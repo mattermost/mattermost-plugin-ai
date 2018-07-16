@@ -1,0 +1,7 @@
+dist/
+
+# Mac
+.DS_Store
+
+# Jetbrains
+.idea/
