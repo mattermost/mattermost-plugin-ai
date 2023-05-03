@@ -122,7 +122,7 @@ func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*mo
 		}
 	}
 
-	split := strings.SplitN(args.Command, " ", 2)
+	split := strings.SplitN(strings.TrimSpace(args.Command), " ", 2)
 	command := split[0]
 	/*parameters := []string{}
 	cmd := ""
