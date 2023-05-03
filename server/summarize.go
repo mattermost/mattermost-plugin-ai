@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"os"
 
 	openai "github.com/sashabaranov/go-openai"
 )
@@ -21,9 +20,9 @@ Then answer any questions the user has about the thread. Keep your responses sho
 `
 )
 
-func NewOpenAISummarizer() *OpenAISummarizer {
+func NewOpenAISummarizer(apiKey string) *OpenAISummarizer {
 	return &OpenAISummarizer{
-		openaiClient: openai.NewClient(os.Getenv("OPENAI_API_KEY")),
+		openaiClient: openai.NewClient(apiKey),
 	}
 }
 

@@ -70,7 +70,7 @@ func (p *Plugin) OnActivate() error {
 
 	p.registerCommands()
 
-	p.summarizer = NewOpenAISummarizer()
+	p.summarizer = NewOpenAISummarizer(p.getConfiguration().OpenAIAPIKey)
 
 	return nil
 }

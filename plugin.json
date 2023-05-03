@@ -25,6 +25,11 @@
         "footer": "",
         "settings": [
 			{
+				"key": "OpenAIAPIKey",
+				"type": "text",
+				"display_name": "OpenAI API Key:"
+			},
+			{
 				"key": "AllowPrivateChannels",
 				"type": "bool",
 				"display_name": "Allow Private Channels:"
