@@ -1,7 +1,7 @@
 {
-    "id": "com.mattermost.plugin-starter-template",
-    "name": "Plugin Starter Template",
-    "description": "This plugin serves as a starting point for writing a Mattermost plugin.",
+    "id": "summarize",
+    "name": "Summarize Plugin",
+    "description": "",
     "homepage_url": "https://github.com/mattermost/mattermost-plugin-starter-template",
     "support_url": "https://github.com/mattermost/mattermost-plugin-starter-template/issues",
     "release_notes_url": "https://github.com/mattermost/mattermost-plugin-starter-template/releases/tag/v0.1.0",
@@ -23,6 +23,22 @@
     "settings_schema": {
         "header": "",
         "footer": "",
-        "settings": []
+        "settings": [
+			{
+				"key": "AllowPrivateChannels",
+				"type": "bool",
+				"display_name": "Allow Private Channels:"
+			},
+			{
+				"key": "AllowedTeamIDs",
+				"type": "text",
+				"display_name": "Allowed Team IDs (csv):"
+			},
+			{
+				"key": "AllowedUserIDs",
+				"type": "text",
+				"display_name": "Allowed User IDs (csv):"
+			}
+		]
     }
 }
