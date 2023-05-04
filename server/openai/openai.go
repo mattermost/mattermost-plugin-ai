@@ -1,13 +1,13 @@
-package main
+package openai
 
 import (
 	"context"
 
-	openai "github.com/sashabaranov/go-openai"
+	openaiClient "github.com/sashabaranov/go-openai"
 )
 
-type OpenAISummarizer struct {
-	openaiClient *openai.Client
+type OpenAI struct {
+	openaiClient *openaiClient.Client
 }
 
 const (
@@ -20,24 +20,24 @@ Then answer any questions the user has about the thread. Keep your responses sho
 `
 )
 
-func NewOpenAISummarizer(apiKey string) *OpenAISummarizer {
-	return &OpenAISummarizer{
-		openaiClient: openai.NewClient(apiKey),
+func New(apiKey string) *OpenAI {
+	return &OpenAI{
+		openaiClient: openaiClient.NewClient(apiKey),
 	}
 }
 
-func (s *OpenAISummarizer) SummarizeThread(thread string) (string, error) {
+func (s *OpenAI) SummarizeThread(thread string) (string, error) {
 	resp, err := s.openaiClient.CreateChatCompletion(
 		context.Background(),
-		openai.ChatCompletionRequest{
-			Model: openai.GPT3Dot5Turbo,
-			Messages: []openai.ChatCompletionMessage{
+		openaiClient.ChatCompletionRequest{
+			Model: openaiClient.GPT3Dot5Turbo,
+			Messages: []openaiClient.ChatCompletionMessage{
 				{
-					Role:    openai.ChatMessageRoleSystem,
+					Role:    openaiClient.ChatMessageRoleSystem,
 					Content: SummarizeThreadSystemMessage,
 				},
 				{
-					Role:    openai.ChatMessageRoleUser,
+					Role:    openaiClient.ChatMessageRoleUser,
 					Content: thread,
 				},
 			},
@@ -51,22 +51,22 @@ func (s *OpenAISummarizer) SummarizeThread(thread string) (string, error) {
 	return summary, nil
 }
 
-func (s *OpenAISummarizer) AnswerQuestionOnThread(thread string, question string) (string, error) {
+func (s *OpenAI) AnswerQuestionOnThread(thread string, question string) (string, error) {
 	resp, err := s.openaiClient.CreateChatCompletion(
 		context.Background(),
-		openai.ChatCompletionRequest{
-			Model: openai.GPT3Dot5Turbo,
-			Messages: []openai.ChatCompletionMessage{
+		openaiClient.ChatCompletionRequest{
+			Model: openaiClient.GPT3Dot5Turbo,
+			Messages: []openaiClient.ChatCompletionMessage{
 				{
-					Role:    openai.ChatMessageRoleSystem,
+					Role:    openaiClient.ChatMessageRoleSystem,
 					Content: AnswerThreadQuestionSystemMessage,
 				},
 				{
-					Role:    openai.ChatMessageRoleUser,
+					Role:    openaiClient.ChatMessageRoleUser,
 					Content: thread,
 				},
 				{
-					Role:    openai.ChatMessageRoleUser,
+					Role:    openaiClient.ChatMessageRoleUser,
 					Content: question,
 				},
 			},

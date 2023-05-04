@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
 	pluginapi "github.com/mattermost/mattermost-plugin-api"
+	"github.com/mattermost/mattermost-plugin-starter-template/server/openai"
 	"github.com/mattermost/mattermost-server/v6/model"
 	"github.com/mattermost/mattermost-server/v6/plugin"
 	"github.com/pkg/errors"
@@ -32,12 +33,9 @@ type Plugin struct {
 	db      *sqlx.DB
 	builder sq.StatementBuilderType
 
-	summarizer Summarizer
-}
-
-type Summarizer interface {
-	SummarizeThread(thread string) (string, error)
-	AnswerQuestionOnThread(thread, question string) (string, error)
+	summarizer     Summarizer
+	threadAnswerer ThreadAnswerer
+	imageGenerator ImageGenerator
 }
 
 func (p *Plugin) OnActivate() error {
@@ -70,7 +68,9 @@ func (p *Plugin) OnActivate() error {
 
 	p.registerCommands()
 
-	p.summarizer = NewOpenAISummarizer(p.getConfiguration().OpenAIAPIKey)
+	openAI := openai.New(p.getConfiguration().OpenAIAPIKey)
+	p.summarizer = openAI
+	p.threadAnswerer = openAI
 
 	return nil
 }
@@ -161,7 +161,7 @@ func (p *Plugin) askThreadQuestion(c *plugin.Context, args *model.CommandArgs, q
 		}
 
 		formattedThread := formatThread(threadData)
-		summary, err := p.summarizer.AnswerQuestionOnThread(formattedThread, question)
+		summary, err := p.threadAnswerer.AnswerQuestionOnThread(formattedThread, question)
 		if err != nil {
 			return nil, err
 		}
