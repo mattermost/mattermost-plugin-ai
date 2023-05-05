@@ -40,6 +40,7 @@ type Summarizer interface {
 	SummarizeThread(thread string) (string, error)
 	AnswerQuestionOnThread(thread, question string) (string, error)
 	ThreadConversation(thread string, posts []string) (string, error)
+	SelectEmoji(message string) (string, error)
 }
 
 func (p *Plugin) OnActivate() error {
@@ -118,7 +119,6 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 		p.pluginAPI.Log.Error(err.Error())
 		return
 	}
-
 }
 
 func (p *Plugin) continueThreadConversation(rootID string) (string, error) {
@@ -165,14 +165,83 @@ func (p *Plugin) registerCommands() {
 // ServeHTTP demonstrates a plugin that handles HTTP requests by greeting the world.
 func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Request) {
 	router := gin.Default()
-	router.GET("/summarize", p.handleSummarize)
+	router.Use(p.ginlogger)
+	router.Use(p.MattermostAuthorizationRequired)
+	router.POST("/react/:postid", p.handleReact)
 	router.ServeHTTP(w, r)
 }
 
-func (p *Plugin) handleSummarize(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"result": "this is the summary",
+func (p *Plugin) ginlogger(c *gin.Context) {
+	c.Next()
+
+	for _, ginErr := range c.Errors {
+		p.API.LogError(ginErr.Error())
+	}
+}
+
+func (p *Plugin) handleReact(c *gin.Context) {
+	postID := c.Param("postid")
+
+	post, err := p.pluginAPI.Post.GetPost(postID)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	if !p.getConfiguration().AllowPrivateChannels {
+		channel, err := p.pluginAPI.Channel.Get(post.ChannelId)
+		if err != nil {
+			c.AbortWithError(http.StatusInternalServerError, err)
+			return
+		}
+
+		if channel.Type != model.ChannelTypeOpen {
+			c.AbortWithError(http.StatusUnauthorized, errors.New("Can't operate on private channels."))
+			return
+		}
+
+		if !strings.Contains(p.getConfiguration().AllowedTeamIDs, channel.TeamId) {
+			c.AbortWithError(http.StatusUnauthorized, errors.New("Can't operate on this team."))
+			return
+		}
+	}
+
+	emojiName, err := p.summarizer.SelectEmoji(post.Message)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	if _, found := model.GetSystemEmojiId(emojiName); !found {
+		p.pluginAPI.Post.AddReaction(&model.Reaction{
+			EmojiName: "large_red_square",
+			UserId:    p.botid,
+			PostId:    post.Id,
+		})
+		c.AbortWithError(http.StatusInternalServerError, errors.New("LLM returned somthing other than emoji: "+emojiName))
+		return
+	}
+
+	p.pluginAPI.Post.AddReaction(&model.Reaction{
+		EmojiName: emojiName,
+		UserId:    p.botid,
+		PostId:    post.Id,
 	})
+
+	c.Status(http.StatusOK)
+}
+
+func (p *Plugin) MattermostAuthorizationRequired(c *gin.Context) {
+	userID := c.GetHeader("Mattermost-User-Id")
+	if userID == "" {
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+
+	if !strings.Contains(p.getConfiguration().AllowedUserIDs, userID) {
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
 }
 
 func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*model.CommandResponse, *model.AppError) {

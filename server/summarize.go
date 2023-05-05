@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strings"
 
 	openai "github.com/sashabaranov/go-openai"
 )
@@ -9,16 +10,6 @@ import (
 type OpenAISummarizer struct {
 	openaiClient *openai.Client
 }
-
-const (
-	SummarizeThreadSystemMessage = `You are a helpful assistant that summarizes threads. Given a thread, return a summary of the thread using less than 30 words. Do not refer to the thread, just give the summary. Include who was speaking.
-
-Then answer any questions the user has about the thread. Keep your responses short.
-`
-
-	AnswerThreadQuestionSystemMessage = `You are a helpful assistant that answers questions about threads. Give a short answer that correctly answers questions asked.
-`
-)
 
 func NewOpenAISummarizer(apiKey string) *OpenAISummarizer {
 	return &OpenAISummarizer{
@@ -116,4 +107,30 @@ func (s *OpenAISummarizer) ThreadConversation(originalThread string, posts []str
 
 	return newMessage, nil
 
+}
+
+func (s *OpenAISummarizer) SelectEmoji(message string) (string, error) {
+	resp, err := s.openaiClient.CreateChatCompletion(
+		context.Background(),
+		openai.ChatCompletionRequest{
+			Model:     openai.GPT3Dot5Turbo,
+			MaxTokens: 25,
+			Messages: []openai.ChatCompletionMessage{
+				{
+					Role:    openai.ChatMessageRoleSystem,
+					Content: EmojiSystemMessage,
+				},
+				{
+					Role:    openai.ChatMessageRoleUser,
+					Content: message,
+				},
+			},
+		},
+	)
+	if err != nil {
+		return "", err
+	}
+	result := strings.Trim(strings.TrimSpace(resp.Choices[0].Message.Content), ":")
+
+	return result, nil
 }

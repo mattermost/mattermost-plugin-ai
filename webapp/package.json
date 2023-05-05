@@ -75,6 +75,7 @@
   },
   "dependencies": {
     "@mattermost/webapp": "github:mattermost/mattermost-webapp",
+    "@mattermost/client": "7.10.0",
     "core-js": "3.22.8",
     "react": "^16.14.0",
     "react-redux": "8.0.2",
