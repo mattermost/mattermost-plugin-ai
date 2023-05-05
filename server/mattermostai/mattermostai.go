@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"image"
+	"image/png"
 	"io"
 	"net/http"
 )
@@ -98,10 +99,11 @@ func (s *MattermostAI) GenerateImage(prompt string) (image.Image, error) {
 	}
 	defer resp.Body.Close()
 
-	image, _, err := image.Decode(bytes.NewReader(data))
+	r := bytes.NewReader(data)
+	imgData, err := png.Decode(r)
 	if err != nil {
 		return nil, err
 	}
 
-	return image, nil
+	return imgData, nil
 }

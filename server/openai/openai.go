@@ -1,8 +1,13 @@
 package openai
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
+	"image"
+	"image/png"
 
+	"github.com/sashabaranov/go-openai"
 	openaiClient "github.com/sashabaranov/go-openai"
 )
 
@@ -78,4 +83,31 @@ func (s *OpenAI) AnswerQuestionOnThread(thread string, question string) (string,
 	summary := resp.Choices[0].Message.Content
 
 	return summary, nil
+}
+
+func (s *OpenAI) GenerateImage(prompt string) (image.Image, error) {
+	req := openaiClient.ImageRequest{
+		Prompt:         prompt,
+		Size:           openai.CreateImageSize256x256,
+		ResponseFormat: openai.CreateImageResponseFormatB64JSON,
+		N:              1,
+	}
+
+	respBase64, err := s.openaiClient.CreateImage(context.Background(), req)
+	if err != nil {
+		return nil, err
+	}
+
+	imgBytes, err := base64.StdEncoding.DecodeString(respBase64.Data[0].B64JSON)
+	if err != nil {
+		return nil, err
+	}
+
+	r := bytes.NewReader(imgBytes)
+	imgData, err := png.Decode(r)
+	if err != nil {
+		return nil, err
+	}
+
+	return imgData, nil
 }
