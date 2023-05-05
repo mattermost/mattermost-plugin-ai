@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -38,6 +39,7 @@ type Plugin struct {
 type Summarizer interface {
 	SummarizeThread(thread string) (string, error)
 	AnswerQuestionOnThread(thread, question string) (string, error)
+	ThreadConversation(thread string, posts []string) (string, error)
 }
 
 func (p *Plugin) OnActivate() error {
@@ -46,7 +48,7 @@ func (p *Plugin) OnActivate() error {
 	botID, err := p.pluginAPI.Bot.EnsureBot(&model.Bot{
 		Username:    "llmbot",
 		DisplayName: "LLM Bot",
-		Description: "Testing...",
+		Description: "LLM Bot",
 	})
 	if err != nil {
 		return errors.Wrapf(err, "failed to ensure bot")
@@ -73,6 +75,81 @@ func (p *Plugin) OnActivate() error {
 	p.summarizer = NewOpenAISummarizer(p.getConfiguration().OpenAIAPIKey)
 
 	return nil
+}
+
+func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
+	// Don't respond to ouselves
+	if post.UserId == p.botid {
+		return
+	}
+
+	// Optimization: We only care about replies
+	if post.RootId == "" {
+		return
+	}
+
+	channel, err := p.pluginAPI.Channel.Get(post.ChannelId)
+	if err != nil {
+		p.pluginAPI.Log.Error(err.Error())
+		return
+	}
+
+	if channel.Type != model.ChannelTypeDirect {
+		return
+	}
+
+	// Check if this DM channel is with the bot
+	if !strings.Contains(channel.Name, p.botid) {
+		return
+	}
+
+	nextPost, err := p.continueThreadConversation(post.RootId)
+	if err != nil {
+		p.pluginAPI.Log.Error(err.Error())
+		return
+	}
+
+	if err := p.pluginAPI.Post.CreatePost(&model.Post{
+		UserId:    p.botid,
+		Message:   nextPost,
+		ChannelId: channel.Id,
+		RootId:    post.RootId,
+	}); err != nil {
+		p.pluginAPI.Log.Error(err.Error())
+		return
+	}
+
+}
+
+func (p *Plugin) continueThreadConversation(rootID string) (string, error) {
+	questionThreadData, err := p.getThreadAndMeta(rootID)
+	if err != nil {
+		return "", err
+	}
+
+	originalThreadID := questionThreadData.Posts[0].GetProp(ThreadIDProp).(string)
+	if originalThreadID == "" {
+		return "", errors.New("Unable to retrive inital thread")
+	}
+
+	originalThreadData, err := p.getThreadAndMeta(originalThreadID)
+	if err != nil {
+		return "", err
+	}
+
+	originalThread := formatThread(originalThreadData)
+
+	posts := []string{}
+	for _, post := range questionThreadData.Posts {
+		posts = append(posts, post.Message)
+	}
+
+	nextAnswer, err := p.summarizer.ThreadConversation(originalThread, posts)
+	if err != nil {
+		return "", err
+	}
+
+	return nextAnswer, nil
 }
 
 func (p *Plugin) registerCommands() {
@@ -153,6 +230,33 @@ func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*mo
 	return response, nil
 }
 
+const ThreadIDProp = "referenced_thread"
+
+// DM the user with a standard message. Run the inferance
+func (p *Plugin) startNewSummaryThread(rootID string, userID string) (string, error) {
+	threadData, err := p.getThreadAndMeta(rootID)
+	if err != nil {
+		return "", err
+	}
+
+	formattedThread := formatThread(threadData)
+	summary, err := p.summarizer.SummarizeThread(formattedThread)
+	if err != nil {
+		return "", err
+	}
+
+	post := &model.Post{
+		Message: fmt.Sprintf("[Original Thread](/_redirect/pl/%s)\n```\n%s\n```", rootID, summary),
+	}
+	post.AddProp(ThreadIDProp, rootID)
+
+	if err := p.pluginAPI.Post.DM(p.botid, userID, post); err != nil {
+		return "", err
+	}
+
+	return post.Id, nil
+}
+
 func (p *Plugin) askThreadQuestion(c *plugin.Context, args *model.CommandArgs, question string) (*model.CommandResponse, error) {
 	if args.RootId != "" {
 		threadData, err := p.getThreadAndMeta(args.RootId)
@@ -182,21 +286,12 @@ func (p *Plugin) askThreadQuestion(c *plugin.Context, args *model.CommandArgs, q
 
 func (p *Plugin) summarizeCurrentContext(c *plugin.Context, args *model.CommandArgs) (*model.CommandResponse, error) {
 	if args.RootId != "" {
-		threadData, err := p.getThreadAndMeta(args.RootId)
+		postid, err := p.startNewSummaryThread(args.RootId, args.UserId)
 		if err != nil {
 			return nil, err
 		}
-
-		formattedThread := formatThread(threadData)
-		summary, err := p.summarizer.SummarizeThread(formattedThread)
-		if err != nil {
-			return nil, err
-		}
-
 		return &model.CommandResponse{
-			ResponseType: model.CommandResponseTypeEphemeral,
-			Text:         summary,
-			ChannelId:    args.ChannelId,
+			GotoLocation: "/_redirect/pl/" + postid,
 		}, nil
 	}
 
