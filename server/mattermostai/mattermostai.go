@@ -3,6 +3,7 @@ package mattermostai
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"image"
 	"image/png"
 	"io"
@@ -106,4 +107,12 @@ func (s *MattermostAI) GenerateImage(prompt string) (image.Image, error) {
 	}
 
 	return imgData, nil
+}
+
+func (s *MattermostAI) SelectEmoji(message string) (string, error) {
+	return "", errors.New("not implemented")
+}
+
+func (s *MattermostAI) ThreadConversation(originalThread string, posts []string) (string, error) {
+	return "", errors.New("not implemented")
 }

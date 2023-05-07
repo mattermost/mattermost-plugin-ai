@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"image"
 	"image/png"
+	"strings"
 
 	"github.com/sashabaranov/go-openai"
 	openaiClient "github.com/sashabaranov/go-openai"
@@ -14,16 +15,6 @@ import (
 type OpenAI struct {
 	openaiClient *openaiClient.Client
 }
-
-const (
-	SummarizeThreadSystemMessage = `You are a helpful assistant that summarizes threads. Given a thread, return a summary of the thread using less than 30 words. Do not refer to the thread, just give the summary. Include who was speaking.
-
-Then answer any questions the user has about the thread. Keep your responses short.
-`
-
-	AnswerThreadQuestionSystemMessage = `You are a helpful assistant that answers questions about threads. Give a short answer that correctly answers questions asked.
-`
-)
 
 func New(apiKey string) *OpenAI {
 	return &OpenAI{
@@ -110,4 +101,68 @@ func (s *OpenAI) GenerateImage(prompt string) (image.Image, error) {
 	}
 
 	return imgData, nil
+}
+
+func (s *OpenAI) ThreadConversation(originalThread string, posts []string) (string, error) {
+	messages := []openai.ChatCompletionMessage{
+		{
+			Role:    openai.ChatMessageRoleSystem,
+			Content: AnswerThreadQuestionSystemMessage,
+		},
+		{
+			Role:    openai.ChatMessageRoleUser,
+			Content: originalThread,
+		},
+	}
+	for i, post := range posts {
+		role := openai.ChatMessageRoleUser
+		if i%2 == 0 {
+			role = openai.ChatMessageRoleAssistant
+		}
+		messages = append(messages, openai.ChatCompletionMessage{
+			Role:    role,
+			Content: post,
+		})
+	}
+
+	resp, err := s.openaiClient.CreateChatCompletion(
+		context.Background(),
+		openai.ChatCompletionRequest{
+			Model:    openai.GPT3Dot5Turbo,
+			Messages: messages,
+		},
+	)
+	if err != nil {
+		return "", err
+	}
+	newMessage := resp.Choices[0].Message.Content
+
+	return newMessage, nil
+
+}
+
+func (s *OpenAI) SelectEmoji(message string) (string, error) {
+	resp, err := s.openaiClient.CreateChatCompletion(
+		context.Background(),
+		openai.ChatCompletionRequest{
+			Model:     openai.GPT3Dot5Turbo,
+			MaxTokens: 25,
+			Messages: []openai.ChatCompletionMessage{
+				{
+					Role:    openai.ChatMessageRoleSystem,
+					Content: EmojiSystemMessage,
+				},
+				{
+					Role:    openai.ChatMessageRoleUser,
+					Content: message,
+				},
+			},
+		},
+	)
+	if err != nil {
+		return "", err
+	}
+	result := strings.Trim(strings.TrimSpace(resp.Choices[0].Message.Content), ":")
+
+	return result, nil
 }

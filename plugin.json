@@ -62,6 +62,28 @@
                 "default": "openai"
 			},
 			{
+				"key": "ThreadConversationer",
+				"type": "dropdown",
+				"display_name": "AI to talk about a thread",
+                "options": [
+                    {"display_name": "None", "value": ""},
+                    {"display_name": "Open AI", "value": "openai"},
+                    {"display_name": "Mattermost AI", "value": "mattermostai"}
+                ],
+                "default": "openai"
+			},
+			{
+				"key": "EmojiSelector",
+				"type": "dropdown",
+				"display_name": "AI to select emojis",
+                "options": [
+                    {"display_name": "None", "value": ""},
+                    {"display_name": "Open AI", "value": "openai"},
+                    {"display_name": "Mattermost AI", "value": "mattermostai"}
+                ],
+                "default": "openai"
+			},
+			{
 				"key": "ImageGenerator",
 				"type": "dropdown",
 				"display_name": "AI to generate images",

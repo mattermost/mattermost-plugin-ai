@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"image/png"
 	"net/http"
 	"strings"
@@ -36,9 +37,11 @@ type Plugin struct {
 	db      *sqlx.DB
 	builder sq.StatementBuilderType
 
-	summarizer     Summarizer
-	threadAnswerer ThreadAnswerer
-	imageGenerator ImageGenerator
+	summarizer           Summarizer
+	threadAnswerer       ThreadAnswerer
+	imageGenerator       ImageGenerator
+	threadConversationer ThreadConversationer
+	emojiSelector        EmojiSelector
 }
 
 func (p *Plugin) OnActivate() error {
@@ -47,7 +50,7 @@ func (p *Plugin) OnActivate() error {
 	botID, err := p.pluginAPI.Bot.EnsureBot(&model.Bot{
 		Username:    "llmbot",
 		DisplayName: "LLM Bot",
-		Description: "Testing...",
+		Description: "LLM Bot",
 	})
 	if err != nil {
 		return errors.Wrapf(err, "failed to ensure bot")
@@ -88,6 +91,20 @@ func (p *Plugin) OnActivate() error {
 		p.threadAnswerer = mattermostAI
 	}
 
+	switch p.getConfiguration().ThreadConversationer {
+	case "openai":
+		p.threadConversationer = openAI
+	case "mattermostai":
+		p.threadConversationer = mattermostAI
+	}
+
+	switch p.getConfiguration().EmojiSelector {
+	case "openai":
+		p.emojiSelector = openAI
+	case "mattermostai":
+		p.emojiSelector = mattermostAI
+	}
+
 	switch p.getConfiguration().ImageGenerator {
 	case "openai":
 		p.imageGenerator = openAI
@@ -96,6 +113,80 @@ func (p *Plugin) OnActivate() error {
 	}
 
 	return nil
+}
+
+func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
+	// Don't respond to ouselves
+	if post.UserId == p.botid {
+		return
+	}
+
+	// Optimization: We only care about replies
+	if post.RootId == "" {
+		return
+	}
+
+	channel, err := p.pluginAPI.Channel.Get(post.ChannelId)
+	if err != nil {
+		p.pluginAPI.Log.Error(err.Error())
+		return
+	}
+
+	if channel.Type != model.ChannelTypeDirect {
+		return
+	}
+
+	// Check if this DM channel is with the bot
+	if !strings.Contains(channel.Name, p.botid) {
+		return
+	}
+
+	nextPost, err := p.continueThreadConversation(post.RootId)
+	if err != nil {
+		p.pluginAPI.Log.Error(err.Error())
+		return
+	}
+
+	if err := p.pluginAPI.Post.CreatePost(&model.Post{
+		UserId:    p.botid,
+		Message:   nextPost,
+		ChannelId: channel.Id,
+		RootId:    post.RootId,
+	}); err != nil {
+		p.pluginAPI.Log.Error(err.Error())
+		return
+	}
+}
+
+func (p *Plugin) continueThreadConversation(rootID string) (string, error) {
+	questionThreadData, err := p.getThreadAndMeta(rootID)
+	if err != nil {
+		return "", err
+	}
+
+	originalThreadID := questionThreadData.Posts[0].GetProp(ThreadIDProp).(string)
+	if originalThreadID == "" {
+		return "", errors.New("Unable to retrive inital thread")
+	}
+
+	originalThreadData, err := p.getThreadAndMeta(originalThreadID)
+	if err != nil {
+		return "", err
+	}
+
+	originalThread := formatThread(originalThreadData)
+
+	posts := []string{}
+	for _, post := range questionThreadData.Posts {
+		posts = append(posts, post.Message)
+	}
+
+	nextAnswer, err := p.threadConversationer.ThreadConversation(originalThread, posts)
+	if err != nil {
+		return "", err
+	}
+
+	return nextAnswer, nil
 }
 
 func (p *Plugin) registerCommands() {
@@ -119,14 +210,83 @@ func (p *Plugin) registerCommands() {
 // ServeHTTP demonstrates a plugin that handles HTTP requests by greeting the world.
 func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Request) {
 	router := gin.Default()
-	router.GET("/summarize", p.handleSummarize)
+	router.Use(p.ginlogger)
+	router.Use(p.MattermostAuthorizationRequired)
+	router.POST("/react/:postid", p.handleReact)
 	router.ServeHTTP(w, r)
 }
 
-func (p *Plugin) handleSummarize(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"result": "this is the summary",
+func (p *Plugin) ginlogger(c *gin.Context) {
+	c.Next()
+
+	for _, ginErr := range c.Errors {
+		p.API.LogError(ginErr.Error())
+	}
+}
+
+func (p *Plugin) handleReact(c *gin.Context) {
+	postID := c.Param("postid")
+
+	post, err := p.pluginAPI.Post.GetPost(postID)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	if !p.getConfiguration().AllowPrivateChannels {
+		channel, err := p.pluginAPI.Channel.Get(post.ChannelId)
+		if err != nil {
+			c.AbortWithError(http.StatusInternalServerError, err)
+			return
+		}
+
+		if channel.Type != model.ChannelTypeOpen {
+			c.AbortWithError(http.StatusUnauthorized, errors.New("Can't operate on private channels."))
+			return
+		}
+
+		if !strings.Contains(p.getConfiguration().AllowedTeamIDs, channel.TeamId) {
+			c.AbortWithError(http.StatusUnauthorized, errors.New("Can't operate on this team."))
+			return
+		}
+	}
+
+	emojiName, err := p.emojiSelector.SelectEmoji(post.Message)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	if _, found := model.GetSystemEmojiId(emojiName); !found {
+		p.pluginAPI.Post.AddReaction(&model.Reaction{
+			EmojiName: "large_red_square",
+			UserId:    p.botid,
+			PostId:    post.Id,
+		})
+		c.AbortWithError(http.StatusInternalServerError, errors.New("LLM returned somthing other than emoji: "+emojiName))
+		return
+	}
+
+	p.pluginAPI.Post.AddReaction(&model.Reaction{
+		EmojiName: emojiName,
+		UserId:    p.botid,
+		PostId:    post.Id,
 	})
+
+	c.Status(http.StatusOK)
+}
+
+func (p *Plugin) MattermostAuthorizationRequired(c *gin.Context) {
+	userID := c.GetHeader("Mattermost-User-Id")
+	if userID == "" {
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+
+	if !strings.Contains(p.getConfiguration().AllowedUserIDs, userID) {
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
 }
 
 func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*model.CommandResponse, *model.AppError) {
@@ -199,6 +359,33 @@ func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*mo
 	return &model.CommandResponse{}, nil
 }
 
+const ThreadIDProp = "referenced_thread"
+
+// DM the user with a standard message. Run the inferance
+func (p *Plugin) startNewSummaryThread(rootID string, userID string) (string, error) {
+	threadData, err := p.getThreadAndMeta(rootID)
+	if err != nil {
+		return "", err
+	}
+
+	formattedThread := formatThread(threadData)
+	summary, err := p.summarizer.SummarizeThread(formattedThread)
+	if err != nil {
+		return "", err
+	}
+
+	post := &model.Post{
+		Message: fmt.Sprintf("[Original Thread](/_redirect/pl/%s)\n```\n%s\n```", rootID, summary),
+	}
+	post.AddProp(ThreadIDProp, rootID)
+
+	if err := p.pluginAPI.Post.DM(p.botid, userID, post); err != nil {
+		return "", err
+	}
+
+	return post.Id, nil
+}
+
 func (p *Plugin) askThreadQuestion(c *plugin.Context, args *model.CommandArgs, question string) (*model.CommandResponse, error) {
 	if args.RootId != "" {
 		threadData, err := p.getThreadAndMeta(args.RootId)
@@ -228,21 +415,12 @@ func (p *Plugin) askThreadQuestion(c *plugin.Context, args *model.CommandArgs, q
 
 func (p *Plugin) summarizeCurrentContext(c *plugin.Context, args *model.CommandArgs) (*model.CommandResponse, error) {
 	if args.RootId != "" {
-		threadData, err := p.getThreadAndMeta(args.RootId)
+		postid, err := p.startNewSummaryThread(args.RootId, args.UserId)
 		if err != nil {
 			return nil, err
 		}
-
-		formattedThread := formatThread(threadData)
-		summary, err := p.summarizer.SummarizeThread(formattedThread)
-		if err != nil {
-			return nil, err
-		}
-
 		return &model.CommandResponse{
-			ResponseType: model.CommandResponseTypeEphemeral,
-			Text:         summary,
-			ChannelId:    args.ChannelId,
+			GotoLocation: "/_redirect/pl/" + postid,
 		}, nil
 	}
 
