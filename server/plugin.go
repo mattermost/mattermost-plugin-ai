@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"image/png"
 	"net/http"
 	"strings"
 	"sync"
@@ -10,6 +12,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
 	pluginapi "github.com/mattermost/mattermost-plugin-api"
+	"github.com/mattermost/mattermost-plugin-starter-template/server/mattermostai"
+	"github.com/mattermost/mattermost-plugin-starter-template/server/openai"
 	"github.com/mattermost/mattermost-server/v6/model"
 	"github.com/mattermost/mattermost-server/v6/plugin"
 	"github.com/pkg/errors"
@@ -33,14 +37,11 @@ type Plugin struct {
 	db      *sqlx.DB
 	builder sq.StatementBuilderType
 
-	summarizer Summarizer
-}
-
-type Summarizer interface {
-	SummarizeThread(thread string) (string, error)
-	AnswerQuestionOnThread(thread, question string) (string, error)
-	ThreadConversation(thread string, posts []string) (string, error)
-	SelectEmoji(message string) (string, error)
+	summarizer           Summarizer
+	threadAnswerer       ThreadAnswerer
+	imageGenerator       ImageGenerator
+	threadConversationer ThreadConversationer
+	emojiSelector        EmojiSelector
 }
 
 func (p *Plugin) OnActivate() error {
@@ -73,7 +74,43 @@ func (p *Plugin) OnActivate() error {
 
 	p.registerCommands()
 
-	p.summarizer = NewOpenAISummarizer(p.getConfiguration().OpenAIAPIKey)
+	openAI := openai.New(p.getConfiguration().OpenAIAPIKey)
+	mattermostAI := mattermostai.New(p.getConfiguration().MattermostAIUrl, p.getConfiguration().MattermostAISecret)
+
+	switch p.getConfiguration().Summarizer {
+	case "openai":
+		p.summarizer = openAI
+	case "mattermostai":
+		p.summarizer = mattermostAI
+	}
+
+	switch p.getConfiguration().ThreadAnswerer {
+	case "openai":
+		p.threadAnswerer = openAI
+	case "mattermostai":
+		p.threadAnswerer = mattermostAI
+	}
+
+	switch p.getConfiguration().ThreadConversationer {
+	case "openai":
+		p.threadConversationer = openAI
+	case "mattermostai":
+		p.threadConversationer = mattermostAI
+	}
+
+	switch p.getConfiguration().EmojiSelector {
+	case "openai":
+		p.emojiSelector = openAI
+	case "mattermostai":
+		p.emojiSelector = mattermostAI
+	}
+
+	switch p.getConfiguration().ImageGenerator {
+	case "openai":
+		p.imageGenerator = openAI
+	case "mattermostai":
+		p.imageGenerator = mattermostAI
+	}
 
 	return nil
 }
@@ -144,7 +181,7 @@ func (p *Plugin) continueThreadConversation(rootID string) (string, error) {
 		posts = append(posts, post.Message)
 	}
 
-	nextAnswer, err := p.summarizer.ThreadConversation(originalThread, posts)
+	nextAnswer, err := p.threadConversationer.ThreadConversation(originalThread, posts)
 	if err != nil {
 		return "", err
 	}
@@ -159,6 +196,14 @@ func (p *Plugin) registerCommands() {
 		Description:      "Summarize current context",
 		AutoComplete:     true,
 		AutoCompleteDesc: "Summarize current context",
+	})
+
+	p.API.RegisterCommand(&model.Command{
+		Trigger:          "imagine",
+		DisplayName:      "Imagine",
+		Description:      "Generate a new image based on the provided text",
+		AutoComplete:     true,
+		AutoCompleteDesc: "Generate a new image based on the provided text",
 	})
 }
 
@@ -206,7 +251,7 @@ func (p *Plugin) handleReact(c *gin.Context) {
 		}
 	}
 
-	emojiName, err := p.summarizer.SelectEmoji(post.Message)
+	emojiName, err := p.emojiSelector.SelectEmoji(post.Message)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
@@ -279,24 +324,39 @@ func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*mo
 		parameters = split[2:]
 	}*/
 
-	if command != "/summarize" {
+	if command != "/summarize" && command != "/imagine" {
 		return &model.CommandResponse{}, nil
 	}
 
-	var response *model.CommandResponse
-	var err error
-	if len(split) == 1 {
-		response, err = p.summarizeCurrentContext(c, args)
-	} else {
-		question := split[1]
-		response, err = p.askThreadQuestion(c, args, question)
+	if command == "/summarize" {
+		var response *model.CommandResponse
+		var err error
+		if len(split) == 1 {
+			response, err = p.summarizeCurrentContext(c, args)
+		} else {
+			question := split[1]
+			response, err = p.askThreadQuestion(c, args, question)
+		}
+
+		if err != nil {
+			return nil, model.NewAppError("Summarize.ExecuteCommand", "app.command.execute.error", nil, err.Error(), http.StatusInternalServerError)
+		}
+		return response, nil
 	}
 
-	if err != nil {
-		return nil, model.NewAppError("Summarize.ExecuteCommand", "app.command.execute.error", nil, err.Error(), http.StatusInternalServerError)
+	if command == "/imagine" {
+		prompt := strings.Join(split[1:], " ")
+		if err := p.imagine(c, args, prompt); err != nil {
+			return nil, model.NewAppError("Imagine.ExecuteCommand", "app.imagine.command.execute.error", nil, err.Error(), http.StatusInternalServerError)
+		}
+		return &model.CommandResponse{
+			ResponseType: model.CommandResponseTypeEphemeral,
+			Text:         "Generating image, please wait.",
+			ChannelId:    args.ChannelId,
+		}, nil
 	}
 
-	return response, nil
+	return &model.CommandResponse{}, nil
 }
 
 const ThreadIDProp = "referenced_thread"
@@ -334,7 +394,7 @@ func (p *Plugin) askThreadQuestion(c *plugin.Context, args *model.CommandArgs, q
 		}
 
 		formattedThread := formatThread(threadData)
-		summary, err := p.summarizer.AnswerQuestionOnThread(formattedThread, question)
+		summary, err := p.threadAnswerer.AnswerQuestionOnThread(formattedThread, question)
 		if err != nil {
 			return nil, err
 		}
@@ -369,4 +429,39 @@ func (p *Plugin) summarizeCurrentContext(c *plugin.Context, args *model.CommandA
 		Text:         "Channel summarization not implmented",
 		ChannelId:    args.ChannelId,
 	}, nil
+}
+
+func (p *Plugin) imagine(c *plugin.Context, args *model.CommandArgs, prompt string) error {
+	go func() {
+		imgBytes, err := p.imageGenerator.GenerateImage(prompt)
+		if err != nil {
+			p.API.LogError("Unable to generate the new image", "error", err)
+			return
+		}
+
+		buf := new(bytes.Buffer)
+		if err := png.Encode(buf, imgBytes); err != nil {
+			p.API.LogError("Unable to parse image", "error", err)
+			return
+		}
+
+		fileInfo, appErr := p.API.UploadFile(buf.Bytes(), args.ChannelId, "generated-image.png")
+		if appErr != nil {
+			p.API.LogError("Unable to upload the attachment", "error", appErr)
+			return
+		}
+
+		_, appErr = p.API.CreatePost(&model.Post{
+			Message:   "Image generated by the AI from the text: " + prompt,
+			ChannelId: args.ChannelId,
+			UserId:    args.UserId,
+			FileIds:   []string{fileInfo.Id},
+		})
+		if appErr != nil {
+			p.API.LogError("Unable to post the new message", "error", appErr)
+			return
+		}
+	}()
+
+	return nil
 }

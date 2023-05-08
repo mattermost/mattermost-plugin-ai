@@ -1,34 +1,39 @@
-package main
+package openai
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
+	"image"
+	"image/png"
 	"strings"
 
-	openai "github.com/sashabaranov/go-openai"
+	"github.com/sashabaranov/go-openai"
+	openaiClient "github.com/sashabaranov/go-openai"
 )
 
-type OpenAISummarizer struct {
-	openaiClient *openai.Client
+type OpenAI struct {
+	openaiClient *openaiClient.Client
 }
 
-func NewOpenAISummarizer(apiKey string) *OpenAISummarizer {
-	return &OpenAISummarizer{
-		openaiClient: openai.NewClient(apiKey),
+func New(apiKey string) *OpenAI {
+	return &OpenAI{
+		openaiClient: openaiClient.NewClient(apiKey),
 	}
 }
 
-func (s *OpenAISummarizer) SummarizeThread(thread string) (string, error) {
+func (s *OpenAI) SummarizeThread(thread string) (string, error) {
 	resp, err := s.openaiClient.CreateChatCompletion(
 		context.Background(),
-		openai.ChatCompletionRequest{
-			Model: openai.GPT3Dot5Turbo,
-			Messages: []openai.ChatCompletionMessage{
+		openaiClient.ChatCompletionRequest{
+			Model: openaiClient.GPT3Dot5Turbo,
+			Messages: []openaiClient.ChatCompletionMessage{
 				{
-					Role:    openai.ChatMessageRoleSystem,
+					Role:    openaiClient.ChatMessageRoleSystem,
 					Content: SummarizeThreadSystemMessage,
 				},
 				{
-					Role:    openai.ChatMessageRoleUser,
+					Role:    openaiClient.ChatMessageRoleUser,
 					Content: thread,
 				},
 			},
@@ -42,22 +47,22 @@ func (s *OpenAISummarizer) SummarizeThread(thread string) (string, error) {
 	return summary, nil
 }
 
-func (s *OpenAISummarizer) AnswerQuestionOnThread(thread string, question string) (string, error) {
+func (s *OpenAI) AnswerQuestionOnThread(thread string, question string) (string, error) {
 	resp, err := s.openaiClient.CreateChatCompletion(
 		context.Background(),
-		openai.ChatCompletionRequest{
-			Model: openai.GPT3Dot5Turbo,
-			Messages: []openai.ChatCompletionMessage{
+		openaiClient.ChatCompletionRequest{
+			Model: openaiClient.GPT3Dot5Turbo,
+			Messages: []openaiClient.ChatCompletionMessage{
 				{
-					Role:    openai.ChatMessageRoleSystem,
+					Role:    openaiClient.ChatMessageRoleSystem,
 					Content: AnswerThreadQuestionSystemMessage,
 				},
 				{
-					Role:    openai.ChatMessageRoleUser,
+					Role:    openaiClient.ChatMessageRoleUser,
 					Content: thread,
 				},
 				{
-					Role:    openai.ChatMessageRoleUser,
+					Role:    openaiClient.ChatMessageRoleUser,
 					Content: question,
 				},
 			},
@@ -71,7 +76,34 @@ func (s *OpenAISummarizer) AnswerQuestionOnThread(thread string, question string
 	return summary, nil
 }
 
-func (s *OpenAISummarizer) ThreadConversation(originalThread string, posts []string) (string, error) {
+func (s *OpenAI) GenerateImage(prompt string) (image.Image, error) {
+	req := openaiClient.ImageRequest{
+		Prompt:         prompt,
+		Size:           openai.CreateImageSize256x256,
+		ResponseFormat: openai.CreateImageResponseFormatB64JSON,
+		N:              1,
+	}
+
+	respBase64, err := s.openaiClient.CreateImage(context.Background(), req)
+	if err != nil {
+		return nil, err
+	}
+
+	imgBytes, err := base64.StdEncoding.DecodeString(respBase64.Data[0].B64JSON)
+	if err != nil {
+		return nil, err
+	}
+
+	r := bytes.NewReader(imgBytes)
+	imgData, err := png.Decode(r)
+	if err != nil {
+		return nil, err
+	}
+
+	return imgData, nil
+}
+
+func (s *OpenAI) ThreadConversation(originalThread string, posts []string) (string, error) {
 	messages := []openai.ChatCompletionMessage{
 		{
 			Role:    openai.ChatMessageRoleSystem,
@@ -109,7 +141,7 @@ func (s *OpenAISummarizer) ThreadConversation(originalThread string, posts []str
 
 }
 
-func (s *OpenAISummarizer) SelectEmoji(message string) (string, error) {
+func (s *OpenAI) SelectEmoji(message string) (string, error) {
 	resp, err := s.openaiClient.CreateChatCompletion(
 		context.Background(),
 		openai.ChatCompletionRequest{
