@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
+	"fmt"
 	"image"
 	"image/png"
+	"io"
 	"strings"
 
 	"github.com/sashabaranov/go-openai"
@@ -13,17 +16,61 @@ import (
 )
 
 type OpenAI struct {
-	openaiClient *openaiClient.Client
+	client *openaiClient.Client
 }
 
 func New(apiKey string) *OpenAI {
 	return &OpenAI{
-		openaiClient: openaiClient.NewClient(apiKey),
+		client: openaiClient.NewClient(apiKey),
 	}
 }
 
+func (s *OpenAI) QuestionAnswerStream(question string) (chan string, error) {
+	request := openaiClient.ChatCompletionRequest{
+		Model: openaiClient.GPT3Dot5Turbo,
+		Messages: []openaiClient.ChatCompletionMessage{
+			{
+				Role:    openaiClient.ChatMessageRoleSystem,
+				Content: GenericQuestionSystemMessage,
+			},
+			{
+				Role:    openaiClient.ChatMessageRoleUser,
+				Content: question,
+			},
+		},
+		Stream: true,
+	}
+
+	stream, err := s.client.CreateChatCompletionStream(context.Background(), request)
+	if err != nil {
+		return nil, err
+	}
+
+	output := make(chan string)
+
+	go func() {
+		defer stream.Close()
+
+		for {
+			response, err := stream.Recv()
+			if errors.Is(err, io.EOF) {
+				return
+			}
+
+			if err != nil {
+				fmt.Println("Stream error: " + err.Error())
+				return
+			}
+
+			output <- response.Choices[0].Delta.Content
+		}
+	}()
+
+	return output, nil
+}
+
 func (s *OpenAI) SummarizeThread(thread string) (string, error) {
-	resp, err := s.openaiClient.CreateChatCompletion(
+	resp, err := s.client.CreateChatCompletion(
 		context.Background(),
 		openaiClient.ChatCompletionRequest{
 			Model: openaiClient.GPT3Dot5Turbo,
@@ -48,7 +95,7 @@ func (s *OpenAI) SummarizeThread(thread string) (string, error) {
 }
 
 func (s *OpenAI) AnswerQuestionOnThread(thread string, question string) (string, error) {
-	resp, err := s.openaiClient.CreateChatCompletion(
+	resp, err := s.client.CreateChatCompletion(
 		context.Background(),
 		openaiClient.ChatCompletionRequest{
 			Model: openaiClient.GPT3Dot5Turbo,
@@ -84,7 +131,7 @@ func (s *OpenAI) GenerateImage(prompt string) (image.Image, error) {
 		N:              1,
 	}
 
-	respBase64, err := s.openaiClient.CreateImage(context.Background(), req)
+	respBase64, err := s.client.CreateImage(context.Background(), req)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +172,7 @@ func (s *OpenAI) ThreadConversation(originalThread string, posts []string) (stri
 		})
 	}
 
-	resp, err := s.openaiClient.CreateChatCompletion(
+	resp, err := s.client.CreateChatCompletion(
 		context.Background(),
 		openai.ChatCompletionRequest{
 			Model:    openai.GPT3Dot5Turbo,
@@ -142,7 +189,7 @@ func (s *OpenAI) ThreadConversation(originalThread string, posts []string) (stri
 }
 
 func (s *OpenAI) SelectEmoji(message string) (string, error) {
-	resp, err := s.openaiClient.CreateChatCompletion(
+	resp, err := s.client.CreateChatCompletion(
 		context.Background(),
 		openai.ChatCompletionRequest{
 			Model:     openai.GPT3Dot5Turbo,

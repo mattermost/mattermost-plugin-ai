@@ -42,6 +42,8 @@ type Plugin struct {
 	imageGenerator       ImageGenerator
 	threadConversationer ThreadConversationer
 	emojiSelector        EmojiSelector
+
+	openai *openai.OpenAI
 }
 
 func (p *Plugin) OnActivate() error {
@@ -112,17 +114,14 @@ func (p *Plugin) OnActivate() error {
 		p.imageGenerator = mattermostAI
 	}
 
+	p.openai = openAI
+
 	return nil
 }
 
 func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 	// Don't respond to ouselves
 	if post.UserId == p.botid {
-		return
-	}
-
-	// Optimization: We only care about replies
-	if post.RootId == "" {
 		return
 	}
 
@@ -141,9 +140,18 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 		return
 	}
 
-	nextPost, err := p.continueThreadConversation(post.RootId)
+	rootPost := post.RootId
+	if rootPost == "" {
+		rootPost = post.Id
+	}
+
+	nextPost, err := p.continueConversation(rootPost)
 	if err != nil {
-		p.pluginAPI.Log.Error(err.Error())
+		p.pluginAPI.Log.Error("Unable to continue conversation " + err.Error())
+		return
+	}
+
+	if nextPost == "" {
 		return
 	}
 
@@ -156,19 +164,58 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 		p.pluginAPI.Log.Error(err.Error())
 		return
 	}
+
 }
 
-func (p *Plugin) continueThreadConversation(rootID string) (string, error) {
+func (p *Plugin) continueConversation(rootID string) (string, error) {
 	questionThreadData, err := p.getThreadAndMeta(rootID)
 	if err != nil {
 		return "", err
 	}
 
-	originalThreadID := questionThreadData.Posts[0].GetProp(ThreadIDProp).(string)
-	if originalThreadID == "" {
-		return "", errors.New("Unable to retrive inital thread")
+	originalThreadID, ok := questionThreadData.Posts[0].GetProp(ThreadIDProp).(string)
+	if ok && originalThreadID != "" {
+		return p.continueThreadConversation(questionThreadData, originalThreadID)
 	}
 
+	return p.continueStandardConversation(questionThreadData)
+}
+
+func (p *Plugin) continueStandardConversation(questionThreadData *ThreadData) (string, error) {
+	posts := []string{}
+	for _, post := range questionThreadData.Posts {
+		posts = append(posts, post.Message)
+	}
+
+	outputStream, err := p.openai.QuestionAnswerStream(posts[0])
+	if err != nil {
+		return "", err
+	}
+
+	post := &model.Post{
+		UserId:    p.botid,
+		Message:   "",
+		ChannelId: questionThreadData.Posts[0].ChannelId,
+		RootId:    questionThreadData.Posts[0].Id,
+	}
+
+	if err := p.pluginAPI.Post.CreatePost(post); err != nil {
+		return "", err
+	}
+
+	go func() {
+		for next := range outputStream {
+			post.Message += next
+			if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
+				return
+			}
+		}
+	}()
+
+	return "", err
+}
+
+func (p *Plugin) continueThreadConversation(questionThreadData *ThreadData, originalThreadID string) (string, error) {
 	originalThreadData, err := p.getThreadAndMeta(originalThreadID)
 	if err != nil {
 		return "", err
