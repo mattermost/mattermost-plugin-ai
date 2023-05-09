@@ -11,6 +11,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/crspeller/mattermost-plugin-summarize/server/ai"
 	"github.com/sashabaranov/go-openai"
 	openaiClient "github.com/sashabaranov/go-openai"
 )
@@ -25,22 +26,45 @@ func New(apiKey string) *OpenAI {
 	}
 }
 
-func (s *OpenAI) QuestionAnswerStream(question string) (chan string, error) {
+func conversationToCompletion(conversation ai.BotConversation) []openaiClient.ChatCompletionMessage {
+	result := make([]openaiClient.ChatCompletionMessage, 0, len(conversation.Posts))
+
+	for _, post := range conversation.Posts {
+		role := openaiClient.ChatMessageRoleUser
+		if post.Role == ai.PostRoleBot {
+			role = openaiClient.ChatMessageRoleAssistant
+		}
+		result = append(result, openai.ChatCompletionMessage{
+			Role:    role,
+			Content: post.Message,
+		})
+	}
+
+	return result
+}
+
+func (s *OpenAI) ThreadCompletion(systemMessage string, conversation ai.BotConversation) (*ai.TextStreamResult, error) {
 	request := openaiClient.ChatCompletionRequest{
 		Model: openaiClient.GPT3Dot5Turbo,
-		Messages: []openaiClient.ChatCompletionMessage{
-			{
-				Role:    openaiClient.ChatMessageRoleSystem,
-				Content: GenericQuestionSystemMessage,
-			},
-			{
-				Role:    openaiClient.ChatMessageRoleUser,
-				Content: question,
-			},
-		},
+		Messages: append(
+			[]openaiClient.ChatCompletionMessage{{
+				Role:    openai.ChatMessageRoleSystem,
+				Content: systemMessage,
+			}},
+			conversationToCompletion(conversation)...,
+		),
 		Stream: true,
 	}
 
+	return s.streamResult(request)
+}
+
+func (s *OpenAI) ContinueQuestionThread(posts ai.BotConversation) (*ai.TextStreamResult, error) {
+	return s.ThreadCompletion(GenericQuestionSystemMessage, posts)
+}
+
+func (s *OpenAI) streamResult(request openaiClient.ChatCompletionRequest) (*ai.TextStreamResult, error) {
+	request.Stream = true
 	stream, err := s.client.CreateChatCompletionStream(context.Background(), request)
 	if err != nil {
 		return nil, err
@@ -50,6 +74,7 @@ func (s *OpenAI) QuestionAnswerStream(question string) (chan string, error) {
 
 	go func() {
 		defer stream.Close()
+		defer close(output)
 
 		for {
 			response, err := stream.Recv()
@@ -66,40 +91,32 @@ func (s *OpenAI) QuestionAnswerStream(question string) (chan string, error) {
 		}
 	}()
 
-	return output, nil
+	return &ai.TextStreamResult{Stream: output}, nil
 }
 
-func (s *OpenAI) SummarizeThread(thread string) (string, error) {
-	resp, err := s.client.CreateChatCompletion(
-		context.Background(),
-		openaiClient.ChatCompletionRequest{
-			Model: openaiClient.GPT3Dot5Turbo,
-			Messages: []openaiClient.ChatCompletionMessage{
-				{
-					Role:    openaiClient.ChatMessageRoleSystem,
-					Content: SummarizeThreadSystemMessage,
-				},
-				{
-					Role:    openaiClient.ChatMessageRoleUser,
-					Content: thread,
-				},
+func (s *OpenAI) SummarizeThread(thread string) (*ai.TextStreamResult, error) {
+	request := openaiClient.ChatCompletionRequest{
+		Model: openaiClient.GPT3Dot5Turbo,
+		Messages: []openaiClient.ChatCompletionMessage{
+			{
+				Role:    openaiClient.ChatMessageRoleSystem,
+				Content: SummarizeThreadSystemMessage,
+			},
+			{
+				Role:    openaiClient.ChatMessageRoleUser,
+				Content: thread,
 			},
 		},
-	)
-	if err != nil {
-		return "", err
+		Stream: true,
 	}
-	summary := resp.Choices[0].Message.Content
-
-	return summary, nil
+	return s.streamResult(request)
 }
 
-func (s *OpenAI) AnswerQuestionOnThread(thread string, question string) (string, error) {
-	resp, err := s.client.CreateChatCompletion(
-		context.Background(),
-		openaiClient.ChatCompletionRequest{
-			Model: openaiClient.GPT3Dot5Turbo,
-			Messages: []openaiClient.ChatCompletionMessage{
+func (s *OpenAI) ContinueThreadInterrogation(thread string, posts ai.BotConversation) (*ai.TextStreamResult, error) {
+	reqeust := openaiClient.ChatCompletionRequest{
+		Model: openaiClient.GPT3Dot5Turbo,
+		Messages: append(
+			[]openaiClient.ChatCompletionMessage{
 				{
 					Role:    openaiClient.ChatMessageRoleSystem,
 					Content: AnswerThreadQuestionSystemMessage,
@@ -108,19 +125,13 @@ func (s *OpenAI) AnswerQuestionOnThread(thread string, question string) (string,
 					Role:    openaiClient.ChatMessageRoleUser,
 					Content: thread,
 				},
-				{
-					Role:    openaiClient.ChatMessageRoleUser,
-					Content: question,
-				},
 			},
-		},
-	)
-	if err != nil {
-		return "", err
+			conversationToCompletion(posts)...,
+		),
+		Stream: true,
 	}
-	summary := resp.Choices[0].Message.Content
 
-	return summary, nil
+	return s.streamResult(reqeust)
 }
 
 func (s *OpenAI) GenerateImage(prompt string) (image.Image, error) {
@@ -148,44 +159,6 @@ func (s *OpenAI) GenerateImage(prompt string) (image.Image, error) {
 	}
 
 	return imgData, nil
-}
-
-func (s *OpenAI) ThreadConversation(originalThread string, posts []string) (string, error) {
-	messages := []openai.ChatCompletionMessage{
-		{
-			Role:    openai.ChatMessageRoleSystem,
-			Content: AnswerThreadQuestionSystemMessage,
-		},
-		{
-			Role:    openai.ChatMessageRoleUser,
-			Content: originalThread,
-		},
-	}
-	for i, post := range posts {
-		role := openai.ChatMessageRoleUser
-		if i%2 == 0 {
-			role = openai.ChatMessageRoleAssistant
-		}
-		messages = append(messages, openai.ChatCompletionMessage{
-			Role:    role,
-			Content: post,
-		})
-	}
-
-	resp, err := s.client.CreateChatCompletion(
-		context.Background(),
-		openai.ChatCompletionRequest{
-			Model:    openai.GPT3Dot5Turbo,
-			Messages: messages,
-		},
-	)
-	if err != nil {
-		return "", err
-	}
-	newMessage := resp.Choices[0].Message.Content
-
-	return newMessage, nil
-
 }
 
 func (s *OpenAI) SelectEmoji(message string) (string, error) {

@@ -1,4 +1,4 @@
-module github.com/mattermost/mattermost-plugin-starter-template
+module github.com/crspeller/mattermost-plugin-summarize
 
 go 1.20
 
