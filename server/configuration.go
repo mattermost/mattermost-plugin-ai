@@ -22,11 +22,11 @@ type configuration struct {
 	MattermostAIUrl    string
 	MattermostAISecret string
 
-	Summarizer           string
-	ThreadAnswerer       string
-	ImageGenerator       string
-	ThreadConversationer string
-	EmojiSelector        string
+	Summarizer      string
+	ThreadAnswerer  string
+	ImageGenerator  string
+	GenericAnswerer string
+	EmojiSelector   string
 
 	AllowPrivateChannels bool
 	AllowedTeamIDs       string

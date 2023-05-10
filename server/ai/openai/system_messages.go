@@ -1,6 +1,7 @@
 package openai
 
 const (
+	GenericQuestionSystemMessage = `You are a helpful assistant.`
 	SummarizeThreadSystemMessage = `You are a helpful assistant that summarizes threads. Given a thread, return a summary of the thread using less than 30 words. Do not refer to the thread, just give the summary. Include who was speaking.
 
 Then answer any questions the user has about the thread. Keep your responses short.
