@@ -29,15 +29,39 @@ func (p *Plugin) newConversation(post *model.Post) error {
 	return nil
 }
 
+func (p *Plugin) modifyPostForBot(post *model.Post) {
+	post.UserId = p.botid
+	post.Type = "custom_llmbot"
+}
+
+func (p *Plugin) botCreatePost(post *model.Post) error {
+	p.modifyPostForBot(post)
+
+	if err := p.pluginAPI.Post.CreatePost(post); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (p *Plugin) botDM(userID string, post *model.Post) error {
+	p.modifyPostForBot(post)
+
+	if err := p.pluginAPI.Post.DM(p.botid, userID, post); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (p *Plugin) streamResultToPost(stream *ai.TextStreamResult, channelID string, rootID string) error {
 	post := &model.Post{
-		UserId:    p.botid,
 		Message:   "",
 		ChannelId: channelID,
 		RootId:    rootID,
 	}
 
-	if err := p.pluginAPI.Post.CreatePost(post); err != nil {
+	if err := p.botCreatePost(post); err != nil {
 		return err
 	}
 
@@ -119,7 +143,7 @@ func (p *Plugin) startNewSummaryThread(rootID string, userID string) (string, er
 	}
 	post.AddProp(ThreadIDProp, rootID)
 
-	if err := p.pluginAPI.Post.DM(p.botid, userID, post); err != nil {
+	if err := p.botDM(userID, post); err != nil {
 		return "", err
 	}
 

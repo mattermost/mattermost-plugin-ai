@@ -8,15 +8,20 @@ import {manifest} from '@/manifest';
 
 import {PluginRegistry} from '@/types/mattermost-webapp';
 
+import {LLMBotPost} from './components/llmbot_post';
+
 export default class Plugin {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-function
     public async initialize(registry: any, store: Store<GlobalState, Action<Record<string, unknown>>>) {
         registry.registerPostDropdownMenuAction('React for me', doReaction);
+        registry.registerPostTypeComponent('custom_llmbot', LLMBotPost);
     }
 }
 
 async function doReaction(postid: string) {
     const url = '/plugins/summarize/react/' + postid;
+    console.log('TESTING---------------------------------');
+    console.log(Client4);
     const response = await fetch(url, Client4.getOptions({
         method: 'POST',
     }));
