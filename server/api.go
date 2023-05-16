@@ -16,6 +16,8 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	router.Use(p.ginlogger)
 	router.Use(p.MattermostAuthorizationRequired)
 	router.POST("/react/:postid", p.handleReact)
+	router.POST("/feedback/post/:postid/positive", p.handlePositivePostFeedback)
+	router.POST("/feedback/post/:postid/negative", p.handleNegativePostFeedback)
 	router.ServeHTTP(w, r)
 }
 
@@ -37,6 +39,23 @@ func (p *Plugin) MattermostAuthorizationRequired(c *gin.Context) {
 	if !strings.Contains(p.getConfiguration().AllowedUserIDs, userID) {
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
+	}
+}
+
+func (p *Plugin) handlePositivePostFeedback(c *gin.Context) {
+	p.handlePostFeedback(c, true)
+}
+func (p *Plugin) handleNegativePostFeedback(c *gin.Context) {
+	p.handlePostFeedback(c, false)
+}
+
+func (p *Plugin) handlePostFeedback(c *gin.Context, positive bool) {
+	postID := c.Param("postid")
+
+	if positive {
+		p.pluginAPI.Log.Error("Feedback recieved: Positive  " + postID)
+	} else {
+		p.pluginAPI.Log.Error("Feedback recieved: Negative  " + postID)
 	}
 }
 

@@ -2,6 +2,8 @@ const exec = require('child_process').exec;
 
 const path = require('path');
 
+const webpack = require('webpack');
+
 const PLUGIN_ID = require('../plugin.json').id;
 
 const NPM_TARGET = process.env.npm_lifecycle_event; //eslint-disable-line no-process-env
@@ -28,6 +30,12 @@ if (NPM_TARGET === 'build:watch' || NPM_TARGET === 'debug:watch') {
         },
     });
 }
+
+plugins.push(
+    new webpack.ProvidePlugin({
+        process: 'process/browser',
+    }),
+);
 
 const config = {
     entry: [
