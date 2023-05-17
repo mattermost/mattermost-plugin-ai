@@ -22,7 +22,11 @@ func (p *Plugin) newConversation(post *model.Post) error {
 		return err
 	}
 
-	if err := p.streamResultToPost(result, post.ChannelId, post.Id); err != nil {
+	responsePost := &model.Post{
+		ChannelId: post.ChannelId,
+		RootId:    post.Id,
+	}
+	if err := p.streamResultToNewPost(result, responsePost); err != nil {
 		return err
 	}
 
@@ -54,17 +58,31 @@ func (p *Plugin) botDM(userID string, post *model.Post) error {
 	return nil
 }
 
-func (p *Plugin) streamResultToPost(stream *ai.TextStreamResult, channelID string, rootID string) error {
-	post := &model.Post{
-		Message:   "",
-		ChannelId: channelID,
-		RootId:    rootID,
-	}
-
+func (p *Plugin) streamResultToNewPost(stream *ai.TextStreamResult, post *model.Post) error {
 	if err := p.botCreatePost(post); err != nil {
 		return err
 	}
 
+	if err := p.streamResultToPost(stream, post); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (p *Plugin) streamResultToNewDM(stream *ai.TextStreamResult, userID string, post *model.Post) error {
+	if err := p.botDM(userID, post); err != nil {
+		return err
+	}
+
+	if err := p.streamResultToPost(stream, post); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (p *Plugin) streamResultToPost(stream *ai.TextStreamResult, post *model.Post) error {
 	go func() {
 		for next := range stream.Stream {
 			post.Message += next
@@ -99,7 +117,11 @@ func (p *Plugin) continueConversation(post *model.Post) error {
 		}
 	}
 
-	if err := p.streamResultToPost(result, post.ChannelId, post.RootId); err != nil {
+	responsePost := &model.Post{
+		ChannelId: post.ChannelId,
+		RootId:    post.RootId,
+	}
+	if err := p.streamResultToNewPost(result, responsePost); err != nil {
 		return err
 	}
 
@@ -133,17 +155,17 @@ func (p *Plugin) startNewSummaryThread(rootID string, userID string) (string, er
 	}
 
 	formattedThread := formatThread(threadData)
-	summary, err := p.summarizer.SummarizeThread(formattedThread)
+	summaryStream, err := p.summarizer.SummarizeThread(formattedThread)
 	if err != nil {
 		return "", err
 	}
 
 	post := &model.Post{
-		Message: fmt.Sprintf("A summary of [this thread](/_redirect/pl/%s):\n```\n%s\n```", rootID, summary.ReadAll()),
+		Message: fmt.Sprintf("A summary of [this thread](/_redirect/pl/%s):\n", rootID),
 	}
 	post.AddProp(ThreadIDProp, rootID)
 
-	if err := p.botDM(userID, post); err != nil {
+	if err := p.streamResultToNewDM(summaryStream, userID, post); err != nil {
 		return "", err
 	}
 
