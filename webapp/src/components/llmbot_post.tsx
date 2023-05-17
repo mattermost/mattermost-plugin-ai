@@ -14,20 +14,26 @@ const PostBody = styled.div`
 	word-spacing: -0.1rem;
 `;
 
+const FeedbackBar = styled.div`
+	display: flex;
+	flex-direction: row;
+	justify-content: center;
+	border-radius: 4px;
+`;
+
 const RatingsContainer = styled.div`
 	display: flex;
 	flex-direction: row;
-	justify-content: flex-end;
-	height: 20px;
 	gap: 5px;
+	border-radius: 4px;
+	padding: 2px;
+	background: rgba(var(--center-channel-color-rgb), 0.08);
 `;
 
 const EmojiButton = styled.div`
-	display: flex;
-	justify-content: center;
-	align-content: center;
-	width: 25px;
-	height: 25px;
+	width: 30px;
+	height: 30px;
+	padding: 5px;
 	border-radius: 4px;
 
 	:hover {
@@ -71,18 +77,20 @@ export const LLMBotPost = (props: Props) => {
             <PostText
                 post={props.post}
             />
-            <RatingsContainer>
-                <EmojiButton
-                    onClick={userFeedbackPositive}
-                >
-					<PlusOne/>
-                </EmojiButton>
-                <EmojiButton
-                    onClick={userFeedbackNegative}
-                >
-					<MinusOne/>
-                </EmojiButton>
-            </RatingsContainer>
+            <FeedbackBar>
+                <RatingsContainer>
+                    <EmojiButton
+                        onClick={userFeedbackPositive}
+                    >
+                        <PlusOne/>
+                    </EmojiButton>
+                    <EmojiButton
+                        onClick={userFeedbackNegative}
+                    >
+                        <MinusOne/>
+                    </EmojiButton>
+                </RatingsContainer>
+            </FeedbackBar>
         </PostBody>
     );
 };
