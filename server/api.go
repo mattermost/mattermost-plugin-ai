@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 
+	"github.com/crspeller/mattermost-plugin-summarize/server/ai"
 	"github.com/gin-gonic/gin"
 	"github.com/mattermost/mattermost-server/v6/model"
 	"github.com/mattermost/mattermost-server/v6/plugin"
@@ -18,6 +20,7 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	router.POST("/react/:postid", p.handleReact)
 	router.POST("/feedback/post/:postid/positive", p.handlePositivePostFeedback)
 	router.POST("/feedback/post/:postid/negative", p.handleNegativePostFeedback)
+	router.GET("/feedback", p.handleGetFeedback)
 	router.ServeHTTP(w, r)
 }
 
@@ -51,12 +54,70 @@ func (p *Plugin) handleNegativePostFeedback(c *gin.Context) {
 
 func (p *Plugin) handlePostFeedback(c *gin.Context, positive bool) {
 	postID := c.Param("postid")
+	userID := c.GetHeader("Mattermost-User-Id")
 
-	if positive {
-		p.pluginAPI.Log.Error("Feedback recieved: Positive  " + postID)
-	} else {
-		p.pluginAPI.Log.Error("Feedback recieved: Negative  " + postID)
+	post, err := p.pluginAPI.Post.GetPost(postID)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
 	}
+
+	threadData, err := p.getThreadAndMeta(post.Id)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	conversation := ai.ThreadToBotConversation(p.botid, threadData.Posts)
+
+	serialized, err := json.Marshal(conversation)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "couldn't marshal json"))
+		return
+	}
+
+	if _, err := p.execBuilder(p.builder.
+		Insert("LLM_Feedback").
+		SetMap(map[string]interface{}{
+			"PostID":           postID,
+			"UserID":           userID,
+			"System":           "",
+			"Prompt":           string(serialized),
+			"Response":         post.Message,
+			"PositiveFeedback": positive,
+		})); err != nil {
+		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "couldn't insert feedback"))
+		return
+	}
+
+	c.Status(http.StatusOK)
+}
+
+func (p *Plugin) handleGetFeedback(c *gin.Context) {
+	userID := c.GetHeader("Mattermost-User-Id")
+
+	if !p.pluginAPI.User.HasPermissionTo(userID, model.PermissionManageSystem) {
+		c.AbortWithStatus(http.StatusForbidden)
+		return
+	}
+
+	var result []struct {
+		PostID           string
+		UserID           string
+		System           string
+		Prompt           string
+		Response         string
+		PositiveFeedback bool
+	}
+	if err := p.doQuery(&result, p.builder.
+		Select("*").
+		From("LLM_Feedback"),
+	); err != nil {
+		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "failed to get feedback table"))
+		return
+	}
+
+	c.IndentedJSON(http.StatusOK, result)
 }
 
 func (p *Plugin) handleReact(c *gin.Context) {

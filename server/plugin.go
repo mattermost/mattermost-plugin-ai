@@ -59,19 +59,8 @@ func (p *Plugin) OnActivate() error {
 	}
 	p.botid = botID
 
-	origDB, err := p.pluginAPI.Store.GetMasterDB()
-	if err != nil {
+	if err := p.SetupDB(); err != nil {
 		return err
-	}
-	p.db = sqlx.NewDb(origDB, p.pluginAPI.Store.DriverName())
-
-	builder := sq.StatementBuilder.PlaceholderFormat(sq.Question)
-	if p.pluginAPI.Store.DriverName() == model.DatabaseDriverPostgres {
-		builder = builder.PlaceholderFormat(sq.Dollar)
-	}
-
-	if p.pluginAPI.Store.DriverName() == model.DatabaseDriverMysql {
-		p.db.MapperFunc(func(s string) string { return s })
 	}
 
 	p.registerCommands()
