@@ -148,8 +148,8 @@ func (p *Plugin) continueThreadConversation(questionThreadData *ThreadData, orig
 const ThreadIDProp = "referenced_thread"
 
 // DM the user with a standard message. Run the inferance
-func (p *Plugin) startNewSummaryThread(rootID string, userID string) (string, error) {
-	threadData, err := p.getThreadAndMeta(rootID)
+func (p *Plugin) startNewSummaryThread(postID string, userID string) (string, error) {
+	threadData, err := p.getThreadAndMeta(postID)
 	if err != nil {
 		return "", err
 	}
@@ -161,9 +161,9 @@ func (p *Plugin) startNewSummaryThread(rootID string, userID string) (string, er
 	}
 
 	post := &model.Post{
-		Message: fmt.Sprintf("A summary of [this thread](/_redirect/pl/%s):\n", rootID),
+		Message: fmt.Sprintf("A summary of [this thread](/_redirect/pl/%s):\n", postID),
 	}
-	post.AddProp(ThreadIDProp, rootID)
+	post.AddProp(ThreadIDProp, postID)
 
 	if err := p.streamResultToNewDM(summaryStream, userID, post); err != nil {
 		return "", err

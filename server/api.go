@@ -20,6 +20,7 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	router.POST("/react/:postid", p.handleReact)
 	router.POST("/feedback/post/:postid/positive", p.handlePositivePostFeedback)
 	router.POST("/feedback/post/:postid/negative", p.handleNegativePostFeedback)
+	router.POST("/summarize/post/:postid", p.handleSummarize)
 	router.GET("/feedback", p.handleGetFeedback)
 	router.ServeHTTP(w, r)
 }
@@ -168,6 +169,42 @@ func (p *Plugin) handleReact(c *gin.Context) {
 		UserId:    p.botid,
 		PostId:    post.Id,
 	})
+
+	c.Status(http.StatusOK)
+}
+
+func (p *Plugin) handleSummarize(c *gin.Context) {
+	postID := c.Param("postid")
+	userID := c.GetHeader("Mattermost-User-Id")
+
+	post, err := p.pluginAPI.Post.GetPost(postID)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	if !p.getConfiguration().AllowPrivateChannels {
+		channel, err := p.pluginAPI.Channel.Get(post.ChannelId)
+		if err != nil {
+			c.AbortWithError(http.StatusInternalServerError, err)
+			return
+		}
+
+		if channel.Type != model.ChannelTypeOpen {
+			c.AbortWithError(http.StatusUnauthorized, errors.New("Can't operate on private channels."))
+			return
+		}
+
+		if !strings.Contains(p.getConfiguration().AllowedTeamIDs, channel.TeamId) {
+			c.AbortWithError(http.StatusUnauthorized, errors.New("Can't operate on this team."))
+			return
+		}
+	}
+
+	if _, err := p.startNewSummaryThread(post.Id, userID); err != nil {
+		c.AbortWithError(http.StatusInternalServerError, errors.New("Unable to produce summary"))
+		return
+	}
 
 	c.Status(http.StatusOK)
 }

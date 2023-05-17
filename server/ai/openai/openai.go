@@ -64,15 +64,15 @@ func (s *OpenAI) ContinueQuestionThread(posts ai.BotConversation) (*ai.TextStrea
 }
 
 func (s *OpenAI) streamResult(request openaiClient.ChatCompletionRequest) (*ai.TextStreamResult, error) {
-	request.Stream = true
-	stream, err := s.client.CreateChatCompletionStream(context.Background(), request)
-	if err != nil {
-		return nil, err
-	}
-
 	output := make(chan string)
-
 	go func() {
+		request.Stream = true
+		stream, err := s.client.CreateChatCompletionStream(context.Background(), request)
+		if err != nil {
+			fmt.Println("Stream error: " + err.Error())
+			return
+		}
+
 		defer stream.Close()
 		defer close(output)
 
