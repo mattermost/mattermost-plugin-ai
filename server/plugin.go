@@ -131,19 +131,9 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 
 	// We are mentioned
 	if strings.Contains(post.Message, "@"+BotUsername) {
-		if !strings.Contains(p.getConfiguration().AllowedUserIDs, post.UserId) {
-			p.pluginAPI.Log.Error("User not authorized on mention.")
+		if err := p.checkUsageRestrictions(post.UserId, channel); err != nil {
+			p.pluginAPI.Log.Error(err.Error())
 			return
-		}
-
-		if !p.getConfiguration().AllowPrivateChannels {
-			if channel.Type != model.ChannelTypeOpen {
-				return
-			}
-
-			if !strings.Contains(p.getConfiguration().AllowedTeamIDs, channel.TeamId) {
-				return
-			}
 		}
 
 		err = p.processUserRequestToBot(post, channel)

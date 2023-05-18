@@ -33,23 +33,13 @@ func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*mo
 		return nil, model.NewAppError("Summarize.ExecuteCommand", "app.command.execute.error", nil, "", http.StatusInternalServerError)
 	}
 
-	if !strings.Contains(p.getConfiguration().AllowedUserIDs, args.UserId) {
-		return nil, model.NewAppError("Summarize.ExecuteCommand", "User not authorized", nil, "", http.StatusUnauthorized)
+	channel, err := p.pluginAPI.Channel.Get(args.ChannelId)
+	if err != nil {
+		return nil, model.NewAppError("Summarize.ExecuteCommand", "app.command.execute.error", nil, err.Error(), http.StatusInternalServerError)
 	}
 
-	if !strings.Contains(p.getConfiguration().AllowedTeamIDs, args.TeamId) {
-		return nil, model.NewAppError("Summarize.ExecuteCommand", "Can't work on this team.", nil, "", http.StatusUnauthorized)
-	}
-
-	if !p.getConfiguration().AllowPrivateChannels {
-		channel, err := p.pluginAPI.Channel.Get(args.ChannelId)
-		if err != nil {
-			return nil, model.NewAppError("Summarize.ExecuteCommand", "app.command.execute.error", nil, err.Error(), http.StatusInternalServerError)
-		}
-
-		if channel.Type != model.ChannelTypeOpen {
-			return nil, model.NewAppError("Summarize.ExecuteCommand", "Can't work on private channels.", nil, "", http.StatusUnauthorized)
-		}
+	if err := p.checkUsageRestrictions(args.UserId, channel); err != nil {
+		return nil, model.NewAppError("Summarize.ExecuteCommand", "Not authorized", nil, err.Error(), http.StatusUnauthorized)
 	}
 
 	split := strings.SplitN(strings.TrimSpace(args.Command), " ", 2)

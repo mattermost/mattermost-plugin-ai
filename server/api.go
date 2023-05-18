@@ -123,6 +123,7 @@ func (p *Plugin) handleGetFeedback(c *gin.Context) {
 
 func (p *Plugin) handleReact(c *gin.Context) {
 	postID := c.Param("postid")
+	userID := c.GetHeader("Mattermost-User-Id")
 
 	post, err := p.pluginAPI.Post.GetPost(postID)
 	if err != nil {
@@ -130,22 +131,15 @@ func (p *Plugin) handleReact(c *gin.Context) {
 		return
 	}
 
-	if !p.getConfiguration().AllowPrivateChannels {
-		channel, err := p.pluginAPI.Channel.Get(post.ChannelId)
-		if err != nil {
-			c.AbortWithError(http.StatusInternalServerError, err)
-			return
-		}
+	channel, err := p.pluginAPI.Channel.Get(post.ChannelId)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
 
-		if channel.Type != model.ChannelTypeOpen {
-			c.AbortWithError(http.StatusUnauthorized, errors.New("Can't operate on private channels."))
-			return
-		}
-
-		if !strings.Contains(p.getConfiguration().AllowedTeamIDs, channel.TeamId) {
-			c.AbortWithError(http.StatusUnauthorized, errors.New("Can't operate on this team."))
-			return
-		}
+	if err := p.checkUsageRestrictions(userID, channel); err != nil {
+		c.AbortWithError(http.StatusForbidden, err)
+		return
 	}
 
 	emojiName, err := p.emojiSelector.SelectEmoji(post.Message)
@@ -183,22 +177,15 @@ func (p *Plugin) handleSummarize(c *gin.Context) {
 		return
 	}
 
-	if !p.getConfiguration().AllowPrivateChannels {
-		channel, err := p.pluginAPI.Channel.Get(post.ChannelId)
-		if err != nil {
-			c.AbortWithError(http.StatusInternalServerError, err)
-			return
-		}
+	channel, err := p.pluginAPI.Channel.Get(post.ChannelId)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
 
-		if channel.Type != model.ChannelTypeOpen {
-			c.AbortWithError(http.StatusUnauthorized, errors.New("Can't operate on private channels."))
-			return
-		}
-
-		if !strings.Contains(p.getConfiguration().AllowedTeamIDs, channel.TeamId) {
-			c.AbortWithError(http.StatusUnauthorized, errors.New("Can't operate on this team."))
-			return
-		}
+	if err := p.checkUsageRestrictions(userID, channel); err != nil {
+		c.AbortWithError(http.StatusForbidden, err)
+		return
 	}
 
 	if _, err := p.startNewSummaryThread(post.Id, userID); err != nil {
