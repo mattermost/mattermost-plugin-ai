@@ -105,9 +105,10 @@
                 "display_name": "Allowed Team IDs (csv):"
             },
             {
-                "key": "AllowedUserIDs",
+                "key": "OnlyUsersOnTeam",
                 "type": "text",
-                "display_name": "Allowed User IDs (csv):"
+                "display_name": "Only Users on Team: ",
+				"help_text": "Only users on this team will be allowed to use the plugin"
             }
         ]
     }

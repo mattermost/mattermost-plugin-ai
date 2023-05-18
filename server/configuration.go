@@ -30,7 +30,7 @@ type configuration struct {
 
 	AllowPrivateChannels bool
 	AllowedTeamIDs       string
-	AllowedUserIDs       string
+	OnlyUsersOnTeam      string
 }
 
 // Clone shallow copies the configuration. Your implementation may require a deep copy if
