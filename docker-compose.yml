@@ -18,6 +18,8 @@ services:
       MM_SQLSETTINGS_DATASOURCE: "postgres://mmuser:mostest@db/mattermost_test?sslmode=disable\u0026connect_timeout=10"
       MM_SERVICESETTINGS_LISTENADDRESS: ":8065"
       MM_SERVICESETTINGS_SITEURL: "http://mattermost:8065"
+      MM_ADMIN_USERNAME: "root" # change this
+      MM_ADMIN_PASSWORD: "mattermostai" #change this
       MM_SERVICESETTINGS_ENABLEBOTACCOUNTCREATION: "true"
       MM_SERVICESETTINGS_ENABLEUSERACCESSTOKENS: "true"
       MM_SERVICESETTINGS_ENABLEOAUTHSERVICEPROVIDER: "true"
@@ -36,6 +38,7 @@ services:
       MM_FEATUREFLAGS_PluginApps: "1.2.0"
     volumes:
       - "./mattermost/mm-logs:/mattermost/logs:rw"
+      - "../:/summarize-plugin:rw"
   db:
     image: "postgres"
     restart: "unless-stopped"
