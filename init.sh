@@ -5,7 +5,7 @@ team_display_name="Mattermost AI"
 channel_name="ai"
 channel_display_name="AI"
 user_name="root"
-user_password="mattermostai"
+user_password="$(openssl rand -base64 14)"
 
 echo -e "Setting up Mattermost with ...\n Team name: $team_name\n Team display name: $team_display_name\n Channel name: $channel_name\n Channel display name: $channel_display_name"
 

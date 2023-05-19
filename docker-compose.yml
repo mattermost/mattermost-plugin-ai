@@ -38,7 +38,7 @@ services:
       MM_FEATUREFLAGS_PluginApps: "1.2.0"
     volumes:
       - "./mattermost/mm-logs:/mattermost/logs:rw"
-      - "../:/summarize-plugin:rw"
+      - "./mattermost/plugins:/mattermost/plugins:rw"
   db:
     image: "postgres"
     restart: "unless-stopped"
