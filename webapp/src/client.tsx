@@ -1,5 +1,6 @@
-import {ClientError} from '@mattermost/client';
-import {Client4} from 'mattermost-redux/client';
+import {Client4 as Client4Class, ClientError} from '@mattermost/client';
+
+const Client4 = new Client4Class()
 
 export async function doReaction(postid: string) {
     const url = '/plugins/summarize/react/' + postid;
