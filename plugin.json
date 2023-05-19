@@ -95,6 +95,12 @@
                 "default": "openai"
             },
             {
+                "key": "EnableUseRestrictions",
+                "type": "bool",
+                "display_name": "Enable Use Restrictions:",
+				"help_text": "Global flag for all below settings."
+            },
+            {
                 "key": "AllowPrivateChannels",
                 "type": "bool",
                 "display_name": "Allow Private Channels:"

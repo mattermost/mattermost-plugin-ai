@@ -28,9 +28,10 @@ type configuration struct {
 	GenericAnswerer string
 	EmojiSelector   string
 
-	AllowPrivateChannels bool
-	AllowedTeamIDs       string
-	OnlyUsersOnTeam      string
+	EnableUseRestrictions bool
+	AllowPrivateChannels  bool
+	AllowedTeamIDs        string
+	OnlyUsersOnTeam       string
 }
 
 // Clone shallow copies the configuration. Your implementation may require a deep copy if
