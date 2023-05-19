@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"image"
 	"image/png"
 	"io"
@@ -65,16 +64,18 @@ func (s *OpenAI) ContinueQuestionThread(posts ai.BotConversation) (*ai.TextStrea
 
 func (s *OpenAI) streamResult(request openaiClient.ChatCompletionRequest) (*ai.TextStreamResult, error) {
 	output := make(chan string)
+	errChan := make(chan error)
 	go func() {
+		defer close(output)
+		defer close(errChan)
 		request.Stream = true
 		stream, err := s.client.CreateChatCompletionStream(context.Background(), request)
 		if err != nil {
-			fmt.Println("Stream error: " + err.Error())
+			errChan <- err
 			return
 		}
 
 		defer stream.Close()
-		defer close(output)
 
 		for {
 			response, err := stream.Recv()
@@ -83,7 +84,7 @@ func (s *OpenAI) streamResult(request openaiClient.ChatCompletionRequest) (*ai.T
 			}
 
 			if err != nil {
-				fmt.Println("Stream error: " + err.Error())
+				errChan <- err
 				return
 			}
 
@@ -91,7 +92,7 @@ func (s *OpenAI) streamResult(request openaiClient.ChatCompletionRequest) (*ai.T
 		}
 	}()
 
-	return &ai.TextStreamResult{Stream: output}, nil
+	return &ai.TextStreamResult{Stream: output, Err: errChan}, nil
 }
 
 func (s *OpenAI) SummarizeThread(thread string) (*ai.TextStreamResult, error) {

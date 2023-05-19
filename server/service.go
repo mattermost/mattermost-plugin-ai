@@ -84,9 +84,24 @@ func (p *Plugin) streamResultToNewDM(stream *ai.TextStreamResult, userID string,
 
 func (p *Plugin) streamResultToPost(stream *ai.TextStreamResult, post *model.Post) error {
 	go func() {
-		for next := range stream.Stream {
-			post.Message += next
-			if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
+		for {
+			select {
+			case next := <-stream.Stream:
+				post.Message += next
+				if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
+					p.API.LogError("Streaming failed to update post", "error", err)
+					return
+				}
+			case err, ok := <-stream.Err:
+				if !ok {
+					return
+				}
+				p.API.LogError("Streaming result to post failed", "error", err)
+				post.Message = "Sorry! An error occoured while accessing the LLM. See server logs for details."
+				if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
+					p.API.LogError("Error recovering from streaming error", "error", err)
+					return
+				}
 				return
 			}
 		}
