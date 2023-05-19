@@ -1,6 +1,6 @@
 tasks:
   - name: mattermost
-    command: 'mkdir mattermost/mm-logs && mkdir mattermost/plugins && chmod 777 mattermost/mm-logs && chmod 777 mattermost/plugins && nvm install lts/gallium && export MMSITEURL=$(gp url 8065) && sed -i "s@MM_SERVICESETTINGS_SITEURL: \"http://mattermost:8065\"@MM_SERVICESETTINGS_SITEURL: \"$MMSITEURL\"@" docker-compose.yml && docker compose up -d && sh init.sh'
+    command: "nvm install lts/gallium && docker compose up -d && sh init.sh"
 ports:
   - name: mattermost
     port: 8065

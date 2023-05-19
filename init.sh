@@ -21,4 +21,4 @@ docker exec mattermost mmctl --local team users add $team_name $user_name
 docker exec mattermost mmctl --local channel users add $team_name:$channel_name $user_name
 
 export MM_URL="$(gp url 8065)"
-echo -e "\n===========================\n\n  YOU CAN NOW LOG IN TO MATTERMOST AT $MM_URL\n\n        username:  $user_name\n        password:  $user_password\n"
+echo -e "\n===========================\n\n  YOU CAN NOW LOG IN TO MATTERMOST AT $MM_URL\n\n        username:  $user_name\n        password:  $user_password\n\n  MAKE AND DEPLOY THE PLUGIN:\n\n     MM_SERVICESETTINGS_SITEURL=$MM_URL MM_ADMIN_USERNAME=$user_name MM_ADMIN_PASSWORD=$user_password make deploy"
