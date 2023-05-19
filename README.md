@@ -1,5 +1,7 @@
 # Mattermost LLM Extensions Plugin
 
+[![Open in Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/azigler/mattermost-ai-framework)
+
 The LLM extensions plugin adds functionality around the use and development of LLMs like GPT-3.5 / 4 and hugging face models within Mattermost. 
 
 Currently at the experimental phase of development. Contributions and suggestions welcome! 
