@@ -67,23 +67,6 @@ const config = {
                     },
                 },
             },
-            {
-                test: /\.(scss|css)$/,
-                use: [
-                    'style-loader',
-                    {
-                        loader: 'css-loader',
-                    },
-                    {
-                        loader: 'sass-loader',
-                        options: {
-                            sassOptions: {
-                                includePaths: ['node_modules/compass-mixins/lib', 'sass'],
-                            },
-                        },
-                    },
-                ],
-            },
         ],
     },
     externals: {
