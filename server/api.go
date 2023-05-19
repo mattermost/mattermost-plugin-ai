@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 
+	"github.com/crspeller/mattermost-plugin-summarize/server/ai"
 	"github.com/gin-gonic/gin"
 	"github.com/mattermost/mattermost-server/v6/model"
 	"github.com/mattermost/mattermost-server/v6/plugin"
@@ -98,7 +99,42 @@ func (p *Plugin) handleGetFeedback(c *gin.Context) {
 		return
 	}
 
-	c.IndentedJSON(http.StatusOK, result)
+	totals := make(map[string]int)
+	for _, entry := range result {
+		if entry.PositiveFeedback {
+			totals[entry.PostID] += 1
+		} else {
+			totals[entry.PostID] -= 1
+		}
+	}
+
+	var output []struct {
+		Conversation ai.BotConversation
+		PostID       string
+		Sentimant    int
+	}
+
+	for postID, total := range totals {
+		thread, err := p.getThreadAndMeta(postID)
+		if err != nil {
+			c.AbortWithError(http.StatusInternalServerError, err)
+			return
+		}
+
+		conversation := ai.ThreadToBotConversation(p.botid, thread.Posts)
+
+		output = append(output, struct {
+			Conversation ai.BotConversation
+			PostID       string
+			Sentimant    int
+		}{
+			Conversation: conversation,
+			PostID:       postID,
+			Sentimant:    total,
+		})
+	}
+
+	c.IndentedJSON(http.StatusOK, output)
 }
 
 func (p *Plugin) handleReact(c *gin.Context) {
