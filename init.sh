@@ -5,7 +5,7 @@ team_display_name="Mattermost AI"
 channel_name="ai"
 channel_display_name="AI"
 user_name="root"
-user_password="$(openssl rand -base64 14)"
+user_password="mattermostai"
 
 echo -e "Setting up Mattermost with ...\n Team name: $team_name\n Team display name: $team_display_name\n Channel name: $channel_name\n Channel display name: $channel_display_name"
 
@@ -20,9 +20,9 @@ docker exec mattermost mmctl --local user create --username $user_name --passwor
 docker exec mattermost mmctl --local team users add $team_name $user_name
 docker exec mattermost mmctl --local channel users add $team_name:$channel_name $user_name
 
-export MM_SERVICESETTINGS_SITEURL="$(gp url 8065)"
-export MM_ADMIN_USERNAME="$user_name"
-export MM_ADMIN_PASSWORD="$user_password"
+MM_SERVICESETTINGS_SITEURL="$(gp url 8065)"
+MM_ADMIN_USERNAME="root"
+MM_ADMIN_PASSWORD="mattermostai"
 
 make deploy
 
