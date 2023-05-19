@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
 
 	"github.com/crspeller/mattermost-plugin-summarize/server/ai"
 	"github.com/gin-gonic/gin"
@@ -40,9 +39,11 @@ func (p *Plugin) MattermostAuthorizationRequired(c *gin.Context) {
 		return
 	}
 
-	if !strings.Contains(p.getConfiguration().AllowedUserIDs, userID) {
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
+	if p.getConfiguration().EnableUseRestrictions {
+		if !p.pluginAPI.User.HasPermissionToTeam(userID, p.getConfiguration().OnlyUsersOnTeam, model.PermissionViewTeam) {
+			c.AbortWithError(http.StatusForbidden, errors.New("user not on allowed team"))
+			return
+		}
 	}
 }
 
