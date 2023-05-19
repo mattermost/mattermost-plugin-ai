@@ -33,8 +33,6 @@ services:
       MM_FILESETTINGS_MAXFILESIZE: 123524266
       MM_FEATUREFLAGS_AppsEnabled: "true"
       MM_FEATUREFLAGS_PluginApps: "1.2.0"
-    volumes:
-      - "./mattermost/mm-logs:/mattermost/logs:rw"
   db:
     image: "postgres"
     restart: "unless-stopped"
