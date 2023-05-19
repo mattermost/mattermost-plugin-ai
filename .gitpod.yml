@@ -5,3 +5,6 @@ ports:
   - name: mattermost
     port: 8065
     onOpen: open-browser
+  - name: db
+    port: 5432
+    onOpen: ignore
