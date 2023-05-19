@@ -35,7 +35,7 @@ endif
 .PHONY: all
 all: check-style test dist
 
-## Runs eslint and golangci-lint
+## Runs eslint and typescript
 .PHONY: check-style
 check-style: webapp/node_modules
 	@echo Checking for style guide compliance
@@ -43,16 +43,6 @@ check-style: webapp/node_modules
 ifneq ($(HAS_WEBAPP),)
 	cd webapp && npm run lint
 	cd webapp && npm run check-types
-endif
-
-ifneq ($(HAS_SERVER),)
-	@if ! [ -x "$$(command -v golangci-lint)" ]; then \
-		echo "golangci-lint is not installed. Please see https://github.com/golangci/golangci-lint#install for installation instructions."; \
-		exit 1; \
-	fi; \
-
-	@echo Running golangci-lint
-	golangci-lint run ./...
 endif
 
 ## Builds the server, if it exists, for all supported architectures, unless MM_SERVICESETTINGS_ENABLEDEVELOPER is set.
