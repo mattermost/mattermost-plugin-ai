@@ -13,12 +13,10 @@
       "eslint:recommended",
       "plugin:react-hooks/recommended",
       "plugin:import/recommended",
-      "plugin:import/typescript",
-      "plugin:jest/recommended"
+      "plugin:import/typescript"
    ],
    "parser": "@typescript-eslint/parser",
    "plugins": [
-      "jest",
       "react",
       "import",
       "babel",
@@ -40,8 +38,7 @@
       "browser": true,
       "node": true,
       "jquery": true,
-      "es6": true,
-      "jest": true
+      "es6": true
    },
    "rules": {
       "array-bracket-spacing": [

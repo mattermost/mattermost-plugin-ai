@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/crspeller/mattermost-plugin-summarize/server/ai"
@@ -58,23 +57,9 @@ func (p *Plugin) handlePostFeedback(c *gin.Context, positive bool) {
 	postID := c.Param("postid")
 	userID := c.GetHeader("Mattermost-User-Id")
 
-	post, err := p.pluginAPI.Post.GetPost(postID)
+	_, err := p.pluginAPI.Post.GetPost(postID)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
-		return
-	}
-
-	threadData, err := p.getThreadAndMeta(post.Id)
-	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, err)
-		return
-	}
-
-	conversation := ai.ThreadToBotConversation(p.botid, threadData.Posts)
-
-	serialized, err := json.Marshal(conversation)
-	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "couldn't marshal json"))
 		return
 	}
 
@@ -83,11 +68,9 @@ func (p *Plugin) handlePostFeedback(c *gin.Context, positive bool) {
 		SetMap(map[string]interface{}{
 			"PostID":           postID,
 			"UserID":           userID,
-			"System":           "",
-			"Prompt":           string(serialized),
-			"Response":         post.Message,
 			"PositiveFeedback": positive,
-		})); err != nil {
+		}).
+		Suffix("ON CONFLICT (PostID) DO UPDATE SET PositiveFeedback = ?", positive)); err != nil {
 		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "couldn't insert feedback"))
 		return
 	}
@@ -106,9 +89,6 @@ func (p *Plugin) handleGetFeedback(c *gin.Context) {
 	var result []struct {
 		PostID           string
 		UserID           string
-		System           string
-		Prompt           string
-		Response         string
 		PositiveFeedback bool
 	}
 	if err := p.doQuery(&result, p.builder.
@@ -119,7 +99,42 @@ func (p *Plugin) handleGetFeedback(c *gin.Context) {
 		return
 	}
 
-	c.IndentedJSON(http.StatusOK, result)
+	totals := make(map[string]int)
+	for _, entry := range result {
+		if entry.PositiveFeedback {
+			totals[entry.PostID] += 1
+		} else {
+			totals[entry.PostID] -= 1
+		}
+	}
+
+	var output []struct {
+		Conversation ai.BotConversation
+		PostID       string
+		Sentimant    int
+	}
+
+	for postID, total := range totals {
+		thread, err := p.getThreadAndMeta(postID)
+		if err != nil {
+			c.AbortWithError(http.StatusInternalServerError, err)
+			return
+		}
+
+		conversation := ai.ThreadToBotConversation(p.botid, thread.Posts)
+
+		output = append(output, struct {
+			Conversation ai.BotConversation
+			PostID       string
+			Sentimant    int
+		}{
+			Conversation: conversation,
+			PostID:       postID,
+			Sentimant:    total,
+		})
+	}
+
+	c.IndentedJSON(http.StatusOK, output)
 }
 
 func (p *Plugin) handleReact(c *gin.Context) {

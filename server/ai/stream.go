@@ -2,6 +2,7 @@ package ai
 
 type TextStreamResult struct {
 	Stream <-chan string
+	Err    <-chan error
 }
 
 func NewStreamFromString(text string) *TextStreamResult {

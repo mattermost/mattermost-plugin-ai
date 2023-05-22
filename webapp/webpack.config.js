@@ -44,7 +44,6 @@ const config = {
     resolve: {
         alias: {
             '@': path.resolve(__dirname, 'src'),
-            'mattermost-redux': path.resolve(__dirname, 'node_modules/@mattermost/webapp/packages/mattermost-redux/src'),
         },
         modules: [
             'src',
@@ -66,23 +65,6 @@ const config = {
                         // Babel configuration is in babel.config.js because jest requires it to be there.
                     },
                 },
-            },
-            {
-                test: /\.(scss|css)$/,
-                use: [
-                    'style-loader',
-                    {
-                        loader: 'css-loader',
-                    },
-                    {
-                        loader: 'sass-loader',
-                        options: {
-                            sassOptions: {
-                                includePaths: ['node_modules/compass-mixins/lib', 'sass'],
-                            },
-                        },
-                    },
-                ],
             },
         ],
     },

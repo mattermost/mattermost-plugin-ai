@@ -4,7 +4,7 @@
     "baseUrl": "./",
     "paths": {
       "@/*": ["src/*"],
-      "mattermost-redux/*": ["../node_modules/@mattermost/webapp/packages/mattermost-redux/src/*"],
+	  "@mattermost/types/*": ["node_modules/@mattermost/types/lib/*"]
     },
     "lib": [
       "dom",
