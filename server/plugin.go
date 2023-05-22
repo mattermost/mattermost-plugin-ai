@@ -5,9 +5,9 @@ import (
 	"sync"
 
 	sq "github.com/Masterminds/squirrel"
-	"github.com/crspeller/mattermost-plugin-summarize/server/ai"
-	"github.com/crspeller/mattermost-plugin-summarize/server/ai/mattermostai"
-	"github.com/crspeller/mattermost-plugin-summarize/server/ai/openai"
+	"github.com/mattermost/mattermost-plugin-ai/server/ai"
+	"github.com/mattermost/mattermost-plugin-ai/server/ai/mattermostai"
+	"github.com/mattermost/mattermost-plugin-ai/server/ai/openai"
 	"github.com/jmoiron/sqlx"
 	pluginapi "github.com/mattermost/mattermost-plugin-api"
 	"github.com/mattermost/mattermost-server/v6/model"

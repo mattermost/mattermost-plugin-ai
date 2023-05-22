@@ -1,9 +1,11 @@
 import {Client4 as Client4Class, ClientError} from '@mattermost/client';
 
+import {manifest} from './manifest';
+
 const Client4 = new Client4Class();
 
 export async function doReaction(postid: string) {
-    const url = '/plugins/summarize/react/' + postid;
+    const url = `/plugins/${manifest.id}/react/${postid}`;
     const response = await fetch(url, Client4.getOptions({
         method: 'POST',
     }));
@@ -20,7 +22,7 @@ export async function doReaction(postid: string) {
 }
 
 export async function doSummarize(postid: string) {
-    const url = '/plugins/summarize/summarize/post/' + postid;
+    const url = `/plugins/${manifest.id}/summarize/post/${postid}`;
     const response = await fetch(url, Client4.getOptions({
         method: 'POST',
     }));
@@ -37,7 +39,7 @@ export async function doSummarize(postid: string) {
 }
 
 export async function doFeedback(postid: string, positive: boolean) {
-    let url = '/plugins/summarize/feedback/post/' + postid + '/';
+    let url = `/plugins/${manifest.id}/feedback/post/${postid}/`;
 
     if (positive) {
         url += 'positive';

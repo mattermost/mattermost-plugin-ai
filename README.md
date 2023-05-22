@@ -8,7 +8,7 @@ Currently at the experimental phase of development. Contributions and suggestion
 
 Chat with an LLM right inside the Mattermost interface. Answer are streamed so you don't have to wait:
 
-https://github.com/crspeller/mattermost-plugin-summarize/assets/3191642/f375f1a2-61bf-4ae1-839b-07e44461809b
+https://github.com/mattermost/mattermost-plugin-ai/assets/3191642/f375f1a2-61bf-4ae1-839b-07e44461809b
 
 ## Thread Summarization
 Use the post menu or the `/summarize` command to get a summary of the thread in a DM:
@@ -17,7 +17,7 @@ Use the post menu or the `/summarize` command to get a summary of the thread in 
 ## Answer questions about Threads
 Respond to the bot post to ask follow up questions:
 
-https://github.com/crspeller/mattermost-plugin-summarize/assets/3191642/6fed05e2-ee68-40db-9ee4-870c61ccf5dd
+https://github.com/mattermost/mattermost-plugin-ai/assets/3191642/6fed05e2-ee68-40db-9ee4-870c61ccf5dd
 
 ## Chat anywhere
 Just mention @llmbot anywhere in Mattermost to ask it to respond. It will be given the context of the thread you are participating in:
@@ -26,7 +26,7 @@ Just mention @llmbot anywhere in Mattermost to ask it to respond. It will be giv
 ## React for me
 Just for fun! Use the post menu to ask the bot to react to the post. It will try to pick an appropriate reaction.
 
-https://github.com/crspeller/mattermost-plugin-summarize/assets/3191642/5282b066-86b5-478d-ae10-57c3cb3ba038
+https://github.com/mattermost/mattermost-plugin-ai/assets/3191642/5282b066-86b5-478d-ae10-57c3cb3ba038
 
 ## RLHF Feedback Collection
 Bot posts will have :+1: :-1: icons for collecting feedback. The idea would be to use this as input for RLHF fine tuning.
