@@ -10,7 +10,6 @@ require (
 	github.com/mattermost/mattermost-server/v6 v6.2.1
 	github.com/pkg/errors v0.9.1
 	github.com/sashabaranov/go-openai v1.9.0
-	github.com/stretchr/testify v1.8.0
 )
 
 require (
@@ -60,6 +59,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rs/xid v1.4.0 // indirect
 	github.com/sirupsen/logrus v1.9.0 // indirect
+	github.com/stretchr/testify v1.8.0 // indirect
 	github.com/tinylib/msgp v1.1.6 // indirect
 	github.com/ugorji/go/codec v1.1.7 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.3.5 // indirect
@@ -79,8 +79,6 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/go-skynet/go-llama.cpp => ../go-llama.cpp
 
 replace github.com/mattermost/mattermost-server/v6 => github.com/mattermost/mattermost-server/v6 v6.0.0-20220512052723-ea98f9f4a9dc
 
