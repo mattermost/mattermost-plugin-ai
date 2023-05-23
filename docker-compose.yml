@@ -7,14 +7,15 @@ services:
     container_name: mattermost
     image: "mattermost/mattermost-enterprise-edition:7.9.0"
     restart: "unless-stopped"
-    network_mode: "host"
     depends_on:
       - "db"
     env_file:
       - "./mattermost/.docker.env"
+    ports:
+      - "8065:8065"
     environment:
       MM_SQLSETTINGS_DRIVERNAME: "postgres"
-      MM_SQLSETTINGS_DATASOURCE: "postgres://mmuser:mostest@localhost:5432/mattermost_test?sslmode=disable\u0026connect_timeout=10"
+      MM_SQLSETTINGS_DATASOURCE: "postgres://mmuser:mostest@db:5432/mattermost_test?sslmode=disable\u0026connect_timeout=10"
       MM_SERVICESETTINGS_LISTENADDRESS: ":8065"
       MM_SERVICESETTINGS_SITEURL: "http://localhost:8065"
       MM_SERVICESETTINGS_ENABLEBOTACCOUNTCREATION: "true"
@@ -36,8 +37,6 @@ services:
   db:
     image: "postgres"
     restart: "unless-stopped"
-    ports:
-      - "5432:5432"
     environment:
       POSTGRES_PASSWORD: "mostest"
       POSTGRES_USER: "mmuser"
