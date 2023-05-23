@@ -1,0 +1,9 @@
+name: Build Plugin
+on: [push pull_request]
+
+jobs:
+  check-style:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: make check-style
