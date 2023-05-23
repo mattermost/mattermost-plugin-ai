@@ -1,7 +1,6 @@
 name: Build Plugin
 on:
   push:
-  pull_request:
 
 jobs:
   check-style:
