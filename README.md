@@ -25,26 +25,28 @@
 
 **🚀 Check out [our AI developer website](https://mattermost.github.io/mattermost-ai-site/) and join the ["AI Exchange" channel](https://community.mattermost.com/core/channels/ai-exchange) where Mattermost's open source community is sharing AI news and innovation in real time!**
 
-The LLM extensions plugin adds functionality around the use and development of LLMs like GPT-3.5 / 4 and hugging face models within Mattermost. 
+The LLM extensions plugin adds functionality to use and develop LLMs (like from OpenAI or Hugging Face) within Mattermost. 
 
-Currently at the experimental phase of development. Contributions and suggestions welcome! 
+This plugin is currently experimental. More options and the ability to use local LLMs is on the roadmap. Contributions and suggestions are welcome, [see below](#contributing)! 
 
 ## Install
 
 1. Clone and enter this repository:
   * `git clone https://github.com/mattermost/mattermost-plugin-ai && cd mattermost-plugin-ai`
-2. Start the services: `docker compose up -d`
-3. Configure the Mattermost server from the init script: `bash ./init.sh`
-4. Access Mattermost:
+2. Start the services:
+  * `docker compose up -d`
+3. Configure the Mattermost server from the init script:
+  * `bash ./init.sh`
+4. Install `mattermost-plugin-ai` on Mattermost from the command line:
+  * `MM_SERVICESETTINGS_SITEURL=http://localhost:8065 MM_ADMIN_USERNAME=root MM_ADMIN_PASSWORD=<YOUR_PASSWORD> make deploy`
+5. Access Mattermost and configure the plugin:
   * Open Mattermost at `http://localhost:8065`
   * Select **View in Browser**
   * Log in with the generated `root` credentials
-5. Install the `mattermost-plugin-ai` on Mattermost:
-  * Go the releases page and download the latest release.
-  * In the top left Mattermost menu, click **System Console** ➡️ **Plugin Management** and [upload the plugin to install it]((https://docs.mattermost.com/administration/plugins.html#plugin-uploads))
+  * In the top left Mattermost menu, click **System Console** ➡️ [**Mattermost AI Plugin**](http://localhost:8065/admin_console/plugins/plugin_mattermost-ai)
   * Enable the plugin and configure plugin settings as desired.
 
-Lots of unfinished work in the system console settings. For now all you need to do is input and OpenAI API Key and configure allowed teams/users as desired. More options and the ability to use local LLMs is on the roadmap.
+For example, you can configure your OpenAI API key and allowed teams/users as desired.
 
 ## Usage
 
@@ -75,7 +77,7 @@ Just for fun! Use the post menu to ask the bot to react to the post. It will try
 https://github.com/mattermost/mattermost-plugin-ai/assets/3191642/5282b066-86b5-478d-ae10-57c3cb3ba038
 
 ### RLHF Feedback Collection
-Bot posts will have 👍 👎 icons for collecting feedback. The idea would be to use this as input for RLHF fine tuning.
+Bot posts will have 👍 👎 icons that will later be used to collect feedback for RLHF fine tuning. The idea would be to use this as input for RLHF fine tuning.
 
 ## Related Efforts
 
