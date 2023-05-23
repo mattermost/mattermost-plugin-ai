@@ -19,6 +19,9 @@ import (
 // copy appropriate for your types.
 type configuration struct {
 	OpenAIAPIKey       string
+	CustomOpenAIUrl    string
+	CustomOpenAIKey    string
+	CustomOpenAIModel  string
 	MattermostAIUrl    string
 	MattermostAISecret string
 

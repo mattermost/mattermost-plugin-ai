@@ -67,12 +67,15 @@ func (p *Plugin) OnActivate() error {
 
 	openAI := openai.New(p.getConfiguration().OpenAIAPIKey)
 	mattermostAI := mattermostai.New(p.getConfiguration().MattermostAIUrl, p.getConfiguration().MattermostAISecret)
+	customOpenAI := openai.NewCustom(p.getConfiguration().CustomOpenAIKey, p.getConfiguration().CustomOpenAIUrl, p.getConfiguration().CustomOpenAIModel)
 
 	switch p.getConfiguration().Summarizer {
 	case "openai":
 		p.summarizer = openAI
 	case "mattermostai":
 		p.summarizer = mattermostAI
+	case "customopenai":
+		p.summarizer = customOpenAI
 	}
 
 	switch p.getConfiguration().ThreadAnswerer {
@@ -80,6 +83,8 @@ func (p *Plugin) OnActivate() error {
 		p.threadAnswerer = openAI
 	case "mattermostai":
 		p.threadAnswerer = mattermostAI
+	case "customopenai":
+		p.threadAnswerer = customOpenAI
 	}
 
 	switch p.getConfiguration().GenericAnswerer {
@@ -87,6 +92,8 @@ func (p *Plugin) OnActivate() error {
 		p.genericAnswerer = openAI
 	case "mattermostai":
 		p.genericAnswerer = mattermostAI
+	case "customopenai":
+		p.genericAnswerer = customOpenAI
 	}
 
 	switch p.getConfiguration().EmojiSelector {
@@ -94,6 +101,8 @@ func (p *Plugin) OnActivate() error {
 		p.emojiSelector = openAI
 	case "mattermostai":
 		p.emojiSelector = mattermostAI
+	case "customopenai":
+		p.emojiSelector = customOpenAI
 	}
 
 	switch p.getConfiguration().ImageGenerator {
@@ -101,6 +110,8 @@ func (p *Plugin) OnActivate() error {
 		p.imageGenerator = openAI
 	case "mattermostai":
 		p.imageGenerator = mattermostAI
+	case "customopenai":
+		p.imageGenerator = customOpenAI
 	}
 
 	p.openai = openAI
