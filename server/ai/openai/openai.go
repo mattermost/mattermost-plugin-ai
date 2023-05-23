@@ -10,7 +10,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/crspeller/mattermost-plugin-summarize/server/ai"
+	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/sashabaranov/go-openai"
 	openaiClient "github.com/sashabaranov/go-openai"
 )

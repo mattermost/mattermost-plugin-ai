@@ -3,7 +3,7 @@ package main
 import (
 	"net/http"
 
-	"github.com/crspeller/mattermost-plugin-summarize/server/ai"
+	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/gin-gonic/gin"
 	"github.com/mattermost/mattermost-server/v6/model"
 	"github.com/mattermost/mattermost-server/v6/plugin"

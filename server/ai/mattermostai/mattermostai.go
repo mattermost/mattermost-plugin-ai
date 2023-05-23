@@ -9,7 +9,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/crspeller/mattermost-plugin-summarize/server/ai"
+	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 )
 
 type MattermostAI struct {

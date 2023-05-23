@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/crspeller/mattermost-plugin-summarize/server/ai"
+	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-server/v6/model"
 )
 
