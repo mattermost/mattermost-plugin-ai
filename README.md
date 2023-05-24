@@ -9,7 +9,7 @@
 - [Mattermost AI Plugin](#mattermost-ai-plugin)
   - [Table of Contents](#table-of-contents)
   - [Background](#background)
-  - [Install](#install)
+  - [Install Mattermost + `mattermost-plugin-ai`](#install-mattermost--mattermost-plugin-ai)
   - [Usage](#usage)
     - [Conversation](#conversation)
     - [Thread Summarization](#thread-summarization)
@@ -29,7 +29,7 @@ The LLM extensions plugin adds functionality to use and develop LLMs (like from 
 
 This plugin is currently experimental. More options and the ability to use local LLMs is on the roadmap. Contributions and suggestions are welcome, [see below](#contributing)! 
 
-## Install
+## Install Mattermost + `mattermost-plugin-ai`
 
 1. Clone and enter this repository:
   * `git clone https://github.com/mattermost/mattermost-plugin-ai && cd mattermost-plugin-ai`
@@ -86,7 +86,6 @@ Explore Mattermost's AI initiatives:
 * https://mattermost.github.io/mattermost-ai-site/
 * https://community.mattermost.com/core/channels/ai-exchange
 * https://forum.mattermost.com/c/ai-frameworks/40
-* https://mattermost.github.io/mattermost-ai-framework/
 * https://docs.mattermost.com/about/mattermost-customizable-chatgpt-bot-framework.html
 * https://mattermost.com/add-chatgpt-to-mattermost/
 * https://github.com/Brightscout/mattermost-plugin-openai
