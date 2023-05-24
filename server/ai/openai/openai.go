@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"image"
 	"image/png"
 	"io"
@@ -94,7 +93,6 @@ func (s *OpenAI) streamResult(request openaiClient.ChatCompletionRequest) (*ai.T
 			if errors.Is(err, io.EOF) {
 				return
 			}
-			fmt.Println("************************************** RESPONSE **************************************", response)
 
 			if err != nil {
 				errChan <- err
