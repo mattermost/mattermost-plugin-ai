@@ -1,0 +1,37 @@
+version: "3.9"
+networks:
+  default:
+    name: "mattermost-apps-dev"
+services:
+  mattermost:
+    container_name: mattermost
+    image: "mattermost/mattermost-enterprise-edition:7.9.0"
+    restart: "unless-stopped"
+    depends_on:
+      - "db"
+    env_file:
+      - "./mattermost/.docker.env"
+    ports:
+      - "8065:8065"
+    environment:
+      MM_SQLSETTINGS_DRIVERNAME: "postgres"
+      MM_SQLSETTINGS_DATASOURCE: "postgres://mmuser:mostest@db:5432/mattermost_test?sslmode=disable\u0026connect_timeout=10"
+      MM_SERVICESETTINGS_LISTENADDRESS: ":8065"
+      MM_SERVICESETTINGS_SITEURL: "http://localhost:8065"
+      MM_SERVICESETTINGS_ENABLEBOTACCOUNTCREATION: "true"
+      MM_SERVICESETTINGS_ENABLEUSERACCESSTOKENS: "true"
+      MM_SERVICESETTINGS_ENABLEOAUTHSERVICEPROVIDER: "true"
+      MM_PLUGINSETTINGS_ENABLEUPLOADS: "true"
+      MM_LOGSETTINGS_CONSOLELEVEL: "DEBUG"
+      MM_LOGSETTINGS_FILELEVEL: "DEBUG"
+      MM_SERVICESETTINGS_ENABLELOCALMODE: "true"
+      MM_FILESETTINGS_MAXFILESIZE: 123524266
+      MM_FEATUREFLAGS_AppsEnabled: "true"
+      MM_FEATUREFLAGS_PluginApps: "1.2.0"
+  db:
+    image: "postgres"
+    restart: "unless-stopped"
+    environment:
+      POSTGRES_PASSWORD: "mostest"
+      POSTGRES_USER: "mmuser"
+      POSTGRES_DB: "mattermost_test"
