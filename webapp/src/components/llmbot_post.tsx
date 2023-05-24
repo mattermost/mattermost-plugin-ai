@@ -4,63 +4,60 @@ import styled from 'styled-components';
 import {doFeedback} from '@/client';
 
 import PostText from './post_text';
+import IconThumbsUp from './icon_thumbs_up';
+import IconThumbsDown from './icon_thumbs_down';
 
 interface Props {
     post: any;
 }
 
 const PostBody = styled.div`
-	font-family: monospace;
-	word-spacing: -0.1rem;
 `;
 
-const FeedbackBar = styled.div`
+const ControlsBar = styled.div`
 	display: flex;
 	flex-direction: row;
-	justify-content: center;
-	border-radius: 4px;
+	justify-content: flex-end;
+	height: 28px;
 `;
 
 const RatingsContainer = styled.div`
 	display: flex;
 	flex-direction: row;
-	gap: 5px;
-	border-radius: 4px;
-	padding: 2px;
-	background: rgba(var(--center-channel-color-rgb), 0.08);
+	gap: 4px;
 `;
 
-const EmojiButton = styled.div`
-	width: 30px;
-	height: 30px;
-	padding: 5px;
+const EmojiButton = styled.button`
+	display: flex;
+	align-items: center;
+	justify-content: center;
+
+	width: 24px;
+	height: 24px;
+	padding: 6px;
 	border-radius: 4px;
+	border: none;
+
+	background: rgba(var(--center-channel-color-rgb), 0.04);
 
 	:hover {
 		background: rgba(var(--center-channel-color-rgb), 0.08);
+        color: rgba(var(--center-channel-color-rgb), 0.72);
 	}
 
-	:click {
-		background: rgba(var(--center-channel-color-rgb), 0.20);
+	:active {
+		background: rgba(var(--button-bg-rgb), 0.08);
 	}
 `;
 
-const EmojiIcon = styled.div`
+const ThumbsUp = styled(IconThumbsUp)`
 	width: 20px;
 	height: 20px;
-	display: inline-flex;
-	background-size: contain;
-	background-position: 50% 50%;
-	background-repeat: no-repeat;
-
 `;
 
-const PlusOne = styled(EmojiIcon)`
-	background-image: url("/static/emoji/1f44d.png");
-`;
-
-const MinusOne = styled(EmojiIcon)`
-	background-image: url("/static/emoji/1f44e.png");
+const ThumbsDown = styled(IconThumbsDown)`
+	width: 20px;
+	height: 20px;
 `;
 
 export const LLMBotPost = (props: Props) => {
@@ -77,20 +74,20 @@ export const LLMBotPost = (props: Props) => {
             <PostText
                 post={props.post}
             />
-            <FeedbackBar>
+            <ControlsBar>
                 <RatingsContainer>
                     <EmojiButton
                         onClick={userFeedbackPositive}
                     >
-                        <PlusOne/>
+                        <ThumbsUp/>
                     </EmojiButton>
                     <EmojiButton
                         onClick={userFeedbackNegative}
                     >
-                        <MinusOne/>
+                        <ThumbsDown/>
                     </EmojiButton>
                 </RatingsContainer>
-            </FeedbackBar>
+            </ControlsBar>
         </PostBody>
     );
 };

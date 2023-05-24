@@ -5,10 +5,10 @@ import (
 	"sync"
 
 	sq "github.com/Masterminds/squirrel"
+	"github.com/jmoiron/sqlx"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/mattermostai"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/openai"
-	"github.com/jmoiron/sqlx"
 	pluginapi "github.com/mattermost/mattermost-plugin-api"
 	"github.com/mattermost/mattermost-server/v6/model"
 	"github.com/mattermost/mattermost-server/v6/plugin"
@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	BotUsername = "llmbot"
+	BotUsername = "ai"
 )
 
 // Plugin implements the interface expected by the Mattermost server to communicate between the server and plugin processes.
@@ -49,9 +49,11 @@ func (p *Plugin) OnActivate() error {
 
 	botID, err := p.pluginAPI.Bot.EnsureBot(&model.Bot{
 		Username:    BotUsername,
-		DisplayName: "LLM Bot",
-		Description: "LLM Bot",
-	})
+		DisplayName: "AI Assistant",
+		Description: "Your helpful assistant within Mattermost",
+	},
+		pluginapi.ProfileImagePath("assets/bot_icon.png"),
+	)
 	if err != nil {
 		return errors.Wrapf(err, "failed to ensure bot")
 	}
@@ -129,6 +131,12 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 
 	// Check if this is post in the DM channel with the bot
 	if channel.Type == model.ChannelTypeDirect && strings.Contains(channel.Name, p.botid) {
+		if p.getConfiguration().EnableUseRestrictions {
+			if !p.pluginAPI.User.HasPermissionToTeam(post.UserId, p.getConfiguration().OnlyUsersOnTeam, model.PermissionViewTeam) {
+				p.pluginAPI.Log.Error("User not on allowed team.")
+				return
+			}
+		}
 		err = p.processUserRequestToBot(post, channel)
 		if err != nil {
 			p.pluginAPI.Log.Error("Unable to process bot reqeust: " + err.Error())
