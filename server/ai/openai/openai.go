@@ -17,11 +17,22 @@ import (
 
 type OpenAI struct {
 	client *openaiClient.Client
+	model  string
+}
+
+func NewCompatible(apiKey string, url string, model string) *OpenAI {
+	config := openai.DefaultConfig(apiKey)
+	config.BaseURL = url
+	return &OpenAI{
+		client: openaiClient.NewClientWithConfig(config),
+		model:  model,
+	}
 }
 
 func New(apiKey string) *OpenAI {
 	return &OpenAI{
 		client: openaiClient.NewClient(apiKey),
+		model:  openaiClient.GPT3Dot5Turbo,
 	}
 }
 
@@ -44,7 +55,7 @@ func conversationToCompletion(conversation ai.BotConversation) []openaiClient.Ch
 
 func (s *OpenAI) ThreadCompletion(systemMessage string, conversation ai.BotConversation) (*ai.TextStreamResult, error) {
 	request := openaiClient.ChatCompletionRequest{
-		Model: openaiClient.GPT3Dot5Turbo,
+		Model: s.model,
 		Messages: append(
 			[]openaiClient.ChatCompletionMessage{{
 				Role:    openai.ChatMessageRoleSystem,
@@ -97,7 +108,7 @@ func (s *OpenAI) streamResult(request openaiClient.ChatCompletionRequest) (*ai.T
 
 func (s *OpenAI) SummarizeThread(thread string) (*ai.TextStreamResult, error) {
 	request := openaiClient.ChatCompletionRequest{
-		Model: openaiClient.GPT3Dot5Turbo,
+		Model: s.model,
 		Messages: []openaiClient.ChatCompletionMessage{
 			{
 				Role:    openaiClient.ChatMessageRoleSystem,
@@ -115,7 +126,7 @@ func (s *OpenAI) SummarizeThread(thread string) (*ai.TextStreamResult, error) {
 
 func (s *OpenAI) ContinueThreadInterrogation(thread string, posts ai.BotConversation) (*ai.TextStreamResult, error) {
 	reqeust := openaiClient.ChatCompletionRequest{
-		Model: openaiClient.GPT3Dot5Turbo,
+		Model: s.model,
 		Messages: append(
 			[]openaiClient.ChatCompletionMessage{
 				{
@@ -166,7 +177,7 @@ func (s *OpenAI) SelectEmoji(message string) (string, error) {
 	resp, err := s.client.CreateChatCompletion(
 		context.Background(),
 		openai.ChatCompletionRequest{
-			Model:     openai.GPT3Dot5Turbo,
+			Model:     s.model,
 			MaxTokens: 25,
 			Messages: []openai.ChatCompletionMessage{
 				{

@@ -30,6 +30,21 @@
                 "display_name": "OpenAI API Key:"
             },
             {
+                "key": "OpenAICompatibleUrl",
+                "type": "text",
+                "display_name": "OpenAI Compatible API url:"
+            },
+            {
+                "key": "OpenAICompatibleKey",
+                "type": "text",
+                "display_name": "OpenAI Compatible API Key:"
+            },
+            {
+                "key": "OpenAICompatibleModel",
+                "type": "text",
+                "display_name": "OpenAI Compatible model"
+            },
+            {
                 "key": "MattermostAIUrl",
                 "type": "text",
                 "display_name": "MattermostAI API url:"
@@ -46,6 +61,7 @@
                 "options": [
                     {"display_name": "None", "value": ""},
                     {"display_name": "Open AI", "value": "openai"},
+                    {"display_name": "OpenAI Compatible", "value": "openaicompatible"},
                     {"display_name": "Mattermost AI", "value": "mattermostai"}
                 ],
                 "default": "openai"
@@ -57,6 +73,7 @@
                 "options": [
                     {"display_name": "None", "value": ""},
                     {"display_name": "Open AI", "value": "openai"},
+                    {"display_name": "OpenAI Compatible", "value": "openaicompatible"},
                     {"display_name": "Mattermost AI", "value": "mattermostai"}
                 ],
                 "default": "openai"
@@ -68,6 +85,7 @@
                 "options": [
                     {"display_name": "None", "value": ""},
                     {"display_name": "Open AI", "value": "openai"},
+                    {"display_name": "OpenAI Compatible", "value": "openaicompatible"},
                     {"display_name": "Mattermost AI", "value": "mattermostai"}
                 ],
                 "default": "openai"
@@ -79,6 +97,7 @@
                 "options": [
                     {"display_name": "None", "value": ""},
                     {"display_name": "Open AI", "value": "openai"},
+                    {"display_name": "OpenAI Compatible", "value": "openaicompatible"},
                     {"display_name": "Mattermost AI", "value": "mattermostai"}
                 ],
                 "default": "openai"
@@ -90,6 +109,7 @@
                 "options": [
                     {"display_name": "None", "value": ""},
                     {"display_name": "Open AI", "value": "openai"},
+                    {"display_name": "OpenAI Compatible", "value": "openaicompatible"},
                     {"display_name": "Mattermost AI", "value": "mattermostai"}
                 ],
                 "default": "openai"
