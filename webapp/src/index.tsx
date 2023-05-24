@@ -7,6 +7,8 @@ import {manifest} from '@/manifest';
 import {LLMBotPost} from './components/llmbot_post';
 import {doReaction, doSummarize} from './client';
 
+const BotUsername = 'ai';
+
 export default class Plugin {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-function
     public async initialize(registry: any, store: Store<GlobalState, Action<Record<string, unknown>>>) {
@@ -20,7 +22,7 @@ function makeSummarizePost(store: Store<GlobalState, Action<Record<string, unkno
     return async function summarizePost(postid: string) {
         const state = store.getState();
         const team = state.entities.teams.teams[state.entities.teams.currentTeamId];
-        window.WebappUtils.browserHistory.push('/' + team.name + '/messages/@llmbot');
+        window.WebappUtils.browserHistory.push('/' + team.name + '/messages/@' + BotUsername);
 
         await doSummarize(postid);
     };

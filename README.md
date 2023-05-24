@@ -67,7 +67,7 @@ Respond to the bot post to ask follow up questions:
 https://github.com/mattermost/mattermost-plugin-ai/assets/3191642/6fed05e2-ee68-40db-9ee4-870c61ccf5dd
 
 ### Chat anywhere
-Just mention @llmbot anywhere in Mattermost to ask it to respond. It will be given the context of the thread you are participating in:
+Just mention @ai anywhere in Mattermost to ask it to respond. It will be given the context of the thread you are participating in:
 
 ![Bot Chat](/img/mention_bot.png)
 
