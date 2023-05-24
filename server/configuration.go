@@ -18,12 +18,12 @@ import (
 // If you add non-reference types to your configuration struct, be sure to rewrite Clone as a deep
 // copy appropriate for your types.
 type configuration struct {
-	OpenAIAPIKey       string
-	CustomOpenAIUrl    string
-	CustomOpenAIKey    string
-	CustomOpenAIModel  string
-	MattermostAIUrl    string
-	MattermostAISecret string
+	OpenAIAPIKey          string
+	OpenAICompatibleUrl   string
+	OpenAICompatibleKey   string
+	OpenAICompatibleModel string
+	MattermostAIUrl       string
+	MattermostAISecret    string
 
 	Summarizer      string
 	ThreadAnswerer  string

@@ -30,19 +30,19 @@
                 "display_name": "OpenAI API Key:"
             },
             {
-                "key": "CustomOpenAIUrl",
+                "key": "OpenAICompatibleUrl",
                 "type": "text",
-                "display_name": "Custom OpenAI API url:"
+                "display_name": "OpenAI Compatible API url:"
             },
             {
-                "key": "CustomOpenAIKey",
+                "key": "OpenAICompatibleKey",
                 "type": "text",
-                "display_name": "Custom OpenAI API Key:"
+                "display_name": "OpenAI Compatible API Key:"
             },
             {
-                "key": "CustomOpenAIModel",
+                "key": "OpenAICompatibleModel",
                 "type": "text",
-                "display_name": "Custom OpenAI model"
+                "display_name": "OpenAI Compatible model"
             },
             {
                 "key": "MattermostAIUrl",
@@ -61,7 +61,7 @@
                 "options": [
                     {"display_name": "None", "value": ""},
                     {"display_name": "Open AI", "value": "openai"},
-                    {"display_name": "Custom OpenAI", "value": "customopenai"},
+                    {"display_name": "OpenAI Compatible", "value": "openaicompatible"},
                     {"display_name": "Mattermost AI", "value": "mattermostai"}
                 ],
                 "default": "openai"
@@ -73,7 +73,7 @@
                 "options": [
                     {"display_name": "None", "value": ""},
                     {"display_name": "Open AI", "value": "openai"},
-                    {"display_name": "Custom OpenAI", "value": "customopenai"},
+                    {"display_name": "OpenAI Compatible", "value": "openaicompatible"},
                     {"display_name": "Mattermost AI", "value": "mattermostai"}
                 ],
                 "default": "openai"
@@ -85,7 +85,7 @@
                 "options": [
                     {"display_name": "None", "value": ""},
                     {"display_name": "Open AI", "value": "openai"},
-                    {"display_name": "Custom OpenAI", "value": "customopenai"},
+                    {"display_name": "OpenAI Compatible", "value": "openaicompatible"},
                     {"display_name": "Mattermost AI", "value": "mattermostai"}
                 ],
                 "default": "openai"
@@ -97,7 +97,7 @@
                 "options": [
                     {"display_name": "None", "value": ""},
                     {"display_name": "Open AI", "value": "openai"},
-                    {"display_name": "Custom OpenAI", "value": "customopenai"},
+                    {"display_name": "OpenAI Compatible", "value": "openaicompatible"},
                     {"display_name": "Mattermost AI", "value": "mattermostai"}
                 ],
                 "default": "openai"
@@ -109,7 +109,7 @@
                 "options": [
                     {"display_name": "None", "value": ""},
                     {"display_name": "Open AI", "value": "openai"},
-                    {"display_name": "Custom OpenAI", "value": "customopenai"},
+                    {"display_name": "OpenAI Compatible", "value": "openaicompatible"},
                     {"display_name": "Mattermost AI", "value": "mattermostai"}
                 ],
                 "default": "openai"

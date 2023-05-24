@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"image"
 	"image/png"
 	"io"
@@ -20,7 +21,7 @@ type OpenAI struct {
 	model  string
 }
 
-func NewCustom(apiKey string, url string, model string) *OpenAI {
+func NewCompatible(apiKey string, url string, model string) *OpenAI {
 	config := openai.DefaultConfig(apiKey)
 	config.BaseURL = url
 	return &OpenAI{
@@ -93,6 +94,7 @@ func (s *OpenAI) streamResult(request openaiClient.ChatCompletionRequest) (*ai.T
 			if errors.Is(err, io.EOF) {
 				return
 			}
+			fmt.Println("************************************** RESPONSE **************************************", response)
 
 			if err != nil {
 				errChan <- err
