@@ -23,7 +23,7 @@
 
 ## Background
 
-**🚀 Check out [our AI developer website](https://mattermost.github.io/mattermost-ai-site/) and join the ["AI Exchange" channel](https://community.mattermost.com/core/channels/ai-exchange) where Mattermost's open source community is sharing AI news and innovation in real time!**
+**🚀 Check out [our AI developer website](https://mattermost.github.io/mattermost-ai-site/), join the ["AI Exchange" channel](https://community.mattermost.com/core/channels/ai-exchange), and explore the [peer-to-peer forums](https://forum.mattermost.com/c/ai-frameworks/40) where Mattermost's open source community is sharing AI news and innovation in real time!**
 
 The LLM extensions plugin adds functionality to use and develop LLMs (like from OpenAI or Hugging Face) within Mattermost. 
 
@@ -83,7 +83,7 @@ Bot posts will have 👍 👎 icons that will later be used to collect feedback 
 
 Explore Mattermost's AI initiatives:
 
-* https://mattermost.github.io/mattermost-ai-site/
+* https://ai.mattermost.com
 * https://community.mattermost.com/core/channels/ai-exchange
 * https://forum.mattermost.com/c/ai-frameworks/40
 * https://docs.mattermost.com/about/mattermost-customizable-chatgpt-bot-framework.html
