@@ -7,6 +7,7 @@ type PostRole int
 const (
 	PostRoleUser PostRole = iota
 	PostRoleBot
+	PostRoleSystem
 )
 
 type Post struct {
@@ -18,22 +19,22 @@ type BotConversation struct {
 	Posts []Post
 }
 
+func (b *BotConversation) AddUserPost(post *model.Post) {
+	b.Posts = append(b.Posts, Post{
+		Role:    PostRoleUser,
+		Message: post.Message,
+	})
+}
+
+func (b *BotConversation) AppendConversation(conversation BotConversation) {
+	b.Posts = append(b.Posts, conversation.Posts...)
+}
+
 func GetPostRole(botID string, post *model.Post) PostRole {
 	if post.UserId == botID {
 		return PostRoleBot
 	}
 	return PostRoleUser
-}
-
-func PostToBotConversation(botID string, post *model.Post) BotConversation {
-	return BotConversation{
-		Posts: []Post{
-			{
-				Role:    GetPostRole(botID, post),
-				Message: post.Message,
-			},
-		},
-	}
 }
 
 func ThreadToBotConversation(botID string, posts []*model.Post) BotConversation {

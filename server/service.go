@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-server/v6/model"
+	"github.com/pkg/errors"
 )
 
 func (p *Plugin) processUserRequestToBot(post *model.Post, channel *model.Channel) error {
@@ -16,8 +18,13 @@ func (p *Plugin) processUserRequestToBot(post *model.Post, channel *model.Channe
 }
 
 func (p *Plugin) newConversation(post *model.Post) error {
-	conversation := ai.PostToBotConversation(p.botid, post)
-	result, err := p.genericAnswerer.ContinueQuestionThread(conversation)
+	conversation, err := p.prompts.ChatCompletion(ai.PromptDirectMessageQuestion, nil)
+	if err != nil {
+		return err
+	}
+	conversation.AddUserPost(post)
+
+	result, err := p.llm.ChatCompletion(conversation)
 	if err != nil {
 		return err
 	}
@@ -29,83 +36,6 @@ func (p *Plugin) newConversation(post *model.Post) error {
 	if err := p.streamResultToNewPost(result, responsePost); err != nil {
 		return err
 	}
-
-	return nil
-}
-
-func (p *Plugin) modifyPostForBot(post *model.Post) {
-	post.UserId = p.botid
-	post.Type = "custom_llmbot"
-}
-
-func (p *Plugin) botCreatePost(post *model.Post) error {
-	p.modifyPostForBot(post)
-
-	if err := p.pluginAPI.Post.CreatePost(post); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (p *Plugin) botDM(userID string, post *model.Post) error {
-	p.modifyPostForBot(post)
-
-	if err := p.pluginAPI.Post.DM(p.botid, userID, post); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (p *Plugin) streamResultToNewPost(stream *ai.TextStreamResult, post *model.Post) error {
-	if err := p.botCreatePost(post); err != nil {
-		return err
-	}
-
-	if err := p.streamResultToPost(stream, post); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (p *Plugin) streamResultToNewDM(stream *ai.TextStreamResult, userID string, post *model.Post) error {
-	if err := p.botDM(userID, post); err != nil {
-		return err
-	}
-
-	if err := p.streamResultToPost(stream, post); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (p *Plugin) streamResultToPost(stream *ai.TextStreamResult, post *model.Post) error {
-	go func() {
-		for {
-			select {
-			case next := <-stream.Stream:
-				post.Message += next
-				if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
-					p.API.LogError("Streaming failed to update post", "error", err)
-					return
-				}
-			case err, ok := <-stream.Err:
-				if !ok {
-					return
-				}
-				p.API.LogError("Streaming result to post failed", "error", err)
-				post.Message = "Sorry! An error occoured while accessing the LLM. See server logs for details."
-				if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
-					p.API.LogError("Error recovering from streaming error", "error", err)
-					return
-				}
-				return
-			}
-		}
-	}()
 
 	return nil
 }
@@ -125,8 +55,13 @@ func (p *Plugin) continueConversation(post *model.Post) error {
 			return err
 		}
 	} else {
-		conversation := ai.ThreadToBotConversation(p.botid, threadData.Posts)
-		result, err = p.genericAnswerer.ContinueQuestionThread(conversation)
+		prompt, err := p.prompts.ChatCompletion(ai.PromptDirectMessageQuestion, nil)
+		if err != nil {
+			return err
+		}
+		prompt.AppendConversation(ai.ThreadToBotConversation(p.botid, threadData.Posts))
+
+		result, err = p.llm.ChatCompletion(prompt)
 		if err != nil {
 			return err
 		}
@@ -150,9 +85,13 @@ func (p *Plugin) continueThreadConversation(questionThreadData *ThreadData, orig
 	}
 	originalThread := formatThread(originalThreadData)
 
-	conversation := ai.ThreadToBotConversation(p.botid, questionThreadData.Posts)
+	prompt, err := p.prompts.ChatCompletion(ai.PromptSummarizeThread, map[string]string{"Thread": originalThread})
+	if err != nil {
+		return nil, err
+	}
+	prompt.AppendConversation(ai.ThreadToBotConversation(p.botid, questionThreadData.Posts))
 
-	result, err := p.threadAnswerer.ContinueThreadInterrogation(originalThread, conversation)
+	result, err := p.llm.ChatCompletion(prompt)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +109,12 @@ func (p *Plugin) startNewSummaryThread(postID string, userID string) (string, er
 	}
 
 	formattedThread := formatThread(threadData)
-	summaryStream, err := p.summarizer.SummarizeThread(formattedThread)
+
+	prompt, err := p.prompts.ChatCompletion(ai.PromptSummarizeThread, map[string]string{"Thread": formattedThread})
+	if err != nil {
+		return "", err
+	}
+	summaryStream, err := p.llm.ChatCompletion(prompt)
 	if err != nil {
 		return "", err
 	}
@@ -185,4 +129,38 @@ func (p *Plugin) startNewSummaryThread(postID string, userID string) (string, er
 	}
 
 	return post.Id, nil
+}
+
+func (p *Plugin) selectEmoji(post *model.Post) error {
+	prompt, err := p.prompts.ChatCompletion(ai.PromptEmojiSelect, map[string]string{"Message": post.Message})
+	if err != nil {
+		return err
+	}
+
+	emojiName, err := p.llm.ChatCompletionNoStream(prompt, ai.WithmaxTokens(25))
+	if err != nil {
+		return err
+	}
+
+	// Do some emoji post processing to hopfully make this an actual emoji.
+	emojiName = strings.Trim(strings.TrimSpace(emojiName), ":")
+
+	if _, found := model.GetSystemEmojiId(emojiName); !found {
+		p.pluginAPI.Post.AddReaction(&model.Reaction{
+			EmojiName: "large_red_square",
+			UserId:    p.botid,
+			PostId:    post.Id,
+		})
+		return errors.New("LLM returned somthing other than emoji: " + emojiName)
+	}
+
+	if err := p.pluginAPI.Post.AddReaction(&model.Reaction{
+		EmojiName: emojiName,
+		UserId:    p.botid,
+		PostId:    post.Id,
+	}); err != nil {
+		return err
+	}
+
+	return nil
 }

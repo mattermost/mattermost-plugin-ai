@@ -8,7 +8,6 @@ import (
 	"image"
 	"image/png"
 	"io"
-	"strings"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/sashabaranov/go-openai"
@@ -16,23 +15,23 @@ import (
 )
 
 type OpenAI struct {
-	client *openaiClient.Client
-	model  string
+	client       *openaiClient.Client
+	defaultModel string
 }
 
 func NewCompatible(apiKey string, url string, model string) *OpenAI {
 	config := openai.DefaultConfig(apiKey)
 	config.BaseURL = url
 	return &OpenAI{
-		client: openaiClient.NewClientWithConfig(config),
-		model:  model,
+		client:       openaiClient.NewClientWithConfig(config),
+		defaultModel: model,
 	}
 }
 
 func New(apiKey string) *OpenAI {
 	return &OpenAI{
-		client: openaiClient.NewClient(apiKey),
-		model:  openaiClient.GPT3Dot5Turbo,
+		client:       openaiClient.NewClient(apiKey),
+		defaultModel: openaiClient.GPT4,
 	}
 }
 
@@ -43,6 +42,8 @@ func conversationToCompletion(conversation ai.BotConversation) []openaiClient.Ch
 		role := openaiClient.ChatMessageRoleUser
 		if post.Role == ai.PostRoleBot {
 			role = openaiClient.ChatMessageRoleAssistant
+		} else if post.Role == ai.PostRoleSystem {
+			role = openaiClient.ChatMessageRoleSystem
 		}
 		result = append(result, openai.ChatCompletionMessage{
 			Role:    role,
@@ -51,26 +52,6 @@ func conversationToCompletion(conversation ai.BotConversation) []openaiClient.Ch
 	}
 
 	return result
-}
-
-func (s *OpenAI) ThreadCompletion(systemMessage string, conversation ai.BotConversation) (*ai.TextStreamResult, error) {
-	request := openaiClient.ChatCompletionRequest{
-		Model: s.model,
-		Messages: append(
-			[]openaiClient.ChatCompletionMessage{{
-				Role:    openai.ChatMessageRoleSystem,
-				Content: systemMessage,
-			}},
-			conversationToCompletion(conversation)...,
-		),
-		Stream: true,
-	}
-
-	return s.streamResult(request)
-}
-
-func (s *OpenAI) ContinueQuestionThread(posts ai.BotConversation) (*ai.TextStreamResult, error) {
-	return s.ThreadCompletion(GenericQuestionSystemMessage, posts)
 }
 
 func (s *OpenAI) streamResult(request openaiClient.ChatCompletionRequest) (*ai.TextStreamResult, error) {
@@ -106,44 +87,43 @@ func (s *OpenAI) streamResult(request openaiClient.ChatCompletionRequest) (*ai.T
 	return &ai.TextStreamResult{Stream: output, Err: errChan}, nil
 }
 
-func (s *OpenAI) SummarizeThread(thread string) (*ai.TextStreamResult, error) {
-	request := openaiClient.ChatCompletionRequest{
-		Model: s.model,
-		Messages: []openaiClient.ChatCompletionMessage{
-			{
-				Role:    openaiClient.ChatMessageRoleSystem,
-				Content: SummarizeThreadSystemMessage,
-			},
-			{
-				Role:    openaiClient.ChatMessageRoleUser,
-				Content: thread,
-			},
-		},
-		Stream: true,
+func (s *OpenAI) GetDefaultConfig() ai.LLMConfig {
+	return ai.LLMConfig{
+		Model:     s.defaultModel,
+		MaxTokens: 0,
 	}
+}
+
+func (s *OpenAI) createConfig(opts []ai.LanguageModelOption) ai.LLMConfig {
+	cfg := s.GetDefaultConfig()
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	return cfg
+}
+
+func (s *OpenAI) completionReqeustFromConfig(cfg ai.LLMConfig) openaiClient.ChatCompletionRequest {
+	return openaiClient.ChatCompletionRequest{
+		Model:     cfg.Model,
+		MaxTokens: cfg.MaxTokens,
+	}
+}
+
+func (s *OpenAI) ChatCompletion(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (*ai.TextStreamResult, error) {
+	request := s.completionReqeustFromConfig(s.createConfig(opts))
+	request.Messages = conversationToCompletion(conversation)
+	request.Stream = true
 	return s.streamResult(request)
 }
 
-func (s *OpenAI) ContinueThreadInterrogation(thread string, posts ai.BotConversation) (*ai.TextStreamResult, error) {
-	reqeust := openaiClient.ChatCompletionRequest{
-		Model: s.model,
-		Messages: append(
-			[]openaiClient.ChatCompletionMessage{
-				{
-					Role:    openaiClient.ChatMessageRoleSystem,
-					Content: AnswerThreadQuestionSystemMessage,
-				},
-				{
-					Role:    openaiClient.ChatMessageRoleUser,
-					Content: thread,
-				},
-			},
-			conversationToCompletion(posts)...,
-		),
-		Stream: true,
+func (s *OpenAI) ChatCompletionNoStream(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (string, error) {
+	request := s.completionReqeustFromConfig(s.createConfig(opts))
+	request.Messages = conversationToCompletion(conversation)
+	response, err := s.client.CreateChatCompletion(context.Background(), request)
+	if err != nil {
+		return "", err
 	}
-
-	return s.streamResult(reqeust)
+	return response.Choices[0].Message.Content, nil
 }
 
 func (s *OpenAI) GenerateImage(prompt string) (image.Image, error) {
@@ -171,30 +151,4 @@ func (s *OpenAI) GenerateImage(prompt string) (image.Image, error) {
 	}
 
 	return imgData, nil
-}
-
-func (s *OpenAI) SelectEmoji(message string) (string, error) {
-	resp, err := s.client.CreateChatCompletion(
-		context.Background(),
-		openai.ChatCompletionRequest{
-			Model:     s.model,
-			MaxTokens: 25,
-			Messages: []openai.ChatCompletionMessage{
-				{
-					Role:    openai.ChatMessageRoleSystem,
-					Content: EmojiSystemMessage,
-				},
-				{
-					Role:    openai.ChatMessageRoleUser,
-					Content: message,
-				},
-			},
-		},
-	)
-	if err != nil {
-		return "", err
-	}
-	result := strings.Trim(strings.TrimSpace(resp.Choices[0].Message.Content), ":")
-
-	return result, nil
 }

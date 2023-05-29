@@ -2,20 +2,28 @@ package ai
 
 import "image"
 
-type Summarizer interface {
-	SummarizeThread(thread string) (*TextStreamResult, error)
+type LLMConfig struct {
+	Model     string
+	MaxTokens int
 }
 
-type ThreadAnswerer interface {
-	ContinueThreadInterrogation(originalThread string, posts BotConversation) (*TextStreamResult, error)
+type LanguageModelOption func(*LLMConfig)
+
+func WithModel(model string) LanguageModelOption {
+	return func(cfg *LLMConfig) {
+		cfg.Model = model
+	}
 }
 
-type GenericAnswerer interface {
-	ContinueQuestionThread(posts BotConversation) (*TextStreamResult, error)
+func WithmaxTokens(maxTokens int) LanguageModelOption {
+	return func(cfg *LLMConfig) {
+		cfg.MaxTokens = maxTokens
+	}
 }
 
-type EmojiSelector interface {
-	SelectEmoji(message string) (string, error)
+type LanguageModel interface {
+	ChatCompletion(conversation BotConversation, opts ...LanguageModelOption) (*TextStreamResult, error)
+	ChatCompletionNoStream(conversation BotConversation, opts ...LanguageModelOption) (string, error)
 }
 
 type ImageGenerator interface {

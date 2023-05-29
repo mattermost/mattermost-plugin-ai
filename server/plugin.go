@@ -1,6 +1,7 @@
 package main
 
 import (
+	"embed"
 	"strings"
 	"sync"
 
@@ -18,6 +19,9 @@ import (
 const (
 	BotUsername = "ai"
 )
+
+//go:embed ai/prompts
+var promptsFolder embed.FS
 
 // Plugin implements the interface expected by the Mattermost server to communicate between the server and plugin processes.
 type Plugin struct {
@@ -37,11 +41,11 @@ type Plugin struct {
 	db      *sqlx.DB
 	builder sq.StatementBuilderType
 
-	summarizer      ai.Summarizer
-	threadAnswerer  ai.ThreadAnswerer
-	genericAnswerer ai.GenericAnswerer
-	emojiSelector   ai.EmojiSelector
-	imageGenerator  ai.ImageGenerator
+	imageGenerator ai.ImageGenerator
+
+	llm ai.LanguageModel
+
+	prompts *ai.Prompts
 }
 
 func (p *Plugin) OnActivate() error {
@@ -63,47 +67,16 @@ func (p *Plugin) OnActivate() error {
 		return err
 	}
 
+	p.prompts, err = ai.NewPrompts(promptsFolder)
+	if err != nil {
+		return err
+	}
+
 	p.registerCommands()
 
 	openAI := openai.New(p.getConfiguration().OpenAIAPIKey)
 	mattermostAI := mattermostai.New(p.getConfiguration().MattermostAIUrl, p.getConfiguration().MattermostAISecret)
 	openAICompatible := openai.NewCompatible(p.getConfiguration().OpenAICompatibleKey, p.getConfiguration().OpenAICompatibleUrl, p.getConfiguration().OpenAICompatibleModel)
-
-	switch p.getConfiguration().Summarizer {
-	case "openai":
-		p.summarizer = openAI
-	case "mattermostai":
-		p.summarizer = mattermostAI
-	case "openaicompatible":
-		p.summarizer = openAICompatible
-	}
-
-	switch p.getConfiguration().ThreadAnswerer {
-	case "openai":
-		p.threadAnswerer = openAI
-	case "mattermostai":
-		p.threadAnswerer = mattermostAI
-	case "openaicompatible":
-		p.threadAnswerer = openAICompatible
-	}
-
-	switch p.getConfiguration().GenericAnswerer {
-	case "openai":
-		p.genericAnswerer = openAI
-	case "mattermostai":
-		p.genericAnswerer = mattermostAI
-	case "openaicompatible":
-		p.genericAnswerer = openAICompatible
-	}
-
-	switch p.getConfiguration().EmojiSelector {
-	case "openai":
-		p.emojiSelector = openAI
-	case "mattermostai":
-		p.emojiSelector = mattermostAI
-	case "openaicompatible":
-		p.emojiSelector = openAICompatible
-	}
 
 	switch p.getConfiguration().ImageGenerator {
 	case "openai":
@@ -113,6 +86,8 @@ func (p *Plugin) OnActivate() error {
 	case "openaicompatible":
 		p.imageGenerator = openAICompatible
 	}
+
+	p.llm = openAI
 
 	return nil
 }

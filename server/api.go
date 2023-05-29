@@ -3,8 +3,8 @@ package main
 import (
 	"net/http"
 
-	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/gin-gonic/gin"
+	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-server/v6/model"
 	"github.com/mattermost/mattermost-server/v6/plugin"
 	"github.com/pkg/errors"
@@ -158,27 +158,10 @@ func (p *Plugin) handleReact(c *gin.Context) {
 		return
 	}
 
-	emojiName, err := p.emojiSelector.SelectEmoji(post.Message)
-	if err != nil {
+	if err := p.selectEmoji(post); err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
-
-	if _, found := model.GetSystemEmojiId(emojiName); !found {
-		p.pluginAPI.Post.AddReaction(&model.Reaction{
-			EmojiName: "large_red_square",
-			UserId:    p.botid,
-			PostId:    post.Id,
-		})
-		c.AbortWithError(http.StatusInternalServerError, errors.New("LLM returned somthing other than emoji: "+emojiName))
-		return
-	}
-
-	p.pluginAPI.Post.AddReaction(&model.Reaction{
-		EmojiName: emojiName,
-		UserId:    p.botid,
-		PostId:    post.Id,
-	})
 
 	c.Status(http.StatusOK)
 }
