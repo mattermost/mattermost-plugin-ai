@@ -22,8 +22,6 @@ type configuration struct {
 	OpenAICompatibleUrl   string
 	OpenAICompatibleKey   string
 	OpenAICompatibleModel string
-	MattermostAIUrl       string
-	MattermostAISecret    string
 
 	Summarizer      string
 	ThreadAnswerer  string

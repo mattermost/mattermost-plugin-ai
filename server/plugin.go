@@ -8,7 +8,6 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
-	"github.com/mattermost/mattermost-plugin-ai/server/ai/mattermostai"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/openai"
 	pluginapi "github.com/mattermost/mattermost-plugin-api"
 	"github.com/mattermost/mattermost-server/v6/model"
@@ -75,14 +74,11 @@ func (p *Plugin) OnActivate() error {
 	p.registerCommands()
 
 	openAI := openai.New(p.getConfiguration().OpenAIAPIKey)
-	mattermostAI := mattermostai.New(p.getConfiguration().MattermostAIUrl, p.getConfiguration().MattermostAISecret)
 	openAICompatible := openai.NewCompatible(p.getConfiguration().OpenAICompatibleKey, p.getConfiguration().OpenAICompatibleUrl, p.getConfiguration().OpenAICompatibleModel)
 
 	switch p.getConfiguration().ImageGenerator {
 	case "openai":
 		p.imageGenerator = openAI
-	case "mattermostai":
-		p.imageGenerator = mattermostAI
 	case "openaicompatible":
 		p.imageGenerator = openAICompatible
 	}
