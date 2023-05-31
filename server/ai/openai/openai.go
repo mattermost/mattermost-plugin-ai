@@ -28,10 +28,13 @@ func NewCompatible(apiKey string, url string, model string) *OpenAI {
 	}
 }
 
-func New(apiKey string) *OpenAI {
+func New(apiKey string, defaultModel string) *OpenAI {
+	if defaultModel == "" {
+		defaultModel = openaiClient.GPT4
+	}
 	return &OpenAI{
 		client:       openaiClient.NewClient(apiKey),
-		defaultModel: openaiClient.GPT4,
+		defaultModel: defaultModel,
 	}
 }
 

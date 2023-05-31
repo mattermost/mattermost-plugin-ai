@@ -76,7 +76,7 @@ func (p *Plugin) getLLM() ai.LanguageModel {
 	cfg := p.getConfiguration()
 	switch cfg.LLMGenerator {
 	case "openai":
-		return openai.New(cfg.OpenAIAPIKey)
+		return openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel)
 	case "openaicompatible":
 		return openai.NewCompatible(cfg.OpenAICompatibleKey, cfg.OpenAICompatibleUrl, cfg.OpenAICompatibleModel)
 	}
@@ -88,7 +88,7 @@ func (p *Plugin) getImageGenerator() ai.ImageGenerator {
 	cfg := p.getConfiguration()
 	switch cfg.LLMGenerator {
 	case "openai":
-		return openai.New(cfg.OpenAIAPIKey)
+		return openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel)
 	case "openaicompatible":
 		return openai.NewCompatible(cfg.OpenAICompatibleKey, cfg.OpenAICompatibleUrl, cfg.OpenAICompatibleModel)
 	}

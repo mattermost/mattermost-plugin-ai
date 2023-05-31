@@ -18,7 +18,9 @@ import (
 // If you add non-reference types to your configuration struct, be sure to rewrite Clone as a deep
 // copy appropriate for your types.
 type configuration struct {
-	OpenAIAPIKey          string
+	OpenAIAPIKey       string
+	OpenAIDefaultModel string
+
 	OpenAICompatibleUrl   string
 	OpenAICompatibleKey   string
 	OpenAICompatibleModel string

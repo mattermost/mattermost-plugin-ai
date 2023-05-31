@@ -30,6 +30,11 @@
                 "display_name": "OpenAI API Key:"
             },
             {
+                "key": "OpenAIDefaultModel",
+                "type": "text",
+                "display_name": "OpenAI Default Model:"
+            },
+            {
                 "key": "OpenAICompatibleUrl",
                 "type": "text",
                 "display_name": "OpenAI Compatible API url:"
