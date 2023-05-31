@@ -103,7 +103,7 @@ func (p *Plugin) summarizeCurrentContext(c *plugin.Context, args *model.CommandA
 
 func (p *Plugin) imagine(c *plugin.Context, args *model.CommandArgs, prompt string) error {
 	go func() {
-		imgBytes, err := p.imageGenerator.GenerateImage(prompt)
+		imgBytes, err := p.getImageGenerator().GenerateImage(prompt)
 		if err != nil {
 			p.API.LogError("Unable to generate the new image", "error", err)
 			return

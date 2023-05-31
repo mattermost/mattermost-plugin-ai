@@ -40,10 +40,6 @@ type Plugin struct {
 	db      *sqlx.DB
 	builder sq.StatementBuilderType
 
-	imageGenerator ai.ImageGenerator
-
-	llm ai.LanguageModel
-
 	prompts *ai.Prompts
 }
 
@@ -73,21 +69,28 @@ func (p *Plugin) OnActivate() error {
 
 	p.registerCommands()
 
-	openAI := openai.New(p.getConfiguration().OpenAIAPIKey)
-	openAICompatible := openai.NewCompatible(p.getConfiguration().OpenAICompatibleKey, p.getConfiguration().OpenAICompatibleUrl, p.getConfiguration().OpenAICompatibleModel)
+	return nil
+}
 
-	switch p.getConfiguration().ImageGenerator {
+func (p *Plugin) getLLM() ai.LanguageModel {
+	cfg := p.getConfiguration()
+	switch cfg.LLMGenerator {
 	case "openai":
-		p.imageGenerator = openAI
+		return openai.New(cfg.OpenAIAPIKey)
 	case "openaicompatible":
-		p.imageGenerator = openAICompatible
+		return openai.NewCompatible(cfg.OpenAICompatibleKey, cfg.OpenAICompatibleUrl, cfg.OpenAICompatibleModel)
 	}
 
-	switch p.getConfiguration().LLMGenerator {
+	return nil
+}
+
+func (p *Plugin) getImageGenerator() ai.ImageGenerator {
+	cfg := p.getConfiguration()
+	switch cfg.LLMGenerator {
 	case "openai":
-		p.llm = openAI
+		return openai.New(cfg.OpenAIAPIKey)
 	case "openaicompatible":
-		p.llm = openAICompatible
+		return openai.NewCompatible(cfg.OpenAICompatibleKey, cfg.OpenAICompatibleUrl, cfg.OpenAICompatibleModel)
 	}
 
 	return nil

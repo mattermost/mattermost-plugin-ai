@@ -24,7 +24,7 @@ func (p *Plugin) newConversation(post *model.Post) error {
 	}
 	conversation.AddUserPost(post)
 
-	result, err := p.llm.ChatCompletion(conversation)
+	result, err := p.getLLM().ChatCompletion(conversation)
 	if err != nil {
 		return err
 	}
@@ -61,7 +61,7 @@ func (p *Plugin) continueConversation(post *model.Post) error {
 		}
 		prompt.AppendConversation(ai.ThreadToBotConversation(p.botid, threadData.Posts))
 
-		result, err = p.llm.ChatCompletion(prompt)
+		result, err = p.getLLM().ChatCompletion(prompt)
 		if err != nil {
 			return err
 		}
@@ -91,7 +91,7 @@ func (p *Plugin) continueThreadConversation(questionThreadData *ThreadData, orig
 	}
 	prompt.AppendConversation(ai.ThreadToBotConversation(p.botid, questionThreadData.Posts))
 
-	result, err := p.llm.ChatCompletion(prompt)
+	result, err := p.getLLM().ChatCompletion(prompt)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +114,7 @@ func (p *Plugin) startNewSummaryThread(postID string, userID string) (string, er
 	if err != nil {
 		return "", err
 	}
-	summaryStream, err := p.llm.ChatCompletion(prompt)
+	summaryStream, err := p.getLLM().ChatCompletion(prompt)
 	if err != nil {
 		return "", err
 	}
@@ -137,7 +137,7 @@ func (p *Plugin) selectEmoji(post *model.Post) error {
 		return err
 	}
 
-	emojiName, err := p.llm.ChatCompletionNoStream(prompt, ai.WithmaxTokens(25))
+	emojiName, err := p.getLLM().ChatCompletionNoStream(prompt, ai.WithmaxTokens(25))
 	if err != nil {
 		return err
 	}
