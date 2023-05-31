@@ -23,11 +23,8 @@ type configuration struct {
 	OpenAICompatibleKey   string
 	OpenAICompatibleModel string
 
-	Summarizer      string
-	ThreadAnswerer  string
-	ImageGenerator  string
-	GenericAnswerer string
-	EmojiSelector   string
+	LLMGenerator   string
+	ImageGenerator string
 
 	EnableUseRestrictions bool
 	AllowPrivateChannels  bool

@@ -83,7 +83,12 @@ func (p *Plugin) OnActivate() error {
 		p.imageGenerator = openAICompatible
 	}
 
-	p.llm = openAI
+	switch p.getConfiguration().LLMGenerator {
+	case "openai":
+		p.llm = openAI
+	case "openaicompatible":
+		p.llm = openAICompatible
+	}
 
 	return nil
 }
