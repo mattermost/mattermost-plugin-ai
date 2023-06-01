@@ -110,8 +110,19 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 
 	// Check if this is post in the DM channel with the bot
 	if channel.Type == model.ChannelTypeDirect && strings.Contains(channel.Name, p.botid) {
+		postingUser, err := p.pluginAPI.User.Get(post.UserId)
+		if err != nil {
+			p.pluginAPI.Log.Error(err.Error())
+			return
+		}
+
+		// We don't talk to other bots
+		if postingUser.IsBot {
+			return
+		}
+
 		if p.getConfiguration().EnableUseRestrictions {
-			if !p.pluginAPI.User.HasPermissionToTeam(post.UserId, p.getConfiguration().OnlyUsersOnTeam, model.PermissionViewTeam) {
+			if !p.pluginAPI.User.HasPermissionToTeam(postingUser.Id, p.getConfiguration().OnlyUsersOnTeam, model.PermissionViewTeam) {
 				p.pluginAPI.Log.Error("User not on allowed team.")
 				return
 			}
@@ -125,7 +136,18 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 
 	// We are mentioned
 	if strings.Contains(post.Message, "@"+BotUsername) {
-		if err := p.checkUsageRestrictions(post.UserId, channel); err != nil {
+		postingUser, err := p.pluginAPI.User.Get(post.UserId)
+		if err != nil {
+			p.pluginAPI.Log.Error(err.Error())
+			return
+		}
+
+		// We don't talk to other bots
+		if postingUser.IsBot {
+			return
+		}
+
+		if err := p.checkUsageRestrictions(postingUser.Id, channel); err != nil {
 			p.pluginAPI.Log.Error(err.Error())
 			return
 		}
