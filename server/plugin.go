@@ -135,7 +135,7 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 	}
 
 	// We are mentioned
-	if strings.Contains(post.Message, "@"+BotUsername) {
+	if userIsMentioned(post.Message, BotUsername) {
 		postingUser, err := p.pluginAPI.User.Get(post.UserId)
 		if err != nil {
 			p.pluginAPI.Log.Error(err.Error())
