@@ -25,6 +25,9 @@ type configuration struct {
 	OpenAICompatibleKey   string
 	OpenAICompatibleModel string
 
+	AnthropicAPIKey       string
+	AnthropicDefaultModel string
+
 	LLMGenerator   string
 	ImageGenerator string
 

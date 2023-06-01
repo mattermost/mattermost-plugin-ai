@@ -8,6 +8,7 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
+	"github.com/mattermost/mattermost-plugin-ai/server/ai/anthropic"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/openai"
 	pluginapi "github.com/mattermost/mattermost-plugin-api"
 	"github.com/mattermost/mattermost-server/v6/model"
@@ -79,6 +80,8 @@ func (p *Plugin) getLLM() ai.LanguageModel {
 		return openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel)
 	case "openaicompatible":
 		return openai.NewCompatible(cfg.OpenAICompatibleKey, cfg.OpenAICompatibleUrl, cfg.OpenAICompatibleModel)
+	case "anthropic":
+		return anthropic.New(cfg.AnthropicAPIKey, cfg.AnthropicDefaultModel)
 	}
 
 	return nil

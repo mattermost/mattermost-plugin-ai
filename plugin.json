@@ -47,7 +47,17 @@
             {
                 "key": "OpenAICompatibleModel",
                 "type": "text",
-                "display_name": "OpenAI Compatible model"
+                "display_name": "OpenAI Compatible model:"
+            },
+            {
+                "key": "AnthropicAPIKey",
+                "type": "text",
+                "display_name": "Anthropic API Key:"
+            },
+            {
+                "key": "AnthropicDefaultModel",
+                "type": "text",
+                "display_name": "Anthropic Default Model:"
             },
             {
                 "key": "LLMGenerator",
@@ -56,7 +66,8 @@
                 "options": [
                     {"display_name": "None", "value": ""},
                     {"display_name": "Open AI", "value": "openai"},
-                    {"display_name": "Open AI Compatible", "value": "openaicompatible"}
+                    {"display_name": "Open AI Compatible", "value": "openaicompatible"},
+                    {"display_name": "Anthropic", "value": "anthropic"}
                 ],
                 "default": "openai"
             },
