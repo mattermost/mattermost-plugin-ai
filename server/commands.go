@@ -42,6 +42,18 @@ func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*mo
 		return nil, model.NewAppError("Summarize.ExecuteCommand", "Not authorized", nil, err.Error(), http.StatusUnauthorized)
 	}
 
+	// Need to verify the RootId is actually in the channel specified. The server does not enforce this.
+	if args.RootId != "" {
+		post, err := p.pluginAPI.Post.GetPost(args.RootId)
+		if err != nil {
+			return nil, model.NewAppError("Summarize.ExecuteCommand", "app.command.execute.error", nil, err.Error(), http.StatusInternalServerError)
+		}
+
+		if post.ChannelId != channel.Id {
+			return nil, model.NewAppError("Summarize.ExecuteCommand", "Not authorized", nil, "", http.StatusUnauthorized)
+		}
+	}
+
 	split := strings.SplitN(strings.TrimSpace(args.Command), " ", 2)
 	command := split[0]
 	/*parameters := []string{}
