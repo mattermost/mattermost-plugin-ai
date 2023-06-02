@@ -38,4 +38,6 @@ jobs:
           printf "## Commits\n"  >> dist/release-notes.md
           git log --pretty='format:- %h %s' --abbrev-commit --no-decorate --no-color $(git describe --tags --abbrev=0 $(git describe --tags --abbrev=0)^)..HEAD >> dist/release-notes.md
       - run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file dist/release-notes.md  dist/*.tar.gz
+        env:
+          GH_TOKEN: ${{github.token}}
 

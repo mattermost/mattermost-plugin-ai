@@ -31,3 +31,5 @@ jobs:
 
       # Have to manually run this since workflows don't trigger for the github token
       - run: gh workflow run build.yml --ref v${{inputs.version}}
+        env:
+          GH_TOKEN: ${{github.token}}
