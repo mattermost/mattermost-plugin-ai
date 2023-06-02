@@ -30,7 +30,7 @@ func NewCompatible(apiKey string, url string, model string) *OpenAI {
 
 func New(apiKey string, defaultModel string) *OpenAI {
 	if defaultModel == "" {
-		defaultModel = openaiClient.GPT4
+		defaultModel = openaiClient.GPT3Dot5Turbo
 	}
 	return &OpenAI{
 		client:       openaiClient.NewClient(apiKey),
