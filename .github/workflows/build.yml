@@ -31,14 +31,14 @@ jobs:
       - test
       - check-style
     steps:
+      - uses: actions/checkout@v3
       - uses: actions/download-artifact@v3
         with:
           name: mattermost-plugin-ai.tar.gz
           path: dist
-      - uses: actions/checkout@v3
       - run: |
           printf "## Commits\n" > release-notes.md
-          git log --pretty='format:- %h %s' --abbrev-commit --no-decorate --no-color $(git describe --tags --abbrev=0 $(git describe --tags --abbrev=0)^)..HEAD >> dist/release-notes.md
+          git log --pretty='format:- %h %s' --abbrev-commit --no-decorate --no-color $(git describe --tags --abbrev=0 $(git describe --tags --abbrev=0)^)..HEAD >> release-notes.md
       - run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file release-notes.md  dist/*.tar.gz
         env:
           GH_TOKEN: ${{github.token}}
