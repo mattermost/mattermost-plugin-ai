@@ -31,7 +31,7 @@ jobs:
       - test
       - check-style
     steps:
-      - uses: actions/download-artifiact@v3
+      - uses: actions/download-artifact@v3
         with:
           name: plugin
           path: dist
