@@ -28,3 +28,6 @@ jobs:
           git push origin ${{inputs.branch}}
           git tag -a v${{inputs.version}} -m "v${{inputs.version}}"
           git push origin v${{inputs.version}}
+
+      # Have to manually run this since workflows don't trigger for the github token
+      - run: gh workflow run build.yml --ref v${{inputs.version}}
