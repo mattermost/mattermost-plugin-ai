@@ -21,7 +21,7 @@ jobs:
       - run: make dist
       - uses: actions/upload-artifact@v3
         with:
-          name: plugin
+          name: mattermost-plugin-ai.tar.gz
           path: dist/*.tar.gz
   release:
     runs-on: ubuntu-latest
@@ -33,8 +33,9 @@ jobs:
     steps:
       - uses: actions/download-artifact@v3
         with:
-          name: plugin
+          name: mattermost-plugin-ai.tar.gz
           path: dist
+      - uses: actions/checkout@v3
       - run: |
           printf "## Commits\n"  >> dist/release-notes.md
           git log --pretty='format:- %h %s' --abbrev-commit --no-decorate --no-color $(git describe --tags --abbrev=0 $(git describe --tags --abbrev=0)^)..HEAD >> dist/release-notes.md
