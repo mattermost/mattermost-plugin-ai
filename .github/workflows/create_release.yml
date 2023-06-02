@@ -15,19 +15,16 @@ on:
 jobs:
   tag-release:
     runs-on: ubuntu-latest
-    env:
-      GITHUB_TOKEN: ${{env.GITHUB_TOKEN}}
-      VERSION: ${{ inputs.version }}
-      BRANCH: ${{ inputs.branch }}
     steps:
       - uses: actions/checkout@v3
         with:
           ref: ${{ inputs.branch }}
-      - run: jq '.version = "$VERSION"' plugin.json > plugin.json.new && mv plugin.json.new plugin.json
+      - run: jq '.version = "${{inputs.version}}"' plugin.json > plugin.json.new && mv plugin.json.new plugin.json
       - run: |
           git add .
-          git commit -m "Update version to $VERSION"
-          git push origin $BRANCH
-      - run: |
-          git tag -a v$VERSION -m "v$VERSION"
-          git push origin v$VERSION
+          git commit -m "Update version to ${{inputs.version}}"
+          git push origin ${{inputs.branch}}
+          git tag -a v${{inputs.version}} -m "v${{inputs.version}}"
+          git push origin v${{inputs.version}}
+        env:
+          GITHUB_TOKEN: ${{env.GITHUB_TOKEN}}
