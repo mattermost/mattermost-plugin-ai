@@ -1,0 +1,33 @@
+name: Create Release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'The version in semver `x.x.x` Note: no leading `v`'
+        required: true
+        type: string
+      branch:
+        description: 'The branch to create the release from'
+        required: true
+        default: 'master'
+        type: string
+
+jobs:
+  tag-release:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{env.GITHUB_TOKEN}}
+      VERSION: ${{ inputs.version }}
+      BRANCH: ${{ inputs.branch }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.branch }}
+      - run: jq '.version = "$VERSION"' plugin.json > plugin.json.new && mv plugin.json.new plugin.json
+      - run: |
+          git add .
+          git commit -m "Update version to $VERSION"
+          git push origin $BRANCH
+      - run: |
+          git tag -a v$VERSION -m "v$VERSION"
+          git push origin v$VERSION
