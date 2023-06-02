@@ -21,10 +21,10 @@ jobs:
           ref: ${{ inputs.branch }}
       - run: jq '.version = "${{inputs.version}}"' plugin.json > plugin.json.new && mv plugin.json.new plugin.json
       - run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
           git add .
           git commit -m "Update version to ${{inputs.version}}"
           git push origin ${{inputs.branch}}
           git tag -a v${{inputs.version}} -m "v${{inputs.version}}"
           git push origin v${{inputs.version}}
-        env:
-          GITHUB_TOKEN: ${{env.GITHUB_TOKEN}}
