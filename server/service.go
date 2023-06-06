@@ -50,6 +50,28 @@ func (p *Plugin) continueConversation(post *model.Post) error {
 	var result *ai.TextStreamResult
 	originalThreadID, ok := threadData.Posts[0].GetProp(ThreadIDProp).(string)
 	if ok && originalThreadID != "" {
+		threadPost, err := p.pluginAPI.Post.GetPost(originalThreadID)
+		if err != nil {
+			return err
+		}
+		threadChannel, err := p.pluginAPI.Channel.Get(threadPost.ChannelId)
+		if err != nil {
+			return err
+		}
+
+		if !p.pluginAPI.User.HasPermissionToChannel(post.UserId, threadChannel.Id, model.PermissionReadChannel) ||
+			p.checkUsageRestrictions(post.UserId, threadChannel) != nil {
+			responsePost := &model.Post{
+				ChannelId: post.ChannelId,
+				RootId:    post.RootId,
+				Message:   "Sorry, you no longer have access to the original thread.",
+			}
+			if err := p.botCreatePost(responsePost); err != nil {
+				return err
+			}
+			return nil
+		}
+
 		result, err = p.continueThreadConversation(threadData, originalThreadID)
 		if err != nil {
 			return err
