@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"os/exec"
 	"strings"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
@@ -180,6 +182,61 @@ func (p *Plugin) selectEmoji(post *model.Post) error {
 		EmojiName: emojiName,
 		UserId:    p.botid,
 		PostId:    post.Id,
+	}); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (p *Plugin) handleCallRecordingPost(post *model.Post) error {
+	if len(post.FileIds) != 1 {
+		return errors.New("Unexpected number of files in calls post")
+	}
+
+	fileID := post.FileIds[0]
+	fileReader, err := p.pluginAPI.File.Get(fileID)
+	if err != nil {
+		return errors.Wrap(err, "unable to read calls file")
+	}
+
+	cmd := exec.Command("ffmpeg", "-i", "pipe:0", "-f", "mp3", "pipe:1")
+	cmd.Stdin = fileReader
+
+	audioReader, err := cmd.StdoutPipe()
+	if err != nil {
+		return errors.Wrap(err, "couldn't create stdout pipe")
+	}
+
+	errorReader, err := cmd.StderrPipe()
+	if err != nil {
+		return errors.Wrap(err, "couldn't create stderr pipe")
+	}
+
+	if err := cmd.Start(); err != nil {
+		return errors.Wrap(err, "couldn't run ffmpeg")
+	}
+
+	transcriber := p.getTranscribe()
+	transcription, err := transcriber.Transcribe(audioReader)
+	if err != nil {
+		return err
+	}
+
+	errout, err := io.ReadAll(errorReader)
+	if err != nil {
+		return errors.Wrap(err, "unable to read stderr from ffmpeg")
+	}
+
+	if err := cmd.Wait(); err != nil {
+		p.pluginAPI.Log.Debug("ffmpeg stderr: " + string(errout))
+		return errors.Wrap(err, "error while waiting for ffmpeg")
+	}
+
+	if err := p.botCreatePost(&model.Post{
+		ChannelId: post.ChannelId,
+		RootId:    post.Id,
+		Message:   transcription,
 	}); err != nil {
 		return err
 	}

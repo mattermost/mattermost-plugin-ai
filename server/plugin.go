@@ -18,6 +18,8 @@ import (
 
 const (
 	BotUsername = "ai"
+
+	CallsRecordingPostType = "custom_calls_recording"
 )
 
 //go:embed ai/prompts
@@ -99,6 +101,15 @@ func (p *Plugin) getImageGenerator() ai.ImageGenerator {
 	return nil
 }
 
+func (p *Plugin) getTranscribe() ai.Transcriber {
+	cfg := p.getConfiguration()
+	/*switch cfg.LLMGenerator {
+	case "openai":
+		return openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel)
+	}*/
+	return openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel)
+}
+
 func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 	// Don't respond to ouselves
 	if post.UserId == p.botid {
@@ -158,6 +169,26 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 		err = p.processUserRequestToBot(post, channel)
 		if err != nil {
 			p.pluginAPI.Log.Error("Unable to process bot mention: " + err.Error())
+			return
+		}
+	}
+
+	// Its a bot post from the calls plugin
+	if post.Type == CallsRecordingPostType {
+		if p.getConfiguration().EnableUseRestrictions {
+			if !strings.Contains(p.getConfiguration().AllowedTeamIDs, channel.TeamId) {
+				return
+			}
+
+			if !p.getConfiguration().AllowPrivateChannels {
+				if channel.Type != model.ChannelTypeOpen {
+					return
+				}
+			}
+		}
+
+		if err := p.handleCallRecordingPost(post); err != nil {
+			p.pluginAPI.Log.Error("Unable to process calls recording", "error", err)
 			return
 		}
 	}

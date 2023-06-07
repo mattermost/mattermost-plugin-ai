@@ -1,6 +1,9 @@
 package ai
 
-import "image"
+import (
+	"image"
+	"io"
+)
 
 type LLMConfig struct {
 	Model     string
@@ -24,6 +27,10 @@ func WithmaxTokens(maxTokens int) LanguageModelOption {
 type LanguageModel interface {
 	ChatCompletion(conversation BotConversation, opts ...LanguageModelOption) (*TextStreamResult, error)
 	ChatCompletionNoStream(conversation BotConversation, opts ...LanguageModelOption) (string, error)
+}
+
+type Transcriber interface {
+	Transcribe(file io.Reader) (string, error)
 }
 
 type ImageGenerator interface {

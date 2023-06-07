@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"errors"
 	"image"
 	"image/png"
 	"io"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
+	"github.com/pkg/errors"
 	"github.com/sashabaranov/go-openai"
 	openaiClient "github.com/sashabaranov/go-openai"
 )
@@ -127,6 +127,20 @@ func (s *OpenAI) ChatCompletionNoStream(conversation ai.BotConversation, opts ..
 		return "", err
 	}
 	return response.Choices[0].Message.Content, nil
+}
+
+func (s *OpenAI) Transcribe(file io.Reader) (string, error) {
+	resp, err := s.client.CreateTranscription(context.Background(), openaiClient.AudioRequest{
+		Model:    openaiClient.Whisper1,
+		Reader:   file,
+		FilePath: "input.mp3",
+		Format:   openaiClient.AudioResponseFormatJSON,
+	})
+	if err != nil {
+		return "", errors.Wrap(err, "unable to create whisper transcription")
+	}
+
+	return resp.Text, nil
 }
 
 func (s *OpenAI) GenerateImage(prompt string) (image.Image, error) {
