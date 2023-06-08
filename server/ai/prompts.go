@@ -21,6 +21,10 @@ const (
 	PromptSummarizeThread       = "summarize_thread"
 	PromptDirectMessageQuestion = "direct_message_question"
 	PromptEmojiSelect           = "emoji_select"
+	PromptFixTranscription      = "fix_transcription"
+	PromptMeetingSummary        = "meeting_summary"
+	PromptMeetingSummaryOnly    = "summary_only"
+	PromptMeetingKeyPoints      = "meeting_key_points"
 )
 
 func NewPrompts(input fs.FS) (*Prompts, error) {

@@ -107,8 +107,12 @@ func (s *OpenAI) createConfig(opts []ai.LanguageModelOption) ai.LLMConfig {
 
 func (s *OpenAI) completionReqeustFromConfig(cfg ai.LLMConfig) openaiClient.ChatCompletionRequest {
 	return openaiClient.ChatCompletionRequest{
-		Model:     cfg.Model,
-		MaxTokens: cfg.MaxTokens,
+		Model:            cfg.Model,
+		MaxTokens:        cfg.MaxTokens,
+		Temperature:      1.0,
+		TopP:             1.0,
+		FrequencyPenalty: 0,
+		PresencePenalty:  0,
 	}
 }
 

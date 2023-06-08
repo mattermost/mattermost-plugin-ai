@@ -5,7 +5,7 @@ import {GlobalState} from '@mattermost/types/lib/store';
 import {manifest} from '@/manifest';
 
 import {LLMBotPost} from './components/llmbot_post';
-import {doReaction, doSummarize} from './client';
+import {doReaction, doSummarize, doTranscribe} from './client';
 
 const BotUsername = 'ai';
 
@@ -15,6 +15,7 @@ export default class Plugin {
         registry.registerPostDropdownMenuAction('React for me', doReaction);
         registry.registerPostDropdownMenuAction('Summarize Thread', makeSummarizePost(store));
         registry.registerPostTypeComponent('custom_llmbot', LLMBotPost);
+        registry.registerPostDropdownMenuAction('Summarize Meeting Audio', doTranscribe);
     }
 }
 

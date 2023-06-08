@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
+	sq "github.com/Masterminds/squirrel"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-server/v6/model"
 	"github.com/pkg/errors"
@@ -189,12 +190,31 @@ func (p *Plugin) selectEmoji(post *model.Post) error {
 	return nil
 }
 
-func (p *Plugin) handleCallRecordingPost(post *model.Post) error {
-	if len(post.FileIds) != 1 {
+func (p *Plugin) handleCallRecordingPost(recordingPost *model.Post) (err error) {
+	if len(recordingPost.FileIds) != 1 {
 		return errors.New("Unexpected number of files in calls post")
 	}
 
-	fileID := post.FileIds[0]
+	botPost := &model.Post{
+		ChannelId: recordingPost.ChannelId,
+		RootId:    recordingPost.Id,
+		Message:   "Transcribing meeting...",
+	}
+	if err := p.botCreatePost(botPost); err != nil {
+		return err
+	}
+
+	// Update to an error if we return one.
+	defer func() {
+		if err != nil {
+			botPost.Message = "Sorry! Somthing went wrong. Check the server logs for details."
+			if err := p.pluginAPI.Post.UpdatePost(botPost); err != nil {
+				p.API.LogError("Failed to update post in error handling handleCallRecordingPost", "error", err)
+			}
+		}
+	}()
+
+	fileID := recordingPost.FileIds[0]
 	fileReader, err := p.pluginAPI.File.Get(fileID)
 	if err != nil {
 		return errors.Wrap(err, "unable to read calls file")
@@ -233,11 +253,54 @@ func (p *Plugin) handleCallRecordingPost(post *model.Post) error {
 		return errors.Wrap(err, "error while waiting for ffmpeg")
 	}
 
-	if err := p.botCreatePost(&model.Post{
-		ChannelId: post.ChannelId,
-		RootId:    post.Id,
-		Message:   transcription,
-	}); err != nil {
+	botPost.Message += "\nRefining transcription..."
+	if err := p.pluginAPI.Post.UpdatePost(botPost); err != nil {
+		return err
+	}
+
+	fixTranscriptionPrompt, err := p.prompts.ChatCompletion(ai.PromptFixTranscription, map[string]string{"Transcription": transcription})
+	if err != nil {
+		return err
+	}
+
+	fixedTranscription, err := p.getLLM().ChatCompletionNoStream(fixTranscriptionPrompt)
+	if err != nil {
+		return err
+	}
+
+	meetingSummaryPrompt, err := p.prompts.ChatCompletion(ai.PromptMeetingSummary, map[string]string{"Transcription": fixedTranscription})
+	if err != nil {
+		return err
+	}
+
+	stream, err := p.getLLM().ChatCompletion(meetingSummaryPrompt)
+	if err != nil {
+		return err
+	}
+
+	fileInfo, err := p.pluginAPI.File.Upload(strings.NewReader(fixedTranscription), "transcription.md", recordingPost.ChannelId)
+	if err != nil {
+		return errors.Wrap(err, "unable to upload transcription")
+	}
+
+	// UpdatePost doesn't update the file info properly. So do it manually.
+	if _, err := p.execBuilder(p.builder.
+		Update("FileInfo").
+		SetMap(map[string]interface{}{
+			"PostID": botPost.Id,
+		}).
+		Where(sq.Eq{"Id": fileInfo.Id}),
+	); err != nil {
+		return err
+	}
+
+	botPost.Message = ""
+	botPost.FileIds = []string{fileInfo.Id}
+	if err := p.pluginAPI.Post.UpdatePost(botPost); err != nil {
+		return err
+	}
+
+	if err := p.streamResultToPost(stream, botPost); err != nil {
 		return err
 	}
 

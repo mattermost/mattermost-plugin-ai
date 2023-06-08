@@ -62,3 +62,19 @@ export async function doFeedback(postid: string, positive: boolean) {
     });
 }
 
+export async function doTranscribe(postid: string) {
+    const url = `/plugins/${manifest.id}/transcribe/${postid}`;
+    const response = await fetch(url, Client4.getOptions({
+        method: 'POST',
+    }));
+
+    if (response.ok) {
+        return;
+    }
+
+    throw new ClientError(Client4.url, {
+        message: '',
+        status_code: response.status,
+        url,
+    });
+}
