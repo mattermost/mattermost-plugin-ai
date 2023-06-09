@@ -11,6 +11,10 @@ import (
 	"github.com/pkg/errors"
 )
 
+const (
+	WhisperAPILimit = 25 * (1024 * 1024) // 25 MB
+)
+
 func (p *Plugin) processUserRequestToBot(post *model.Post, channel *model.Channel) error {
 	if post.RootId == "" {
 		return p.newConversation(post)
@@ -246,7 +250,8 @@ func (p *Plugin) handleCallRecordingPost(recordingPost *model.Post) (err error) 
 	}
 
 	transcriber := p.getTranscribe()
-	transcription, err := transcriber.Transcribe(audioReader)
+	// Limit reader should probably error out instead of just silently failing
+	transcription, err := transcriber.Transcribe(io.LimitReader(audioReader, WhisperAPILimit))
 	if err != nil {
 		return err
 	}
