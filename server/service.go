@@ -194,6 +194,10 @@ func (p *Plugin) handleCallRecordingPost(recordingPost *model.Post) (err error) 
 		return errors.New("Unexpected number of files in calls post")
 	}
 
+	if !p.haveFFMpeg {
+		return errors.New("ffmpeg not installed")
+	}
+
 	rootId := recordingPost.Id
 	if recordingPost.RootId != "" {
 		rootId = recordingPost.RootId

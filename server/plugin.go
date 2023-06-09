@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"os/exec"
 	"strings"
 	"sync"
 
@@ -40,10 +41,21 @@ type Plugin struct {
 
 	botid string
 
+	haveFFMpeg bool
+
 	db      *sqlx.DB
 	builder sq.StatementBuilderType
 
 	prompts *ai.Prompts
+}
+
+func checkForffmpeg() error {
+	_, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		return errors.Wrap(err, "unable to find ffmpeg")
+	}
+
+	return nil
 }
 
 func (p *Plugin) OnActivate() error {
@@ -68,6 +80,13 @@ func (p *Plugin) OnActivate() error {
 	p.prompts, err = ai.NewPrompts(promptsFolder)
 	if err != nil {
 		return err
+	}
+
+	if err := checkForffmpeg(); err != nil {
+		p.haveFFMpeg = false
+		p.pluginAPI.Log.Error("ffmpeg not installed, transcriptions will be disabled.", "error", err)
+	} else {
+		p.haveFFMpeg = true
 	}
 
 	p.registerCommands()
