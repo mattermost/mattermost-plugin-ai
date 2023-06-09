@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"strings"
 
-	sq "github.com/Masterminds/squirrel"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-server/v6/model"
 	"github.com/pkg/errors"
@@ -195,9 +194,14 @@ func (p *Plugin) handleCallRecordingPost(recordingPost *model.Post) (err error) 
 		return errors.New("Unexpected number of files in calls post")
 	}
 
+	rootId := recordingPost.Id
+	if recordingPost.RootId != "" {
+		rootId = recordingPost.RootId
+	}
+
 	botPost := &model.Post{
 		ChannelId: recordingPost.ChannelId,
-		RootId:    recordingPost.Id,
+		RootId:    rootId,
 		Message:   "Transcribing meeting...",
 	}
 	if err := p.botCreatePost(botPost); err != nil {
@@ -258,49 +262,38 @@ func (p *Plugin) handleCallRecordingPost(recordingPost *model.Post) (err error) 
 		return err
 	}
 
-	fixTranscriptionPrompt, err := p.prompts.ChatCompletion(ai.PromptFixTranscription, map[string]string{"Transcription": transcription})
+	summaryPrompt, err := p.prompts.ChatCompletion(ai.PromptMeetingSummaryOnly, map[string]string{"Transcription": transcription})
 	if err != nil {
 		return err
 	}
 
-	fixedTranscription, err := p.getLLM().ChatCompletionNoStream(fixTranscriptionPrompt)
+	keyPointsPrompt, err := p.prompts.ChatCompletion(ai.PromptMeetingKeyPoints, map[string]string{"Transcription": transcription})
 	if err != nil {
 		return err
 	}
 
-	meetingSummaryPrompt, err := p.prompts.ChatCompletion(ai.PromptMeetingSummary, map[string]string{"Transcription": fixedTranscription})
+	summaryStream, err := p.getLLM().ChatCompletion(summaryPrompt)
 	if err != nil {
 		return err
 	}
 
-	stream, err := p.getLLM().ChatCompletion(meetingSummaryPrompt)
+	keyPointsStream, err := p.getLLM().ChatCompletion(keyPointsPrompt)
 	if err != nil {
-		return err
-	}
-
-	fileInfo, err := p.pluginAPI.File.Upload(strings.NewReader(fixedTranscription), "transcription.md", recordingPost.ChannelId)
-	if err != nil {
-		return errors.Wrap(err, "unable to upload transcription")
-	}
-
-	// UpdatePost doesn't update the file info properly. So do it manually.
-	if _, err := p.execBuilder(p.builder.
-		Update("FileInfo").
-		SetMap(map[string]interface{}{
-			"PostID": botPost.Id,
-		}).
-		Where(sq.Eq{"Id": fileInfo.Id}),
-	); err != nil {
 		return err
 	}
 
 	botPost.Message = ""
-	botPost.FileIds = []string{fileInfo.Id}
+	template := []string{
+		"# Meeting Summary\n",
+		"",
+		"\n## Key Discussion Points\n",
+		"",
+	}
 	if err := p.pluginAPI.Post.UpdatePost(botPost); err != nil {
 		return err
 	}
 
-	if err := p.streamResultToPost(stream, botPost); err != nil {
+	if err := p.multiStreamResultToPost(botPost, template, summaryStream, keyPointsStream); err != nil {
 		return err
 	}
 

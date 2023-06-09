@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-server/v6/model"
+	"github.com/pkg/errors"
 )
 
 type ThreadData struct {
@@ -114,6 +116,71 @@ func (p *Plugin) streamResultToPost(stream *ai.TextStreamResult, post *model.Pos
 					return
 				}
 			case err, ok := <-stream.Err:
+				if !ok {
+					return
+				}
+				p.API.LogError("Streaming result to post failed", "error", err)
+				post.Message = "Sorry! An error occoured while accessing the LLM. See server logs for details."
+				if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
+					p.API.LogError("Error recovering from streaming error", "error", err)
+					return
+				}
+				return
+			}
+		}
+	}()
+
+	return nil
+}
+
+type WorkerResult struct {
+	StreamNumber int
+	Value        string
+}
+
+func (p *Plugin) multiStreamResultToPost(post *model.Post, messageTemplate []string, streams ...*ai.TextStreamResult) error {
+	if len(messageTemplate) < 2*len(streams) {
+		return errors.New("bad multi stream template")
+	}
+
+	results := make(chan WorkerResult)
+	errors := make(chan error)
+
+	// Create workers for recieving the text stream results.
+	for i, stream := range streams {
+		go func(streamNumber int, stream *ai.TextStreamResult) {
+			for {
+				select {
+				case next := <-stream.Stream:
+					results <- WorkerResult{
+						StreamNumber: streamNumber,
+						Value:        next,
+					}
+				case err, ok := <-stream.Err:
+					if !ok {
+						return
+					}
+					errors <- err
+					return
+				}
+			}
+		}(i, stream)
+	}
+
+	// Single post updating goroutine
+	go func() {
+		for {
+			select {
+			case next := <-results:
+				// Update template
+				messageTemplate[next.StreamNumber*2+1] += next.Value
+
+				post.Message = strings.Join(messageTemplate, "")
+				if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
+					p.API.LogError("Streaming failed to update post", "error", err)
+					return
+				}
+			case err, ok := <-errors:
 				if !ok {
 					return
 				}
