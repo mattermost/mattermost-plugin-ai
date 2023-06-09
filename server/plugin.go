@@ -21,6 +21,8 @@ const (
 	BotUsername = "ai"
 
 	CallsRecordingPostType = "custom_calls_recording"
+
+	ffmpegPluginPath = "./plugins/mattermost-ai/server/dist/ffmpeg"
 )
 
 //go:embed ai/prompts
@@ -41,7 +43,7 @@ type Plugin struct {
 
 	botid string
 
-	haveFFMpeg bool
+	ffmpegPath string
 
 	db      *sqlx.DB
 	builder sq.StatementBuilderType
@@ -49,13 +51,17 @@ type Plugin struct {
 	prompts *ai.Prompts
 }
 
-func checkForffmpeg() error {
-	_, err := exec.LookPath("ffmpeg")
-	if err != nil {
-		return errors.Wrap(err, "unable to find ffmpeg")
+func resolveffmpegPath() string {
+	_, standardPathErr := exec.LookPath("ffmpeg")
+	if standardPathErr != nil {
+		_, pluginPathErr := exec.LookPath(ffmpegPluginPath)
+		if pluginPathErr != nil {
+			return ""
+		}
+		return ffmpegPluginPath
 	}
 
-	return nil
+	return "ffmpeg"
 }
 
 func (p *Plugin) OnActivate() error {
@@ -82,11 +88,9 @@ func (p *Plugin) OnActivate() error {
 		return err
 	}
 
-	if err := checkForffmpeg(); err != nil {
-		p.haveFFMpeg = false
+	p.ffmpegPath = resolveffmpegPath()
+	if p.ffmpegPath == "" {
 		p.pluginAPI.Log.Error("ffmpeg not installed, transcriptions will be disabled.", "error", err)
-	} else {
-		p.haveFFMpeg = true
 	}
 
 	p.registerCommands()

@@ -194,7 +194,7 @@ func (p *Plugin) handleCallRecordingPost(recordingPost *model.Post) (err error) 
 		return errors.New("Unexpected number of files in calls post")
 	}
 
-	if !p.haveFFMpeg {
+	if p.ffmpegPath == "" {
 		return errors.New("ffmpeg not installed")
 	}
 
@@ -228,7 +228,7 @@ func (p *Plugin) handleCallRecordingPost(recordingPost *model.Post) (err error) 
 		return errors.Wrap(err, "unable to read calls file")
 	}
 
-	cmd := exec.Command("ffmpeg", "-i", "pipe:0", "-f", "mp3", "pipe:1")
+	cmd := exec.Command(p.ffmpegPath, "-i", "pipe:0", "-f", "mp3", "pipe:1")
 	cmd.Stdin = fileReader
 
 	audioReader, err := cmd.StdoutPipe()

@@ -10,6 +10,7 @@ MM_UTILITIES_DIR ?= ../mattermost-utilities
 DLV_DEBUG_PORT := 2346
 DEFAULT_GOOS := $(shell go env GOOS)
 DEFAULT_GOARCH := $(shell go env GOARCH)
+INCLUDE_FFMPEG ?=
 
 export GO111MODULE=on
 
@@ -113,6 +114,9 @@ endif
 ifneq ($(HAS_WEBAPP),)
 	mkdir -p dist/$(PLUGIN_ID)/webapp
 	cp -r webapp/dist dist/$(PLUGIN_ID)/webapp/
+endif
+ifneq ($(INCLUDE_FFMPEG),)
+	cp $(INCLUDE_FFMPEG) dist/$(PLUGIN_ID)/server/dist/
 endif
 	cd dist && tar -cvzf $(BUNDLE_NAME) $(PLUGIN_ID)
 
