@@ -174,7 +174,7 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 	}
 
 	// Its a bot post from the calls plugin
-	if post.Type == CallsRecordingPostType {
+	if post.Type == CallsRecordingPostType && p.getConfiguration().EnableAutomaticCallsSummary {
 		if p.getConfiguration().EnableUseRestrictions {
 			if !strings.Contains(p.getConfiguration().AllowedTeamIDs, channel.TeamId) {
 				return

@@ -83,6 +83,13 @@
                 "default": "openai"
             },
             {
+                "key": "EnableAutomaticCallsSummary",
+                "type": "bool",
+                "display_name": "Enable Automatic Calls Summary:",
+				"help_text": "Automatically create a summary of any recorded call.",
+				"default": false
+            },
+            {
                 "key": "EnableUseRestrictions",
                 "type": "bool",
                 "display_name": "Enable Use Restrictions:",

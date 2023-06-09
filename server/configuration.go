@@ -31,6 +31,8 @@ type configuration struct {
 	LLMGenerator   string
 	ImageGenerator string
 
+	EnableAutomaticCallsSummary bool
+
 	EnableUseRestrictions bool
 	AllowPrivateChannels  bool
 	AllowedTeamIDs        string
