@@ -292,6 +292,7 @@ func (p *Plugin) handleCallRecordingPost(recordingPost *model.Post) (err error) 
 		"",
 		"\n## Key Discussion Points\n",
 		"",
+		"_Summary generated using AI, and may contain inaccuracies. Do not take this summary as absolute truth._",
 	}
 	if err := p.pluginAPI.Post.UpdatePost(botPost); err != nil {
 		return err
