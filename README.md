@@ -66,7 +66,7 @@ This plugin is currently experimental. More options and the ability to use local
   * In the top left Mattermost menu, click **System Console** ➡️ [**Mattermost AI Plugin**](http://localhost:8065/admin_console/plugins/plugin_mattermost-ai)
   * Enable the plugin and configure plugin settings as desired.
 
-You're now ready to use the example `mattermost-plugin-ai`! 🤖🎉
+You're now ready to use the example `mattermost-plugin-ai`. Add it to your desired teams/channels or message it directly via **@ai**! You can also interact with the plugin's features via the actions menu on any message! 🤖🎉
 
 ## Usage
 

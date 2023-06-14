@@ -1,6 +1,6 @@
 tasks:
   - name: mattermost
-    command: "cd mattermost-plugin-ai && docker compose up -d && bash ./init.sh"
+    command: "docker compose up -d && bash ./init.sh"
 ports:
   - name: mattermost
     port: 8065
