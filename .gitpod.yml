@@ -1,0 +1,7 @@
+tasks:
+  - name: mattermost
+    command: "git clone https://github.com/mattermost/mattermost-plugin-ai && cd mattermost-plugin-ai && docker compose up -d && bash ./init.sh"
+ports:
+  - name: mattermost
+    port: 8065
+    onOpen: open-browser
