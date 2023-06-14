@@ -23,7 +23,7 @@
 
 ## Background
 
-**🚀 Join [Mattermost's AI discussion forums](https://forum.mattermost.com/c/ai-frameworks/40) where Mattermost's open source community is sharing the latest AI resources and innovations!**
+**🚀 Join [Mattermost's AI discussion forums](https://forum.mattermost.com/c/ai-frameworks/40) and the ["AI Exchange" community server channel](https://community.mattermost.com/core/channels/ai-exchange) where Mattermost's open source community is sharing the latest AI resources and innovations!**
 
 The LLM extensions plugin adds functionality to use and develop LLMs (like from OpenAI or Hugging Face) within Mattermost. 
 
