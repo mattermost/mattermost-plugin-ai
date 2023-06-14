@@ -9,8 +9,6 @@ services:
     restart: "unless-stopped"
     depends_on:
       - "db"
-    env_file:
-      - "./mattermost/.docker.env"
     ports:
       - "8065:8065"
     environment:
