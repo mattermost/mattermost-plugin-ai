@@ -33,13 +33,15 @@ This plugin is currently experimental. More options and the ability to use local
 
 1. Clone and enter this repository:
   * `git clone https://github.com/mattermost/mattermost-plugin-ai && cd mattermost-plugin-ai`
-2. Start the services:
+2. Create a `.env.docker` file inside a `mattermost` folder.
+   - You can adjust this accordingly based on the environment variables you see in the [`docker-compose.yml`](./docker-compose.yml) file.
+3. Start the services:
   * `docker compose up -d`
-3. Configure the Mattermost server from the init script:
+4. Configure the Mattermost server from the init script:
   * `bash ./init.sh`
-4. Install `mattermost-plugin-ai` on Mattermost from the command line:
+5. Install `mattermost-plugin-ai` on Mattermost from the command line:
   * `MM_SERVICESETTINGS_SITEURL=http://localhost:8065 MM_ADMIN_USERNAME=root MM_ADMIN_PASSWORD=<YOUR_PASSWORD> make deploy`
-5. Access Mattermost and configure the plugin:
+6. Access Mattermost and configure the plugin:
   * Open Mattermost at `http://localhost:8065`
   * Select **View in Browser**
   * Log in with the generated `root` credentials
