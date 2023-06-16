@@ -118,7 +118,7 @@ endif
 ifneq ($(INCLUDE_FFMPEG),)
 	cp $(INCLUDE_FFMPEG) dist/$(PLUGIN_ID)/server/dist/
 endif
-	cd dist && tar -cvzf $(BUNDLE_NAME) $(PLUGIN_ID)
+	cd dist && tar -cvzf $(BUNDLE_NAME) -C $(PLUGIN_ID) .
 
 	@echo plugin built at: dist/$(BUNDLE_NAME)
 
