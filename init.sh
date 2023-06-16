@@ -23,6 +23,7 @@ docker exec mattermost mmctl --local channel users add $team_name:$channel_name 
 export MM_ADMIN_USERNAME=$user_name
 export MM_ADMIN_PASSWORD=$user_password
 export MM_SERVICESETTINGS_SITEURL=http://localhost:8065
+export MM_SERVICESETTINGS_ENABLEDEVELOPER=true
 make deploy /mattermost-ai-plugin
 
 #echo -e "\n===========================\n\n  FIRST, DO THIS COMMAND: MM_SERVICESETTINGS_SITEURL=http://localhost:8065 MM_ADMIN_USERNAME=root MM_ADMIN_PASSWORD=$user_password make deploy"
