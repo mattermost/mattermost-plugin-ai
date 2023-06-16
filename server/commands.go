@@ -26,6 +26,22 @@ func (p *Plugin) registerCommands() {
 		AutoComplete:     true,
 		AutoCompleteDesc: "Generate a new image based on the provided text",
 	})
+	_ = p.API.RegisterCommand(&model.Command{
+		Trigger:          "spellcheck",
+		DisplayName:      "Spellcheck",
+		Description:      "Spellchecks a message",
+		AutoComplete:     true,
+		AutoCompleteDesc: "Spell check the provided message.",
+		AutoCompleteHint: "[message]",
+	})
+	_ = p.API.RegisterCommand(&model.Command{
+		Trigger:          "change_tone",
+		DisplayName:      "Change tone",
+		Description:      "Change the tone to a message",
+		AutoComplete:     true,
+		AutoCompleteDesc: "Change the tone of the provided message to the specified mood.",
+		AutoCompleteHint: "[tone] [message]",
+	})
 }
 
 func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*model.CommandResponse, *model.AppError) {
@@ -65,7 +81,7 @@ func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*mo
 		parameters = split[2:]
 	}*/
 
-	if command != "/summarize" && command != "/imagine" {
+	if command != "/summarize" && command != "/imagine" && command != "/spellcheck" && command != "/change_tone" {
 		return &model.CommandResponse{}, nil
 	}
 
@@ -88,6 +104,33 @@ func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*mo
 		return &model.CommandResponse{
 			ResponseType: model.CommandResponseTypeEphemeral,
 			Text:         "Generating image, please wait.",
+			ChannelId:    args.ChannelId,
+		}, nil
+	}
+
+	if command == "/spellcheck" {
+		message := strings.Join(split[1:], " ")
+		result, err := p.spellcheckMessage(message)
+		if err != nil {
+			return nil, model.NewAppError("Imagine.ExecuteCommand", "app.spellcheck.command.execute.error", nil, err.Error(), http.StatusInternalServerError)
+		}
+		return &model.CommandResponse{
+			ResponseType: model.CommandResponseTypeEphemeral,
+			Text:         *result,
+			ChannelId:    args.ChannelId,
+		}, nil
+	}
+
+	if command == "/change_tone" {
+		parts := strings.SplitN(split[1], " ", 2)
+		tone := strings.ToLower(parts[0])
+		result, err := p.changeTone(tone, parts[1])
+		if err != nil {
+			return nil, model.NewAppError("Imagine.ExecuteCommand", "app.change_tone.command.execute.error", nil, err.Error(), http.StatusInternalServerError)
+		}
+		return &model.CommandResponse{
+			ResponseType: model.CommandResponseTypeEphemeral,
+			Text:         *result,
 			ChannelId:    args.ChannelId,
 		}, nil
 	}

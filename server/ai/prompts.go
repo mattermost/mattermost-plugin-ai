@@ -24,6 +24,8 @@ const (
 	PromptMeetingSummary        = "meeting_summary"
 	PromptMeetingSummaryOnly    = "summary_only"
 	PromptMeetingKeyPoints      = "meeting_key_points"
+	PromptSpellcheck            = "spellcheck"
+	PromptChangeTone            = "change_tone"
 )
 
 func NewPrompts(input fs.FS) (*Prompts, error) {

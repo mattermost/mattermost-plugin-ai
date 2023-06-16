@@ -309,3 +309,38 @@ func (p *Plugin) handleCallRecordingPost(recordingPost *model.Post) (err error) 
 
 	return nil
 }
+
+func (p *Plugin) spellcheckMessage(message string) (*string, error) {
+	prompt, err := p.prompts.ChatCompletion(ai.PromptSpellcheck, map[string]string{"Message": message})
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := p.getLLM().ChatCompletionNoStream(prompt, ai.WithmaxTokens(128))
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func (p *Plugin) changeTone(tone, message string) (*string, error) {
+	if tone != "professional" && tone != "casual" {
+		return nil, fmt.Errorf("unsupported tone: %s", tone)
+	}
+
+	prompt, err := p.prompts.ChatCompletion(ai.PromptChangeTone, map[string]string{
+		"Tone":    tone,
+		"Message": message,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := p.getLLM().ChatCompletionNoStream(prompt, ai.WithmaxTokens(128))
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
