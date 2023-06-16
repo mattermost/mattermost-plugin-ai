@@ -325,10 +325,6 @@ func (p *Plugin) spellcheckMessage(message string) (*string, error) {
 }
 
 func (p *Plugin) changeTone(tone, message string) (*string, error) {
-	if tone != "professional" && tone != "casual" {
-		return nil, fmt.Errorf("unsupported tone: %s", tone)
-	}
-
 	prompt, err := p.prompts.ChatCompletion(ai.PromptChangeTone, map[string]string{
 		"Tone":    tone,
 		"Message": message,
