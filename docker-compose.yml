@@ -9,8 +9,6 @@ services:
     restart: "unless-stopped"
     depends_on:
       - "db"
-    env_file:
-      - "./mattermost/.docker.env"
     ports:
       - "8065:8065"
     environment:
@@ -21,6 +19,7 @@ services:
       MM_SERVICESETTINGS_ENABLEBOTACCOUNTCREATION: "true"
       MM_SERVICESETTINGS_ENABLEUSERACCESSTOKENS: "true"
       MM_SERVICESETTINGS_ENABLEOAUTHSERVICEPROVIDER: "true"
+      MM_SERVICESETTINGS_ENABLEDEVELOPER: "true"
       MM_PLUGINSETTINGS_ENABLEUPLOADS: "true"
       MM_LOGSETTINGS_CONSOLELEVEL: "DEBUG"
       MM_LOGSETTINGS_FILELEVEL: "DEBUG"

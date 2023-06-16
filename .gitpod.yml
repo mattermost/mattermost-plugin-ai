@@ -1,0 +1,7 @@
+tasks:
+  - name: mattermost
+    command: "docker compose up -d && bash ./init.sh"
+ports:
+  - name: mattermost
+    port: 8065
+    onOpen: open-browser

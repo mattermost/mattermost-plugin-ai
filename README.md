@@ -1,5 +1,7 @@
 # Mattermost AI Plugin
 
+[![Open in Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/mattermost/mattermost-plugin-ai)
+
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen.svg?style=flat-square)](https://github.com/RichardLitt/standard-readme)
 
 ![Screenshot](/img/mention_bot.png)
@@ -10,6 +12,8 @@
   - [Table of Contents](#table-of-contents)
   - [Background](#background)
   - [Install Mattermost + `mattermost-plugin-ai`](#install-mattermost--mattermost-plugin-ai)
+    - [Local](#local)
+    - [Gitpod](#gitpod)
   - [Usage](#usage)
     - [Conversation](#conversation)
     - [Thread Summarization](#thread-summarization)
@@ -31,6 +35,8 @@ This plugin is currently experimental. More options and the ability to use local
 
 ## Install Mattermost + `mattermost-plugin-ai`
 
+### Local
+
 1. Clone and enter this repository:
   * `git clone https://github.com/mattermost/mattermost-plugin-ai && cd mattermost-plugin-ai`
 2. Create a `.env.docker` file inside a `mattermost` folder.
@@ -48,7 +54,21 @@ This plugin is currently experimental. More options and the ability to use local
   * In the top left Mattermost menu, click **System Console** ➡️ [**Mattermost AI Plugin**](http://localhost:8065/admin_console/plugins/plugin_mattermost-ai)
   * Enable the plugin and configure plugin settings as desired.
 
-For example, you can configure your OpenAI API key and allowed teams/users as desired.
+### Gitpod
+
+[![Open in Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/mattermost/mattermost-plugin-ai)
+
+1. Select the above badge to start your Gitpod workspace
+2. The workspace will configure itself automatically. Wait for the services to start and for your `root` login for Mattermost to be generated in the terminal
+3. Access Mattermost and log in with the generated `root` credentials
+5. Configure the plugin:
+  * Open Mattermost at `http://localhost:8065`
+  * Select **View in Browser**
+  * Log in with the generated `root` credentials
+  * In the top left Mattermost menu, click **System Console** ➡️ [**Mattermost AI Plugin**](http://localhost:8065/admin_console/plugins/plugin_mattermost-ai)
+  * Enable the plugin and configure plugin settings as desired.
+
+You're now ready to use the example `mattermost-plugin-ai`. Add it to your desired teams/channels or message it directly via **@ai**! You can also interact with the plugin's features via the actions menu on any message! 🤖🎉
 
 ## Usage
 
