@@ -12,7 +12,8 @@ import (
 )
 
 const (
-	WhisperAPILimit = 25 * (1024 * 1024) // 25 MB
+	WhisperAPILimit           = 25 * (1024 * 1024) // 25 MB
+	defaultSpellcheckLanguage = "English"
 )
 
 func (p *Plugin) processUserRequestToBot(post *model.Post, channel *model.Channel) error {
@@ -311,7 +312,10 @@ func (p *Plugin) handleCallRecordingPost(recordingPost *model.Post) (err error) 
 }
 
 func (p *Plugin) spellcheckMessage(message string) (*string, error) {
-	prompt, err := p.prompts.ChatCompletion(ai.PromptSpellcheck, map[string]string{"Message": message})
+	prompt, err := p.prompts.ChatCompletion(ai.PromptSpellcheck, map[string]string{
+		"Message":  message,
+		"Language": defaultSpellcheckLanguage,
+	})
 	if err != nil {
 		return nil, err
 	}

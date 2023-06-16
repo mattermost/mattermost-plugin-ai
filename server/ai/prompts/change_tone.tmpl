@@ -6,5 +6,8 @@ Avoid complex words.
 {{end}}
 Provide only the resulting text as an answer.
 Avoid greetings and sign-offs.
-The original text: "{{.Message}}"
+The original text is:
+{{end}}
+{{define "change_tone.user"}}
+{{.Message}}
 {{end}}
