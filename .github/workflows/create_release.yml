@@ -1,0 +1,35 @@
+name: Create Release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'The version in semver `x.x.x` Note: no leading `v`'
+        required: true
+        type: string
+      branch:
+        description: 'The branch to create the release from'
+        required: true
+        default: 'master'
+        type: string
+
+jobs:
+  tag-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.branch }}
+      - run: jq '.version = "${{inputs.version}}"' plugin.json > plugin.json.new && mv plugin.json.new plugin.json
+      - run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add .
+          git commit -m "Update version to ${{inputs.version}}"
+          git push origin ${{inputs.branch}}
+          git tag -a v${{inputs.version}} -m "v${{inputs.version}}"
+          git push origin v${{inputs.version}}
+
+      # Have to manually run this since workflows don't trigger for the github token
+      - run: gh workflow run build.yml --ref v${{inputs.version}}
+        env:
+          GH_TOKEN: ${{github.token}}

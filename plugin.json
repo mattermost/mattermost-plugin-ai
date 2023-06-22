@@ -1,116 +1,137 @@
 {
-    "id": "mattermost-ai",
-    "name": "Mattermost AI Plugin",
-    "description": "",
-    "homepage_url": "https://github.com/mattermost/mattermost-plugin-ai",
-    "support_url": "https://github.com/mattermost/mattermost-plugin-ai/issues",
-    "release_notes_url": "https://github.com/mattermost/mattermost-plugin-ai",
-    "icon_path": "assets/bot_icon.png",
-    "version": "0.1.0",
-    "min_server_version": "6.2.1",
-    "server": {
-        "executables": {
-            "linux-amd64": "server/dist/plugin-linux-amd64",
-            "linux-arm64": "server/dist/plugin-linux-arm64",
-            "darwin-amd64": "server/dist/plugin-darwin-amd64",
-            "darwin-arm64": "server/dist/plugin-darwin-arm64",
-            "windows-amd64": "server/dist/plugin-windows-amd64.exe"
-        }
-    },
-    "webapp": {
-        "bundle_path": "webapp/dist/main.js"
-    },
-    "settings_schema": {
-        "header": "",
-        "footer": "",
-        "settings": [
-            {
-                "key": "OpenAIAPIKey",
-                "type": "text",
-                "display_name": "OpenAI API Key:"
-            },
-            {
-                "key": "OpenAIDefaultModel",
-                "type": "text",
-                "display_name": "OpenAI Default Model:"
-            },
-            {
-                "key": "OpenAICompatibleUrl",
-                "type": "text",
-                "display_name": "OpenAI Compatible API url:"
-            },
-            {
-                "key": "OpenAICompatibleKey",
-                "type": "text",
-                "display_name": "OpenAI Compatible API Key:"
-            },
-            {
-                "key": "OpenAICompatibleModel",
-                "type": "text",
-                "display_name": "OpenAI Compatible model:"
-            },
-            {
-                "key": "AnthropicAPIKey",
-                "type": "text",
-                "display_name": "Anthropic API Key:"
-            },
-            {
-                "key": "AnthropicDefaultModel",
-                "type": "text",
-                "display_name": "Anthropic Default Model:"
-            },
-            {
-                "key": "LLMGenerator",
-                "type": "dropdown",
-                "display_name": "AI Large Language Model service",
-                "options": [
-                    {"display_name": "None", "value": ""},
-                    {"display_name": "Open AI", "value": "openai"},
-                    {"display_name": "Open AI Compatible", "value": "openaicompatible"},
-                    {"display_name": "Anthropic", "value": "anthropic"}
-                ],
-                "default": "openai"
-            },
-            {
-                "key": "ImageGenerator",
-                "type": "dropdown",
-                "display_name": "AI to generate images",
-                "options": [
-                    {"display_name": "None", "value": ""},
-                    {"display_name": "Open AI", "value": "openai"},
-                    {"display_name": "Open AI Compatible", "value": "openaicompatible"}
-                ],
-                "default": "openai"
-            },
-            {
-                "key": "EnableAutomaticCallsSummary",
-                "type": "bool",
-                "display_name": "Enable Automatic Calls Summary:",
-				"help_text": "Automatically create a summary of any recorded call.",
-				"default": false
-            },
-            {
-                "key": "EnableUseRestrictions",
-                "type": "bool",
-                "display_name": "Enable Use Restrictions:",
-				"help_text": "Global flag for all below settings."
-            },
-            {
-                "key": "AllowPrivateChannels",
-                "type": "bool",
-                "display_name": "Allow Private Channels:"
-            },
-            {
-                "key": "AllowedTeamIDs",
-                "type": "text",
-                "display_name": "Allowed Team IDs (csv):"
-            },
-            {
-                "key": "OnlyUsersOnTeam",
-                "type": "text",
-                "display_name": "Only Users on Team: ",
-				"help_text": "Only users on this team will be allowed to use the plugin"
-            }
-        ]
+  "id": "mattermost-ai",
+  "name": "Mattermost AI Plugin",
+  "description": "",
+  "homepage_url": "https://github.com/mattermost/mattermost-plugin-ai",
+  "support_url": "https://github.com/mattermost/mattermost-plugin-ai/issues",
+  "release_notes_url": "https://github.com/mattermost/mattermost-plugin-ai",
+  "icon_path": "assets/bot_icon.png",
+  "version": "0.1.0",
+  "min_server_version": "6.2.1",
+  "server": {
+    "executables": {
+      "linux-amd64": "server/dist/plugin-linux-amd64",
+      "linux-arm64": "server/dist/plugin-linux-arm64",
+      "darwin-amd64": "server/dist/plugin-darwin-amd64",
+      "darwin-arm64": "server/dist/plugin-darwin-arm64",
+      "windows-amd64": "server/dist/plugin-windows-amd64.exe"
     }
+  },
+  "webapp": {
+    "bundle_path": "webapp/dist/main.js"
+  },
+  "settings_schema": {
+    "header": "",
+    "footer": "",
+    "settings": [
+      {
+        "key": "OpenAIAPIKey",
+        "type": "text",
+        "display_name": "OpenAI API Key:"
+      },
+      {
+        "key": "OpenAIDefaultModel",
+        "type": "text",
+        "display_name": "OpenAI Default Model:"
+      },
+      {
+        "key": "OpenAICompatibleUrl",
+        "type": "text",
+        "display_name": "OpenAI Compatible API url:"
+      },
+      {
+        "key": "OpenAICompatibleKey",
+        "type": "text",
+        "display_name": "OpenAI Compatible API Key:"
+      },
+      {
+        "key": "OpenAICompatibleModel",
+        "type": "text",
+        "display_name": "OpenAI Compatible model:"
+      },
+      {
+        "key": "AnthropicAPIKey",
+        "type": "text",
+        "display_name": "Anthropic API Key:"
+      },
+      {
+        "key": "AnthropicDefaultModel",
+        "type": "text",
+        "display_name": "Anthropic Default Model:"
+      },
+      {
+        "key": "LLMGenerator",
+        "type": "dropdown",
+        "display_name": "AI Large Language Model service",
+        "options": [
+          {
+            "display_name": "None",
+            "value": ""
+          },
+          {
+            "display_name": "Open AI",
+            "value": "openai"
+          },
+          {
+            "display_name": "Open AI Compatible",
+            "value": "openaicompatible"
+          },
+          {
+            "display_name": "Anthropic",
+            "value": "anthropic"
+          }
+        ],
+        "default": "openai"
+      },
+      {
+        "key": "ImageGenerator",
+        "type": "dropdown",
+        "display_name": "AI to generate images",
+        "options": [
+          {
+            "display_name": "None",
+            "value": ""
+          },
+          {
+            "display_name": "Open AI",
+            "value": "openai"
+          },
+          {
+            "display_name": "Open AI Compatible",
+            "value": "openaicompatible"
+          }
+        ],
+        "default": "openai"
+      },
+      {
+        "key": "EnableAutomaticCallsSummary",
+        "type": "bool",
+        "display_name": "Enable Automatic Calls Summary:",
+        "help_text": "Automatically create a summary of any recorded call.",
+        "default": false
+      },
+      {
+        "key": "EnableUseRestrictions",
+        "type": "bool",
+        "display_name": "Enable Use Restrictions:",
+        "help_text": "Global flag for all below settings."
+      },
+      {
+        "key": "AllowPrivateChannels",
+        "type": "bool",
+        "display_name": "Allow Private Channels:"
+      },
+      {
+        "key": "AllowedTeamIDs",
+        "type": "text",
+        "display_name": "Allowed Team IDs (csv):"
+      },
+      {
+        "key": "OnlyUsersOnTeam",
+        "type": "text",
+        "display_name": "Only Users on Team: ",
+        "help_text": "Only users on this team will be allowed to use the plugin"
+      }
+    ]
+  }
 }
