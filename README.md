@@ -2,7 +2,7 @@
 
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen.svg?style=flat-square)](https://github.com/RichardLitt/standard-readme)
 
-![Screenshot](/img/mention_bot.png)
+![Screenshot](/img/banner_fun.png)
 
 # Table of Contents
 
