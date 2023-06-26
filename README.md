@@ -41,9 +41,13 @@ This plugin is currently experimental. Contributions and suggestions are welcome
 ### Local Development
 
 1. Clone and enter this repository:
-  * `git clone https://github.com/mattermost/mattermost-plugin-ai && cd mattermost-plugin-ai`
+    ```bash
+    git clone https://github.com/mattermost/mattermost-plugin-ai && cd mattermost-plugin-ai
+    ```
 1. Install `mattermost-plugin-ai` on Mattermost:
-  * `MM_SERVICESETTINGS_SITEURL=http://localhost:8065 MM_ADMIN_USERNAME=<YOUR_USERNAME> MM_ADMIN_PASSWORD=<YOUR_PASSWORD> make deploy`
+    ```bash
+    `MM_SERVICESETTINGS_SITEURL=http://localhost:8065 MM_ADMIN_USERNAME=<YOUR_USERNAME> MM_ADMIN_PASSWORD=<YOUR_PASSWORD> make deploy`
+    ```
 1. Access Mattermost and configure the plugin:
   * Open Mattermost at `http://localhost:8065`
   * Select **View in Browser**
