@@ -56,7 +56,7 @@ This plugin is currently experimental. Contributions and suggestions are welcome
 
 ### Gitpod Demo
 
-See out demo setup [OpenOps](https://github.com/mattermost/openops#install-openops-mattermost--mattermost-plugin-ai) for an easy to start demo. 
+See our demo setup [OpenOps](https://github.com/mattermost/openops#install-openops-mattermost--mattermost-plugin-ai) for an easy to start demo. 
 
 ## Usage
 
