@@ -77,6 +77,11 @@ Just mention @ai anywhere in Mattermost to ask it to respond. It will be given t
 
 ![Chat anywhere](/img/chat_anywhere.png)
 
+### Create meeting summary
+Create meeting summaries! Designed to work with the [calls plugin's](https://github.com/mattermost/mattermost-plugin-calls) recording feature.
+
+![Meeting Summary](/img/meeting_summary.png)
+
 ### React for me
 Just for fun! Use the post menu to ask the bot to react to the post. It will try to pick an appropriate reaction.
 
