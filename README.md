@@ -1,97 +1,81 @@
 # Mattermost AI Plugin
 
-[![Open in Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/mattermost/mattermost-plugin-ai)
-
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen.svg?style=flat-square)](https://github.com/RichardLitt/standard-readme)
 
 ![Screenshot](/img/mention_bot.png)
 
-## Table of Contents
+# Table of Contents
 
-- [Mattermost AI Plugin](#mattermost-ai-plugin)
-  - [Table of Contents](#table-of-contents)
-  - [Background](#background)
-  - [Install Mattermost + `mattermost-plugin-ai`](#install-mattermost--mattermost-plugin-ai)
-    - [Local](#local)
-    - [Gitpod](#gitpod)
-  - [Usage](#usage)
-    - [Conversation](#conversation)
-    - [Thread Summarization](#thread-summarization)
-    - [Answer questions about Threads](#answer-questions-about-threads)
-    - [Chat anywhere](#chat-anywhere)
-    - [React for me](#react-for-me)
-    - [RLHF Feedback Collection](#rlhf-feedback-collection)
-  - [Related Efforts](#related-efforts)
-  - [Contributing](#contributing)
-  - [License](#license)
+- [Background](#background)
+- [Install Mattermost + `mattermost-plugin-ai`](#install-mattermost-plugin-ai)
+  - [On my existing MM server](#on-my-existing-mm-server)
+  - [Local Development](#local-development)
+  - [Gitpod Demo](#gitpod-demo)
+- [Usage](#usage)
+  - [Streaming Conversation](#streaming-conversation)
+  - [Thread Summarization](#thread-summarization)
+  - [Answer questions about Threads](#answer-questions-about-threads)
+  - [Chat anywhere](#chat-anywhere)
+  - [React for me](#react-for-me)
+  - [RLHF Feedback Collection](#rlhf-feedback-collection)
+- [Related Efforts](#related-efforts)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Background
 
-**🚀 Join [Mattermost's AI discussion forums](https://forum.mattermost.com/c/ai-frameworks/40) and the ["AI Exchange" community server channel](https://community.mattermost.com/core/channels/ai-exchange) where Mattermost's open source community is sharing the latest AI resources and innovations!**
+**🚀 Join the ["AI Exchange" community server channel](https://community.mattermost.com/core/channels/ai-exchange) where Mattermost's open source community is sharing the latest AI resources and innovations!**
 
-The LLM extensions plugin adds functionality to use and develop LLMs (like from OpenAI or Hugging Face) within Mattermost. 
+The Mattermost AI plugin adds functionality to use LLMs (like from OpenAI or Hugging Face) within Mattermost. 
 
-This plugin is currently experimental. More options and the ability to use local LLMs is on the roadmap. Contributions and suggestions are welcome, [see below](#contributing)! 
+This plugin is currently experimental. Contributions and suggestions are welcome, [see below](#contributing)! 
 
 ## Install Mattermost + `mattermost-plugin-ai`
 
-### Local
+### On my existing MM server
+
+1. Download the latest release from https://github.com/mattermost/mattermost-plugin-ai/releases
+1. Upload it to your server via System Console > Plugin Management.
+1. Enable the plugin and configure the settings as desired. 
+
+### Local Development
 
 1. Clone and enter this repository:
   * `git clone https://github.com/mattermost/mattermost-plugin-ai && cd mattermost-plugin-ai`
-2. Create a `.env.docker` file inside a `mattermost` folder.
-   - You can adjust this accordingly based on the environment variables you see in the [`docker-compose.yml`](./docker-compose.yml) file.
-3. Start the services:
-  * `docker compose up -d`
-4. Configure the Mattermost server from the init script:
-  * `bash ./init.sh`
-5. Install `mattermost-plugin-ai` on Mattermost from the command line:
-  * `MM_SERVICESETTINGS_SITEURL=http://localhost:8065 MM_ADMIN_USERNAME=root MM_ADMIN_PASSWORD=<YOUR_PASSWORD> make deploy`
-6. Access Mattermost and configure the plugin:
+1. Install `mattermost-plugin-ai` on Mattermost:
+  * `MM_SERVICESETTINGS_SITEURL=http://localhost:8065 MM_ADMIN_USERNAME=<YOUR_USERNAME> MM_ADMIN_PASSWORD=<YOUR_PASSWORD> make deploy`
+1. Access Mattermost and configure the plugin:
   * Open Mattermost at `http://localhost:8065`
   * Select **View in Browser**
-  * Log in with the generated `root` credentials
   * In the top left Mattermost menu, click **System Console** ➡️ [**Mattermost AI Plugin**](http://localhost:8065/admin_console/plugins/plugin_mattermost-ai)
   * Enable the plugin and configure plugin settings as desired.
 
-### Gitpod
+### Gitpod Demo
 
-[![Open in Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/mattermost/mattermost-plugin-ai)
-
-1. Select the above badge to start your Gitpod workspace
-2. The workspace will configure itself automatically. Wait for the services to start and for your `root` login for Mattermost to be generated in the terminal
-3. Access Mattermost and log in with the generated `root` credentials
-5. Configure the plugin:
-  * Open Mattermost at `http://localhost:8065`
-  * Select **View in Browser**
-  * Log in with the generated `root` credentials
-  * In the top left Mattermost menu, click **System Console** ➡️ [**Mattermost AI Plugin**](http://localhost:8065/admin_console/plugins/plugin_mattermost-ai)
-  * Enable the plugin and configure plugin settings as desired.
-
-You're now ready to use the example `mattermost-plugin-ai`. Add it to your desired teams/channels or message it directly via **@ai**! You can also interact with the plugin's features via the actions menu on any message! 🤖🎉
+See out demo setup [OpenOps](https://github.com/mattermost/openops#install-openops-mattermost--mattermost-plugin-ai) for an easy to start demo. 
 
 ## Usage
 
-### Conversation
+### Streaming Conversation
 
 Chat with an LLM right inside the Mattermost interface. Answer are streamed so you don't have to wait:
 
-https://github.com/mattermost/mattermost-plugin-ai/assets/3191642/f375f1a2-61bf-4ae1-839b-07e44461809b
+![Summarizing Thread](/img/summarize_thread.gif)
 
 ### Thread Summarization
-Use the post menu or the `/summarize` command to get a summary of the thread in a DM:
+Use the post menu or the `/summarize` command to get a summary of the thread in a Direct Message from the AI Bot:
 
-![Summarizing Thread](/img/summarize_thread.png)
+![Summarizing Thread](/img/summarize_button.gif)
 
 ### Answer questions about Threads
 Respond to the bot post to ask follow up questions:
 
-https://github.com/mattermost/mattermost-plugin-ai/assets/3191642/6fed05e2-ee68-40db-9ee4-870c61ccf5dd
+![Thread Interrogation](/img/thread_interrogation.png)
 
 ### Chat anywhere
 Just mention @ai anywhere in Mattermost to ask it to respond. It will be given the context of the thread you are participating in:
 
-![Bot Chat](/img/mention_bot.png)
+![Chat anywhere](/img/chat_anywhere.png)
 
 ### React for me
 Just for fun! Use the post menu to ask the bot to react to the post. It will try to pick an appropriate reaction.
@@ -99,7 +83,7 @@ Just for fun! Use the post menu to ask the bot to react to the post. It will try
 https://github.com/mattermost/mattermost-plugin-ai/assets/3191642/5282b066-86b5-478d-ae10-57c3cb3ba038
 
 ### RLHF Feedback Collection
-Bot posts will have 👍 👎 icons that will later be used to collect feedback for RLHF fine tuning. The idea would be to use this as input for RLHF fine tuning.
+Bot posts have 👍 👎 icons that collect user feedback. The idea would be to use this as input for RLHF fine tuning or prompt development.
 
 ## Related Efforts
 
@@ -107,7 +91,13 @@ Explore Mattermost's AI initiatives via the ["Welcome to Mattermost’s AI Commu
 
 ## Contributing
 
-Visit [our AI developer website](https://mattermost.github.io/mattermost-ai-site/) and check out Mattermost's [contributor guide](https://developers.mattermost.com/contribute/) to learn about contributing to our open source projects like this one.
+To contribute to the project see [contributor guide](https://developers.mattermost.com/contribute/)
+
+Join the [AI Exchange channel](https://community.mattermost.com/core/channels/ai-exchange) on our community server to discuss any questions.
+
+Read our documentation about the [Developer Workflow](https://developers.mattermost.com/extend/plugins/developer-workflow/) and [Developer Setup](https://developers.mattermost.com/extend/plugins/developer-setup/) for more information about developing and extending plugins.
+
+See the [issues](https://github.com/mattermost/mattermost-plugin-ai/issues) for what you can do to help.
 
 ## License
 
