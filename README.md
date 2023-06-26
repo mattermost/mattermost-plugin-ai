@@ -8,7 +8,7 @@
 
 - [Background](#background)
 - [Install Mattermost + `mattermost-plugin-ai`](#install-mattermost-plugin-ai)
-  - [On my existing MM server](#on-my-existing-mm-server)
+  - [On my existing MM server](#on-existing-mattermost-server)
   - [Local Development](#local-development)
   - [Gitpod Demo](#gitpod-demo)
 - [Usage](#usage)
@@ -32,7 +32,7 @@ This plugin is currently experimental. Contributions and suggestions are welcome
 
 ## Install Mattermost + `mattermost-plugin-ai`
 
-### On my existing MM server
+### On existing Mattermost server
 
 1. Download the latest release from https://github.com/mattermost/mattermost-plugin-ai/releases
 1. Upload it to your server via System Console > Plugin Management.
