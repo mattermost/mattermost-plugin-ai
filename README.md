@@ -1,8 +1,8 @@
 # Mattermost AI Plugin
 
-[![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen.svg?style=flat-square)](https://github.com/RichardLitt/standard-readme)
-
 ![Screenshot](/img/banner_fun.png)
+
+[![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen.svg?style=flat-square)](https://github.com/RichardLitt/standard-readme)
 
 # Table of Contents
 
@@ -26,9 +26,11 @@
 
 **🚀 Join the ["AI Exchange" community server channel](https://community.mattermost.com/core/channels/ai-exchange) where Mattermost's open source community is sharing the latest AI resources and innovations!**
 
-The Mattermost AI plugin adds functionality to use LLMs (like from OpenAI or Hugging Face) within Mattermost. 
+The Mattermost AI plugin adds functionality to use a wide variety of open source self hosted and vendor-hosted LLMs like OpenAI and GPT4All within Mattermost. 
 
 This plugin is currently experimental. Contributions and suggestions are welcome, [see below](#contributing)! 
+
+The Mattermost AI Plugin is used as part of the [Mattermost OpenOps](https://openops.mattermost.com) framework for responsible development of AI-enhanced workflows with the ability to maintain full data control and data portability across different AI backends. 
 
 ## Install Mattermost + `mattermost-plugin-ai`
 
