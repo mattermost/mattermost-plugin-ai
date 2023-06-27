@@ -1,5 +1,9 @@
 # Mattermost AI Plugin
 
+The Mattermost AI Plugin is part of the [Mattermost OpenOps](https://openops.mattermost.com) framework for responsible development of AI-enhanced workflows with the ability to maintain full data control and data portability across different AI backends. 
+
+It connects the Mattermost secure collaboration platform with an array of open source, self-hosted LLMs from services like Hugging Face, including GPT4All and Falcon LLM, along with vendor-hosted generative AI models from Azure AI, OpenAI, Anthropic and others. 
+
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen.svg?style=flat-square)](https://github.com/RichardLitt/standard-readme)
 
 ![Screenshot](/img/banner_fun.png)
