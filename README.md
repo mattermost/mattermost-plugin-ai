@@ -6,21 +6,26 @@
 
 # Table of Contents
 
-- [Background](#background)
-- [Install Mattermost + `mattermost-plugin-ai`](#install-mattermost-plugin-ai)
-  - [On my existing MM server](#on-existing-mattermost-server)
-  - [Local Development](#local-development)
-  - [Gitpod Demo](#gitpod-demo)
-- [Usage](#usage)
-  - [Streaming Conversation](#streaming-conversation)
-  - [Thread Summarization](#thread-summarization)
-  - [Answer questions about Threads](#answer-questions-about-threads)
-  - [Chat anywhere](#chat-anywhere)
-  - [React for me](#react-for-me)
-  - [RLHF Feedback Collection](#rlhf-feedback-collection)
-- [Related Efforts](#related-efforts)
-- [Contributing](#contributing)
-- [License](#license)
+- [Mattermost AI Plugin](#mattermost-ai-plugin)
+- [Table of Contents](#table-of-contents)
+  - [Background](#background)
+  - [Install Mattermost + `mattermost-plugin-ai`](#install-mattermost--mattermost-plugin-ai)
+    - [On existing Mattermost server](#on-existing-mattermost-server)
+    - [Local Development](#local-development)
+    - [Gitpod Demo](#gitpod-demo)
+  - [Usage](#usage)
+    - [Streaming Conversation](#streaming-conversation)
+    - [Thread Summarization](#thread-summarization)
+    - [Answer questions about Threads](#answer-questions-about-threads)
+    - [Chat anywhere](#chat-anywhere)
+    - [Create meeting summary](#create-meeting-summary)
+    - [React for me](#react-for-me)
+    - [RLHF Feedback Collection](#rlhf-feedback-collection)
+  - [Community Resources](#community-resources)
+    - [OpenOps \& AI](#openops--ai)
+    - [Mattermost](#mattermost)
+  - [Contributing](#contributing)
+  - [License](#license)
 
 ## Background
 
@@ -96,19 +101,22 @@ https://github.com/mattermost/mattermost-plugin-ai/assets/3191642/5282b066-86b5-
 ### RLHF Feedback Collection
 Bot posts have 👍 👎 icons that collect user feedback. The idea would be to use this as input for RLHF fine tuning or prompt development.
 
-## Related Efforts
+## Community Resources 
 
-Explore Mattermost's AI initiatives via the ["Welcome to Mattermost’s AI Community"](https://forum.mattermost.com/t/welcome-to-mattermosts-ai-community/16144?u=zigler) thread in the [AI forums](https://forum.mattermost.com/c/ai-frameworks/40).
+### OpenOps & AI
+- [OpenOps General Discussion on Mattermost Forum](https://forum.mattermost.com/c/openops-ai/40) 
+- [OpenOps Troubleshooting Discussion on Mattermost Forum](https://forum.mattermost.com/t/openops-ai-troubleshooting/15942/)
+- [OpenOps Q&A on Mattermost Forum](https://forum.mattermost.com/t/openops-ai-faqs/16287)
+- [OpenOps "AI Exchange" channel on Mattermost Community server](https://community.mattermost.com/core/channels/ai-exchange) (for Mattermost community interested in AI)
+- [OpenOps Discord Server](https://discord.gg/VqzB4bz6) (for AI community interested in Mattermost) 
+
+### Mattermost
+- [Mattermost Troubleshooting Discussion on Mattermost Forum](https://forum.mattermost.com/c/trouble-shoot/16)
+- [Mattermost "Peer-to-peer Help" channel on Mattermost Community server](https://community.mattermost.com/core/channels/peer-to-peer-help)
 
 ## Contributing
 
-To contribute to the project see [contributor guide](https://developers.mattermost.com/contribute/)
-
-Join the [AI Exchange channel](https://community.mattermost.com/core/channels/ai-exchange) on our community server to discuss any questions.
-
-Read our documentation about the [Developer Workflow](https://developers.mattermost.com/extend/plugins/developer-workflow/) and [Developer Setup](https://developers.mattermost.com/extend/plugins/developer-setup/) for more information about developing and extending plugins.
-
-See the [issues](https://github.com/mattermost/mattermost-plugin-ai/issues) for what you can do to help.
+Thank you for your interest in contributing to our open source project! ❤️ To get started, please read the [contributor guidelines](./CONTRIBUTING.md) for this repository.
 
 ## License
 
