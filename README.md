@@ -22,7 +22,7 @@
     - [React for me](#react-for-me)
     - [RLHF Feedback Collection](#rlhf-feedback-collection)
   - [Community Resources](#community-resources)
-    - [OpenOps \& AI](#openops--ai)
+    - [AI](#ai)
     - [Mattermost](#mattermost)
   - [Contributing](#contributing)
   - [License](#license)
@@ -103,12 +103,11 @@ Bot posts have 👍 👎 icons that collect user feedback. The idea would be to 
 
 ## Community Resources 
 
-### OpenOps & AI
+### AI
+- ["AI Exchange" channel on Mattermost Community server](https://community.mattermost.com/core/channels/ai-exchange) (for Mattermost community interested in AI)
 - [OpenOps General Discussion on Mattermost Forum](https://forum.mattermost.com/c/openops-ai/40) 
 - [OpenOps Troubleshooting Discussion on Mattermost Forum](https://forum.mattermost.com/t/openops-ai-troubleshooting/15942/)
 - [OpenOps Q&A on Mattermost Forum](https://forum.mattermost.com/t/openops-ai-faqs/16287)
-- [OpenOps "AI Exchange" channel on Mattermost Community server](https://community.mattermost.com/core/channels/ai-exchange) (for Mattermost community interested in AI)
-- [OpenOps Discord Server](https://discord.gg/VqzB4bz6) (for AI community interested in Mattermost) 
 
 ### Mattermost
 - [Mattermost Troubleshooting Discussion on Mattermost Forum](https://forum.mattermost.com/c/trouble-shoot/16)
