@@ -1,6 +1,10 @@
 package ai
 
-import "github.com/mattermost/mattermost-server/v6/model"
+import (
+	"strings"
+
+	"github.com/mattermost/mattermost-server/v6/model"
+)
 
 type PostRole int
 
@@ -28,6 +32,16 @@ func (b *BotConversation) AddUserPost(post *model.Post) {
 
 func (b *BotConversation) AppendConversation(conversation BotConversation) {
 	b.Posts = append(b.Posts, conversation.Posts...)
+}
+
+func (b *BotConversation) ExtractSystemMessage() string {
+	var result strings.Builder
+	for _, post := range b.Posts {
+		if post.Role == PostRoleSystem {
+			result.WriteString(post.Message)
+		}
+	}
+	return result.String()
 }
 
 func GetPostRole(botID string, post *model.Post) PostRole {

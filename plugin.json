@@ -60,6 +60,22 @@
         "display_name": "Anthropic Default Model:"
       },
       {
+        "key": "AskSageUsername",
+        "type": "text",
+        "display_name": "Ask Sage Username:"
+      },
+      {
+        "key": "AskSagePassword",
+        "type": "text",
+        "display_name": "Ask Sage Password:",
+        "help_text": "Unfortunately Ask Sage doesn't support API keys so we require a plaintext password here to integrate."
+      },
+      {
+        "key": "AskSageDefaultModel",
+        "type": "text",
+        "display_name": "Ask Sage Default Model:"
+      },
+      {
         "key": "LLMGenerator",
         "type": "dropdown",
         "display_name": "AI Large Language Model service",
@@ -79,6 +95,10 @@
           {
             "display_name": "Anthropic",
             "value": "anthropic"
+          },
+          {
+            "display_name": "Ask Sage",
+            "value": "asksage"
           }
         ],
         "default": "openai"

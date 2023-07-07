@@ -21,6 +21,7 @@
     - [Create meeting summary](#create-meeting-summary)
     - [React for me](#react-for-me)
     - [RLHF Feedback Collection](#rlhf-feedback-collection)
+  - [Supported Backends](#supported-backends)
   - [Community Resources](#community-resources)
     - [AI](#ai)
     - [Mattermost](#mattermost)
@@ -59,7 +60,7 @@ The Mattermost AI Plugin is used as part of the [Mattermost OpenOps](https://ope
   * Open Mattermost at `http://localhost:8065`
   * Select **View in Browser**
   * In the top left Mattermost menu, click **System Console** ➡️ [**Mattermost AI Plugin**](http://localhost:8065/admin_console/plugins/plugin_mattermost-ai)
-  * Enable the plugin and configure plugin settings as desired.
+  * Enable the plugin and configure plugin settings as desired. See [Supported Backends](#supported-backends).
 
 ### Gitpod Demo
 
@@ -100,6 +101,31 @@ https://github.com/mattermost/mattermost-plugin-ai/assets/3191642/5282b066-86b5-
 
 ### RLHF Feedback Collection
 Bot posts have 👍 👎 icons that collect user feedback. The idea would be to use this as input for RLHF fine tuning or prompt development.
+
+## Supported Backends
+
+All backends are configured in the system console settings page for the plugin. 
+Make sure to select your preferred backend under `AI Large Language Model service` on the system console page after configuring. 
+
+### OpenAI (recommended)
+To set this up get an OpenAI api key. You will need to sign up for an account if you don't have one already. You can go to https://platform.openai.com/account/api-keys to create a new one. 
+
+Configure the key in the system console and add a model like `gpt-4` (better) or `gpt-3.5-turbo` (faster and cheaper)
+
+### Anthropic
+You will need to have an invite to the Anthropic API. 
+
+If you do you can create an APi key here: https://console.anthropic.com/account/keys
+
+Configure the API key in the system console and configure a default model like `claude-v1`.
+
+### OpenAI Compatable
+Can support any backend that is OpenAI compatable such as [LocalAI](https://github.com/go-skynet/LocalAI) which we use in the [OpenOps](https://github.com/mattermost/openops) demo.
+
+### Ask Sage
+If you can to use the OpenAI api directly, it is recommended you do that. Ask Sage does not support response streaming leading to a worse user experience. API tokens have not been implemented by Ask Sage therefore the Ask Sage integration requires username and password stored in plaintext in the server configuration. Hopefully these limitations will be resolved.
+
+To configure enter your username and password on the system console page and set the default model such as `gpt-4` or `gpt-3.5-turbo`.
 
 ## Community Resources 
 

@@ -28,6 +28,10 @@ type configuration struct {
 	AnthropicAPIKey       string
 	AnthropicDefaultModel string
 
+	AskSageUsername     string
+	AskSagePassword     string // Not ideal but there is no API key support from AskSage yet
+	AskSageDefaultModel string
+
 	LLMGenerator   string
 	ImageGenerator string
 
