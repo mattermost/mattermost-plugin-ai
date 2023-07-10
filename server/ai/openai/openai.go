@@ -7,6 +7,8 @@ import (
 	"image"
 	"image/png"
 	"io"
+	"net/url"
+	"strings"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/pkg/errors"
@@ -19,9 +21,14 @@ type OpenAI struct {
 	defaultModel string
 }
 
-func NewCompatible(apiKey string, url string, model string) *OpenAI {
+func NewCompatible(apiKey string, endpointUrl string, model string) *OpenAI {
 	config := openai.DefaultConfig(apiKey)
-	config.BaseURL = url
+	config.BaseURL = endpointUrl
+
+	parsedUrl, err := url.Parse(endpointUrl)
+	if err == nil && strings.HasSuffix(parsedUrl.Host, "openai.azure.com") {
+		config = openai.DefaultAzureConfig(apiKey, endpointUrl)
+	}
 	return &OpenAI{
 		client:       openaiClient.NewClientWithConfig(config),
 		defaultModel: model,
