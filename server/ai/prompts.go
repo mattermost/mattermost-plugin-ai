@@ -48,6 +48,7 @@ func (p *Prompts) ChatCompletion(templateName string, data any) (BotConversation
 	conversation := BotConversation{
 		Posts: []Post{},
 	}
+	conversation.AddBuiltInTools()
 
 	template := p.templates.Lookup(withPromptExtension(templateName))
 	if template == nil {
