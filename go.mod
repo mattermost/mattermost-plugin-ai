@@ -10,7 +10,7 @@ require (
 	github.com/mattermost/mattermost-server/v6 v6.2.1
 	github.com/pkg/errors v0.9.1
 	github.com/r3labs/sse/v2 v2.10.0
-	github.com/sashabaranov/go-openai v1.10.0
+	github.com/sashabaranov/go-openai v1.13.0
 	github.com/stretchr/testify v1.8.2
 )
 
@@ -36,6 +36,8 @@ require (
 	github.com/hashicorp/go-hclog v1.2.2 // indirect
 	github.com/hashicorp/go-plugin v1.4.4 // indirect
 	github.com/hashicorp/yamux v0.1.1 // indirect
+	github.com/iancoleman/orderedmap v0.2.0 // indirect
+	github.com/invopop/jsonschema v0.7.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.16.4 // indirect
 	github.com/klauspost/cpuid/v2 v2.1.0 // indirect

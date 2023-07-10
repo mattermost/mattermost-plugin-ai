@@ -21,6 +21,7 @@ type Post struct {
 
 type BotConversation struct {
 	Posts []Post
+	Tools []Tool
 }
 
 func (b *BotConversation) AddUserPost(post *model.Post) {
@@ -42,6 +43,10 @@ func (b *BotConversation) ExtractSystemMessage() string {
 		}
 	}
 	return result.String()
+}
+
+func (b *BotConversation) AddBuiltInTools() {
+	b.Tools = append(b.Tools, BuiltInTools...)
 }
 
 func GetPostRole(botID string, post *model.Post) PostRole {
