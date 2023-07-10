@@ -119,7 +119,7 @@ If you do you can create an APi key here: https://console.anthropic.com/account/
 
 Configure the API key in the system console and configure a default model like `claude-v1`.
 
-### Azure
+### Azure OpenAI
 You will need to ask Azure to enable OpenAI in your Azure account before you can use this API.
 
 Once you have been approved, you can create a new OpenAI resource. With the resource created you get access to the API key and the endpoint url clicking in keys and endpoints option of the menu.
