@@ -119,6 +119,15 @@ If you do you can create an APi key here: https://console.anthropic.com/account/
 
 Configure the API key in the system console and configure a default model like `claude-v1`.
 
+### Azure
+You will need to ask Azure to enable OpenAI in your Azure account before you can use this API.
+
+Once you have been approved, you can create a new OpenAI resource. With the resource created you get access to the API key and the endpoint url clicking in keys and endpoints option of the menu.
+
+Finally you have to deploy the model that you are going to use, normally gpt-35-turbo, clicking in "Model deployments", and managing the models from there.
+
+Configure the API key and the endpoint url for OpenAI Compatible in the system console and configure a default model like `gpt-35-turbo`.
+
 ### OpenAI Compatable
 Can support any backend that is OpenAI compatable such as [LocalAI](https://github.com/go-skynet/LocalAI) which we use in the [OpenOps](https://github.com/mattermost/openops) demo.
 
