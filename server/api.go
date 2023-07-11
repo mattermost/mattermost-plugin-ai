@@ -154,12 +154,18 @@ func (p *Plugin) handleReact(c *gin.Context) {
 		return
 	}
 
+	user, err := p.pluginAPI.User.Get(userID)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
 	if err := p.checkUsageRestrictions(userID, channel); err != nil {
 		c.AbortWithError(http.StatusForbidden, err)
 		return
 	}
 
-	if err := p.selectEmoji(post); err != nil {
+	if err := p.selectEmoji(post, ai.NewConversationContext(user, channel, nil)); err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
@@ -183,12 +189,18 @@ func (p *Plugin) handleSummarize(c *gin.Context) {
 		return
 	}
 
+	user, err := p.pluginAPI.User.Get(userID)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
 	if err := p.checkUsageRestrictions(userID, channel); err != nil {
 		c.AbortWithError(http.StatusForbidden, err)
 		return
 	}
 
-	if _, err := p.startNewSummaryThread(post.Id, userID); err != nil {
+	if _, err := p.startNewSummaryThread(postID, ai.NewConversationContext(user, channel, nil)); err != nil {
 		c.AbortWithError(http.StatusInternalServerError, errors.New("Unable to produce summary"))
 		return
 	}
@@ -217,7 +229,7 @@ func (p *Plugin) handleTranscribe(c *gin.Context) {
 		return
 	}
 
-	if err := p.handleCallRecordingPost(post); err != nil {
+	if err := p.handleCallRecordingPost(post, channel); err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}

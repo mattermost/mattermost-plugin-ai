@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-server/v6/model"
 	"github.com/mattermost/mattermost-server/v6/plugin"
 )
@@ -49,12 +50,24 @@ func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*mo
 		return nil, model.NewAppError("Summarize.ExecuteCommand", "app.command.execute.error", nil, "", http.StatusInternalServerError)
 	}
 
+	split := strings.SplitN(strings.TrimSpace(args.Command), " ", 2)
+	command := split[0]
+
+	if command != "/summarize" && command != "/imagine" && command != "/spellcheck" && command != "/change_tone" {
+		return &model.CommandResponse{}, nil
+	}
+
 	channel, err := p.pluginAPI.Channel.Get(args.ChannelId)
 	if err != nil {
 		return nil, model.NewAppError("Summarize.ExecuteCommand", "app.command.execute.error", nil, err.Error(), http.StatusInternalServerError)
 	}
 
-	if err := p.checkUsageRestrictions(args.UserId, channel); err != nil {
+	user, err := p.pluginAPI.User.Get(args.UserId)
+	if err != nil {
+		return nil, model.NewAppError("Summarize.ExecuteCommand", "app.command.execute.error", nil, err.Error(), http.StatusInternalServerError)
+	}
+
+	if err := p.checkUsageRestrictions(user.Id, channel); err != nil {
 		return nil, model.NewAppError("Summarize.ExecuteCommand", "Not authorized", nil, err.Error(), http.StatusUnauthorized)
 	}
 
@@ -64,31 +77,17 @@ func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*mo
 		if err != nil {
 			return nil, model.NewAppError("Summarize.ExecuteCommand", "app.command.execute.error", nil, err.Error(), http.StatusInternalServerError)
 		}
-
 		if post.ChannelId != channel.Id {
 			return nil, model.NewAppError("Summarize.ExecuteCommand", "Not authorized", nil, "", http.StatusUnauthorized)
 		}
 	}
 
-	split := strings.SplitN(strings.TrimSpace(args.Command), " ", 2)
-	command := split[0]
-	/*parameters := []string{}
-	cmd := ""
-	if len(split) > 1 {
-		cmd = split[1]
-	}
-	if len(split) > 2 {
-		parameters = split[2:]
-	}*/
-
-	if command != "/summarize" && command != "/imagine" && command != "/spellcheck" && command != "/change_tone" {
-		return &model.CommandResponse{}, nil
-	}
+	context := ai.NewConversationContext(user, channel, nil)
 
 	if command == "/summarize" {
 		var response *model.CommandResponse
 		var err error
-		response, err = p.summarizeCurrentContext(c, args)
+		response, err = p.summarizeCurrentContext(c, args, context)
 
 		if err != nil {
 			return nil, model.NewAppError("Summarize.ExecuteCommand", "app.command.execute.error", nil, err.Error(), http.StatusInternalServerError)
@@ -138,9 +137,9 @@ func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*mo
 	return &model.CommandResponse{}, nil
 }
 
-func (p *Plugin) summarizeCurrentContext(c *plugin.Context, args *model.CommandArgs) (*model.CommandResponse, error) {
+func (p *Plugin) summarizeCurrentContext(c *plugin.Context, args *model.CommandArgs, context ai.ConversationContext) (*model.CommandResponse, error) {
 	if args.RootId != "" {
-		postid, err := p.startNewSummaryThread(args.RootId, args.UserId)
+		postid, err := p.startNewSummaryThread(args.RootId, context)
 		if err != nil {
 			return nil, err
 		}
