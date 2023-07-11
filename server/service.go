@@ -16,20 +16,21 @@ const (
 	defaultSpellcheckLanguage = "English"
 )
 
-func (p *Plugin) processUserRequestToBot(post *model.Post, channel *model.Channel) error {
-	if post.RootId == "" {
-		return p.newConversation(post)
+func (p *Plugin) processUserRequestToBot(context ai.ConversationContext) error {
+	if context.Post.RootId == "" {
+		return p.newConversation(context)
 	}
 
-	return p.continueConversation(post)
+	return p.continueConversation(context)
 }
 
-func (p *Plugin) newConversation(post *model.Post) error {
-	conversation, err := p.prompts.ChatCompletion(ai.PromptDirectMessageQuestion, nil)
+func (p *Plugin) newConversation(context ai.ConversationContext) error {
+	conversation, err := p.prompts.ChatCompletion(ai.PromptDirectMessageQuestion, context)
 	if err != nil {
 		return err
 	}
-	conversation.AddUserPost(post)
+	conversation.AddUserPost(context.Post)
+	conversation.Tools = p.tools.GetTools()
 
 	result, err := p.getLLM().ChatCompletion(conversation)
 	if err != nil {
@@ -37,8 +38,8 @@ func (p *Plugin) newConversation(post *model.Post) error {
 	}
 
 	responsePost := &model.Post{
-		ChannelId: post.ChannelId,
-		RootId:    post.Id,
+		ChannelId: context.Channel.Id,
+		RootId:    context.Post.Id,
 	}
 	if err := p.streamResultToNewPost(result, responsePost); err != nil {
 		return err
@@ -47,8 +48,8 @@ func (p *Plugin) newConversation(post *model.Post) error {
 	return nil
 }
 
-func (p *Plugin) continueConversation(post *model.Post) error {
-	threadData, err := p.getThreadAndMeta(post.RootId)
+func (p *Plugin) continueConversation(context ai.ConversationContext) error {
+	threadData, err := p.getThreadAndMeta(context.Post.RootId)
 	if err != nil {
 		return err
 	}
@@ -66,11 +67,11 @@ func (p *Plugin) continueConversation(post *model.Post) error {
 			return err
 		}
 
-		if !p.pluginAPI.User.HasPermissionToChannel(post.UserId, threadChannel.Id, model.PermissionReadChannel) ||
-			p.checkUsageRestrictions(post.UserId, threadChannel) != nil {
+		if !p.pluginAPI.User.HasPermissionToChannel(context.Post.UserId, threadChannel.Id, model.PermissionReadChannel) ||
+			p.checkUsageRestrictions(context.Post.UserId, threadChannel) != nil {
 			responsePost := &model.Post{
-				ChannelId: post.ChannelId,
-				RootId:    post.RootId,
+				ChannelId: context.Channel.Id,
+				RootId:    context.Post.RootId,
 				Message:   "Sorry, you no longer have access to the original thread.",
 			}
 			if err := p.botCreatePost(responsePost); err != nil {
@@ -79,12 +80,12 @@ func (p *Plugin) continueConversation(post *model.Post) error {
 			return nil
 		}
 
-		result, err = p.continueThreadConversation(threadData, originalThreadID)
+		result, err = p.continueThreadConversation(threadData, originalThreadID, context)
 		if err != nil {
 			return err
 		}
 	} else {
-		prompt, err := p.prompts.ChatCompletion(ai.PromptDirectMessageQuestion, nil)
+		prompt, err := p.prompts.ChatCompletion(ai.PromptDirectMessageQuestion, context)
 		if err != nil {
 			return err
 		}
@@ -97,8 +98,8 @@ func (p *Plugin) continueConversation(post *model.Post) error {
 	}
 
 	responsePost := &model.Post{
-		ChannelId: post.ChannelId,
-		RootId:    post.RootId,
+		ChannelId: context.Channel.Id,
+		RootId:    context.Post.RootId,
 	}
 	if err := p.streamResultToNewPost(result, responsePost); err != nil {
 		return err
@@ -107,14 +108,15 @@ func (p *Plugin) continueConversation(post *model.Post) error {
 	return nil
 }
 
-func (p *Plugin) continueThreadConversation(questionThreadData *ThreadData, originalThreadID string) (*ai.TextStreamResult, error) {
+func (p *Plugin) continueThreadConversation(questionThreadData *ThreadData, originalThreadID string, context ai.ConversationContext) (*ai.TextStreamResult, error) {
 	originalThreadData, err := p.getThreadAndMeta(originalThreadID)
 	if err != nil {
 		return nil, err
 	}
 	originalThread := formatThread(originalThreadData)
 
-	prompt, err := p.prompts.ChatCompletion(ai.PromptSummarizeThread, map[string]string{"Thread": originalThread})
+	context.PromptParameters = map[string]string{"Thread": originalThread}
+	prompt, err := p.prompts.ChatCompletion(ai.PromptSummarizeThread, context)
 	if err != nil {
 		return nil, err
 	}
@@ -131,15 +133,16 @@ func (p *Plugin) continueThreadConversation(questionThreadData *ThreadData, orig
 const ThreadIDProp = "referenced_thread"
 
 // DM the user with a standard message. Run the inferance
-func (p *Plugin) startNewSummaryThread(postID string, userID string) (string, error) {
-	threadData, err := p.getThreadAndMeta(postID)
+func (p *Plugin) startNewSummaryThread(postIDToSummarize string, context ai.ConversationContext) (string, error) {
+	threadData, err := p.getThreadAndMeta(postIDToSummarize)
 	if err != nil {
 		return "", err
 	}
 
 	formattedThread := formatThread(threadData)
 
-	prompt, err := p.prompts.ChatCompletion(ai.PromptSummarizeThread, map[string]string{"Thread": formattedThread})
+	context.PromptParameters = map[string]string{"Thread": formattedThread}
+	prompt, err := p.prompts.ChatCompletion(ai.PromptSummarizeThread, context)
 	if err != nil {
 		return "", err
 	}
@@ -149,19 +152,20 @@ func (p *Plugin) startNewSummaryThread(postID string, userID string) (string, er
 	}
 
 	post := &model.Post{
-		Message: fmt.Sprintf("A summary of [this thread](/_redirect/pl/%s):\n", postID),
+		Message: fmt.Sprintf("A summary of [this thread](/_redirect/pl/%s):\n", postIDToSummarize),
 	}
-	post.AddProp(ThreadIDProp, postID)
+	post.AddProp(ThreadIDProp, postIDToSummarize)
 
-	if err := p.streamResultToNewDM(summaryStream, userID, post); err != nil {
+	if err := p.streamResultToNewDM(summaryStream, context.RequestingUser.Id, post); err != nil {
 		return "", err
 	}
 
 	return post.Id, nil
 }
 
-func (p *Plugin) selectEmoji(post *model.Post) error {
-	prompt, err := p.prompts.ChatCompletion(ai.PromptEmojiSelect, map[string]string{"Message": post.Message})
+func (p *Plugin) selectEmoji(postToReact *model.Post, context ai.ConversationContext) error {
+	context.PromptParameters = map[string]string{"Message": postToReact.Message}
+	prompt, err := p.prompts.ChatCompletion(ai.PromptEmojiSelect, context)
 	if err != nil {
 		return err
 	}
@@ -178,7 +182,7 @@ func (p *Plugin) selectEmoji(post *model.Post) error {
 		p.pluginAPI.Post.AddReaction(&model.Reaction{
 			EmojiName: "large_red_square",
 			UserId:    p.botid,
-			PostId:    post.Id,
+			PostId:    postToReact.Id,
 		})
 		return errors.New("LLM returned somthing other than emoji: " + emojiName)
 	}
@@ -186,7 +190,7 @@ func (p *Plugin) selectEmoji(post *model.Post) error {
 	if err := p.pluginAPI.Post.AddReaction(&model.Reaction{
 		EmojiName: emojiName,
 		UserId:    p.botid,
-		PostId:    post.Id,
+		PostId:    postToReact.Id,
 	}); err != nil {
 		return err
 	}
@@ -194,7 +198,7 @@ func (p *Plugin) selectEmoji(post *model.Post) error {
 	return nil
 }
 
-func (p *Plugin) handleCallRecordingPost(recordingPost *model.Post) (err error) {
+func (p *Plugin) handleCallRecordingPost(recordingPost *model.Post, channel *model.Channel) (err error) {
 	if len(recordingPost.FileIds) != 1 {
 		return errors.New("Unexpected number of files in calls post")
 	}
@@ -272,12 +276,14 @@ func (p *Plugin) handleCallRecordingPost(recordingPost *model.Post) (err error) 
 		return err
 	}
 
-	summaryPrompt, err := p.prompts.ChatCompletion(ai.PromptMeetingSummaryOnly, map[string]string{"Transcription": transcription})
+	context := ai.NewConversationContext(nil, channel, nil)
+	context.PromptParameters = map[string]string{"Transcription": transcription}
+	summaryPrompt, err := p.prompts.ChatCompletion(ai.PromptMeetingSummaryOnly, context)
 	if err != nil {
 		return err
 	}
 
-	keyPointsPrompt, err := p.prompts.ChatCompletion(ai.PromptMeetingKeyPoints, map[string]string{"Transcription": transcription})
+	keyPointsPrompt, err := p.prompts.ChatCompletion(ai.PromptMeetingKeyPoints, context)
 	if err != nil {
 		return err
 	}
@@ -312,10 +318,11 @@ func (p *Plugin) handleCallRecordingPost(recordingPost *model.Post) (err error) 
 }
 
 func (p *Plugin) spellcheckMessage(message string) (*string, error) {
-	prompt, err := p.prompts.ChatCompletion(ai.PromptSpellcheck, map[string]string{
+	context := ai.NewConversationContextParametersOnly(map[string]string{
 		"Message":  message,
 		"Language": defaultSpellcheckLanguage,
 	})
+	prompt, err := p.prompts.ChatCompletion(ai.PromptSpellcheck, context)
 	if err != nil {
 		return nil, err
 	}
@@ -329,10 +336,11 @@ func (p *Plugin) spellcheckMessage(message string) (*string, error) {
 }
 
 func (p *Plugin) changeTone(tone, message string) (*string, error) {
-	prompt, err := p.prompts.ChatCompletion(ai.PromptChangeTone, map[string]string{
+	context := ai.NewConversationContextParametersOnly(map[string]string{
 		"Tone":    tone,
 		"Message": message,
 	})
+	prompt, err := p.prompts.ChatCompletion(ai.PromptChangeTone, context)
 	if err != nil {
 		return nil, err
 	}

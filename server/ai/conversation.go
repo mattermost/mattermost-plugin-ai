@@ -19,9 +19,31 @@ type Post struct {
 	Message string
 }
 
+type ConversationContext struct {
+	RequestingUser   *model.User
+	Channel          *model.Channel
+	Post             *model.Post
+	PromptParameters map[string]string
+}
+
+func NewConversationContext(reqeustingUser *model.User, channel *model.Channel, post *model.Post) ConversationContext {
+	return ConversationContext{
+		RequestingUser: reqeustingUser,
+		Channel:        channel,
+		Post:           post,
+	}
+}
+
+func NewConversationContextParametersOnly(promptParameters map[string]string) ConversationContext {
+	return ConversationContext{
+		PromptParameters: promptParameters,
+	}
+}
+
 type BotConversation struct {
-	Posts []Post
-	Tools []Tool
+	Posts   []Post
+	Tools   []Tool
+	Context ConversationContext
 }
 
 func (b *BotConversation) AddUserPost(post *model.Post) {
@@ -43,10 +65,6 @@ func (b *BotConversation) ExtractSystemMessage() string {
 		}
 	}
 	return result.String()
-}
-
-func (b *BotConversation) AddBuiltInTools() {
-	b.Tools = append(b.Tools, BuiltInTools...)
 }
 
 func GetPostRole(botID string, post *model.Post) PostRole {

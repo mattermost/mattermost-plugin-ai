@@ -50,6 +50,7 @@ type Plugin struct {
 	builder sq.StatementBuilderType
 
 	prompts *ai.Prompts
+	tools   *ai.ToolStore
 }
 
 func resolveffmpegPath() string {
@@ -96,6 +97,9 @@ func (p *Plugin) OnActivate() error {
 
 	p.registerCommands()
 
+	p.tools = ai.NewToolStore()
+	p.tools.AddTools(p.getBuiltInTools())
+
 	return nil
 }
 
@@ -103,9 +107,9 @@ func (p *Plugin) getLLM() ai.LanguageModel {
 	cfg := p.getConfiguration()
 	switch cfg.LLMGenerator {
 	case "openai":
-		return openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel)
+		return openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel, p.tools)
 	case "openaicompatible":
-		return openai.NewCompatible(cfg.OpenAICompatibleKey, cfg.OpenAICompatibleUrl, cfg.OpenAICompatibleModel)
+		return openai.NewCompatible(cfg.OpenAICompatibleKey, cfg.OpenAICompatibleUrl, cfg.OpenAICompatibleModel, p.tools)
 	case "anthropic":
 		return anthropic.New(cfg.AnthropicAPIKey, cfg.AnthropicDefaultModel)
 	case "asksage":
@@ -119,9 +123,9 @@ func (p *Plugin) getImageGenerator() ai.ImageGenerator {
 	cfg := p.getConfiguration()
 	switch cfg.LLMGenerator {
 	case "openai":
-		return openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel)
+		return openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel, p.tools)
 	case "openaicompatible":
-		return openai.NewCompatible(cfg.OpenAICompatibleKey, cfg.OpenAICompatibleUrl, cfg.OpenAICompatibleModel)
+		return openai.NewCompatible(cfg.OpenAICompatibleKey, cfg.OpenAICompatibleUrl, cfg.OpenAICompatibleModel, p.tools)
 	}
 
 	return nil
@@ -133,7 +137,7 @@ func (p *Plugin) getTranscribe() ai.Transcriber {
 	case "openai":
 		return openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel)
 	}*/
-	return openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel)
+	return openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel, p.tools)
 }
 
 func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
@@ -167,7 +171,7 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 				return
 			}
 		}
-		err = p.processUserRequestToBot(post, channel)
+		err = p.processUserRequestToBot(ai.NewConversationContext(postingUser, channel, post))
 		if err != nil {
 			p.pluginAPI.Log.Error("Unable to process bot reqeust: " + err.Error())
 			return
@@ -192,7 +196,7 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 			return
 		}
 
-		err = p.processUserRequestToBot(post, channel)
+		err = p.processUserRequestToBot(ai.NewConversationContext(postingUser, channel, post))
 		if err != nil {
 			p.pluginAPI.Log.Error("Unable to process bot mention: " + err.Error())
 			return
@@ -213,7 +217,7 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 			}
 		}
 
-		if err := p.handleCallRecordingPost(post); err != nil {
+		if err := p.handleCallRecordingPost(post, channel); err != nil {
 			p.pluginAPI.Log.Error("Unable to process calls recording", "error", err)
 			return
 		}

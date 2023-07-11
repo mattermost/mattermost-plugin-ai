@@ -44,11 +44,11 @@ func withPromptExtension(filename string) string {
 	return filename + "." + PromptExtension
 }
 
-func (p *Prompts) ChatCompletion(templateName string, data any) (BotConversation, error) {
+func (p *Prompts) ChatCompletion(templateName string, context ConversationContext) (BotConversation, error) {
 	conversation := BotConversation{
-		Posts: []Post{},
+		Posts:   []Post{},
+		Context: context,
 	}
-	conversation.AddBuiltInTools()
 
 	template := p.templates.Lookup(withPromptExtension(templateName))
 	if template == nil {
@@ -56,7 +56,7 @@ func (p *Prompts) ChatCompletion(templateName string, data any) (BotConversation
 	}
 
 	if systemTemplate := template.Lookup(templateName + SystemSubTemplateName); systemTemplate != nil {
-		systemMessage, err := p.Execute(systemTemplate, data)
+		systemMessage, err := p.Execute(systemTemplate, context)
 		if err != nil {
 			return conversation, err
 		}
@@ -68,7 +68,7 @@ func (p *Prompts) ChatCompletion(templateName string, data any) (BotConversation
 	}
 
 	if userTemplate := template.Lookup(templateName + UserSubTemplateName); userTemplate != nil {
-		userMessage, err := p.Execute(userTemplate, data)
+		userMessage, err := p.Execute(userTemplate, context)
 		if err != nil {
 			return conversation, err
 		}
@@ -82,7 +82,7 @@ func (p *Prompts) ChatCompletion(templateName string, data any) (BotConversation
 	return conversation, nil
 }
 
-func (p *Prompts) Execute(template *template.Template, data any) (string, error) {
+func (p *Prompts) Execute(template *template.Template, data ConversationContext) (string, error) {
 	out := &strings.Builder{}
 	if err := template.Execute(out, data); err != nil {
 		return "", errors.Wrap(err, "unable to execute template")
