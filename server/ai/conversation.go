@@ -2,6 +2,7 @@ package ai
 
 import (
 	"strings"
+	"time"
 
 	"github.com/mattermost/mattermost-server/v6/model"
 )
@@ -20,6 +21,9 @@ type Post struct {
 }
 
 type ConversationContext struct {
+	Time             string
+	ServerName       string
+	CompanyName      string
 	RequestingUser   *model.User
 	Channel          *model.Channel
 	Post             *model.Post
@@ -27,7 +31,16 @@ type ConversationContext struct {
 }
 
 func NewConversationContext(reqeustingUser *model.User, channel *model.Channel, post *model.Post) ConversationContext {
+	// Get current time and date formated nicely with the user's locale
+	now := time.Now()
+	nowString := now.Format(time.RFC1123)
+	if reqeustingUser != nil {
+		tz := reqeustingUser.GetPreferredTimezone()
+		loc, _ := time.LoadLocation(tz)
+		nowString = now.In(loc).Format(time.RFC1123)
+	}
 	return ConversationContext{
+		Time:           nowString,
 		RequestingUser: reqeustingUser,
 		Channel:        channel,
 		Post:           post,

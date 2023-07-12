@@ -276,7 +276,7 @@ func (p *Plugin) handleCallRecordingPost(recordingPost *model.Post, channel *mod
 		return err
 	}
 
-	context := ai.NewConversationContext(nil, channel, nil)
+	context := p.MakeConversationContext(nil, channel, nil)
 	context.PromptParameters = map[string]string{"Transcription": transcription}
 	summaryPrompt, err := p.prompts.ChatCompletion(ai.PromptMeetingSummaryOnly, context)
 	if err != nil {

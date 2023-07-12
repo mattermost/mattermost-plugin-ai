@@ -165,7 +165,7 @@ func (p *Plugin) handleReact(c *gin.Context) {
 		return
 	}
 
-	if err := p.selectEmoji(post, ai.NewConversationContext(user, channel, nil)); err != nil {
+	if err := p.selectEmoji(post, p.MakeConversationContext(user, channel, nil)); err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
@@ -200,7 +200,7 @@ func (p *Plugin) handleSummarize(c *gin.Context) {
 		return
 	}
 
-	if _, err := p.startNewSummaryThread(postID, ai.NewConversationContext(user, channel, nil)); err != nil {
+	if _, err := p.startNewSummaryThread(postID, p.MakeConversationContext(user, channel, nil)); err != nil {
 		c.AbortWithError(http.StatusInternalServerError, errors.New("Unable to produce summary"))
 		return
 	}

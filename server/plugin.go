@@ -171,7 +171,7 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 				return
 			}
 		}
-		err = p.processUserRequestToBot(ai.NewConversationContext(postingUser, channel, post))
+		err = p.processUserRequestToBot(p.MakeConversationContext(postingUser, channel, post))
 		if err != nil {
 			p.pluginAPI.Log.Error("Unable to process bot reqeust: " + err.Error())
 			return
@@ -196,7 +196,7 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 			return
 		}
 
-		err = p.processUserRequestToBot(ai.NewConversationContext(postingUser, channel, post))
+		err = p.processUserRequestToBot(p.MakeConversationContext(postingUser, channel, post))
 		if err != nil {
 			p.pluginAPI.Log.Error("Unable to process bot mention: " + err.Error())
 			return
