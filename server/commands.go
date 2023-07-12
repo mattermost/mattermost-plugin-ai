@@ -82,7 +82,7 @@ func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*mo
 		}
 	}
 
-	context := ai.NewConversationContext(user, channel, nil)
+	context := p.MakeConversationContext(user, channel, nil)
 
 	if command == "/summarize" {
 		var response *model.CommandResponse
