@@ -17,8 +17,8 @@ type ToolStore struct {
 	tools map[string]Tool
 }
 
-func NewToolStore() *ToolStore {
-	return &ToolStore{
+func NewToolStore() ToolStore {
+	return ToolStore{
 		tools: make(map[string]Tool),
 	}
 }

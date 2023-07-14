@@ -21,13 +21,12 @@ import (
 
 type OpenAI struct {
 	client       *openaiClient.Client
-	tools        *ai.ToolStore
 	defaultModel string
 }
 
 const MaxFunctionCalls = 10
 
-func NewCompatible(apiKey, endpointUrl, defaultModel string, tools *ai.ToolStore) *OpenAI {
+func NewCompatible(apiKey, endpointUrl, defaultModel string) *OpenAI {
 	config := openai.DefaultConfig(apiKey)
 	config.BaseURL = endpointUrl
 
@@ -38,24 +37,22 @@ func NewCompatible(apiKey, endpointUrl, defaultModel string, tools *ai.ToolStore
 	return &OpenAI{
 		client:       openaiClient.NewClientWithConfig(config),
 		defaultModel: defaultModel,
-		tools:        tools,
 	}
 }
 
-func New(apiKey, defaultModel string, tools *ai.ToolStore) *OpenAI {
+func New(apiKey, defaultModel string) *OpenAI {
 	if defaultModel == "" {
 		defaultModel = openaiClient.GPT3Dot5Turbo
 	}
 	return &OpenAI{
 		client:       openaiClient.NewClient(apiKey),
 		defaultModel: defaultModel,
-		tools:        tools,
 	}
 }
 
 func modifyCompletionRequestWithConversation(request openaiClient.ChatCompletionRequest, conversation ai.BotConversation) openaiClient.ChatCompletionRequest {
 	request.Messages = postsToChatCompletionMessages(conversation.Posts)
-	request.Functions = toolsToFunctionDefinitions(conversation.Tools)
+	request.Functions = toolsToFunctionDefinitions(conversation.Tools.GetTools())
 	return request
 }
 
@@ -105,8 +102,8 @@ func createFunctionArrgmentResolver(jsonArgs string) ai.ToolArgumentGetter {
 	}
 }
 
-func (s *OpenAI) handleStreamFunctionCall(request openaiClient.ChatCompletionRequest, conversationContext ai.ConversationContext, name, arguments string) (openaiClient.ChatCompletionRequest, error) {
-	toolResult, err := s.tools.ResolveTool(name, createFunctionArrgmentResolver(arguments), conversationContext)
+func (s *OpenAI) handleStreamFunctionCall(request openaiClient.ChatCompletionRequest, conversation ai.BotConversation, name, arguments string) (openaiClient.ChatCompletionRequest, error) {
+	toolResult, err := conversation.Tools.ResolveTool(name, createFunctionArrgmentResolver(arguments), conversation.Context)
 	if err != nil {
 		// Failures are reported to the LLM to deal with
 		toolResult += err.Error()
@@ -120,7 +117,7 @@ func (s *OpenAI) handleStreamFunctionCall(request openaiClient.ChatCompletionReq
 	return request, nil
 }
 
-func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionRequest, conversationContext ai.ConversationContext, output chan<- string, errChan chan<- error) {
+func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionRequest, conversation ai.BotConversation, output chan<- string, errChan chan<- error) {
 	request.Stream = true
 	stream, err := s.client.CreateChatCompletionStream(context.Background(), request)
 	if err != nil {
@@ -165,12 +162,12 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 			}
 
 			// Call ourselves again with the result of the function call
-			recursiveRequest, err := s.handleStreamFunctionCall(request, conversationContext, functionName.String(), functionArguments.String())
+			recursiveRequest, err := s.handleStreamFunctionCall(request, conversation, functionName.String(), functionArguments.String())
 			if err != nil {
 				errChan <- err
 				return
 			}
-			s.streamResultToChannels(recursiveRequest, conversationContext, output, errChan)
+			s.streamResultToChannels(recursiveRequest, conversation, output, errChan)
 			return
 		default:
 			fmt.Printf("Unknown finish reason: %s", response.Choices[0].FinishReason)
@@ -191,13 +188,13 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 	}
 }
 
-func (s *OpenAI) streamResult(request openaiClient.ChatCompletionRequest, context ai.ConversationContext) (*ai.TextStreamResult, error) {
+func (s *OpenAI) streamResult(request openaiClient.ChatCompletionRequest, conversation ai.BotConversation) (*ai.TextStreamResult, error) {
 	output := make(chan string)
 	errChan := make(chan error)
 	go func() {
 		defer close(output)
 		defer close(errChan)
-		s.streamResultToChannels(request, context, output, errChan)
+		s.streamResultToChannels(request, conversation, output, errChan)
 	}()
 
 	return &ai.TextStreamResult{Stream: output, Err: errChan}, nil
@@ -233,17 +230,16 @@ func (s *OpenAI) ChatCompletion(conversation ai.BotConversation, opts ...ai.Lang
 	request := s.completionReqeustFromConfig(s.createConfig(opts))
 	request = modifyCompletionRequestWithConversation(request, conversation)
 	request.Stream = true
-	return s.streamResult(request, conversation.Context)
+	return s.streamResult(request, conversation)
 }
 
 func (s *OpenAI) ChatCompletionNoStream(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (string, error) {
-	request := s.completionReqeustFromConfig(s.createConfig(opts))
-	request = modifyCompletionRequestWithConversation(request, conversation)
-	response, err := s.client.CreateChatCompletion(context.Background(), request)
+	// This could perform better if we didn't use the streaming API here, but the complexity is not worth it.
+	result, err := s.ChatCompletion(conversation, opts...)
 	if err != nil {
 		return "", err
 	}
-	return response.Choices[0].Message.Content, nil
+	return result.ReadAll(), nil
 }
 
 func (s *OpenAI) Transcribe(file io.Reader) (string, error) {

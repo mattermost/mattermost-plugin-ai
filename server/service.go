@@ -30,7 +30,6 @@ func (p *Plugin) newConversation(context ai.ConversationContext) error {
 		return err
 	}
 	conversation.AddUserPost(context.Post)
-	conversation.Tools = p.tools.GetTools()
 
 	result, err := p.getLLM().ChatCompletion(conversation)
 	if err != nil {

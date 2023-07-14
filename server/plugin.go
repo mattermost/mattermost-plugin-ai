@@ -50,7 +50,6 @@ type Plugin struct {
 	builder sq.StatementBuilderType
 
 	prompts *ai.Prompts
-	tools   *ai.ToolStore
 }
 
 func resolveffmpegPath() string {
@@ -85,7 +84,10 @@ func (p *Plugin) OnActivate() error {
 		return err
 	}
 
-	p.prompts, err = ai.NewPrompts(promptsFolder)
+	tools := ai.NewToolStore()
+	tools.AddTools(p.getBuiltInTools())
+
+	p.prompts, err = ai.NewPrompts(promptsFolder, tools)
 	if err != nil {
 		return err
 	}
@@ -97,9 +99,6 @@ func (p *Plugin) OnActivate() error {
 
 	p.registerCommands()
 
-	p.tools = ai.NewToolStore()
-	p.tools.AddTools(p.getBuiltInTools())
-
 	return nil
 }
 
@@ -107,9 +106,9 @@ func (p *Plugin) getLLM() ai.LanguageModel {
 	cfg := p.getConfiguration()
 	switch cfg.LLMGenerator {
 	case "openai":
-		return openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel, p.tools)
+		return openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel)
 	case "openaicompatible":
-		return openai.NewCompatible(cfg.OpenAICompatibleKey, cfg.OpenAICompatibleUrl, cfg.OpenAICompatibleModel, p.tools)
+		return openai.NewCompatible(cfg.OpenAICompatibleKey, cfg.OpenAICompatibleUrl, cfg.OpenAICompatibleModel)
 	case "anthropic":
 		return anthropic.New(cfg.AnthropicAPIKey, cfg.AnthropicDefaultModel)
 	case "asksage":
@@ -123,9 +122,9 @@ func (p *Plugin) getImageGenerator() ai.ImageGenerator {
 	cfg := p.getConfiguration()
 	switch cfg.LLMGenerator {
 	case "openai":
-		return openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel, p.tools)
+		return openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel)
 	case "openaicompatible":
-		return openai.NewCompatible(cfg.OpenAICompatibleKey, cfg.OpenAICompatibleUrl, cfg.OpenAICompatibleModel, p.tools)
+		return openai.NewCompatible(cfg.OpenAICompatibleKey, cfg.OpenAICompatibleUrl, cfg.OpenAICompatibleModel)
 	}
 
 	return nil
@@ -137,7 +136,7 @@ func (p *Plugin) getTranscribe() ai.Transcriber {
 	case "openai":
 		return openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel)
 	}*/
-	return openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel, p.tools)
+	return openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel)
 }
 
 func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
