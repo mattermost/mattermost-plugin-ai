@@ -41,6 +41,8 @@ type configuration struct {
 	AllowPrivateChannels  bool
 	AllowedTeamIDs        string
 	OnlyUsersOnTeam       string
+
+	EnableLLMTrace bool
 }
 
 // Clone shallow copies the configuration. Your implementation may require a deep copy if

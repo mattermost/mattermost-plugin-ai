@@ -104,18 +104,23 @@ func (p *Plugin) OnActivate() error {
 
 func (p *Plugin) getLLM() ai.LanguageModel {
 	cfg := p.getConfiguration()
+	var llm ai.LanguageModel
 	switch cfg.LLMGenerator {
 	case "openai":
-		return openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel)
+		llm = openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel)
 	case "openaicompatible":
-		return openai.NewCompatible(cfg.OpenAICompatibleKey, cfg.OpenAICompatibleUrl, cfg.OpenAICompatibleModel)
+		llm = openai.NewCompatible(cfg.OpenAICompatibleKey, cfg.OpenAICompatibleUrl, cfg.OpenAICompatibleModel)
 	case "anthropic":
-		return anthropic.New(cfg.AnthropicAPIKey, cfg.AnthropicDefaultModel)
+		llm = anthropic.New(cfg.AnthropicAPIKey, cfg.AnthropicDefaultModel)
 	case "asksage":
-		return asksage.New(cfg.AskSageUsername, cfg.AskSagePassword, cfg.AskSageDefaultModel)
+		llm = asksage.New(cfg.AskSageUsername, cfg.AskSagePassword, cfg.AskSageDefaultModel)
 	}
 
-	return nil
+	if cfg.EnableLLMTrace {
+		return NewLanguageModelLogWrapper(p.pluginAPI.Log, llm)
+	}
+
+	return llm
 }
 
 func (p *Plugin) getImageGenerator() ai.ImageGenerator {
