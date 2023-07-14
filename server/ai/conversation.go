@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"fmt"
 	"strings"
 	"time"
 	_ "time/tzdata"
@@ -81,6 +82,38 @@ func (b *BotConversation) ExtractSystemMessage() string {
 			result.WriteString(post.Message)
 		}
 	}
+	return result.String()
+}
+
+func (b BotConversation) String() string {
+	// Create a string of all the posts with their role and message
+	var result strings.Builder
+	result.WriteString("--- Conversation ---\n")
+	for _, post := range b.Posts {
+		switch post.Role {
+		case PostRoleUser:
+			result.WriteString("User: ")
+		case PostRoleBot:
+			result.WriteString("Bot: ")
+		case PostRoleSystem:
+			result.WriteString("System: ")
+		default:
+			result.WriteString("<unknown>: ")
+		}
+		result.WriteString(post.Message)
+		result.WriteString("\n---------\n")
+	}
+	result.WriteString("--- Tools ---\n")
+	for _, tool := range b.Tools.GetTools() {
+		result.WriteString(tool.Name)
+		result.WriteString(": ")
+		result.WriteString(tool.Description)
+		result.WriteString("\n")
+		result.WriteString(fmt.Sprintf("%+v\n", tool.Schema))
+	}
+	result.WriteString("--- Context ---\n")
+	result.WriteString(fmt.Sprintf("%+v\n", b.Context))
+
 	return result.String()
 }
 

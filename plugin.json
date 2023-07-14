@@ -151,6 +151,13 @@
         "type": "text",
         "display_name": "Only Users on Team: ",
         "help_text": "Only users on this team will be allowed to use the plugin"
+      },
+      {
+        "key": "EnableLLMTrace",
+        "type": "bool",
+        "display_name": "Enable LLM Trace:",
+        "help_text": "Enable tracing of LLM requests. Outputs whole conversations to the logs.",
+        "default": false
       }
     ]
   }
