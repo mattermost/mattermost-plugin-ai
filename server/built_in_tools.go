@@ -9,7 +9,7 @@ import (
 )
 
 type LookupMattermostUserArgs struct {
-	Username string `jsonschema_description:"The username of the user to lookup witout a leading '@'. Example: 'chris.speller'"`
+	Username string `jsonschema_description:"The username of the user to lookup witout a leading '@'. Example: 'firstname.lastname'"`
 }
 
 func (p *Plugin) toolResolveLookupMattermostUser(context ai.ConversationContext, argsGetter ai.ToolArgumentGetter) (string, error) {
@@ -27,6 +27,11 @@ func (p *Plugin) toolResolveLookupMattermostUser(context ai.ConversationContext,
 	user, err := p.pluginAPI.User.GetByUsername(args.Username)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to lookup user")
+	}
+
+	userStatus, err := p.pluginAPI.User.GetStatus(user.Id)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to get user status")
 	}
 
 	result := fmt.Sprintf("Username: %s", user.Username)
@@ -48,7 +53,8 @@ func (p *Plugin) toolResolveLookupMattermostUser(context ai.ConversationContext,
 		result += fmt.Sprintf("\nLocale: %s", user.Locale)
 	}
 	result += fmt.Sprintf("\nTimezone: %s", model.GetPreferredTimezone(user.Timezone))
-	result += fmt.Sprintf("\nLast Activity: %s", model.GetTimeForMillis(user.LastActivityAt).Format("2006-01-02 15:04:05 MST"))
+	result += fmt.Sprintf("\nLast Activity: %s", model.GetTimeForMillis(userStatus.LastActivityAt).Format("2006-01-02 15:04:05 MST"))
+	result += fmt.Sprintf("\nStatus: %s", userStatus.Status)
 
 	return result, nil
 }
@@ -57,7 +63,7 @@ func (p *Plugin) getBuiltInTools() []ai.Tool {
 	builtInTools := []ai.Tool{
 		{
 			Name:        "LookupMattermostUser",
-			Description: "Lookup a Mattermost user by their username.",
+			Description: "Lookup a Mattermost user by their username. Avalable information includes: username, full name, email, nickname, position, locale, timezone, last activity, and status.",
 			Schema:      LookupMattermostUserArgs{},
 			Resolver:    p.toolResolveLookupMattermostUser,
 		},
