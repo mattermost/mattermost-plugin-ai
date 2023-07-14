@@ -3,6 +3,7 @@ package ai
 import (
 	"strings"
 	"time"
+	_ "time/tzdata"
 
 	"github.com/mattermost/mattermost-server/v6/model"
 )
@@ -36,7 +37,10 @@ func NewConversationContext(reqeustingUser *model.User, channel *model.Channel, 
 	nowString := now.Format(time.RFC1123)
 	if reqeustingUser != nil {
 		tz := reqeustingUser.GetPreferredTimezone()
-		loc, _ := time.LoadLocation(tz)
+		loc, err := time.LoadLocation(tz)
+		if err != nil || loc == nil {
+			loc = time.UTC
+		}
 		nowString = now.In(loc).Format(time.RFC1123)
 	}
 	return ConversationContext{
@@ -55,7 +59,7 @@ func NewConversationContextParametersOnly(promptParameters map[string]string) Co
 
 type BotConversation struct {
 	Posts   []Post
-	Tools   []Tool
+	Tools   ToolStore
 	Context ConversationContext
 }
 

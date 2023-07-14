@@ -9,7 +9,8 @@ import (
 )
 
 type Prompts struct {
-	templates *template.Template
+	templates    *template.Template
+	defaultTools ToolStore
 }
 
 const PromptExtension = "tmpl"
@@ -28,14 +29,15 @@ const (
 	PromptChangeTone            = "change_tone"
 )
 
-func NewPrompts(input fs.FS) (*Prompts, error) {
+func NewPrompts(input fs.FS, defaultTools ToolStore) (*Prompts, error) {
 	templates, err := template.ParseFS(input, "ai/prompts/*")
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to parse prompt templates")
 	}
 
 	return &Prompts{
-		templates: templates,
+		templates:    templates,
+		defaultTools: defaultTools,
 	}, nil
 
 }
@@ -48,6 +50,7 @@ func (p *Prompts) ChatCompletion(templateName string, context ConversationContex
 	conversation := BotConversation{
 		Posts:   []Post{},
 		Context: context,
+		Tools:   p.defaultTools,
 	}
 
 	template := p.templates.Lookup(withPromptExtension(templateName))
@@ -56,7 +59,7 @@ func (p *Prompts) ChatCompletion(templateName string, context ConversationContex
 	}
 
 	if systemTemplate := template.Lookup(templateName + SystemSubTemplateName); systemTemplate != nil {
-		systemMessage, err := p.Execute(systemTemplate, context)
+		systemMessage, err := p.execute(systemTemplate, context)
 		if err != nil {
 			return conversation, err
 		}
@@ -68,7 +71,7 @@ func (p *Prompts) ChatCompletion(templateName string, context ConversationContex
 	}
 
 	if userTemplate := template.Lookup(templateName + UserSubTemplateName); userTemplate != nil {
-		userMessage, err := p.Execute(userTemplate, context)
+		userMessage, err := p.execute(userTemplate, context)
 		if err != nil {
 			return conversation, err
 		}
@@ -82,7 +85,7 @@ func (p *Prompts) ChatCompletion(templateName string, context ConversationContex
 	return conversation, nil
 }
 
-func (p *Prompts) Execute(template *template.Template, data ConversationContext) (string, error) {
+func (p *Prompts) execute(template *template.Template, data ConversationContext) (string, error) {
 	out := &strings.Builder{}
 	if err := template.Execute(out, data); err != nil {
 		return "", errors.Wrap(err, "unable to execute template")

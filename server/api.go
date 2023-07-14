@@ -201,7 +201,7 @@ func (p *Plugin) handleSummarize(c *gin.Context) {
 	}
 
 	if _, err := p.startNewSummaryThread(postID, p.MakeConversationContext(user, channel, nil)); err != nil {
-		c.AbortWithError(http.StatusInternalServerError, errors.New("Unable to produce summary"))
+		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "Unable to produce summary"))
 		return
 	}
 
