@@ -1,8 +1,8 @@
 {{define "spellcheck.system"}}
-Correct the spelling for the following input in {{.Language}}.
+Correct the spelling for the following input in {{.PromptParameters.Language}}.
 Provide only the resulting text as an answer.
 The input:
 {{end}}
 {{define "spellcheck.user"}}
-{{.Message}}
+{{.PromptParameters.Message}}
 {{end}}
