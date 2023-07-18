@@ -59,6 +59,45 @@ func (p *Plugin) toolResolveLookupMattermostUser(context ai.ConversationContext,
 	return result, nil
 }
 
+type GetChannelPosts struct {
+	ChannelName string `jsonschema_description:"The name of the channel to get posts from. Should be the channel name without the leading '~'. Example: 'town-square'"`
+	NumberPosts int    `jsonschema_description:"The number of most recent posts to get. Example: '30'"`
+}
+
+func (p *Plugin) toolResolveGetChannelPosts(context ai.ConversationContext, argsGetter ai.ToolArgumentGetter) (string, error) {
+	var args GetChannelPosts
+	err := argsGetter(&args)
+	if err != nil {
+		return "invalid parameters to function", errors.Wrap(err, "failed to get arguments for tool GetChannelPosts")
+	}
+
+	if context.Channel == nil || context.Channel.TeamId == "" {
+		//TODO: support DMs. This will require some way to disabiguate between channels with the same name on different teams.
+		return "Error: Ambiguous channel lookup. Unable to what channel the user is reffering to because DMs do not belong to specific teams. Tell the user to ask outside a DM channel.", errors.New("ambiguous channel lookup")
+	}
+
+	if !p.pluginAPI.User.HasPermissionToChannel(context.RequestingUser.Id, context.Channel.Id, model.PermissionReadChannel) {
+		return "user doesn't have permissions to read requested channel", errors.New("user doesn't have permission to read channel")
+	}
+
+	channel, err := p.pluginAPI.Channel.GetByName(context.Channel.TeamId, args.ChannelName, false)
+	if err != nil {
+		return "internal failure", errors.Wrap(err, "failed to lookup channel by name, may not exist")
+	}
+
+	posts, err := p.pluginAPI.Post.GetPostsForChannel(channel.Id, 0, args.NumberPosts)
+	if err != nil {
+		return "internal failure", errors.Wrap(err, "failed to get posts for channel")
+	}
+
+	postsData, err := p.getMetadataForPosts(posts)
+	if err != nil {
+		return "internal failure", errors.Wrap(err, "failed to get metadata for posts")
+	}
+
+	return formatThread(postsData), nil
+}
+
 func (p *Plugin) getBuiltInTools() []ai.Tool {
 	builtInTools := []ai.Tool{
 		{
@@ -66,6 +105,12 @@ func (p *Plugin) getBuiltInTools() []ai.Tool {
 			Description: "Lookup a Mattermost user by their username. Avalable information includes: username, full name, email, nickname, position, locale, timezone, last activity, and status.",
 			Schema:      LookupMattermostUserArgs{},
 			Resolver:    p.toolResolveLookupMattermostUser,
+		},
+		{
+			Name:        "GetChannelPosts",
+			Description: "Get the most recent posts from a Mattermost channel. Returns posts in the format 'username: message'",
+			Schema:      GetChannelPosts{},
+			Resolver:    p.toolResolveGetChannelPosts,
 		},
 	}
 	return builtInTools

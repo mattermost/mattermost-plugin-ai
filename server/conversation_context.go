@@ -15,5 +15,14 @@ func (p *Plugin) MakeConversationContext(user *model.User, channel *model.Channe
 		context.CompanyName = license.Customer.Company
 	}
 
+	if channel != nil {
+		team, err := p.pluginAPI.Team.Get(channel.TeamId)
+		if err != nil {
+			p.pluginAPI.Log.Error("Unable to get team for context", "error", err.Error())
+		} else {
+			context.Team = team
+		}
+	}
+
 	return context
 }
