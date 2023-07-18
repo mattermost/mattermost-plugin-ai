@@ -180,6 +180,7 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 			p.pluginAPI.Log.Error("Unable to process bot reqeust: " + err.Error())
 			return
 		}
+		return
 	}
 
 	// We are mentioned
@@ -205,6 +206,7 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 			p.pluginAPI.Log.Error("Unable to process bot mention: " + err.Error())
 			return
 		}
+		return
 	}
 
 	// Its a bot post from the calls plugin
@@ -225,5 +227,6 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 			p.pluginAPI.Log.Error("Unable to process calls recording", "error", err)
 			return
 		}
+		return
 	}
 }
