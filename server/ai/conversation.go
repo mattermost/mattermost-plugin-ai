@@ -28,6 +28,7 @@ type ConversationContext struct {
 	CompanyName      string
 	RequestingUser   *model.User
 	Channel          *model.Channel
+	Team             *model.Team
 	Post             *model.Post
 	PromptParameters map[string]string
 }

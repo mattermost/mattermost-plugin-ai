@@ -105,8 +105,7 @@ func createFunctionArrgmentResolver(jsonArgs string) ai.ToolArgumentGetter {
 func (s *OpenAI) handleStreamFunctionCall(request openaiClient.ChatCompletionRequest, conversation ai.BotConversation, name, arguments string) (openaiClient.ChatCompletionRequest, error) {
 	toolResult, err := conversation.Tools.ResolveTool(name, createFunctionArrgmentResolver(arguments), conversation.Context)
 	if err != nil {
-		// Failures are reported to the LLM to deal with
-		toolResult += err.Error()
+		fmt.Println("Error resolving function: ", err)
 	}
 	request.Messages = append(request.Messages, openai.ChatCompletionMessage{
 		Role:    openaiClient.ChatMessageRoleFunction,
@@ -147,6 +146,7 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 		case openaiClient.FinishReasonStop:
 			return
 		case openaiClient.FinishReasonFunctionCall:
+			fmt.Println("\nFunction call:\nfunction name: ", functionName.String(), "\n arguments: ", functionArguments.String())
 			// Verify OpenAI functions are not recursing too deep.
 			numFunctionCalls := 0
 			for i := len(request.Messages) - 1; i >= 0; i-- {
@@ -167,6 +167,7 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 				errChan <- err
 				return
 			}
+			fmt.Println("Function request: ", recursiveRequest)
 			s.streamResultToChannels(recursiveRequest, conversation, output, errChan)
 			return
 		default:
