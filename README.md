@@ -6,27 +6,34 @@
 
 # Table of Contents
 
-- [Mattermost AI Plugin](#mattermost-ai-plugin)
-- [Table of Contents](#table-of-contents)
-  - [Background](#background)
-  - [Install Mattermost + `mattermost-plugin-ai`](#install-mattermost--mattermost-plugin-ai)
-    - [On existing Mattermost server](#on-existing-mattermost-server)
-    - [Local Development](#local-development)
-    - [Gitpod Demo](#gitpod-demo)
-  - [Usage](#usage)
-    - [Streaming Conversation](#streaming-conversation)
-    - [Thread Summarization](#thread-summarization)
-    - [Answer questions about Threads](#answer-questions-about-threads)
-    - [Chat anywhere](#chat-anywhere)
-    - [Create meeting summary](#create-meeting-summary)
-    - [React for me](#react-for-me)
-    - [RLHF Feedback Collection](#rlhf-feedback-collection)
-  - [Supported Backends](#supported-backends)
-  - [Community Resources](#community-resources)
-    - [AI](#ai)
-    - [Mattermost](#mattermost)
-  - [Contributing](#contributing)
-  - [License](#license)
+- [Background](#background)
+- [Install Mattermost + `mattermost-plugin-ai`](#install-mattermost--mattermost-plugin-ai)
+  - [On existing Mattermost server](#on-existing-mattermost-server)
+  - [Local Development](#local-development)
+  - [Gitpod Demo](#gitpod-demo)
+- [Usage](#usage)
+  - [Streaming Conversation](#streaming-conversation)
+  - [Thread Summarization](#thread-summarization)
+  - [Answer questions about Threads](#answer-questions-about-threads)
+  - [Chat anywhere](#chat-anywhere)
+  - [Create meeting summary](#create-meeting-summary)
+  - [Personalisation](#personalisation)
+  - [User lookup (OpenAI exclusive)](#user-lookup-openai-exclusive)
+  - [Channel posts lookup (OpenAI exclusive)](#channel-posts-lookup-openai-exclusive)
+  - [GitHub integration (OpenAI exclusive, requires GitHub plugin)](#github-integration-openai-exclusive-requires-github-plugin)
+  - [React for me](#react-for-me)
+  - [RLHF Feedback Collection](#rlhf-feedback-collection)
+- [Supported Backends](#supported-backends)
+  - [OpenAI (recommended)](#openai-recommended)
+  - [Anthropic](#anthropic)
+  - [Azure OpenAI](#azure-openai)
+  - [OpenAI Compatable](#openai-compatable)
+  - [Ask Sage](#ask-sage)
+- [Community Resources](#community-resources)
+  - [AI](#ai)
+  - [Mattermost](#mattermost)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Background
 
@@ -104,7 +111,7 @@ The LLM can lookup other users on the system if you ask about them.
 OpenAI exclusive for now since it requires the function API.
 
 ### Channel posts lookup (OpenAI exclusive)
-You can ask about other channels and the LLM can injest posts from that channel. For example you can ask it to summarize the last few posts in a channel. Note, depending on if you have CRT enabled this may not behave as you expect.
+You can ask about other channels and the LLM can ingest posts from that channel. For example you can ask it to summarize the last few posts in a channel. Note, depending on if you have CRT enabled this may not behave as you expect.
 ![Personalisation](/img/posts_lookup.png)
 
 OpenAI exclusive for now since it requires the function API.
