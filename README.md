@@ -94,6 +94,27 @@ Create meeting summaries! Designed to work with the [calls plugin's](https://git
 
 ![Meeting Summary](/img/meeting_summary.png)
 
+### Personalisation
+Context such as the current channel and user are supplied to the LLM when you make requests. Allowing customization of responses.
+![Personalisation](/img/personalization.png)
+
+### User lookup (OpenAI exclusive) 
+The LLM can lookup other users on the system if you ask about them.
+
+OpenAI exclusive for now since it requires the function API.
+
+### Channel posts lookup (OpenAI exclusive)
+You can ask about other channels and the LLM can injest posts from that channel. For example you can ask it to summarize the last few posts in a channel. Note, depending on if you have CRT enabled this may not behave as you expect.
+![Personalisation](/img/posts_lookup.png)
+
+OpenAI exclusive for now since it requires the function API.
+
+### GitHub integration (OpenAI exclusive, requires GitHub plugin)
+The LLM can attempt to lookup specific GitHub issues. For example you can paste a GitHub link into the chat and ask questions about it. Only the title and description for now.
+![Github](/img/github.png)
+
+OpenAI exclusive for now since it requires the function API.
+
 ### React for me
 Just for fun! Use the post menu to ask the bot to react to the post. It will try to pick an appropriate reaction.
 
