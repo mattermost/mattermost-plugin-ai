@@ -9,8 +9,8 @@ import (
 )
 
 type Prompts struct {
-	templates    *template.Template
-	defaultTools ToolStore
+	templates       *template.Template
+	getBuiltInTools func() []Tool
 }
 
 const PromptExtension = "tmpl"
@@ -29,15 +29,15 @@ const (
 	PromptChangeTone            = "change_tone"
 )
 
-func NewPrompts(input fs.FS, defaultTools ToolStore) (*Prompts, error) {
+func NewPrompts(input fs.FS, getBuiltInTools func() []Tool) (*Prompts, error) {
 	templates, err := template.ParseFS(input, "ai/prompts/*")
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to parse prompt templates")
 	}
 
 	return &Prompts{
-		templates:    templates,
-		defaultTools: defaultTools,
+		templates:       templates,
+		getBuiltInTools: getBuiltInTools,
 	}, nil
 
 }
@@ -46,11 +46,17 @@ func withPromptExtension(filename string) string {
 	return filename + "." + PromptExtension
 }
 
+func (p *Prompts) getDefaultTools() ToolStore {
+	tools := NewToolStore()
+	tools.AddTools(p.getBuiltInTools())
+	return tools
+}
+
 func (p *Prompts) ChatCompletion(templateName string, context ConversationContext) (BotConversation, error) {
 	conversation := BotConversation{
 		Posts:   []Post{},
 		Context: context,
-		Tools:   p.defaultTools,
+		Tools:   p.getDefaultTools(),
 	}
 
 	template := p.templates.Lookup(withPromptExtension(templateName))

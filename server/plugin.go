@@ -84,10 +84,7 @@ func (p *Plugin) OnActivate() error {
 		return err
 	}
 
-	tools := ai.NewToolStore()
-	tools.AddTools(p.getBuiltInTools())
-
-	p.prompts, err = ai.NewPrompts(promptsFolder, tools)
+	p.prompts, err = ai.NewPrompts(promptsFolder, p.getBuiltInTools)
 	if err != nil {
 		return err
 	}
