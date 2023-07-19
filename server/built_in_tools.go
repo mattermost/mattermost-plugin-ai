@@ -1,8 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 
+	"github.com/google/go-github/v41/github"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-server/v6/model"
 	"github.com/pkg/errors"
@@ -98,7 +102,46 @@ func (p *Plugin) toolResolveGetChannelPosts(context ai.ConversationContext, args
 	return formatThread(postsData), nil
 }
 
+type GetGithubIssueArgs struct {
+	RepoOwner string `jsonschema_description:"The owner of the repository to get issues from. Example: 'mattermost'"`
+	RepoName  string `jsonschema_description:"The name of the repository to get issues from. Example: 'mattermost-plugin-ai'"`
+	Number    int    `jsonschema_description:"The issue number to get. Example: '1'"`
+}
+
+func formatIssue(issue *github.Issue) string {
+	return fmt.Sprintf("Title: %s\nNumber: %d\nState: %s\nSubmitter: %s\nIs Pull Request: %v\nBody: %s", issue.GetTitle(), issue.GetNumber(), issue.GetState(), issue.User.GetLogin(), issue.IsPullRequest(), issue.GetBody())
+}
+
+func (p *Plugin) toolGetGithubIssue(context ai.ConversationContext, argsGetter ai.ToolArgumentGetter) (string, error) {
+	var args GetGithubIssueArgs
+	err := argsGetter(&args)
+	if err != nil {
+		return "invalid parameters to function", errors.Wrap(err, "failed to get arguments for tool GetGithubIssues")
+	}
+
+	req, err := http.NewRequest("GET", fmt.Sprintf("/github/api/v1/issue?owner=%s&repo=%s&number=%d", args.RepoOwner, args.RepoName, args.Number), nil)
+	if err != nil {
+		return "internal failure", errors.Wrap(err, "failed to create request")
+	}
+	req.Header.Set("Mattermost-User-ID", context.RequestingUser.Id)
+
+	resp := p.pluginAPI.Plugin.HTTP(req)
+	if resp == nil || resp.StatusCode != http.StatusOK {
+		result, _ := io.ReadAll(resp.Body)
+		return "Error: unable to get issue, internal failure", errors.Errorf("failed to get issue, status code: %v\nbody: %v\n", resp.Status, string(result))
+	}
+
+	var issue github.Issue
+	err = json.NewDecoder(resp.Body).Decode(&issue)
+	if err != nil {
+		return "internal failure", errors.Wrap(err, "failed to decode response")
+	}
+
+	return formatIssue(&issue), nil
+}
+
 func (p *Plugin) getBuiltInTools() []ai.Tool {
+	// Unconditional tools
 	builtInTools := []ai.Tool{
 		{
 			Name:        "LookupMattermostUser",
@@ -113,5 +156,19 @@ func (p *Plugin) getBuiltInTools() []ai.Tool {
 			Resolver:    p.toolResolveGetChannelPosts,
 		},
 	}
+
+	// Github plugin tools
+	status, err := p.pluginAPI.Plugin.GetPluginStatus("github")
+	if err != nil {
+		p.API.LogError("failed to get github plugin status", "error", err.Error())
+	} else if status != nil && status.State == model.PluginStateRunning {
+		builtInTools = append(builtInTools, ai.Tool{
+			Name:        "GetGithubIssue",
+			Description: "Retrive a single GitHub issue by owner, repo, and issue number.",
+			Schema:      GetGithubIssueArgs{},
+			Resolver:    p.toolGetGithubIssue,
+		})
+	}
+
 	return builtInTools
 }
