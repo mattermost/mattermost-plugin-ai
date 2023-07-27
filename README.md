@@ -154,7 +154,7 @@ This api requires functions to be supported, and they are for now only on models
 
 Once you have been approved, you can create a new OpenAI resource. With the resource created you get access to the API key and the endpoint url clicking in keys and endpoints option of the menu.
 
-Finally you have to deploy the model that you are going to use, normally gpt-35-turbo, clicking in "Model deployments", and managing the models from there.
+Finally you have to deploy the model that you are going to use, normally gpt-35-turbo, clicking in "Model deployments", and managing the models from there. (TIP: don't select auto-update on your deployed model, it will auto-downgrade it to 0301 within about 5-10 minutes)
 
 Configure the API key and the endpoint url for OpenAI Compatible in the system console and configure a default model like `gpt-35-turbo`.
 
