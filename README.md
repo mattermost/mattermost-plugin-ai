@@ -150,7 +150,7 @@ Configure the API key in the system console and configure a default model like `
 ### Azure OpenAI
 You will need to ask Azure to enable OpenAI in your Azure account before you can use this API.
 
-This api requires functions to be supporter, and they are for now only on models version `0613` with API `2023-07-01-preview`. They are avaiable on limited datacenters right now. For moment of writing this docs avaiable regions for gpt-35-turbo v0613 are: Canada East, East US, France Central, Japan East, North Central US, UK South. More info in [azure docs](https://learn.microsoft.com/en-us/azure/ai-services/openai/concepts/models)
+This api requires functions to be supported, and they are for now only on models version `0613` with API `2023-07-01-preview`. They are avaiable on limited datacenters right now. For moment of writing this docs avaiable regions for gpt-35-turbo v0613 are: Canada East, East US, France Central, Japan East, North Central US, UK South. More info in [azure docs](https://learn.microsoft.com/en-us/azure/ai-services/openai/concepts/models)
 
 Once you have been approved, you can create a new OpenAI resource. With the resource created you get access to the API key and the endpoint url clicking in keys and endpoints option of the menu.
 
