@@ -12,7 +12,7 @@ require (
 	github.com/mattermost/mattermost-server/v6 v6.2.1
 	github.com/pkg/errors v0.9.1
 	github.com/r3labs/sse/v2 v2.10.0
-	github.com/sashabaranov/go-openai v1.13.0
+	github.com/sashabaranov/go-openai v1.14.1
 	github.com/stretchr/testify v1.8.2
 )
 

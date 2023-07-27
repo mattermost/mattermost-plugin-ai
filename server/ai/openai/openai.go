@@ -33,6 +33,7 @@ func NewCompatible(apiKey, endpointUrl, defaultModel string) *OpenAI {
 	parsedUrl, err := url.Parse(endpointUrl)
 	if err == nil && strings.HasSuffix(parsedUrl.Host, "openai.azure.com") {
 		config = openai.DefaultAzureConfig(apiKey, endpointUrl)
+		config.APIVersion = "2023-07-01-preview"
 	}
 	return &OpenAI{
 		client:       openaiClient.NewClientWithConfig(config),
@@ -137,6 +138,10 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 		if err != nil {
 			errChan <- err
 			return
+		}
+
+		if len(response.Choices) == 0 {
+			continue
 		}
 
 		// Check finishing conditions
