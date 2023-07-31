@@ -6,8 +6,6 @@ import styled, {css} from 'styled-components';
 
 import {useUpdateEffect} from 'react-use';
 
-import {useUniqueId} from 'src/utils';
-
 import Dropdown from './dropdown';
 import {PrimaryButton} from './assets/buttons';
 
@@ -190,8 +188,6 @@ export const iconSplitStyling = css`
 `;
 
 export const DropdownMenuItem = (props: { children: React.ReactNode, onClick: () => void, className?: string, disabled?: boolean, disabledAltText?: string }) => {
-    const tooltipId = useUniqueId();
-
     return (
         <DropdownMenuItemStyled
             href='#'

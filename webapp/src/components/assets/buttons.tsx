@@ -4,8 +4,6 @@
 import React from 'react';
 import styled from 'styled-components';
 
-import {KeyVariantCircleIcon} from '@mattermost/compass-icons/components';
-
 export const Button = styled.button`
     display: inline-flex;
     align-items: center;
@@ -194,25 +192,6 @@ export const DestructiveButton = styled.button`
     :disabled {
         background: rgba(var(--center-channel-color-rgb), 0.08);
     }
-`;
-
-export type UpgradeButtonProps = React.ComponentProps<typeof PrimaryButton>;
-
-export const UpgradeTertiaryButton = (props: UpgradeButtonProps & {className?: string}) => {
-    const {children, ...rest} = props;
-    return (
-        <TertiaryButton {...rest}>
-            {children}
-            <PositionedKeyVariantCircleIcon/>
-        </TertiaryButton>
-    );
-};
-
-const PositionedKeyVariantCircleIcon = styled(KeyVariantCircleIcon)`
-    position: absolute;
-    top: -4px;
-    right: -6px;
-    color: var(--online-indicator);
 `;
 
 export const ButtonIcon = styled.button`
