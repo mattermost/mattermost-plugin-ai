@@ -1,7 +1,7 @@
 import React, {useState} from 'react';
 import styled from 'styled-components';
 
-import IconAI from './icon_ai';
+import IconAI from './assets/icon_ai';
 
 const Container = styled.div`
 	display: flex

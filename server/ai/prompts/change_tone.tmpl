@@ -4,6 +4,10 @@ Change tone and voice to {{.Tone}}.
 Use industry-specific language and terminology.
 Avoid complex words.
 {{end}}
+{{if eq .Tone "informal"}}
+Use informal and friendly language.
+Avoid complex words.
+{{end}}
 Provide only the resulting text as an answer.
 Avoid greetings and sign-offs.
 The original text is:

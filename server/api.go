@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/render"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-server/v6/model"
 	"github.com/mattermost/mattermost-server/v6/plugin"
@@ -20,6 +22,8 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	router.POST("/feedback/post/:postid/negative", p.handleNegativePostFeedback)
 	router.POST("/summarize/post/:postid", p.handleSummarize)
 	router.POST("/transcribe/:postid", p.handleTranscribe)
+	router.POST("/simplify", p.handleSimplify)
+	router.POST("/change_tone/:tone", p.handleChangeTone)
 	router.GET("/feedback", p.handleGetFeedback)
 	router.ServeHTTP(w, r)
 }
@@ -221,4 +225,75 @@ func (p *Plugin) handleTranscribe(c *gin.Context) {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
+}
+
+func (p *Plugin) handleSimplify(c *gin.Context) {
+	// userID := c.GetHeader("Mattermost-User-Id")
+	// TODO: Handle user rstrictions
+
+	data := struct {
+		Message string `json:"message"`
+	}{}
+
+	err := json.NewDecoder(c.Request.Body).Decode(&data)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+	defer c.Request.Body.Close()
+
+	// channel, err := p.pluginAPI.Channel.Get(post.ChannelId)
+	// if err != nil {
+	// 	c.AbortWithError(http.StatusInternalServerError, err)
+	// 	return
+	// }
+
+	// if err := p.checkUsageRestrictions(userID, channel); err != nil {
+	// 	c.AbortWithError(http.StatusForbidden, err)
+	// 	return
+	// }
+
+	newMessage, err := p.simplifyText(data.Message)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+	data.Message = *newMessage
+	c.Render(200, render.JSON{Data: data})
+}
+
+func (p *Plugin) handleChangeTone(c *gin.Context) {
+	// userID := c.GetHeader("Mattermost-User-Id")
+	// TODO: Handle user rstrictions
+	tone := c.Param("tone")
+
+	data := struct {
+		Message string `json:"message"`
+	}{}
+
+	err := json.NewDecoder(c.Request.Body).Decode(&data)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+	defer c.Request.Body.Close()
+
+	// channel, err := p.pluginAPI.Channel.Get(post.ChannelId)
+	// if err != nil {
+	// 	c.AbortWithError(http.StatusInternalServerError, err)
+	// 	return
+	// }
+
+	// if err := p.checkUsageRestrictions(userID, channel); err != nil {
+	// 	c.AbortWithError(http.StatusForbidden, err)
+	// 	return
+	// }
+
+	newMessage, err := p.changeTone(tone, data.Message)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+	data.Message = *newMessage
+	c.Render(200, render.JSON{Data: data})
 }

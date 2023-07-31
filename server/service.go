@@ -344,3 +344,19 @@ func (p *Plugin) changeTone(tone, message string) (*string, error) {
 
 	return &result, nil
 }
+
+func (p *Plugin) simplifyText(message string) (*string, error) {
+	prompt, err := p.prompts.ChatCompletion(ai.PromptSimplifyText, map[string]string{
+		"Message": message,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := p.getLLM().ChatCompletionNoStream(prompt, ai.WithmaxTokens(128))
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
