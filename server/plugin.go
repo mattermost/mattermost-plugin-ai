@@ -147,6 +147,11 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 		return
 	}
 
+	// Never respond to remote posts
+	if post.RemoteId != nil && *post.RemoteId != "" {
+		return
+	}
+
 	channel, err := p.pluginAPI.Channel.Get(post.ChannelId)
 	if err != nil {
 		p.pluginAPI.Log.Error(err.Error())
