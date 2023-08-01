@@ -228,8 +228,7 @@ func (p *Plugin) handleTranscribe(c *gin.Context) {
 }
 
 func (p *Plugin) handleSimplify(c *gin.Context) {
-	// userID := c.GetHeader("Mattermost-User-Id")
-	// TODO: Handle user rstrictions
+	userID := c.GetHeader("Mattermost-User-Id")
 
 	data := struct {
 		Message string `json:"message"`
@@ -242,16 +241,10 @@ func (p *Plugin) handleSimplify(c *gin.Context) {
 	}
 	defer c.Request.Body.Close()
 
-	// channel, err := p.pluginAPI.Channel.Get(post.ChannelId)
-	// if err != nil {
-	// 	c.AbortWithError(http.StatusInternalServerError, err)
-	// 	return
-	// }
-
-	// if err := p.checkUsageRestrictions(userID, channel); err != nil {
-	// 	c.AbortWithError(http.StatusForbidden, err)
-	// 	return
-	// }
+	if err := p.checkUsageRestrictionsForUser(userID); err != nil {
+		c.AbortWithError(http.StatusForbidden, err)
+		return
+	}
 
 	newMessage, err := p.simplifyText(data.Message)
 	if err != nil {
@@ -263,8 +256,7 @@ func (p *Plugin) handleSimplify(c *gin.Context) {
 }
 
 func (p *Plugin) handleChangeTone(c *gin.Context) {
-	// userID := c.GetHeader("Mattermost-User-Id")
-	// TODO: Handle user rstrictions
+	userID := c.GetHeader("Mattermost-User-Id")
 	tone := c.Param("tone")
 
 	data := struct {
@@ -278,16 +270,10 @@ func (p *Plugin) handleChangeTone(c *gin.Context) {
 	}
 	defer c.Request.Body.Close()
 
-	// channel, err := p.pluginAPI.Channel.Get(post.ChannelId)
-	// if err != nil {
-	// 	c.AbortWithError(http.StatusInternalServerError, err)
-	// 	return
-	// }
-
-	// if err := p.checkUsageRestrictions(userID, channel); err != nil {
-	// 	c.AbortWithError(http.StatusForbidden, err)
-	// 	return
-	// }
+	if err := p.checkUsageRestrictionsForUser(userID); err != nil {
+		c.AbortWithError(http.StatusForbidden, err)
+		return
+	}
 
 	newMessage, err := p.changeTone(tone, data.Message)
 	if err != nil {
