@@ -18,11 +18,7 @@ export default class Plugin {
     public async initialize(registry: any, store: Store<GlobalState, Action<Record<string, unknown>>>) {
 		registry.registerPostTypeComponent('custom_llmbot', LLMBotPost);
         if (registry.registerPostActionComponent) {
-            registry.registerPostActionComponent((props: {post: any}) => {
-                const state = store.getState();
-                const team = state.entities.teams.teams[state.entities.teams.currentTeamId];
-                return <PostMenu post={props.post} teamName={team.name}/>
-            });
+            registry.registerPostActionComponent(PostMenu);
         } else {
             registry.registerPostDropdownMenuAction(<><span className='icon'><IconThreadSummarization/></span>{'Summarize Thread'}</>, (postId: string) => {
                 const state = store.getState();

@@ -1,15 +1,17 @@
 import React, {useState} from 'react';
 import styled from 'styled-components';
 
+import {Draft} from '@mattermost/types/drafts';
+
 import LoadingSpinner from './assets/loading_spinner';
 import IconAI from './assets/icon_ai';
 import IconWand from './assets/icon_wand';
-import {SubtlePrimaryButton, TertiaryButton, ButtonIcon} from './assets/buttons';
+import {SubtlePrimaryButton, TertiaryButton} from './assets/buttons';
 import DotMenu, {DropdownMenuItem} from './dot_menu';
 import {doSimplify, doChangeTone} from '../client';
 
 type Props = {
-    draft: any, // TODO: Add PostDraft here
+    draft: Draft,
     getSelectedText: () => {start: number, end: number},
     updateText: (text: string) => void
 }
@@ -69,7 +71,6 @@ const EditorMenu = (props: Props) => {
         const {start, end} = props.getSelectedText()
         let text = draft.message
         if (start < end) {
-            console.log(draft.message.substring(start, end))
             text = draft.message.substring(start, end)
         }
         let data = {message: ''};
@@ -90,7 +91,6 @@ const EditorMenu = (props: Props) => {
         const {start, end} = props.getSelectedText()
         let text = draft.message
         if (start < end) {
-            console.log(draft.message.substring(start, end))
             text = draft.message.substring(start, end)
         }
         let data = {message: ''};
@@ -109,7 +109,6 @@ const EditorMenu = (props: Props) => {
         const {start, end} = props.getSelectedText()
         let text = draft.message
         if (start < end) {
-            console.log(draft.message.substring(start, end))
             text = draft.message.substring(start, end)
         }
         let data = {message: ''};
