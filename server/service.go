@@ -368,3 +368,20 @@ func (p *Plugin) simplifyText(message string) (*string, error) {
 
 	return &result, nil
 }
+
+func (p *Plugin) aiChangeText(ask, message string) (*string, error) {
+	prompt, err := p.prompts.ChatCompletion(ai.PromptAIChangeText, map[string]string{
+		"Ask":     ask,
+		"Message": message,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := p.getLLM().ChatCompletionNoStream(prompt, ai.WithmaxTokens(128))
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}

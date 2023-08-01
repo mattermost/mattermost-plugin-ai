@@ -23,6 +23,7 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	router.POST("/summarize/post/:postid", p.handleSummarize)
 	router.POST("/transcribe/:postid", p.handleTranscribe)
 	router.POST("/simplify", p.handleSimplify)
+	router.POST("/ask_ai_change_text", p.handleAiChangeText)
 	router.POST("/change_tone/:tone", p.handleChangeTone)
 	router.GET("/feedback", p.handleGetFeedback)
 	router.ServeHTTP(w, r)
@@ -288,6 +289,35 @@ func (p *Plugin) handleChangeTone(c *gin.Context) {
 	}
 
 	newMessage, err := p.changeTone(tone, data.Message)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+	data.Message = *newMessage
+	c.Render(200, render.JSON{Data: data})
+}
+
+func (p *Plugin) handleAiChangeText(c *gin.Context) {
+	userID := c.GetHeader("Mattermost-User-Id")
+
+	data := struct {
+		Message string `json:"message"`
+		Ask     string `json:"ask"`
+	}{}
+
+	err := json.NewDecoder(c.Request.Body).Decode(&data)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+	defer c.Request.Body.Close()
+
+	if err := p.checkUsageRestrictionsForUser(userID); err != nil {
+		c.AbortWithError(http.StatusForbidden, err)
+		return
+	}
+
+	newMessage, err := p.aiChangeText(data.Ask, data.Message)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return

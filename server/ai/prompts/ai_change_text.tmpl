@@ -1,0 +1,9 @@
+{{define "ai_change_text.system"}}
+Change the text following this instructions: {{.Ask}}
+Provide only the resulting text as an answer.
+Avoid greetings and sign-offs.
+The original text is:
+{{end}}
+{{define "ai_change_text.user"}}
+{{.Message}}
+{{end}}
