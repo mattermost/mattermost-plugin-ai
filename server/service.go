@@ -353,9 +353,10 @@ func (p *Plugin) changeTone(tone, message string) (*string, error) {
 }
 
 func (p *Plugin) simplifyText(message string) (*string, error) {
-	prompt, err := p.prompts.ChatCompletion(ai.PromptSimplifyText, map[string]string{
+	context := ai.NewConversationContextParametersOnly(map[string]string{
 		"Message": message,
 	})
+	prompt, err := p.prompts.ChatCompletion(ai.PromptSimplifyText, context)
 	if err != nil {
 		return nil, err
 	}
