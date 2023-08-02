@@ -80,13 +80,17 @@ func (p *Plugin) toolResolveGetChannelPosts(context ai.ConversationContext, args
 		return "Error: Ambiguous channel lookup. Unable to what channel the user is reffering to because DMs do not belong to specific teams. Tell the user to ask outside a DM channel.", errors.New("ambiguous channel lookup")
 	}
 
-	if !p.pluginAPI.User.HasPermissionToChannel(context.RequestingUser.Id, context.Channel.Id, model.PermissionReadChannel) {
-		return "user doesn't have permissions to read requested channel", errors.New("user doesn't have permission to read channel")
-	}
-
 	channel, err := p.pluginAPI.Channel.GetByName(context.Channel.TeamId, args.ChannelName, false)
 	if err != nil {
 		return "internal failure", errors.Wrap(err, "failed to lookup channel by name, may not exist")
+	}
+
+	if err := p.checkUsageRestrictions(context.RequestingUser.Id, channel); err != nil {
+		return "user asked for a channel that is blocked by usage restrictions", errors.Wrap(err, "usage restrictions during channel lookup")
+	}
+
+	if !p.pluginAPI.User.HasPermissionToChannel(context.RequestingUser.Id, channel.Id, model.PermissionReadChannel) {
+		return "user doesn't have permissions to read requested channel", errors.New("user doesn't have permission to read channel")
 	}
 
 	posts, err := p.pluginAPI.Post.GetPostsForChannel(channel.Id, 0, args.NumberPosts)
