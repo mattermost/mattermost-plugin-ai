@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
@@ -19,6 +20,14 @@ func (p *Plugin) getThreadAndMeta(postID string) (*ThreadData, error) {
 	if err != nil {
 		return nil, err
 	}
+	return p.getMetadataForPosts(posts)
+
+}
+
+func (p *Plugin) getMetadataForPosts(posts *model.PostList) (*ThreadData, error) {
+	sort.Slice(posts.Order, func(i, j int) bool {
+		return posts.Posts[posts.Order[i]].CreateAt < posts.Posts[posts.Order[j]].CreateAt
+	})
 
 	userIDsUnique := make(map[string]bool)
 	for _, post := range posts.Posts {
@@ -44,7 +53,6 @@ func (p *Plugin) getThreadAndMeta(postID string) (*ThreadData, error) {
 		Posts:     postsSlice,
 		UsersByID: usersByID,
 	}, nil
-
 }
 
 func formatThread(data *ThreadData) string {

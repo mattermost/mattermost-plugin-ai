@@ -6,27 +6,34 @@
 
 # Table of Contents
 
-- [Mattermost AI Plugin](#mattermost-ai-plugin)
-- [Table of Contents](#table-of-contents)
-  - [Background](#background)
-  - [Install Mattermost + `mattermost-plugin-ai`](#install-mattermost--mattermost-plugin-ai)
-    - [On existing Mattermost server](#on-existing-mattermost-server)
-    - [Local Development](#local-development)
-    - [Gitpod Demo](#gitpod-demo)
-  - [Usage](#usage)
-    - [Streaming Conversation](#streaming-conversation)
-    - [Thread Summarization](#thread-summarization)
-    - [Answer questions about Threads](#answer-questions-about-threads)
-    - [Chat anywhere](#chat-anywhere)
-    - [Create meeting summary](#create-meeting-summary)
-    - [React for me](#react-for-me)
-    - [RLHF Feedback Collection](#rlhf-feedback-collection)
-  - [Supported Backends](#supported-backends)
-  - [Community Resources](#community-resources)
-    - [AI](#ai)
-    - [Mattermost](#mattermost)
-  - [Contributing](#contributing)
-  - [License](#license)
+- [Background](#background)
+- [Install Mattermost + `mattermost-plugin-ai`](#install-mattermost--mattermost-plugin-ai)
+  - [On existing Mattermost server](#on-existing-mattermost-server)
+  - [Local Development](#local-development)
+  - [Gitpod Demo](#gitpod-demo)
+- [Usage](#usage)
+  - [Streaming Conversation](#streaming-conversation)
+  - [Thread Summarization](#thread-summarization)
+  - [Answer questions about Threads](#answer-questions-about-threads)
+  - [Chat anywhere](#chat-anywhere)
+  - [Create meeting summary](#create-meeting-summary)
+  - [Personalisation](#personalisation)
+  - [User lookup (OpenAI exclusive)](#user-lookup-openai-exclusive)
+  - [Channel posts lookup (OpenAI exclusive)](#channel-posts-lookup-openai-exclusive)
+  - [GitHub integration (OpenAI exclusive, requires GitHub plugin)](#github-integration-openai-exclusive-requires-github-plugin)
+  - [React for me](#react-for-me)
+  - [RLHF Feedback Collection](#rlhf-feedback-collection)
+- [Supported Backends](#supported-backends)
+  - [OpenAI (recommended)](#openai-recommended)
+  - [Anthropic](#anthropic)
+  - [Azure OpenAI](#azure-openai)
+  - [OpenAI Compatable](#openai-compatable)
+  - [Ask Sage](#ask-sage)
+- [Community Resources](#community-resources)
+  - [AI](#ai)
+  - [Mattermost](#mattermost)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Background
 
@@ -94,6 +101,27 @@ Create meeting summaries! Designed to work with the [calls plugin's](https://git
 
 ![Meeting Summary](/img/meeting_summary.png)
 
+### Personalisation
+Context such as the current channel and user are supplied to the LLM when you make requests. Allowing customization of responses.
+![Personalisation](/img/personalization.png)
+
+### User lookup (OpenAI exclusive) 
+The LLM can lookup other users on the system if you ask about them.
+
+OpenAI exclusive for now since it requires the function API.
+
+### Channel posts lookup (OpenAI exclusive)
+You can ask about other channels and the LLM can ingest posts from that channel. For example you can ask it to summarize the last few posts in a channel. Note, depending on if you have CRT enabled this may not behave as you expect.
+![Personalisation](/img/posts_lookup.png)
+
+OpenAI exclusive for now since it requires the function API.
+
+### GitHub integration (OpenAI exclusive, requires GitHub plugin)
+The LLM can attempt to lookup specific GitHub issues. For example you can paste a GitHub link into the chat and ask questions about it. Only the title and description for now.
+![Github](/img/github.png)
+
+OpenAI exclusive for now since it requires the function API.
+
 ### React for me
 Just for fun! Use the post menu to ask the bot to react to the post. It will try to pick an appropriate reaction.
 
@@ -122,9 +150,11 @@ Configure the API key in the system console and configure a default model like `
 ### Azure OpenAI
 You will need to ask Azure to enable OpenAI in your Azure account before you can use this API.
 
+This api requires functions to be supported, and they are for now only on models version `0613` with API `2023-07-01-preview`. They are avaiable on limited datacenters right now. For moment of writing this docs avaiable regions for gpt-35-turbo v0613 are: Canada East, East US, France Central, Japan East, North Central US, UK South. More info in [azure docs](https://learn.microsoft.com/en-us/azure/ai-services/openai/concepts/models)
+
 Once you have been approved, you can create a new OpenAI resource. With the resource created you get access to the API key and the endpoint url clicking in keys and endpoints option of the menu.
 
-Finally you have to deploy the model that you are going to use, normally gpt-35-turbo, clicking in "Model deployments", and managing the models from there.
+Finally you have to deploy the model that you are going to use, normally gpt-35-turbo, clicking in "Model deployments", and managing the models from there. (TIP: don't select auto-update on your deployed model, it will auto-downgrade it to 0301 within about 5-10 minutes)
 
 Configure the API key and the endpoint url for OpenAI Compatible in the system console and configure a default model like `gpt-35-turbo`.
 

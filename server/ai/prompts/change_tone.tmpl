@@ -1,6 +1,6 @@
 {{define "change_tone.system"}}
-Change tone and voice to {{.Tone}}.
-{{if eq .Tone "professional"}}
+Change tone and voice to {{.PromptParameters.Tone}}.
+{{if eq .PromptParameters.Tone "professional"}}
 Use industry-specific language and terminology.
 Avoid complex words.
 {{end}}
@@ -13,5 +13,5 @@ Avoid greetings and sign-offs.
 The original text is:
 {{end}}
 {{define "change_tone.user"}}
-{{.Message}}
+{{.PromptParameters.Message}}
 {{end}}

@@ -84,7 +84,7 @@ func (p *Plugin) OnActivate() error {
 		return err
 	}
 
-	p.prompts, err = ai.NewPrompts(promptsFolder)
+	p.prompts, err = ai.NewPrompts(promptsFolder, p.getBuiltInTools)
 	if err != nil {
 		return err
 	}
@@ -101,18 +101,23 @@ func (p *Plugin) OnActivate() error {
 
 func (p *Plugin) getLLM() ai.LanguageModel {
 	cfg := p.getConfiguration()
+	var llm ai.LanguageModel
 	switch cfg.LLMGenerator {
 	case "openai":
-		return openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel)
+		llm = openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel)
 	case "openaicompatible":
-		return openai.NewCompatible(cfg.OpenAICompatibleKey, cfg.OpenAICompatibleUrl, cfg.OpenAICompatibleModel)
+		llm = openai.NewCompatible(cfg.OpenAICompatibleKey, cfg.OpenAICompatibleUrl, cfg.OpenAICompatibleModel)
 	case "anthropic":
-		return anthropic.New(cfg.AnthropicAPIKey, cfg.AnthropicDefaultModel)
+		llm = anthropic.New(cfg.AnthropicAPIKey, cfg.AnthropicDefaultModel)
 	case "asksage":
-		return asksage.New(cfg.AskSageUsername, cfg.AskSagePassword, cfg.AskSageDefaultModel)
+		llm = asksage.New(cfg.AskSageUsername, cfg.AskSagePassword, cfg.AskSageDefaultModel)
 	}
 
-	return nil
+	if cfg.EnableLLMTrace {
+		return NewLanguageModelLogWrapper(p.pluginAPI.Log, llm)
+	}
+
+	return llm
 }
 
 func (p *Plugin) getImageGenerator() ai.ImageGenerator {
@@ -142,6 +147,11 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 		return
 	}
 
+	// Never respond to remote posts
+	if post.RemoteId != nil && *post.RemoteId != "" {
+		return
+	}
+
 	channel, err := p.pluginAPI.Channel.Get(post.ChannelId)
 	if err != nil {
 		p.pluginAPI.Log.Error(err.Error())
@@ -167,11 +177,12 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 				return
 			}
 		}
-		err = p.processUserRequestToBot(post, channel)
+		err = p.processUserRequestToBot(p.MakeConversationContext(postingUser, channel, post))
 		if err != nil {
 			p.pluginAPI.Log.Error("Unable to process bot reqeust: " + err.Error())
 			return
 		}
+		return
 	}
 
 	// We are mentioned
@@ -192,11 +203,12 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 			return
 		}
 
-		err = p.processUserRequestToBot(post, channel)
+		err = p.processUserRequestToBot(p.MakeConversationContext(postingUser, channel, post))
 		if err != nil {
 			p.pluginAPI.Log.Error("Unable to process bot mention: " + err.Error())
 			return
 		}
+		return
 	}
 
 	// Its a bot post from the calls plugin
@@ -213,9 +225,10 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 			}
 		}
 
-		if err := p.handleCallRecordingPost(post); err != nil {
+		if err := p.handleCallRecordingPost(post, channel); err != nil {
 			p.pluginAPI.Log.Error("Unable to process calls recording", "error", err)
 			return
 		}
+		return
 	}
 }

@@ -9,7 +9,8 @@ import (
 )
 
 type Prompts struct {
-	templates *template.Template
+	templates       *template.Template
+	getBuiltInTools func() []Tool
 }
 
 const PromptExtension = "tmpl"
@@ -29,14 +30,15 @@ const (
 	PromptSimplifyText          = "simplify_text"
 )
 
-func NewPrompts(input fs.FS) (*Prompts, error) {
+func NewPrompts(input fs.FS, getBuiltInTools func() []Tool) (*Prompts, error) {
 	templates, err := template.ParseFS(input, "ai/prompts/*")
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to parse prompt templates")
 	}
 
 	return &Prompts{
-		templates: templates,
+		templates:       templates,
+		getBuiltInTools: getBuiltInTools,
 	}, nil
 
 }
@@ -45,9 +47,17 @@ func withPromptExtension(filename string) string {
 	return filename + "." + PromptExtension
 }
 
-func (p *Prompts) ChatCompletion(templateName string, data any) (BotConversation, error) {
+func (p *Prompts) getDefaultTools() ToolStore {
+	tools := NewToolStore()
+	tools.AddTools(p.getBuiltInTools())
+	return tools
+}
+
+func (p *Prompts) ChatCompletion(templateName string, context ConversationContext) (BotConversation, error) {
 	conversation := BotConversation{
-		Posts: []Post{},
+		Posts:   []Post{},
+		Context: context,
+		Tools:   p.getDefaultTools(),
 	}
 
 	template := p.templates.Lookup(withPromptExtension(templateName))
@@ -56,7 +66,7 @@ func (p *Prompts) ChatCompletion(templateName string, data any) (BotConversation
 	}
 
 	if systemTemplate := template.Lookup(templateName + SystemSubTemplateName); systemTemplate != nil {
-		systemMessage, err := p.Execute(systemTemplate, data)
+		systemMessage, err := p.execute(systemTemplate, context)
 		if err != nil {
 			return conversation, err
 		}
@@ -68,7 +78,7 @@ func (p *Prompts) ChatCompletion(templateName string, data any) (BotConversation
 	}
 
 	if userTemplate := template.Lookup(templateName + UserSubTemplateName); userTemplate != nil {
-		userMessage, err := p.Execute(userTemplate, data)
+		userMessage, err := p.execute(userTemplate, context)
 		if err != nil {
 			return conversation, err
 		}
@@ -82,7 +92,7 @@ func (p *Prompts) ChatCompletion(templateName string, data any) (BotConversation
 	return conversation, nil
 }
 
-func (p *Prompts) Execute(template *template.Template, data any) (string, error) {
+func (p *Prompts) execute(template *template.Template, data ConversationContext) (string, error) {
 	out := &strings.Builder{}
 	if err := template.Execute(out, data); err != nil {
 		return "", errors.Wrap(err, "unable to execute template")

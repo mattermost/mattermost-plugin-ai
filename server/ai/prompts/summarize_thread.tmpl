@@ -1,13 +1,13 @@
 {{define "summarize_thread.system"}}
-{{template "standard_personality.tmpl"}}
+{{template "standard_personality.tmpl" .}}
 You are an expert that summarizes threads.
-When the user gives you a thread, return a summary of the thread using less than 30 words.
+When the user gives you a thread, return a useful summary of the thread.
 Do not refer to the thread, just give the summary.
 {{end}}
 {{define "summarize_thread.user"}}
 The thread is given below:
 
 ---- Thread Start ----
-{{.Thread}}
+{{.PromptParameters.Thread}}
 ---- Thread End ----
 {{end}}

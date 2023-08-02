@@ -11,6 +11,7 @@ DLV_DEBUG_PORT := 2346
 DEFAULT_GOOS := $(shell go env GOOS)
 DEFAULT_GOARCH := $(shell go env GOARCH)
 INCLUDE_FFMPEG ?=
+RELEASE_VERSION ?=
 
 export GO111MODULE=on
 
@@ -265,6 +266,22 @@ ifndef STARTERTEMPLATE_PATH
 	@exit 1
 endif
 	cd ${STARTERTEMPLATE_PATH} && go run ./build/sync/main.go ./build/sync/plan.yml $(PWD)
+
+.PHONY: confirm
+confirm:
+	@echo -n 'Are you sure? [y/N] ' && read ans && [ $${ans:-N} = y ]
+
+## Create and push a new release
+.PHONY: release
+release: confirm
+	@git diff-index --quiet HEAD || (echo "Git not clean. Aborting."; exit 1)
+
+	jq '.version = "${RELEASE_VERSION}"' plugin.json > plugin.json.new && mv plugin.json.new plugin.json
+	git add .
+	git commit -m "Update version to ${RELEASE_VERSION}"
+	git push origin
+	git tag -a v${RELEASE_VERSION} -m "v${RELEASE_VERSION}"
+	git push origin v${RELEASE_VERSION}
 
 # Help documentation à la https://marmelab.com/blog/2016/02/29/auto-documented-makefile.html
 help:

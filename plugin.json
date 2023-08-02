@@ -6,7 +6,7 @@
   "support_url": "https://github.com/mattermost/mattermost-plugin-ai/issues",
   "release_notes_url": "https://github.com/mattermost/mattermost-plugin-ai",
   "icon_path": "assets/bot_icon.png",
-  "version": "0.2.0",
+  "version": "0.3.1",
   "min_server_version": "6.2.1",
   "server": {
     "executables": {
@@ -151,6 +151,13 @@
         "type": "text",
         "display_name": "Only Users on Team: ",
         "help_text": "Only users on this team will be allowed to use the plugin"
+      },
+      {
+        "key": "EnableLLMTrace",
+        "type": "bool",
+        "display_name": "Enable LLM Trace:",
+        "help_text": "Enable tracing of LLM requests. Outputs whole conversations to the logs.",
+        "default": false
       }
     ]
   }

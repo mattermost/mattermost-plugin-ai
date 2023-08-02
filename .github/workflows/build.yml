@@ -1,7 +1,11 @@
 name: Build Plugin
 on:
   push:
-  workflow_dispatch:
+    branches:
+      - master
+    tags:
+      - v*
+  pull_request:
 
 jobs:
   check-style:
