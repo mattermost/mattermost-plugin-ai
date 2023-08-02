@@ -68,7 +68,7 @@ type DotMenuProps = {
     closeOnClick?: boolean;
 };
 
-type DropdownProps = Omit<ComponentProps<typeof Dropdown>, 'target' | 'children'>;
+type DropdownProps = Omit<ComponentProps<typeof Dropdown>, 'target' | 'children' | 'isOpen'>;
 
 const DotMenu = ({
     children,

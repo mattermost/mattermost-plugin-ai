@@ -32,9 +32,8 @@ type DropdownProps = {
     shift?: Parameters<typeof shift>[0];
     focusManager?: boolean | Omit<ComponentProps<typeof FloatingFocusManager>, 'context' | 'children'>;
     portal?: boolean;
-    containerStyles?: ReturnType<typeof css>;
     isOpen: boolean;
-    onOpenChange: undefined | ((open: boolean) => void);
+    onOpenChange?: ((open: boolean) => void);
 };
 
 const Dropdown = (props: DropdownProps) => {
@@ -72,9 +71,6 @@ const Dropdown = (props: DropdownProps) => {
                     left: x ?? 0,
                 },
             })}
-            css={`
-                ${props.containerStyles};
-            `}
         >
             {props.children}
         </FloatingContainer>
