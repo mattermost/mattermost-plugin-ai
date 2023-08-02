@@ -151,7 +151,6 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 		case openaiClient.FinishReasonStop:
 			return
 		case openaiClient.FinishReasonFunctionCall:
-			fmt.Println("\nFunction call:\nfunction name: ", functionName.String(), "\n arguments: ", functionArguments.String())
 			// Verify OpenAI functions are not recursing too deep.
 			numFunctionCalls := 0
 			for i := len(request.Messages) - 1; i >= 0; i-- {
@@ -172,7 +171,6 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 				errChan <- err
 				return
 			}
-			fmt.Println("Function request: ", recursiveRequest)
 			s.streamResultToChannels(recursiveRequest, conversation, output, errChan)
 			return
 		default:
