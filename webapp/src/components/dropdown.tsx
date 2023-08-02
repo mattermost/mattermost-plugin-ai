@@ -12,7 +12,6 @@ import {
     flip,
     offset,
     shift,
-    useClick,
     useDismiss,
     useFloating,
     useInteractions,
@@ -34,13 +33,9 @@ type DropdownProps = {
     focusManager?: boolean | Omit<ComponentProps<typeof FloatingFocusManager>, 'context' | 'children'>;
     portal?: boolean;
     containerStyles?: ReturnType<typeof css>;
-} & ({
     isOpen: boolean;
     onOpenChange: undefined | ((open: boolean) => void);
-} | {
-    isOpen?: never;
-    onOpenChange?: (open: boolean) => void;
-});
+};
 
 const Dropdown = (props: DropdownProps) => {
     const [isOpen, setIsOpen] = useState(props.isOpen);
@@ -61,7 +56,6 @@ const Dropdown = (props: DropdownProps) => {
     });
 
     const {getReferenceProps, getFloatingProps} = useInteractions([
-        useClick(context, {enabled: props.isOpen === undefined}),
         useRole(context),
         useDismiss(context),
     ]);

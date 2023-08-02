@@ -3,12 +3,13 @@ import styled from 'styled-components';
 
 import {Draft} from '@mattermost/types/drafts';
 
+import {doSimplify, doChangeTone} from '../client';
+
 import LoadingSpinner from './assets/loading_spinner';
 import IconAI from './assets/icon_ai';
 import IconWand from './assets/icon_wand';
 import {SubtlePrimaryButton, TertiaryButton} from './assets/buttons';
 import DotMenu, {DropdownMenuItem} from './dot_menu';
-import {doSimplify, doChangeTone} from '../client';
 
 type Props = {
     draft: Draft,
@@ -30,7 +31,7 @@ export const AIPrimaryButton = styled(SubtlePrimaryButton)`
     height: 24px;
     padding: 0 10px;
     margin-right: 10px;
-`
+`;
 
 export const AISecondaryButton = styled(TertiaryButton)`
     height: 24px;
@@ -44,7 +45,7 @@ export const AISecondaryButton = styled(TertiaryButton)`
         color: rgba(var(--center-channel-color-rgb), 0.76);
         fill: rgba(var(--center-channel-color-rgb), 0.76);
     }
-`
+`;
 
 export const MenuContentButtons = styled.div`
  && {
@@ -66,69 +67,69 @@ const EditorMenu = (props: Props) => {
     const simplify = async (e?: Event) => {
         e?.stopPropagation();
         e?.preventDefault();
-        setCurrentAction('simplify')
-        setGenerating(true)
-        const {start, end} = props.getSelectedText()
-        let text = draft.message
+        setCurrentAction('simplify');
+        setGenerating(true);
+        const {start, end} = props.getSelectedText();
+        let text = draft.message;
         if (start < end) {
-            text = draft.message.substring(start, end)
+            text = draft.message.substring(start, end);
         }
         let data = {message: ''};
         try {
-            data = await doSimplify(text, );
-        } catch (e) {
-            setError("Unable to simplify the text")
+            data = await doSimplify(text);
+        } catch (err) {
+            setError('Unable to simplify the text');
         }
-        setGenerating(false)
-        setProposal(data.message)
-    }
+        setGenerating(false);
+        setProposal(data.message);
+    };
 
     const changeToProfessional = async (e?: Event) => {
         e?.stopPropagation();
         e?.preventDefault();
-        setCurrentAction('change-to-professional')
-        setGenerating(true)
-        const {start, end} = props.getSelectedText()
-        let text = draft.message
+        setCurrentAction('change-to-professional');
+        setGenerating(true);
+        const {start, end} = props.getSelectedText();
+        let text = draft.message;
         if (start < end) {
-            text = draft.message.substring(start, end)
+            text = draft.message.substring(start, end);
         }
         let data = {message: ''};
         try {
             data = await doChangeTone('professional', text);
-        } catch (e) {
-            setError("Unable to change the tone")
+        } catch (err) {
+            setError('Unable to change the tone');
         }
-        setGenerating(false)
-        setProposal(data.message)
-    }
+        setGenerating(false);
+        setProposal(data.message);
+    };
 
     const regenerate = async () => {
-        setProposal('')
-        setGenerating(true)
-        const {start, end} = props.getSelectedText()
-        let text = draft.message
+        setProposal('');
+        setGenerating(true);
+        const {start, end} = props.getSelectedText();
+        let text = draft.message;
         if (start < end) {
-            text = draft.message.substring(start, end)
+            text = draft.message.substring(start, end);
         }
         let data = {message: ''};
-        if (currentAction == 'simplify') {
+        if (currentAction === 'simplify') {
             try {
                 data = await doSimplify(text);
             } catch (e) {
-                setError("Unable to simplify the text")
+                setError('Unable to simplify the text');
             }
-        } else if (currentAction == 'change-to-professional') {
+        } else if (currentAction === 'change-to-professional') {
             try {
                 data = await doChangeTone('professional', text);
             } catch (e) {
-                setError("Unable to change the tone")
+                setError('Unable to change the tone');
             }
         }
-        setGenerating(false)
-        setProposal(data.message)
-        setCurrentAction('simplify')
-    }
+        setGenerating(false);
+        setProposal(data.message);
+        setCurrentAction('simplify');
+    };
 
     return (
         <DotMenu
@@ -142,21 +143,25 @@ const EditorMenu = (props: Props) => {
             }}
         >
             {(generating || error || proposal) &&
-                <MenuContent onClick={(e) => {
-                    if (!(e.target as HTMLElement).classList.contains('ai-error-cancel') && !(e.target as HTMLElement).classList.contains('ai-use-it-button')) {
-                        e.stopPropagation();
-                        e.preventDefault();
-                    }
-                }}>
+                <MenuContent
+                    onClick={(e) => {
+                        if (!(e.target as HTMLElement).classList.contains('ai-error-cancel') && !(e.target as HTMLElement).classList.contains('ai-use-it-button')) {
+                            e.stopPropagation();
+                            e.preventDefault();
+                        }
+                    }}
+                >
                     {generating && <LoadingSpinner/>}
                     {!generating && error &&
                         <div>
                             <div>{error}</div>
                             <MenuContentButtons>
-                                <AIPrimaryButton onClick={() => {
-                                    setError('');
-                                    regenerate();
-                                }}>{'Try again'}</AIPrimaryButton>
+                                <AIPrimaryButton
+                                    onClick={() => {
+                                        setError('');
+                                        regenerate();
+                                    }}
+                                >{'Try again'}</AIPrimaryButton>
                                 <AISecondaryButton className='ai-error-cancel'>{'Cancel'}</AISecondaryButton>
                             </MenuContentButtons>
                         </div>
@@ -165,14 +170,14 @@ const EditorMenu = (props: Props) => {
                         <Proposal
                             text={proposal}
                             onAccept={() => {
-                                const {start, end} = props.getSelectedText()
+                                const {start, end} = props.getSelectedText();
                                 let prefix = '';
                                 let suffix = '';
                                 if (start < end) {
-                                    prefix = draft.message.substring(0, start)
-                                    suffix = draft.message.substring(end)
+                                    prefix = draft.message.substring(0, start);
+                                    suffix = draft.message.substring(end);
                                 }
-                                updateText(prefix+proposal+suffix)
+                                updateText(prefix + proposal + suffix);
                             }}
                             onRegenerate={regenerate}
                         />}
@@ -201,15 +206,20 @@ const Proposal = (props: ProposalProps) => {
         <div>
             <div>{props.text}</div>
             <MenuContentButtons>
-                <AIPrimaryButton onClick={() => props.onAccept()} className='ai-use-it-button'><span className='icon'><i className='icon-check'/></span>{'Use this'}</AIPrimaryButton>
-                <AISecondaryButton onClick={(e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    props.onRegenerate();
-                }}><span className='icon'><i className='icon-refresh'/></span>{'Regenerate'}</AISecondaryButton>
+                <AIPrimaryButton
+                    onClick={() => props.onAccept()}
+                    className='ai-use-it-button'
+                ><span className='icon'><i className='icon-check'/></span>{'Use this'}</AIPrimaryButton>
+                <AISecondaryButton
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        props.onRegenerate();
+                    }}
+                ><span className='icon'><i className='icon-refresh'/></span>{'Regenerate'}</AISecondaryButton>
             </MenuContentButtons>
         </div>
     );
-}
+};
 
 export default EditorMenu;
