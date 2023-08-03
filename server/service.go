@@ -370,10 +370,11 @@ func (p *Plugin) simplifyText(message string) (*string, error) {
 }
 
 func (p *Plugin) aiChangeText(ask, message string) (*string, error) {
-	prompt, err := p.prompts.ChatCompletion(ai.PromptAIChangeText, map[string]string{
+	context := ai.NewConversationContextParametersOnly(map[string]string{
 		"Ask":     ask,
 		"Message": message,
 	})
+	prompt, err := p.prompts.ChatCompletion(ai.PromptAIChangeText, context)
 	if err != nil {
 		return nil, err
 	}
