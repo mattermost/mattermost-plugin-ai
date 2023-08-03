@@ -27,6 +27,7 @@ const (
 	PromptMeetingKeyPoints      = "meeting_key_points"
 	PromptSpellcheck            = "spellcheck"
 	PromptChangeTone            = "change_tone"
+	PromptSimplifyText          = "simplify_text"
 )
 
 func NewPrompts(input fs.FS, getBuiltInTools func() []Tool) (*Prompts, error) {

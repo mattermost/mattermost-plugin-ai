@@ -4,8 +4,8 @@ import styled from 'styled-components';
 import {doFeedback} from '@/client';
 
 import PostText from './post_text';
-import IconThumbsUp from './icon_thumbs_up';
-import IconThumbsDown from './icon_thumbs_down';
+import IconThumbsUp from './assets/icon_thumbs_up';
+import IconThumbsDown from './assets/icon_thumbs_down';
 
 interface Props {
     post: any;

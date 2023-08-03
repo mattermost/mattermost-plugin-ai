@@ -78,3 +78,39 @@ export async function doTranscribe(postid: string) {
         url,
     });
 }
+
+export async function doSimplify(message: string) {
+    const url = `/plugins/${manifest.id}/simplify`;
+    const response = await fetch(url, Client4.getOptions({
+        method: 'POST',
+        body: JSON.stringify({message}),
+    }));
+
+    if (response.ok) {
+        return response.json();
+    }
+
+    throw new ClientError(Client4.url, {
+        message: '',
+        status_code: response.status,
+        url,
+    });
+}
+
+export async function doChangeTone(tone: string, message: string) {
+    const url = `/plugins/${manifest.id}/change_tone/${tone}`;
+    const response = await fetch(url, Client4.getOptions({
+        method: 'POST',
+        body: JSON.stringify({message}),
+    }));
+
+    if (response.ok) {
+        return response.json();
+    }
+
+    throw new ClientError(Client4.url, {
+        message: '',
+        status_code: response.status,
+        url,
+    });
+}

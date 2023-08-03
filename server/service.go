@@ -351,3 +351,20 @@ func (p *Plugin) changeTone(tone, message string) (*string, error) {
 
 	return &result, nil
 }
+
+func (p *Plugin) simplifyText(message string) (*string, error) {
+	context := ai.NewConversationContextParametersOnly(map[string]string{
+		"Message": message,
+	})
+	prompt, err := p.prompts.ChatCompletion(ai.PromptSimplifyText, context)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := p.getLLM().ChatCompletionNoStream(prompt, ai.WithmaxTokens(128))
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
