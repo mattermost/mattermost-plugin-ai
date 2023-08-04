@@ -4,8 +4,16 @@ import {manifest} from './manifest';
 
 const Client4 = new Client4Class();
 
+function postRoute(postid: string): string {
+    return `/plugins/${manifest.id}/post/${postid}`;
+}
+
+function textRoute(): string {
+    return `/plugins/${manifest.id}/text`;
+}
+
 export async function doReaction(postid: string) {
-    const url = `/plugins/${manifest.id}/react/${postid}`;
+    const url = `${postRoute(postid)}/react`;
     const response = await fetch(url, Client4.getOptions({
         method: 'POST',
     }));
@@ -22,7 +30,7 @@ export async function doReaction(postid: string) {
 }
 
 export async function doSummarize(postid: string) {
-    const url = `/plugins/${manifest.id}/summarize/post/${postid}`;
+    const url = `${postRoute(postid)}/summarize`;
     const response = await fetch(url, Client4.getOptions({
         method: 'POST',
     }));
@@ -39,7 +47,7 @@ export async function doSummarize(postid: string) {
 }
 
 export async function doFeedback(postid: string, positive: boolean) {
-    let url = `/plugins/${manifest.id}/feedback/post/${postid}/`;
+    let url = `${postRoute(postid)}/feedback/`;
 
     if (positive) {
         url += 'positive';
@@ -63,7 +71,7 @@ export async function doFeedback(postid: string, positive: boolean) {
 }
 
 export async function doTranscribe(postid: string) {
-    const url = `/plugins/${manifest.id}/transcribe/${postid}`;
+    const url = `${postRoute(postid)}/transcribe`;
     const response = await fetch(url, Client4.getOptions({
         method: 'POST',
     }));
@@ -80,7 +88,7 @@ export async function doTranscribe(postid: string) {
 }
 
 export async function doSimplify(message: string) {
-    const url = `/plugins/${manifest.id}/simplify`;
+    const url = `${textRoute()}/simplify`;
     const response = await fetch(url, Client4.getOptions({
         method: 'POST',
         body: JSON.stringify({message}),
@@ -98,7 +106,7 @@ export async function doSimplify(message: string) {
 }
 
 export async function doChangeTone(tone: string, message: string) {
-    const url = `/plugins/${manifest.id}/change_tone/${tone}`;
+    const url = `${textRoute()}/change_tone/${tone}`;
     const response = await fetch(url, Client4.getOptions({
         method: 'POST',
         body: JSON.stringify({message}),
@@ -116,7 +124,7 @@ export async function doChangeTone(tone: string, message: string) {
 }
 
 export async function doAskAiChangeText(ask: string, message: string) {
-    const url = `/plugins/${manifest.id}/ask_ai_change_text`;
+    const url = `${textRoute()}/ask_ai_change_text`;
     const response = await fetch(url, Client4.getOptions({
         method: 'POST',
         body: JSON.stringify({message, ask}),
