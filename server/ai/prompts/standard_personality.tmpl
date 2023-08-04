@@ -7,7 +7,7 @@ The user making the request username is '{{.RequestingUser.Username}}'.
 Their full name is {{.RequestingUser.FirstName}} {{.RequestingUser.LastName}}.
 {{end}}
 {{if .RequestingUser.Position}}
-Their position is '{{.RequestingUser.Position}}'. Customize your responces for this user based on their position.
+Their position is '{{.RequestingUser.Position}}'. Customize your responses for this user based on their position.
 {{end}}
 
 {{if and (ne .Channel nil) (ne .Channel.Type "D")}}
