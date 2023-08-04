@@ -35,7 +35,7 @@ export default function AskAiInput(props: Props) {
                 onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                         e.preventDefault();
-                        props.onRun(value)
+                        props.onRun(value);
                     }
                 }}
             />
