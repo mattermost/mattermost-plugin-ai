@@ -17,6 +17,14 @@ const Input = styled.input`
 	backgroundColor: transparent;
 `;
 
+const Icon = styled.span`
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 10px;
+	padding-right: 5px;
+`;
+
 type Props = {
     placeholder: string;
     onRun: (value: string) => void;
@@ -26,7 +34,7 @@ export default function AskAiInput(props: Props) {
     const [value, setValue] = useState('');
     return (
         <Container onClick={(e) => e.stopPropagation()}>
-            <span className='icon'><IconAI/></span>
+            <Icon><IconAI/></Icon>
             <Input
                 type='text'
                 placeholder={props.placeholder}
