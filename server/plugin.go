@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"io"
 	"os/exec"
 	"strings"
 	"sync"
@@ -231,4 +232,16 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 		}
 		return
 	}
+}
+
+func (p *Plugin) FileWillBeUploaded(c *plugin.Context, info *model.FileInfo, file io.Reader, output io.Writer) (*model.FileInfo, string) {
+	if !strings.HasPrefix(info.MimeType, "audio/") && !strings.HasPrefix(info.MimeType, "video/") {
+		return nil, ""
+	}
+	text, err := p.getTranscribe().Transcribe(file)
+	if err != nil {
+		return nil, ""
+	}
+	info.Content = text
+	return info, ""
 }
