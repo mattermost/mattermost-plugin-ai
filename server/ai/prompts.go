@@ -28,6 +28,7 @@ const (
 	PromptSpellcheck            = "spellcheck"
 	PromptChangeTone            = "change_tone"
 	PromptSimplifyText          = "simplify_text"
+	PromptAIChangeText          = "ai_change_text"
 )
 
 func NewPrompts(input fs.FS, getBuiltInTools func() []Tool) (*Prompts, error) {

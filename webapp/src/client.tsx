@@ -122,3 +122,21 @@ export async function doChangeTone(tone: string, message: string) {
         url,
     });
 }
+
+export async function doAskAiChangeText(ask: string, message: string) {
+    const url = `${textRoute()}/ask_ai_change_text`;
+    const response = await fetch(url, Client4.getOptions({
+        method: 'POST',
+        body: JSON.stringify({message, ask}),
+    }));
+
+    if (response.ok) {
+        return response.json();
+    }
+
+    throw new ClientError(Client4.url, {
+        message: '',
+        status_code: response.status,
+        url,
+    });
+}

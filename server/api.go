@@ -31,6 +31,7 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	textRouter := router.Group("/text")
 	textRouter.POST("/simplify", p.handleSimplify)
 	textRouter.POST("/change_tone/:tone", p.handleChangeTone)
+	textRouter.POST("/ask_ai_change_text", p.handleAiChangeText)
 
 	adminRouter := router.Group("/admin")
 	adminRouter.GET("/feedback", p.handleGetFeedback)
