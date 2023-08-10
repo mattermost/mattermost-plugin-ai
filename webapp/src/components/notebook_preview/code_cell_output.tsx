@@ -98,15 +98,15 @@ const CodeCellOutput = ({outputType, className, text, traceback, cellNumber, dat
             />
         );
         switch (format) {
-            case 'text/svg+xml':
-            case 'image/svg+xml':
-            case 'svg':
-            case 'image/png':
-            case 'png':
-            case 'image/jpeg':
-            case 'jpg':
-            case 'jpeg':
-                showCellNumber = false
+        case 'text/svg+xml':
+        case 'image/svg+xml':
+        case 'svg':
+        case 'image/png':
+        case 'png':
+        case 'image/jpeg':
+        case 'jpg':
+        case 'jpeg':
+            showCellNumber = false;
         }
     } else if (outputType === 'pyerr' || outputType === 'error') {
         output = (
