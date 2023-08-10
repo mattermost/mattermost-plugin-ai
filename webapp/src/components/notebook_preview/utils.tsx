@@ -4,7 +4,3 @@ export const joinText = (text: string|string[]): string => {
     }
     return text;
 };
-
-export const escapeHTML = (text: string) => {
-    return text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-};

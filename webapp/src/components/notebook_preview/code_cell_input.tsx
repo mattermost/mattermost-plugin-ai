@@ -2,8 +2,6 @@ import React from 'react';
 
 import styled from 'styled-components';
 
-import {escapeHTML} from './utils';
-
 type Props = {
     text: string
     language: string
