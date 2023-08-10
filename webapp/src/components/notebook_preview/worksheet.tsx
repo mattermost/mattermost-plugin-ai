@@ -15,14 +15,15 @@ const Worksheet = ({cells, language}: Props) => {
     return (
         <div className='worksheet'>
             {cells.map((c, idx) => {
-                if (c.cell_type === 'markdown') {
+                switch (c.cell_type) {
+                case 'markdown':
                     return (
                         <MarkdownCell
                             key={idx}
                             source={c.source}
                         />
                     );
-                } else if (c.cell_type === 'heading') {
+                case 'heading':
                     return (
                         <HeadingCell
                             key={idx}
@@ -30,14 +31,14 @@ const Worksheet = ({cells, language}: Props) => {
                             level={c.level || 1}
                         />
                     );
-                } else if (c.cell_type === 'raw') {
+                case 'raw':
                     return (
                         <RawCell
                             key={idx}
                             source={c.source}
                         />
                     );
-                } else if (c.cell_type === 'code') {
+                case 'code':
                     return (
                         <CodeCell
                             key={idx}
@@ -47,8 +48,9 @@ const Worksheet = ({cells, language}: Props) => {
                             cellNumber={c.prompt_number && c.prompt_number > -1 ? c.prompt_number : c.execution_count}
                         />
                     );
+                default:
+                    return null;
                 }
-                return null;
             })}
         </div>
     );

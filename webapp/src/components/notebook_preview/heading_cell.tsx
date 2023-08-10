@@ -14,18 +14,20 @@ type Props ={
 
 const HeadingCell = ({source, level, className}: Props) => {
     const content = <ReactMarkdown remarkPlugins={[remarkGfm]}>{joinText(source)}</ReactMarkdown>;
-    if (level === 1) {
-        return <h1 className={className || ''}>{content}</h1>;
-    } else if (level === 2) {
-        return <h2 className={className || ''}>{content}</h2>;
-    } else if (level === 3) {
-        return <h3 className={className || ''}>{content}</h3>;
-    } else if (level === 4) {
-        return <h4 className={className || ''}>{content}</h4>;
-    } else if (level === 5) {
-        return <h5 className={className || ''}>{content}</h5>;
+    switch (level) {
+        case 1:
+            return <h1 className={className || ''}>{content}</h1>;
+        case 2:
+            return <h2 className={className || ''}>{content}</h2>;
+        case 3:
+            return <h3 className={className || ''}>{content}</h3>;
+        case 4:
+            return <h4 className={className || ''}>{content}</h4>;
+        case 5:
+            return <h5 className={className || ''}>{content}</h5>;
+        default:
+            return <h6 className={className || ''}>{content}</h6>;
     }
-    return <h6 className={className || ''}>{content}</h6>;
 };
 
 const SytledHeadingCell = styled(HeadingCell)`
