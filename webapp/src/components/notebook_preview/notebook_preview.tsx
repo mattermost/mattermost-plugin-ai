@@ -24,11 +24,11 @@ const NotebookPreview = ({fileInfo}: Props) => {
 
     useEffect(() => {
         const client = new Client4();
-        fetch(client.getFileUrl(fileInfo.id, new Date().getTime())).then(async (response: any) => {
+        fetch(client.getFileRoute(fileInfo.id)).then(async (response: any) => {
             const data = await response.json();
             setNotebook(data);
         });
-    }, []);
+    }, [fileInfo.id]);
 
     return (
         <NotebookPreviewContainer>
