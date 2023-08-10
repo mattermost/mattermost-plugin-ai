@@ -1,12 +1,8 @@
 import React from 'react';
 import styled from 'styled-components';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import Ansi from 'ansi-to-react';
-import DOMPurify from 'dompurify';
-import katex from 'katex';
 
-import {joinText} from './utils';
+import CodeCellOutputData from './code_cell_output_data';
 
 import 'katex/dist/katex.min.css';
 
@@ -95,67 +91,22 @@ const CodeCellOutput = ({outputType, className, text, traceback, cellNumber, dat
         });
         const format = formats[0];
         const content = data[format];
-        if (format === 'text/plain' || format === 'text') {
-            output = (
-                <pre className='text-output'>
-                    <Ansi>{joinText(content)}</Ansi>
-                </pre>
-            );
-        } else if (format === 'text/html' || format === 'html') {
-            const sanitizedContent = DOMPurify.sanitize(joinText(content));
-            output = (
-                <div
-                    className='html-output'
-                    dangerouslySetInnerHTML={{__html: sanitizedContent}}
-                />
-            );
-        } else if (format === 'text/markdown' || format === 'markdown') {
-            output = (<ReactMarkdown remarkPlugins={[remarkGfm]}>{joinText(content)}</ReactMarkdown>);
-        } else if (format === 'text/svg+xml' || format === 'image/svg+xml' || format === 'svg') {
-            const sanitizedContent = DOMPurify.sanitize(joinText(content));
-            output = (
-                <div
-                    className='svg-output'
-                    dangerouslySetInnerHTML={{__html: sanitizedContent}}
-                />
-            );
-            showCellNumber = false;
-        } else if (format === 'text/latex' || format === 'latex') {
-            const katexOptions = {
-                throwOnError: false,
-                displayMode: true,
-                maxSize: 200,
-                maxExpand: 100,
-                fleqn: true,
-            };
-
-            let latex = joinText(content);
-            if (latex.startsWith('$$') && latex.endsWith('$$')) {
-                latex = latex.slice(2, -2);
-            }
-            const sanitizedText = DOMPurify.sanitize(katex.renderToString(latex, katexOptions));
-            output = (
-                <div
-                    className='latex-output'
-                    dangerouslySetInnerHTML={{__html: sanitizedText}}
-                />
-            );
-        } else if (format === 'image/png' || format === 'png') {
-            output = (
-                <img
-                    className='image-output'
-                    src={`data:image/png;base64,${joinText(content).replace(/\n/g, '')}`}
-                />
-            );
-            showCellNumber = false;
-        } else if (format === 'image/jpeg' || format === 'jpeg' || format === 'jpg') {
-            output = (
-                <img
-                    className='image-output'
-                    src={`data:image/jpeg;base64,${joinText(content).replace(/\n/g, '')}`}
-                />
-            );
-            showCellNumber = false;
+        output = (
+            <CodeCellOutputData
+                format={format}
+                content={content}
+            />
+        );
+        switch (format) {
+            case 'text/svg+xml':
+            case 'image/svg+xml':
+            case 'svg':
+            case 'image/png':
+            case 'png':
+            case 'image/jpeg':
+            case 'jpg':
+            case 'jpeg':
+                showCellNumber = false
         }
     } else if (outputType === 'pyerr' || outputType === 'error') {
         output = (
