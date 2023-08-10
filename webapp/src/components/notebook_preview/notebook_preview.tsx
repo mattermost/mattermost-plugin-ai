@@ -1,7 +1,5 @@
 import React, {useEffect, useState} from 'react';
 
-// import nb from 'notebookjs';
-
 import {FileInfo} from '@mattermost/types/files';
 import {Client4} from '@mattermost/client';
 import styled from 'styled-components';
