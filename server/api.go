@@ -54,8 +54,8 @@ func (p *Plugin) MattermostAuthorizationRequired(c *gin.Context) {
 		return
 	}
 
-	if p.getConfiguration().EnableUseRestrictions {
-		if !p.pluginAPI.User.HasPermissionToTeam(userID, p.getConfiguration().OnlyUsersOnTeam, model.PermissionViewTeam) {
+	if p.getConfiguration().Config.SecurityConfig.EnableUseRestrictions {
+		if !p.pluginAPI.User.HasPermissionToTeam(userID, p.getConfiguration().Config.SecurityConfig.OnlyUsersOnTeam, model.PermissionViewTeam) {
 			c.AbortWithError(http.StatusForbidden, errors.New("user not on allowed team"))
 			return
 		}

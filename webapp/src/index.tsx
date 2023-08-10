@@ -10,6 +10,7 @@ import PostMenu from './components/post_menu';
 import EditorMenu from './components/editor_menu';
 import IconThreadSummarization from './components/assets/icon_thread_summarization';
 import IconReactForMe from './components/assets/icon_react_for_me';
+import Config from './components/config/config';
 import {doReaction, doSummarize, doTranscribe} from './client';
 import {BotUsername} from './constants';
 
@@ -32,6 +33,8 @@ export default class Plugin {
         if (registry.registerPostEditorActionComponent) {
             registry.registerPostEditorActionComponent(EditorMenu);
         }
+
+        registry.registerAdminConsoleCustomSetting('Config', Config)
     }
 }
 

@@ -102,18 +102,25 @@ func (p *Plugin) OnActivate() error {
 func (p *Plugin) getLLM() ai.LanguageModel {
 	cfg := p.getConfiguration()
 	var llm ai.LanguageModel
-	switch cfg.LLMGenerator {
+	var llmService ServiceConfig
+	for _, service := range cfg.Config.Services {
+		if service.Name == cfg.Config.LLMGenerator {
+			llmService = service
+			break
+		}
+	}
+	switch llmService.ServiceName {
 	case "openai":
-		llm = openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel)
+		llm = openai.New(llmService.APIKey, llmService.DefaultModel)
 	case "openaicompatible":
-		llm = openai.NewCompatible(cfg.OpenAICompatibleKey, cfg.OpenAICompatibleUrl, cfg.OpenAICompatibleModel)
+		llm = openai.NewCompatible(llmService.APIKey, llmService.URL, llmService.DefaultModel)
 	case "anthropic":
-		llm = anthropic.New(cfg.AnthropicAPIKey, cfg.AnthropicDefaultModel)
+		llm = anthropic.New(llmService.APIKey, llmService.DefaultModel)
 	case "asksage":
-		llm = asksage.New(cfg.AskSageUsername, cfg.AskSagePassword, cfg.AskSageDefaultModel)
+		llm = asksage.New(llmService.Username, llmService.Password, llmService.DefaultModel)
 	}
 
-	if cfg.EnableLLMTrace {
+	if cfg.Config.EnableLLMTrace {
 		return NewLanguageModelLogWrapper(p.pluginAPI.Log, llm)
 	}
 
@@ -122,11 +129,18 @@ func (p *Plugin) getLLM() ai.LanguageModel {
 
 func (p *Plugin) getImageGenerator() ai.ImageGenerator {
 	cfg := p.getConfiguration()
-	switch cfg.LLMGenerator {
+	var imageGeneratorService ServiceConfig
+	for _, service := range cfg.Config.Services {
+		if service.Name == cfg.Config.ImageGenerator {
+			imageGeneratorService = service
+			break
+		}
+	}
+	switch imageGeneratorService.ServiceName {
 	case "openai":
-		return openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel)
+		return openai.New(imageGeneratorService.APIKey, imageGeneratorService.DefaultModel)
 	case "openaicompatible":
-		return openai.NewCompatible(cfg.OpenAICompatibleKey, cfg.OpenAICompatibleUrl, cfg.OpenAICompatibleModel)
+		return openai.NewCompatible(imageGeneratorService.APIKey, imageGeneratorService.URL, imageGeneratorService.DefaultModel)
 	}
 
 	return nil
@@ -134,11 +148,20 @@ func (p *Plugin) getImageGenerator() ai.ImageGenerator {
 
 func (p *Plugin) getTranscribe() ai.Transcriber {
 	cfg := p.getConfiguration()
-	/*switch cfg.LLMGenerator {
+	var transcriptionService ServiceConfig
+	for _, service := range cfg.Config.Services {
+		if service.Name == cfg.Config.TranscriptGenerator {
+			transcriptionService = service
+			break
+		}
+	}
+	switch transcriptionService.ServiceName {
 	case "openai":
-		return openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel)
-	}*/
-	return openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel)
+		return openai.New(transcriptionService.APIKey, transcriptionService.DefaultModel)
+	case "openaicompatible":
+		return openai.NewCompatible(transcriptionService.APIKey, transcriptionService.URL, transcriptionService.DefaultModel)
+	}
+	return nil
 }
 
 func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
@@ -171,8 +194,8 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 			return
 		}
 
-		if p.getConfiguration().EnableUseRestrictions {
-			if !p.pluginAPI.User.HasPermissionToTeam(postingUser.Id, p.getConfiguration().OnlyUsersOnTeam, model.PermissionViewTeam) {
+		if p.getConfiguration().Config.SecurityConfig.EnableUseRestrictions {
+			if !p.pluginAPI.User.HasPermissionToTeam(postingUser.Id, p.getConfiguration().Config.SecurityConfig.OnlyUsersOnTeam, model.PermissionViewTeam) {
 				p.pluginAPI.Log.Error("User not on allowed team.")
 				return
 			}
@@ -212,13 +235,13 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 	}
 
 	// Its a bot post from the calls plugin
-	if post.Type == CallsRecordingPostType && p.getConfiguration().EnableAutomaticCallsSummary {
-		if p.getConfiguration().EnableUseRestrictions {
-			if !strings.Contains(p.getConfiguration().AllowedTeamIDs, channel.TeamId) {
+	if post.Type == CallsRecordingPostType && p.getConfiguration().Config.EnableAutomaticCallsSummary {
+		if p.getConfiguration().Config.SecurityConfig.EnableUseRestrictions {
+			if !strings.Contains(p.getConfiguration().Config.SecurityConfig.AllowedTeamIDs, channel.TeamId) {
 				return
 			}
 
-			if !p.getConfiguration().AllowPrivateChannels {
+			if !p.getConfiguration().Config.SecurityConfig.AllowPrivateChannels {
 				if channel.Type != model.ChannelTypeOpen {
 					return
 				}
