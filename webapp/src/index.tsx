@@ -34,7 +34,7 @@ export default class Plugin {
         if (registry.registerPostEditorActionComponent) {
             registry.registerPostEditorActionComponent(EditorMenu);
         }
-        registry.registerFilePreviewComponent((fileInfo: FileInfo) => fileInfo.extension === "ipynb", NotebookPreview);
+        registry.registerFilePreviewComponent((fileInfo: FileInfo) => fileInfo.extension === 'ipynb', NotebookPreview);
     }
 }
 

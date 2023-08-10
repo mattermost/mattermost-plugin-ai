@@ -1,8 +1,10 @@
 import React from 'react';
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import {joinText} from './utils'
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
 import styled from 'styled-components';
+
+import {joinText} from './utils';
 
 type Props ={
     source: string|string[]
@@ -19,14 +21,14 @@ const RawCellContainer = styled.div`
     + .cell {
         margin-top: 0.5em;
     }
-`
+`;
 
 const RawCell = ({source}: Props) => {
     return (
         <RawCellContainer>
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{joinText(source)}</ReactMarkdown>
         </RawCellContainer>
-    )
-}
+    );
+};
 
 export default RawCell;

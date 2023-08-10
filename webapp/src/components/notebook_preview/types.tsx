@@ -8,10 +8,6 @@ export type Metadata = {
     }
 }
 
-export type WorksheetData = {
-    cells: Cell[]
-}
-
 export type Output = {
     output_type: string
     stream?: string
@@ -22,7 +18,7 @@ export type Output = {
 }
 
 export type Cell = {
-    cell_type: "markdown" | "heading" | "raw" | "code"
+    cell_type: 'markdown' | 'heading' | 'raw' | 'code'
     source: string
     level?: number
     language?: string
@@ -30,4 +26,8 @@ export type Cell = {
     prompt_number?: number
     execution_count: number
     input?: string[]
+}
+
+export type WorksheetData = {
+    cells: Cell[]
 }

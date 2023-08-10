@@ -1,6 +1,8 @@
 import React from 'react';
-import {escapeHTML} from './utils'
+
 import styled from 'styled-components';
+
+import {escapeHTML} from './utils';
 
 type Props = {
     text: string
@@ -18,13 +20,18 @@ const CodeCellInputtContainer = styled.div`
         width: 7em;
         text-align: right;
     }
-`
+`;
 
 const CodeCellInput = ({text, language, cellNumber}: Props) => {
-    if (!text.length) { return <div/>; }
+    if (!text.length) {
+        return <div/>;
+    }
 
     return (
-        <CodeCellInputtContainer className='cell-input' data-prompt-number={cellNumber}>
+        <CodeCellInputtContainer
+            className='cell-input'
+            data-prompt-number={cellNumber}
+        >
             <pre>
                 <code
                     data-language={language}
@@ -34,7 +41,7 @@ const CodeCellInput = ({text, language, cellNumber}: Props) => {
                 </code>
             </pre>
         </CodeCellInputtContainer>
-    )
-}
+    );
+};
 
 export default CodeCellInput;
