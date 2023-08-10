@@ -6,12 +6,12 @@ import HeadingCell from './heading_cell';
 import RawCell from './raw_cell';
 import CodeCell from './code_cell';
 
-type WorksheetProps = {
+type Props = {
     cells: Cell[]
     language: string
 }
 
-const Worksheet = ({cells, language}: WorksheetProps): React.ReactNode => {
+const Worksheet = ({cells, language}: Props) => {
     return (
         <div className='worksheet'>
             {cells.map((c, idx) => {
