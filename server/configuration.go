@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"reflect"
 
 	"github.com/pkg/errors"
@@ -80,8 +79,6 @@ func (p *Plugin) getConfiguration() *configuration {
 func (p *Plugin) setConfiguration(configuration *configuration) {
 	p.configurationLock.Lock()
 	defer p.configurationLock.Unlock()
-
-	fmt.Println("SAVING CONFIGURATION:", configuration.Config)
 
 	if configuration != nil && p.configuration == configuration {
 		// Ignore assignment if the configuration struct is empty. Go will optimize the
