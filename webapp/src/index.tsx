@@ -34,7 +34,7 @@ export default class Plugin {
             registry.registerPostEditorActionComponent(EditorMenu);
         }
 
-        registry.registerAdminConsoleCustomSetting('Config', Config)
+        registry.registerAdminConsoleCustomSetting('Config', Config);
     }
 }
 

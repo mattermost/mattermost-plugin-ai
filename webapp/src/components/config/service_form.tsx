@@ -1,7 +1,7 @@
 import React from 'react';
 import styled from 'styled-components';
 
-import {ServiceData} from './service'
+import {ServiceData} from './service';
 
 type Props = {
     service: ServiceData
@@ -15,14 +15,14 @@ const FormContainer = styled.div`
     border: 1px solid #ccc;
     margin-bottom: 20px;
     background: white;
-`
+`;
 
 const CloseButton = styled.button`
     position: absolute;
     top: 10px;
     right: 15px;
     font-size: 32px;
-`
+`;
 
 const ServiceForm = ({service, onChange, onDelete}: Props) => {
     return (
@@ -32,14 +32,14 @@ const ServiceForm = ({service, onChange, onDelete}: Props) => {
                     className='control-label col-sm-4'
                     htmlFor='ai-service-name'
                 >
-                    Name
+                    {'Name'}
                 </label>
                 <div className='col-sm-8'>
                     <input
                         id='ai-service-name'
                         className='form-control'
-                        type="name"
-                        placeholder="Name"
+                        type='name'
+                        placeholder='Name'
                         value={service.name}
                         onChange={(e) => onChange({...service, name: e.target.value})}
                     />
@@ -50,7 +50,7 @@ const ServiceForm = ({service, onChange, onDelete}: Props) => {
                     className='control-label col-sm-4'
                     htmlFor='ai-service-select'
                 >
-                    AI Service
+                    {'AI Service'}
                 </label>
                 <div className='col-sm-8'>
                     <select
@@ -59,10 +59,10 @@ const ServiceForm = ({service, onChange, onDelete}: Props) => {
                         onChange={(e) => onChange({...service, serviceName: e.target.value})}
                         value={service.serviceName}
                     >
-                        <option value="openai">OpenAI</option>
-                        <option value="openai-compatible">OpenAI Compatible</option>
-                        <option value="anthropic">Anthropic</option>
-                        <option value="asksage">Ask Sage</option>
+                        <option value='openai'>{'OpenAI'}</option>
+                        <option value='openai-compatible'>{'OpenAI Compatible'}</option>
+                        <option value='anthropic'>{'Anthropic'}</option>
+                        <option value='asksage'>{'Ask Sage'}</option>
                     </select>
                 </div>
             </div>
@@ -72,14 +72,14 @@ const ServiceForm = ({service, onChange, onDelete}: Props) => {
                         className='control-label col-sm-4'
                         htmlFor='ai-service-url'
                     >
-                        API URL
+                        {'API URL'}
                     </label>
                     <div className='col-sm-8'>
                         <input
                             id='ai-service-url'
                             className='form-control'
-                            type="url"
-                            placeholder="URL"
+                            type='url'
+                            placeholder='URL'
                             value={service.url}
                             onChange={(e) => onChange({...service, url: e.target.value})}
                         />
@@ -92,14 +92,14 @@ const ServiceForm = ({service, onChange, onDelete}: Props) => {
                         className='control-label col-sm-4'
                         htmlFor='ai-service-api-key'
                     >
-                        API Key
+                        {'API Key'}
                     </label>
                     <div className='col-sm-8'>
                         <input
                             id='ai-service-api-key'
                             className='form-control'
-                            type="text"
-                            placeholder="API Key"
+                            type='text'
+                            placeholder='API Key'
                             value={service.apiKey}
                             onChange={(e) => onChange({...service, apiKey: e.target.value})}
                         />
@@ -111,14 +111,14 @@ const ServiceForm = ({service, onChange, onDelete}: Props) => {
                     className='control-label col-sm-4'
                     htmlFor='ai-service-default-model'
                 >
-                    Default Model
+                    {'Default Model'}
                 </label>
                 <div className='col-sm-8'>
                     <input
                         id='ai-service-default-model'
                         className='form-control'
-                        type="text"
-                        placeholder="Default Model"
+                        type='text'
+                        placeholder='Default Model'
                         value={service.defaultModel}
                         onChange={(e) => onChange({...service, defaultModel: e.target.value})}
                     />
@@ -130,14 +130,14 @@ const ServiceForm = ({service, onChange, onDelete}: Props) => {
                         className='control-label col-sm-4'
                         htmlFor='ai-service-username'
                     >
-                        Username
+                        {'Username'}
                     </label>
                     <div className='col-sm-8'>
                         <input
                             id='ai-service-username'
                             className='form-control'
-                            type="text"
-                            placeholder="Username"
+                            type='text'
+                            placeholder='Username'
                             value={service.username}
                             onChange={(e) => onChange({...service, username: e.target.value})}
                         />
@@ -150,14 +150,14 @@ const ServiceForm = ({service, onChange, onDelete}: Props) => {
                         className='control-label col-sm-4'
                         htmlFor='ai-service-password'
                     >
-                        Password
+                        {'Password'}
                     </label>
                     <div className='col-sm-8'>
                         <input
                             id='ai-service-password'
                             className='form-control'
-                            type="password"
-                            placeholder="Password"
+                            type='password'
+                            placeholder='Password'
                             value={service.password}
                             onChange={(e) => onChange({...service, password: e.target.value})}
                         />
@@ -171,10 +171,10 @@ const ServiceForm = ({service, onChange, onDelete}: Props) => {
                 onClick={() => onDelete(service)}
                 title='Delete'
             >
-                <span aria-hidden="true">×</span>
-                <span className="sr-only">Delete</span>
+                <span aria-hidden='true'>{'×'}</span>
+                <span className='sr-only'>{'Delete'}</span>
             </CloseButton>
         </FormContainer>
-    )
-}
+    );
+};
 export default ServiceForm;

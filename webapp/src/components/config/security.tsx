@@ -17,7 +17,7 @@ const SecurityContainer = styled.div`
     .form-group {
         margin: 20px;
     }
-`
+`;
 
 type Props = {
     securityConfig: SecurityConfig
@@ -28,35 +28,35 @@ const Security = ({securityConfig, onChange}: Props) => {
     return (
         <SecurityContainer className='AdminPanel'>
             <div className='header'>
-                <h3><span>User restrictions</span></h3>
-                <div className='mt-2'><span>Enable restrictions to allow or not users to use AI in this instance.</span></div>
+                <h3><span>{'User restrictions'}</span></h3>
+                <div className='mt-2'><span>{'Enable restrictions to allow or not users to use AI in this instance.'}</span></div>
             </div>
             <div className='form-group'>
                 <label
                     className='control-label col-sm-4'
                 >
-                    Enable User Restrictions:
+                    {'Enable User Restrictions:'}
                 </label>
-                <div className="col-sm-8">
-                    <label className="radio-inline">
+                <div className='col-sm-8'>
+                    <label className='radio-inline'>
                         <input
-                            type="radio"
-                            value="true"
+                            type='radio'
+                            value='true'
                             checked={securityConfig.enableUserRestrictions}
                             onChange={() => onChange({...securityConfig, enableUserRestrictions: true})}
                         />
-                        <span>true</span>
+                        <span>{'true'}</span>
                     </label>
-                    <label className="radio-inline">
+                    <label className='radio-inline'>
                         <input
-                            type="radio"
-                            value="false"
+                            type='radio'
+                            value='false'
                             checked={!securityConfig.enableUserRestrictions}
                             onChange={() => onChange({...securityConfig, enableUserRestrictions: false})}
                         />
-                        <span>false</span>
+                        <span>{'false'}</span>
                     </label>
-                    <div className="help-text"><span>Global flag for all below settings.</span></div>
+                    <div className='help-text'><span>{'Global flag for all below settings.'}</span></div>
                 </div>
             </div>
             {securityConfig.enableUserRestrictions && (
@@ -65,26 +65,26 @@ const Security = ({securityConfig, onChange}: Props) => {
                         <label
                             className='control-label col-sm-4'
                         >
-                            Allow Private Channels:
+                            {'Allow Private Channels:'}
                         </label>
-                        <div className="col-sm-8">
-                            <label className="radio-inline">
+                        <div className='col-sm-8'>
+                            <label className='radio-inline'>
                                 <input
-                                    type="radio"
-                                    value="true"
+                                    type='radio'
+                                    value='true'
                                     checked={securityConfig.allowPrivateChannels}
                                     onChange={() => onChange({...securityConfig, allowPrivateChannels: true})}
                                 />
-                                <span>true</span>
+                                <span>{'true'}</span>
                             </label>
-                            <label className="radio-inline">
+                            <label className='radio-inline'>
                                 <input
-                                    type="radio"
-                                    value="false"
+                                    type='radio'
+                                    value='false'
                                     checked={!securityConfig.allowPrivateChannels}
                                     onChange={() => onChange({...securityConfig, allowPrivateChannels: false})}
                                 />
-                                <span>false</span>
+                                <span>{'false'}</span>
                             </label>
                         </div>
                     </div>
@@ -93,13 +93,13 @@ const Security = ({securityConfig, onChange}: Props) => {
                             className='control-label col-sm-4'
                             htmlFor='ai-allow-team-ids'
                         >
-                            Allow Team IDs (csv):
+                            {'Allow Team IDs (csv):'}
                         </label>
                         <div className='col-sm-8'>
                             <input
                                 id='ai-allow-team-ids'
                                 className='form-control'
-                                type="text"
+                                type='text'
                                 value={securityConfig.allowedTeamIds}
                                 onChange={(e) => onChange({...securityConfig, allowedTeamIds: e.target.value})}
                             />
@@ -110,13 +110,13 @@ const Security = ({securityConfig, onChange}: Props) => {
                             className='control-label col-sm-4'
                             htmlFor='ai-only-users-on-team'
                         >
-                            Only Users on Team:
+                            {'Only Users on Team:'}
                         </label>
                         <div className='col-sm-8'>
                             <input
                                 id='ai-only-users-on-team'
                                 className='form-control'
-                                type="text"
+                                type='text'
                                 value={securityConfig.onlyUsersOnTeam}
                                 onChange={(e) => onChange({...securityConfig, onlyUsersOnTeam: e.target.value})}
                             />
@@ -125,6 +125,6 @@ const Security = ({securityConfig, onChange}: Props) => {
                 </>
             )}
         </SecurityContainer>
-    )
-}
+    );
+};
 export default Security;

@@ -1,13 +1,13 @@
 import React, {useState, useCallback} from 'react';
 import styled from 'styled-components';
 
-import {ServiceData} from './service'
-import ServiceForm from './service_form'
-import Security, {SecurityConfig} from './security'
+import {ServiceData} from './service';
+import ServiceForm from './service_form';
+import Security, {SecurityConfig} from './security';
 
 const AddAIServiceButton = styled.button`
     margin-bottom: 10px;
-`
+`;
 
 type Value = {
     services: ServiceData[],
@@ -34,13 +34,13 @@ type Props = {
 }
 
 const Config = (props: Props) => {
-    const value = props.value || {services: [], llmBackend: '', transcriptBackend: '', imageGeneratorBackend: '', enableLLMTrace: false}
-    const currentServices = value.services
-    const securityConfig = value.securityConfig || {enableUserRestrictions: false, allowPrivateChannels: false, allowedTeamIds: '', onlyUsersOnTeam: ''}
+    const value = props.value || {services: [], llmBackend: '', transcriptBackend: '', imageGeneratorBackend: '', enableLLMTrace: false};
+    const currentServices = value.services;
+    const securityConfig = value.securityConfig || {enableUserRestrictions: false, allowPrivateChannels: false, allowedTeamIds: '', onlyUsersOnTeam: ''};
 
     const addNewService = useCallback((e: React.MouseEvent) => {
-        e.preventDefault()
-        e.stopPropagation()
+        e.preventDefault();
+        e.stopPropagation();
         const newService = {
             id: Math.random().toString(36).substring(2, 22),
             name: 'AI Engine',
@@ -50,28 +50,28 @@ const Config = (props: Props) => {
             apiKey: '',
             username: '',
             password: '',
-        }
+        };
 
-        let counter = 1
-        while (true) {
-            let isNew = true
+        let counter = 1;
+        for (;;) {
+            let isNew = true;
             for (const service of currentServices) {
-                if (service.name == newService.name) {
-                    isNew = false
+                if (service.name === newService.name) {
+                    isNew = false;
                 }
             }
             if (isNew) {
-                break
+                break;
             }
-            newService.name = `AI Engine ${counter}`
-            counter++
+            newService.name = `AI Engine ${counter}`;
+            counter++;
         }
         if (value.services.length === 0) {
-            props.onChange(props.id, {...value, services: [...currentServices, newService], llmBackend: newService.name, transcriptBackend: newService.name, imageGeneratorBackend: newService.name})
+            props.onChange(props.id, {...value, services: [...currentServices, newService], llmBackend: newService.name, transcriptBackend: newService.name, imageGeneratorBackend: newService.name});
         } else {
-            props.onChange(props.id, {...value, services: [...currentServices, newService]})
+            props.onChange(props.id, {...value, services: [...currentServices, newService]});
         }
-    }, [value, currentServices])
+    }, [value, currentServices]);
 
     return (
         <div>
@@ -79,45 +79,45 @@ const Config = (props: Props) => {
                 <ServiceForm
                     key={idx}
                     service={service}
-                    onDelete={(service) => {
-                        const updatedServiceIdx = currentServices.indexOf(service)
+                    onDelete={(deletedService) => {
+                        const updatedServiceIdx = currentServices.indexOf(deletedService);
                         if (updatedServiceIdx === -1) {
-                            throw new Error('Service not found')
+                            throw new Error('Service not found');
                         }
-                        let newValue = value
+                        let newValue = value;
                         if (currentServices.length > 1) {
-                            if (value.llmBackend === service.name) {
-                                newValue = {...newValue, llmBackend: value.services[0]?.name || ''}
+                            if (value.llmBackend === deletedService.name) {
+                                newValue = {...newValue, llmBackend: value.services[0]?.name || ''};
                             }
-                            if (value.imageGeneratorBackend === service.name) {
-                                newValue = {...newValue, imageGeneratorBackend: value.services[0]?.name || ''}
+                            if (value.imageGeneratorBackend === deletedService.name) {
+                                newValue = {...newValue, imageGeneratorBackend: value.services[0]?.name || ''};
                             }
-                            if (value.transcriptBackend === service.name) {
-                                newValue = {...newValue, transcriptBackend: value.services[0]?.name || ''}
+                            if (value.transcriptBackend === deletedService.name) {
+                                newValue = {...newValue, transcriptBackend: value.services[0]?.name || ''};
                             }
                         } else {
-                            newValue = {...newValue, llmBackend: '', transcriptBackend: '', imageGeneratorBackend: ''}
+                            newValue = {...newValue, llmBackend: '', transcriptBackend: '', imageGeneratorBackend: ''};
                         }
-                        props.onChange(props.id, {...newValue, services: [...currentServices.slice(0, updatedServiceIdx), ...currentServices.slice(updatedServiceIdx + 1)]})
-                        props.setSaveNeeded()
+                        props.onChange(props.id, {...newValue, services: [...currentServices.slice(0, updatedServiceIdx), ...currentServices.slice(updatedServiceIdx + 1)]});
+                        props.setSaveNeeded();
                     }}
-                    onChange={(service) => {
-                        const updatedServiceIdx = currentServices.findIndex((s) => service.id === s.id)
+                    onChange={(changedService) => {
+                        const updatedServiceIdx = currentServices.findIndex((s) => changedService.id === s.id);
                         if (updatedServiceIdx === -1) {
-                            throw new Error('Service not found')
+                            throw new Error('Service not found');
                         }
-                        let newValue = value
+                        let newValue = value;
                         if (value.llmBackend === currentServices[updatedServiceIdx].name) {
-                            newValue = {...newValue, llmBackend: service.name}
+                            newValue = {...newValue, llmBackend: changedService.name};
                         }
                         if (value.imageGeneratorBackend === currentServices[updatedServiceIdx].name) {
-                            newValue = {...newValue, imageGeneratorBackend: service.name}
+                            newValue = {...newValue, imageGeneratorBackend: changedService.name};
                         }
                         if (value.transcriptBackend === currentServices[updatedServiceIdx].name) {
-                            newValue = {...newValue, transcriptBackend: service.name}
+                            newValue = {...newValue, transcriptBackend: changedService.name};
                         }
-                        props.onChange(props.id, {...newValue, services: [...currentServices.slice(0, updatedServiceIdx), service, ...currentServices.slice(updatedServiceIdx + 1)]})
-                        props.setSaveNeeded()
+                        props.onChange(props.id, {...newValue, services: [...currentServices.slice(0, updatedServiceIdx), changedService, ...currentServices.slice(updatedServiceIdx + 1)]});
+                        props.setSaveNeeded();
                     }}
                 />
             ))}
@@ -125,22 +125,22 @@ const Config = (props: Props) => {
                 className='save-button btn btn-primary'
                 onClick={addNewService}
             >
-                Add AI Service
+                {'Add AI Service'}
             </AddAIServiceButton>
             <div className='form-group'>
                 <label
                     className='control-label col-sm-4'
                     htmlFor='ai-llm-backend'
                 >
-                    AI Large Language Model service
+                    {'AI Large Language Model service'}
                 </label>
                 <div className='col-sm-8'>
                     <select
                         id='ai-llm-backend'
                         className={currentServices.length === 0 ? 'form-control disabled' : 'form-control'}
                         onChange={(e) => {
-                            props.onChange(props.id, {...value, llmBackend: e.target.value})
-                            props.setSaveNeeded()
+                            props.onChange(props.id, {...value, llmBackend: e.target.value});
+                            props.setSaveNeeded();
                         }}
                         value={value.llmBackend}
                         disabled={currentServices.length === 0}
@@ -155,8 +155,8 @@ const Config = (props: Props) => {
                         ))}
                     </select>
                     {currentServices.length === 0 && (
-                        <div className="help-text">
-                            <span>You need at least one AI services use this setting.</span>
+                        <div className='help-text'>
+                            <span>{'You need at least one AI services use this setting.'}</span>
                         </div>
                     )}
                 </div>
@@ -166,15 +166,15 @@ const Config = (props: Props) => {
                     className='control-label col-sm-4'
                     htmlFor='ai-image-generator'
                 >
-                    AI Image Generator service
+                    {'AI Image Generator service'}
                 </label>
                 <div className='col-sm-8'>
                     <select
                         id='ai-image-generator'
                         className={currentServices.length === 0 ? 'form-control disabled' : 'form-control'}
                         onChange={(e) => {
-                            props.onChange(props.id, {...value, imageGeneratorBackend: e.target.value})
-                            props.setSaveNeeded()
+                            props.onChange(props.id, {...value, imageGeneratorBackend: e.target.value});
+                            props.setSaveNeeded();
                         }}
                         value={value.imageGeneratorBackend}
                         disabled={currentServices.length === 0}
@@ -189,8 +189,8 @@ const Config = (props: Props) => {
                         ))}
                     </select>
                     {currentServices.length === 0 && (
-                        <div className="help-text">
-                            <span>You need at least one AI services use this setting.</span>
+                        <div className='help-text'>
+                            <span>{'You need at least one AI services use this setting.'}</span>
                         </div>
                     )}
                 </div>
@@ -200,15 +200,15 @@ const Config = (props: Props) => {
                     className='control-label col-sm-4'
                     htmlFor='ai-transcript-backend'
                 >
-                    AI Audio/Video transcript service
+                    {'AI Audio/Video transcript service'}
                 </label>
                 <div className='col-sm-8'>
                     <select
                         id='ai-transcript-backend'
                         className={currentServices.length === 0 ? 'form-control disabled' : 'form-control'}
                         onChange={(e) => {
-                            props.onChange(props.id, {...value, transcriptBackend: e.target.value})
-                            props.setSaveNeeded()
+                            props.onChange(props.id, {...value, transcriptBackend: e.target.value});
+                            props.setSaveNeeded();
                         }}
                         value={value.transcriptBackend}
                         disabled={currentServices.length === 0}
@@ -223,8 +223,8 @@ const Config = (props: Props) => {
                         ))}
                     </select>
                     {currentServices.length === 0 && (
-                        <div className="help-text">
-                            <span>You need at least one AI services use this setting.</span>
+                        <div className='help-text'>
+                            <span>{'You need at least one AI services use this setting.'}</span>
                         </div>
                     )}
                 </div>
@@ -232,9 +232,9 @@ const Config = (props: Props) => {
 
             <Security
                 securityConfig={securityConfig}
-                onChange={(securityConfig) => {
-                    props.onChange(props.id, {...value, securityConfig})
-                    props.setSaveNeeded()
+                onChange={(changedSecurityConfig) => {
+                    props.onChange(props.id, {...value, changedSecurityConfig});
+                    props.setSaveNeeded();
                 }}
             />
 
@@ -242,28 +242,28 @@ const Config = (props: Props) => {
                 <label
                     className='control-label col-sm-4'
                 >
-                    Enable Automatic Call Sumary:
+                    {'Enable Automatic Call Sumary:'}
                 </label>
-                <div className="col-sm-8">
-                    <label className="radio-inline">
+                <div className='col-sm-8'>
+                    <label className='radio-inline'>
                         <input
-                            type="radio"
-                            value="true"
+                            type='radio'
+                            value='true'
                             checked={value.enableCallSummary}
                             onChange={() => props.onChange(props.id, {...value, enableCallSummary: true})}
                         />
-                        <span>true</span>
+                        <span>{'true'}</span>
                     </label>
-                    <label className="radio-inline">
+                    <label className='radio-inline'>
                         <input
-                            type="radio"
-                            value="false"
+                            type='radio'
+                            value='false'
                             checked={!value.enableCallSummary}
                             onChange={() => props.onChange(props.id, {...value, enableCallSummary: false})}
                         />
-                        <span>false</span>
+                        <span>{'false'}</span>
                     </label>
-                    <div className="help-text"><span>Automatically create a summary of any recorded call.</span></div>
+                    <div className='help-text'><span>{'Automatically create a summary of any recorded call.'}</span></div>
                 </div>
             </div>
 
@@ -272,31 +272,31 @@ const Config = (props: Props) => {
                     className='control-label col-sm-4'
                     htmlFor='ai-service-name'
                 >
-                    Enable LLM Trace:
+                    {'Enable LLM Trace:'}
                 </label>
-                <div className="col-sm-8">
-                    <label className="radio-inline">
+                <div className='col-sm-8'>
+                    <label className='radio-inline'>
                         <input
-                            type="radio"
-                            value="true"
+                            type='radio'
+                            value='true'
                             checked={value.enableLLMTrace}
                             onChange={() => props.onChange(props.id, {...value, enableLLMTrace: true})}
                         />
-                        <span>true</span>
+                        <span>{'true'}</span>
                     </label>
-                    <label className="radio-inline">
+                    <label className='radio-inline'>
                         <input
-                            type="radio"
-                            value="false"
+                            type='radio'
+                            value='false'
                             checked={!value.enableLLMTrace}
                             onChange={() => props.onChange(props.id, {...value, enableLLMTrace: false})}
                         />
-                        <span>false</span>
+                        <span>{'false'}</span>
                     </label>
-                    <div className="help-text"><span>Enable tracing of LLM requests. Outputs whole conversations to the logs.</span></div>
+                    <div className='help-text'><span>{'Enable tracing of LLM requests. Outputs whole conversations to the logs.'}</span></div>
                 </div>
             </div>
         </div>
-    )
-}
+    );
+};
 export default Config;
