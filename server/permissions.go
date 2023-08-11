@@ -27,7 +27,7 @@ func (p *Plugin) checkUsageRestrictionsForChannel(channel *model.Channel) error 
 	}
 
 	if p.getConfiguration().EnableUseRestrictions {
-		if !strings.Contains(p.getConfiguration().AllowedTeamIDs, channel.TeamId) {
+		if p.getConfiguration().AllowedTeamIDs != "" && !strings.Contains(p.getConfiguration().AllowedTeamIDs, channel.TeamId) {
 			return errors.Wrap(ErrUsageRestriction, "can't work on this team")
 		}
 
