@@ -29,6 +29,7 @@ const (
 	PromptChangeTone            = "change_tone"
 	PromptSimplifyText          = "simplify_text"
 	PromptAIChangeText          = "ai_change_text"
+	PromptSummarizeChannelSince = "summarize_channel_since"
 )
 
 func NewPrompts(input fs.FS, getBuiltInTools func() []Tool) (*Prompts, error) {
