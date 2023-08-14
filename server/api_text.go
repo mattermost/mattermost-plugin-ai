@@ -8,9 +8,15 @@ import (
 	"github.com/gin-gonic/gin/render"
 )
 
-func (p *Plugin) handleSimplify(c *gin.Context) {
+func (p *Plugin) textAuthorizationRequired(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
+	if err := p.checkUsageRestrictionsForUser(userID); err != nil {
+		c.AbortWithError(http.StatusForbidden, err)
+		return
+	}
+}
 
+func (p *Plugin) handleSimplify(c *gin.Context) {
 	data := struct {
 		Message string `json:"message"`
 	}{}
@@ -22,11 +28,6 @@ func (p *Plugin) handleSimplify(c *gin.Context) {
 	}
 	defer c.Request.Body.Close()
 
-	if err := p.checkUsageRestrictionsForUser(userID); err != nil {
-		c.AbortWithError(http.StatusForbidden, err)
-		return
-	}
-
 	newMessage, err := p.simplifyText(data.Message)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
@@ -37,7 +38,6 @@ func (p *Plugin) handleSimplify(c *gin.Context) {
 }
 
 func (p *Plugin) handleChangeTone(c *gin.Context) {
-	userID := c.GetHeader("Mattermost-User-Id")
 	tone := c.Param("tone")
 
 	data := struct {
@@ -51,11 +51,6 @@ func (p *Plugin) handleChangeTone(c *gin.Context) {
 	}
 	defer c.Request.Body.Close()
 
-	if err := p.checkUsageRestrictionsForUser(userID); err != nil {
-		c.AbortWithError(http.StatusForbidden, err)
-		return
-	}
-
 	newMessage, err := p.changeTone(tone, data.Message)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
@@ -66,8 +61,6 @@ func (p *Plugin) handleChangeTone(c *gin.Context) {
 }
 
 func (p *Plugin) handleAiChangeText(c *gin.Context) {
-	userID := c.GetHeader("Mattermost-User-Id")
-
 	data := struct {
 		Message string `json:"message"`
 		Ask     string `json:"ask"`
@@ -79,11 +72,6 @@ func (p *Plugin) handleAiChangeText(c *gin.Context) {
 		return
 	}
 	defer c.Request.Body.Close()
-
-	if err := p.checkUsageRestrictionsForUser(userID); err != nil {
-		c.AbortWithError(http.StatusForbidden, err)
-		return
-	}
 
 	newMessage, err := p.aiChangeText(data.Ask, data.Message)
 	if err != nil {

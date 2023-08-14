@@ -4,9 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/mattermost/mattermost-server/v6/model"
 	"github.com/mattermost/mattermost-server/v6/plugin"
-	"github.com/pkg/errors"
 )
 
 const (
@@ -29,11 +27,13 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	postRouter.POST("/transcribe", p.handleTranscribe)
 
 	textRouter := router.Group("/text")
+	textRouter.Use(p.textAuthorizationRequired)
 	textRouter.POST("/simplify", p.handleSimplify)
 	textRouter.POST("/change_tone/:tone", p.handleChangeTone)
 	textRouter.POST("/ask_ai_change_text", p.handleAiChangeText)
 
 	adminRouter := router.Group("/admin")
+	adminRouter.Use(p.mattermostAdminAuthorizationRequired)
 	adminRouter.GET("/feedback", p.handleGetFeedback)
 
 	router.ServeHTTP(w, r)
@@ -52,12 +52,5 @@ func (p *Plugin) MattermostAuthorizationRequired(c *gin.Context) {
 	if userID == "" {
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
-	}
-
-	if p.getConfiguration().Config.SecurityConfig.EnableUseRestrictions {
-		if !p.pluginAPI.User.HasPermissionToTeam(userID, p.getConfiguration().Config.SecurityConfig.OnlyUsersOnTeam, model.PermissionViewTeam) {
-			c.AbortWithError(http.StatusForbidden, errors.New("user not on allowed team"))
-			return
-		}
 	}
 }
