@@ -95,8 +95,6 @@ func (p *Plugin) OnActivate() error {
 		p.pluginAPI.Log.Error("ffmpeg not installed, transcriptions will be disabled.", "error", err)
 	}
 
-	p.registerCommands()
-
 	return nil
 }
 
