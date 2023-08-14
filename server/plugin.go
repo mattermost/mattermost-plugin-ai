@@ -102,8 +102,8 @@ func (p *Plugin) getLLM() ai.LanguageModel {
 	cfg := p.getConfiguration()
 	var llm ai.LanguageModel
 	var llmService ServiceConfig
-	for _, service := range cfg.Config.Services {
-		if service.Name == cfg.Config.LLMGenerator {
+	for _, service := range cfg.Services {
+		if service.Name == cfg.LLMGenerator {
 			llmService = service
 			break
 		}
@@ -119,7 +119,7 @@ func (p *Plugin) getLLM() ai.LanguageModel {
 		llm = asksage.New(llmService.Username, llmService.Password, llmService.DefaultModel)
 	}
 
-	if cfg.Config.EnableLLMTrace {
+	if cfg.EnableLLMTrace {
 		return NewLanguageModelLogWrapper(p.pluginAPI.Log, llm)
 	}
 
@@ -129,8 +129,8 @@ func (p *Plugin) getLLM() ai.LanguageModel {
 func (p *Plugin) getImageGenerator() ai.ImageGenerator {
 	cfg := p.getConfiguration()
 	var imageGeneratorService ServiceConfig
-	for _, service := range cfg.Config.Services {
-		if service.Name == cfg.Config.ImageGenerator {
+	for _, service := range cfg.Services {
+		if service.Name == cfg.ImageGenerator {
 			imageGeneratorService = service
 			break
 		}
@@ -148,8 +148,8 @@ func (p *Plugin) getImageGenerator() ai.ImageGenerator {
 func (p *Plugin) getTranscribe() ai.Transcriber {
 	cfg := p.getConfiguration()
 	var transcriptionService ServiceConfig
-	for _, service := range cfg.Config.Services {
-		if service.Name == cfg.Config.TranscriptGenerator {
+	for _, service := range cfg.Services {
+		if service.Name == cfg.TranscriptGenerator {
 			transcriptionService = service
 			break
 		}
@@ -210,7 +210,7 @@ func (p *Plugin) handleMessages(post *model.Post) error {
 		return p.handleDMs(channel, postingUser, post)
 
 	// Its a bot post from the calls plugin
-	case post.Type == CallsRecordingPostType && p.getConfiguration().Config.EnableAutomaticCallsSummary:
+	case post.Type == CallsRecordingPostType && p.getConfiguration().EnableAutomaticCallsSummary:
 		return p.handleAutoCallsRecording(post, postingUser, channel)
 	}
 

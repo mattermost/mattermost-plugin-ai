@@ -23,12 +23,11 @@ type Config struct {
 	TranscriptGenerator         string          `json:"transcriptBackend"`
 	EnableLLMTrace              bool            `json:"enableLLMTrace"`
 	EnableAutomaticCallsSummary bool            `json:"enableAutomaticCallsSummary"`
-	SecurityConfig              struct {
-		EnableUseRestrictions bool   `json:"enableUserRestrictions"`
-		AllowPrivateChannels  bool   `json:"allowPrivateChannels"`
-		AllowedTeamIDs        string `json:"allowedTeamIDs"`
-		OnlyUsersOnTeam       string `json:"onlyUsersOnTeam"`
-	} `json:"securityConfig"`
+
+	EnableUseRestrictions bool   `json:"enableUserRestrictions"`
+	AllowPrivateChannels  bool   `json:"allowPrivateChannels"`
+	AllowedTeamIDs        string `json:"allowedTeamIDs"`
+	OnlyUsersOnTeam       string `json:"onlyUsersOnTeam"`
 }
 
 // configuration captures the plugin's external configuration as exposed in the Mattermost server
@@ -43,7 +42,7 @@ type Config struct {
 // If you add non-reference types to your configuration struct, be sure to rewrite Clone as a deep
 // copy appropriate for your types.
 type configuration struct {
-	Config Config
+	Config `json:"config"`
 }
 
 // Clone shallow copies the configuration. Your implementation may require a deep copy if

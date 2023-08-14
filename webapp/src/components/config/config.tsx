@@ -16,7 +16,11 @@ type Value = {
     imageGeneratorBackend: string,
     enableLLMTrace: boolean,
     enableCallSummary: boolean,
-    securityConfig: SecurityConfig
+
+    enableUserRestrictions: boolean
+    allowPrivateChannels: boolean
+    allowedTeamIds: string
+    onlyUsersOnTeam: string
 }
 
 type Props = {
@@ -33,10 +37,32 @@ type Props = {
     setSaveNeeded: () => void
 }
 
+const SecurityContainer = styled.div`
+    position: relative;
+    padding: 20px;
+    border: 1px solid #ccc;
+    margin-bottom: 20px;
+    background: white;
+    .form-group {
+        margin: 20px;
+    }
+`;
+
+const defaultConfig = {
+    services: [],
+    llmBackend: '',
+    transcriptBackend: '',
+    imageGeneratorBackend: '',
+    enableLLMTrace: false,
+    enableUserRestrictions: false,
+    allowPrivateChannels: false,
+    allowedTeamIds: '',
+    onlyUsersOnTeam: '',
+};
+
 const Config = (props: Props) => {
-    const value = props.value || {services: [], llmBackend: '', transcriptBackend: '', imageGeneratorBackend: '', enableLLMTrace: false};
+    const value = props.value || defaultConfig;
     const currentServices = value.services;
-    const securityConfig = value.securityConfig || {enableUserRestrictions: false, allowPrivateChannels: false, allowedTeamIds: '', onlyUsersOnTeam: ''};
 
     const addNewService = useCallback((e: React.MouseEvent) => {
         e.preventDefault();
@@ -230,13 +256,105 @@ const Config = (props: Props) => {
                 </div>
             </div>
 
-            <Security
-                securityConfig={securityConfig}
-                onChange={(changedSecurityConfig) => {
-                    props.onChange(props.id, {...value, changedSecurityConfig});
-                    props.setSaveNeeded();
-                }}
-            />
+            <SecurityContainer className='AdminPanel'>
+                <div className='header'>
+                    <h3><span>{'User restrictions'}</span></h3>
+                    <div className='mt-2'><span>{'Enable restrictions to allow or not users to use AI in this instance.'}</span></div>
+                </div>
+                <div className='form-group'>
+                    <label
+                        className='control-label col-sm-4'
+                    >
+                        {'Enable User Restrictions:'}
+                    </label>
+                    <div className='col-sm-8'>
+                        <label className='radio-inline'>
+                            <input
+                                type='radio'
+                                value='true'
+                                checked={value.enableUserRestrictions}
+                                onChange={() => props.onChange(props.id, {...value, enableUserRestrictions: true})}
+                            />
+                            <span>{'true'}</span>
+                        </label>
+                        <label className='radio-inline'>
+                            <input
+                                type='radio'
+                                value='false'
+                                checked={!value.enableUserRestrictions}
+                                onChange={() => props.onChange(props.id, {...value, enableUserRestrictions: false})}
+                            />
+                            <span>{'false'}</span>
+                        </label>
+                        <div className='help-text'><span>{'Global flag for all below settings.'}</span></div>
+                    </div>
+                </div>
+                {value.enableUserRestrictions && (
+                    <>
+                        <div className='form-group'>
+                            <label
+                                className='control-label col-sm-4'
+                            >
+                                {'Allow Private Channels:'}
+                            </label>
+                            <div className='col-sm-8'>
+                                <label className='radio-inline'>
+                                    <input
+                                        type='radio'
+                                        value='true'
+                                        checked={value.allowPrivateChannels}
+                                        onChange={() => props.onChange(props.id, {...value, allowPrivateChannels: true})}
+                                    />
+                                    <span>{'true'}</span>
+                                </label>
+                                <label className='radio-inline'>
+                                    <input
+                                        type='radio'
+                                        value='false'
+                                        checked={!value.allowPrivateChannels}
+                                        onChange={() => props.onChange(props.id, {...value, allowPrivateChannels: false})}
+                                    />
+                                    <span>{'false'}</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div className='form-group'>
+                            <label
+                                className='control-label col-sm-4'
+                                htmlFor='ai-allow-team-ids'
+                            >
+                                {'Allow Team IDs (csv):'}
+                            </label>
+                            <div className='col-sm-8'>
+                                <input
+                                    id='ai-allow-team-ids'
+                                    className='form-control'
+                                    type='text'
+                                    value={value.allowedTeamIds}
+                                    onChange={(e) => props.onChange(props.id, {...value, allowedTeamIds: e.target.value})}
+                                />
+                            </div>
+                        </div>
+                        <div className='form-group'>
+                            <label
+                                className='control-label col-sm-4'
+                                htmlFor='ai-only-users-on-team'
+                            >
+                                {'Only Users on Team:'}
+                            </label>
+                            <div className='col-sm-8'>
+                                <input
+                                    id='ai-only-users-on-team'
+                                    className='form-control'
+                                    type='text'
+                                    value={value.onlyUsersOnTeam}
+                                    onChange={(e) => props.onChange(props.id, {...value, onlyUsersOnTeam: e.target.value})}
+                                />
+                            </div>
+                        </div>
+                    </>
+                )}
+            </SecurityContainer>
 
             <div className='form-group'>
                 <label
