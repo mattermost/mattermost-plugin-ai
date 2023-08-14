@@ -85,7 +85,7 @@ func (p *Plugin) toolResolveGetChannelPosts(context ai.ConversationContext, args
 		return "internal failure", errors.Wrap(err, "failed to lookup channel by name, may not exist")
 	}
 
-	if err := p.checkUsageRestrictions(context.RequestingUser.Id, channel); err != nil {
+	if err := p.checkUsageRestrictionsForChannel(channel); err != nil {
 		return "user asked for a channel that is blocked by usage restrictions", errors.Wrap(err, "usage restrictions during channel lookup")
 	}
 
