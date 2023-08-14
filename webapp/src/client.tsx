@@ -12,6 +12,10 @@ function textRoute(): string {
     return `/plugins/${manifest.id}/text`;
 }
 
+function channelRoute(channelid: string): string {
+    return `/plugins/${manifest.id}/channel/${channelid}`;
+}
+
 export async function doReaction(postid: string) {
     const url = `${postRoute(postid)}/react`;
     const response = await fetch(url, Client4.getOptions({
@@ -128,6 +132,24 @@ export async function doAskAiChangeText(ask: string, message: string) {
     const response = await fetch(url, Client4.getOptions({
         method: 'POST',
         body: JSON.stringify({message, ask}),
+    }));
+
+    if (response.ok) {
+        return response.json();
+    }
+
+    throw new ClientError(Client4.url, {
+        message: '',
+        status_code: response.status,
+        url,
+    });
+}
+
+export async function summarizeChannelSince(channelID: string, since: number) {
+    const url = `${channelRoute(channelID)}/summarize/since`;
+    const response = await fetch(url, Client4.getOptions({
+        method: 'POST',
+        body: JSON.stringify({since}),
     }));
 
     if (response.ok) {

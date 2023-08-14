@@ -1,6 +1,6 @@
 module github.com/mattermost/mattermost-plugin-ai
 
-go 1.20
+go 1.21
 
 require (
 	github.com/Masterminds/squirrel v1.5.4
