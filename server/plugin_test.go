@@ -45,6 +45,12 @@ func (e *TestEnviroment) Cleanup(t *testing.T) {
 	e.mockAPI.AssertExpectations(t)
 }
 
+func makeConfig(config Config) *configuration {
+	return &configuration{
+		Config: config,
+	}
+}
+
 func TestBotMention(t *testing.T) {
 	e := SetupTestEnvironment(t)
 	defer e.Cleanup(t)
@@ -83,10 +89,10 @@ func TestHandleMentions(t *testing.T) {
 
 	t.Run("don't respond to users that are not allowed", func(t *testing.T) {
 		e.ResetMocks(t)
-		e.plugin.setConfiguration(&configuration{
+		e.plugin.setConfiguration(makeConfig(Config{
 			OnlyUsersOnTeam:       "teamid",
 			EnableUseRestrictions: true,
-		})
+		}))
 		e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
 			Type:   model.ChannelTypeOpen,
 			TeamId: "teamid",
@@ -102,11 +108,11 @@ func TestHandleMentions(t *testing.T) {
 
 	t.Run("don't respond if not on allowed team", func(t *testing.T) {
 		e.ResetMocks(t)
-		e.plugin.setConfiguration(&configuration{
+		e.plugin.setConfiguration(makeConfig(Config{
 			AllowedTeamIDs:        "someotherteam,someotherteam2",
 			AllowPrivateChannels:  true,
 			EnableUseRestrictions: true,
-		})
+		}))
 		e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
 			Type:   model.ChannelTypeOpen,
 			TeamId: "notallowedteam",
@@ -121,11 +127,11 @@ func TestHandleMentions(t *testing.T) {
 
 	t.Run("don't respond if in private channel and not allowed", func(t *testing.T) {
 		e.ResetMocks(t)
-		e.plugin.setConfiguration(&configuration{
+		e.plugin.setConfiguration(makeConfig(Config{
 			AllowedTeamIDs:        "teamid",
 			AllowPrivateChannels:  false,
 			EnableUseRestrictions: true,
-		})
+		}))
 		e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
 			Type:   model.ChannelTypePrivate,
 			TeamId: "teamid",
@@ -140,9 +146,9 @@ func TestHandleMentions(t *testing.T) {
 
 	t.Run("don't respond to bots", func(t *testing.T) {
 		e.ResetMocks(t)
-		e.plugin.setConfiguration(&configuration{
+		e.plugin.setConfiguration(makeConfig(Config{
 			EnableUseRestrictions: false,
-		})
+		}))
 		e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
 			Type:   model.ChannelTypePrivate,
 			TeamId: "teamid",
@@ -169,10 +175,10 @@ func TestHandleDMs(t *testing.T) {
 
 	t.Run("don't respond to users that are not allowed", func(t *testing.T) {
 		e.ResetMocks(t)
-		e.plugin.setConfiguration(&configuration{
+		e.plugin.setConfiguration(makeConfig(Config{
 			OnlyUsersOnTeam:       "teamid",
 			EnableUseRestrictions: true,
-		})
+		}))
 		e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
 			Type:   model.ChannelTypeDirect,
 			Name:   e.plugin.botid + "__" + "userid",
@@ -189,9 +195,9 @@ func TestHandleDMs(t *testing.T) {
 
 	t.Run("don't respond to bots", func(t *testing.T) {
 		e.ResetMocks(t)
-		e.plugin.setConfiguration(&configuration{
+		e.plugin.setConfiguration(makeConfig(Config{
 			EnableUseRestrictions: false,
-		})
+		}))
 		e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
 			Type:   model.ChannelTypeDirect,
 			Name:   e.plugin.botid + "__" + "userid",
@@ -219,12 +225,12 @@ func TestHandleAudioCallsRecording(t *testing.T) {
 
 	t.Run("don't respond if not on allowed team", func(t *testing.T) {
 		e.ResetMocks(t)
-		e.plugin.setConfiguration(&configuration{
+		e.plugin.setConfiguration(makeConfig(Config{
 			EnableAutomaticCallsSummary: true,
 			AllowedTeamIDs:              "someotherteam,someotherteam2",
 			AllowPrivateChannels:        true,
 			EnableUseRestrictions:       true,
-		})
+		}))
 		e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
 			Type:   model.ChannelTypeOpen,
 			TeamId: "notallowedteam",
@@ -241,12 +247,12 @@ func TestHandleAudioCallsRecording(t *testing.T) {
 
 	t.Run("don't respond if in private channel and not allowed", func(t *testing.T) {
 		e.ResetMocks(t)
-		e.plugin.setConfiguration(&configuration{
+		e.plugin.setConfiguration(makeConfig(Config{
 			EnableAutomaticCallsSummary: true,
 			AllowedTeamIDs:              "teamid",
 			AllowPrivateChannels:        false,
 			EnableUseRestrictions:       true,
-		})
+		}))
 		e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
 			Type:   model.ChannelTypePrivate,
 			TeamId: "teamid",
@@ -263,10 +269,10 @@ func TestHandleAudioCallsRecording(t *testing.T) {
 
 	t.Run("don't respond if somone is trying to spoof the calls bot", func(t *testing.T) {
 		e.ResetMocks(t)
-		e.plugin.setConfiguration(&configuration{
+		e.plugin.setConfiguration(makeConfig(Config{
 			EnableAutomaticCallsSummary: true,
 			EnableUseRestrictions:       false,
-		})
+		}))
 		e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
 			Type:   model.ChannelTypeOpen,
 			TeamId: "teamid",
