@@ -30,13 +30,13 @@ func TestPostRouter(t *testing.T) {
 		for name, test := range map[string]struct {
 			request        *http.Request
 			expectedStatus int
-			config         *configuration
+			config         Config
 			envSetup       func(e *TestEnviroment)
 		}{
 			"test no permission to channel": {
 				request:        httptest.NewRequest("POST", url, nil),
 				expectedStatus: http.StatusForbidden,
-				config: &configuration{
+				config: Config{
 					EnableUseRestrictions: false,
 				},
 				envSetup: func(e *TestEnviroment) {
@@ -51,7 +51,7 @@ func TestPostRouter(t *testing.T) {
 			"test user not allowed": {
 				request:        httptest.NewRequest("POST", url, nil),
 				expectedStatus: http.StatusForbidden,
-				config: &configuration{
+				config: Config{
 					EnableUseRestrictions: true,
 					OnlyUsersOnTeam:       "someotherteam",
 				},
@@ -68,7 +68,7 @@ func TestPostRouter(t *testing.T) {
 			"not allowed team": {
 				request:        httptest.NewRequest("POST", url, nil),
 				expectedStatus: http.StatusForbidden,
-				config: &configuration{
+				config: Config{
 					EnableUseRestrictions: true,
 					AllowedTeamIDs:        "someteam",
 				},
@@ -84,7 +84,7 @@ func TestPostRouter(t *testing.T) {
 			"not on private channels": {
 				request:        httptest.NewRequest("POST", url, nil),
 				expectedStatus: http.StatusForbidden,
-				config: &configuration{
+				config: Config{
 					EnableUseRestrictions: true,
 					AllowPrivateChannels:  false,
 				},
@@ -102,7 +102,7 @@ func TestPostRouter(t *testing.T) {
 				e := SetupTestEnvironment(t)
 				defer e.Cleanup(t)
 
-				e.plugin.setConfiguration(test.config)
+				e.plugin.setConfiguration(makeConfig(test.config))
 
 				e.mockAPI.On("GetPost", "postid").Return(&model.Post{
 					ChannelId: "channelid",
@@ -136,13 +136,13 @@ func TestTextRouter(t *testing.T) {
 		for name, test := range map[string]struct {
 			request        *http.Request
 			expectedStatus int
-			config         *configuration
+			config         Config
 			envSetup       func(e *TestEnviroment)
 		}{
 			"test user not allowed": {
 				request:        httptest.NewRequest("POST", url, nil),
 				expectedStatus: http.StatusForbidden,
-				config: &configuration{
+				config: Config{
 					EnableUseRestrictions: true,
 					OnlyUsersOnTeam:       "someotherteam",
 				},
@@ -155,7 +155,7 @@ func TestTextRouter(t *testing.T) {
 				e := SetupTestEnvironment(t)
 				defer e.Cleanup(t)
 
-				e.plugin.setConfiguration(test.config)
+				e.plugin.setConfiguration(makeConfig(test.config))
 
 				e.mockAPI.On("LogError", mock.Anything).Maybe()
 
@@ -184,13 +184,13 @@ func TestAdminRouter(t *testing.T) {
 		for name, test := range map[string]struct {
 			request        *http.Request
 			expectedStatus int
-			config         *configuration
+			config         Config
 			envSetup       func(e *TestEnviroment)
 		}{
 			"only admins": {
 				request:        httptest.NewRequest("GET", url, nil),
 				expectedStatus: http.StatusForbidden,
-				config: &configuration{
+				config: Config{
 					EnableUseRestrictions: false,
 				},
 				envSetup: func(e *TestEnviroment) {
@@ -202,7 +202,7 @@ func TestAdminRouter(t *testing.T) {
 				e := SetupTestEnvironment(t)
 				defer e.Cleanup(t)
 
-				e.plugin.setConfiguration(test.config)
+				e.plugin.setConfiguration(makeConfig(test.config))
 
 				e.mockAPI.On("LogError", mock.Anything).Maybe()
 

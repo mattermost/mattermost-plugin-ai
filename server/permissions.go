@@ -26,12 +26,13 @@ func (p *Plugin) checkUsageRestrictionsForChannel(channel *model.Channel) error 
 		return nil
 	}
 
-	if p.getConfiguration().EnableUseRestrictions {
-		if p.getConfiguration().AllowedTeamIDs != "" && !strings.Contains(p.getConfiguration().AllowedTeamIDs, channel.TeamId) {
+	cfg := p.getConfiguration()
+	if cfg.EnableUseRestrictions {
+		if cfg.AllowedTeamIDs != "" && !strings.Contains(cfg.AllowedTeamIDs, channel.TeamId) {
 			return errors.Wrap(ErrUsageRestriction, "can't work on this team")
 		}
 
-		if !p.getConfiguration().AllowPrivateChannels {
+		if !cfg.AllowPrivateChannels {
 			if channel.Type != model.ChannelTypeOpen {
 				return errors.Wrap(ErrUsageRestriction, "can't work on private channels")
 			}
@@ -41,8 +42,9 @@ func (p *Plugin) checkUsageRestrictionsForChannel(channel *model.Channel) error 
 }
 
 func (p *Plugin) checkUsageRestrictionsForUser(userID string) error {
-	if p.getConfiguration().EnableUseRestrictions && p.getConfiguration().OnlyUsersOnTeam != "" {
-		if !p.pluginAPI.User.HasPermissionToTeam(userID, p.getConfiguration().OnlyUsersOnTeam, model.PermissionViewTeam) {
+	cfg := p.getConfiguration()
+	if cfg.EnableUseRestrictions && cfg.OnlyUsersOnTeam != "" {
+		if !p.pluginAPI.User.HasPermissionToTeam(userID, cfg.OnlyUsersOnTeam, model.PermissionViewTeam) {
 			return errors.Wrap(ErrUsageRestriction, "user not on allowed team")
 		}
 	}
