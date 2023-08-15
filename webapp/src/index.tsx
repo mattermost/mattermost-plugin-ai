@@ -11,6 +11,7 @@ import EditorMenu from './components/editor_menu';
 import IconThreadSummarization from './components/assets/icon_thread_summarization';
 import IconReactForMe from './components/assets/icon_react_for_me';
 import Config from './components/config/config';
+import UnreadsSummarize from './components/unreads_summarize';
 import {doReaction, doSummarize, doTranscribe} from './client';
 import {BotUsername} from './constants';
 
@@ -35,6 +36,10 @@ export default class Plugin {
         }
 
         registry.registerAdminConsoleCustomSetting('Config', Config);
+
+        if (registry.registerUnreadsBarActionComponent) {
+            registry.registerUnreadsBarActionComponent(UnreadsSummarize);
+        }
     }
 }
 
