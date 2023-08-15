@@ -1,13 +1,13 @@
 import React, {useState, useCallback} from 'react';
 import styled from 'styled-components';
 
+import {summarizeChannelSince} from '../client';
+
 import DotMenu from './dot_menu';
 
 import IconAI from './assets/icon_ai';
 import LoadingSpinner from './assets/loading_spinner';
 import {SubtlePrimaryButton, TertiaryButton} from './assets/buttons';
-
-import {summarizeChannelSince} from '../client';
 
 export const Button = styled(DotMenu)`
     &&&&& {
@@ -99,12 +99,12 @@ const UnreadsSummarize = ({channelId, lastViewedAt}: Props) => {
     const [generating, setGenerating] = useState(true);
     const [error, setError] = useState('');
 
-    const generateSummary = useCallback(async (channelId, lastViewedAt) => {
+    const generateSummary = useCallback(async (channelID, since) => {
         setGenerating(true);
         setSummary('');
         let data;
         try {
-            data = await summarizeChannelSince(channelId, lastViewedAt);
+            data = await summarizeChannelSince(channelID, since);
         } catch (err) {
             setError('Unable to summarize the unread posts');
         }
@@ -114,7 +114,7 @@ const UnreadsSummarize = ({channelId, lastViewedAt}: Props) => {
 
     return (
         <Button
-            icon={<span><IconAI/> Summarize</span>}
+            icon={<span><IconAI/>{' Summarize'}</span>}
             title='Summarize'
             onOpenChange={(isOpen) => {
                 setSummary('');
