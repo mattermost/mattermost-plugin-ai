@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
-	"slices"
 	"strings"
+
+	"golang.org/x/exp/slices"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-server/v6/model"

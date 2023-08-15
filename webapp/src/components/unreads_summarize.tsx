@@ -7,6 +7,8 @@ import IconAI from './assets/icon_ai';
 import LoadingSpinner from './assets/loading_spinner';
 import {SubtlePrimaryButton, TertiaryButton} from './assets/buttons';
 
+import {summarizeChannelSince} from '../client';
+
 export const Button = styled(DotMenu)`
     &&&&& {
         background: rgba(255,255,255,0.12);
@@ -92,19 +94,21 @@ type Props = {
     channelId: string
 }
 
-const UnreadsSummarize = ({lastViewedAt}: Props) => {
+const UnreadsSummarize = ({channelId, lastViewedAt}: Props) => {
     const [summary, setSummary] = useState<null|string>(null);
     const [generating, setGenerating] = useState(true);
     const [error, setError] = useState('');
 
-    const generateSummary = useCallback(async (lastViewedAt) => {
-        // TODO: Make this not fake
+    const generateSummary = useCallback(async (channelId, lastViewedAt) => {
         setGenerating(true);
         setSummary('');
-        const response = await fetch('https://power-plugins.com/api/flipsum/ipsum/lorem-ipsum?paragraphs=3')
-        const data = await response.json()
-        console.log("DATA", data)
-        setSummary(data.join("\n"));
+        let data;
+        try {
+            data = await summarizeChannelSince(channelId, lastViewedAt);
+        } catch (err) {
+            setError('Unable to summarize the unread posts');
+        }
+        setSummary(data.message);
         setGenerating(false);
     }, []);
 
@@ -117,7 +121,7 @@ const UnreadsSummarize = ({lastViewedAt}: Props) => {
                 setGenerating(false);
                 setError('');
                 if (isOpen) {
-                    generateSummary(lastViewedAt);
+                    generateSummary(channelId, lastViewedAt);
                 }
             }}
         >
@@ -137,7 +141,7 @@ const UnreadsSummarize = ({lastViewedAt}: Props) => {
                             <AIPrimaryButton
                                 onClick={() => {
                                     setError('');
-                                    generateSummary(lastViewedAt);
+                                    generateSummary(channelId, lastViewedAt);
                                 }}
                             >{'Try again'}</AIPrimaryButton>
                             <AISecondaryButton className='ai-error-cancel'>{'Cancel'}</AISecondaryButton>
@@ -147,7 +151,7 @@ const UnreadsSummarize = ({lastViewedAt}: Props) => {
                 {!error && summary &&
                     <Summary
                         text={summary}
-                        onRegenerate={() => generateSummary(lastViewedAt)}
+                        onRegenerate={() => generateSummary(channelId, lastViewedAt)}
                     />}
             </MenuContent>
         </Button>
