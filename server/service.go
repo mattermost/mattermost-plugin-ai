@@ -13,7 +13,8 @@ import (
 )
 
 const (
-	WhisperAPILimit           = 25 * (1024 * 1024) // 25 MB
+	WhisperAPILimit           = 25 * 1000 * 1000 // 25 MB
+	ContextTokenMargin        = 1000
 	defaultSpellcheckLanguage = "English"
 )
 
@@ -232,12 +233,24 @@ func (p *Plugin) handleCallRecordingPost(recordingPost *model.Post, channel *mod
 	}()
 
 	fileID := recordingPost.FileIds[0]
+
+	fileInfo, err := p.pluginAPI.File.GetInfo(fileID)
+	if err != nil {
+		return errors.Wrap(err, "unable to get calls file info")
+	}
+
 	fileReader, err := p.pluginAPI.File.Get(fileID)
 	if err != nil {
 		return errors.Wrap(err, "unable to read calls file")
 	}
 
-	cmd := exec.Command(p.ffmpegPath, "-i", "pipe:0", "-f", "mp3", "pipe:1")
+	var cmd *exec.Cmd
+	if fileInfo.Size > WhisperAPILimit {
+		cmd = exec.Command(p.ffmpegPath, "-i", "pipe:0", "-ac", "1", "-map", "0:a:0", "-b:a", "32k", "-ar", "16000", "-f", "mp3", "pipe:1")
+	} else {
+		cmd = exec.Command(p.ffmpegPath, "-i", "pipe:0", "-f", "mp3", "pipe:1")
+	}
+
 	cmd.Stdin = fileReader
 
 	audioReader, err := cmd.StdoutPipe()
@@ -276,8 +289,34 @@ func (p *Plugin) handleCallRecordingPost(recordingPost *model.Post, channel *mod
 		return err
 	}
 
+	tokens := p.getLLM().CountTokens(transcription)
+	isChunked := false
+	if tokens > p.getLLM().TokenLimit()-ContextTokenMargin {
+		p.pluginAPI.Log.Debug("Transcription too long, summarizing in chunks.")
+		chunks := splitPlaintextOnSentences(transcription, p.getLLM().TokenLimit()-ContextTokenMargin)
+		summarizedChunks := make([]string, 0, len(chunks))
+		for _, chunk := range chunks {
+			context := p.MakeConversationContext(nil, channel, nil)
+			context.PromptParameters = map[string]string{"TranscriptionChunk": chunk}
+			summarizeChunkPrompt, err := p.prompts.ChatCompletion(ai.PromptSummarizeChunk, context)
+			if err != nil {
+				return err
+			}
+
+			summarizedChunk, err := p.getLLM().ChatCompletionNoStream(summarizeChunkPrompt)
+			if err != nil {
+				return err
+			}
+
+			summarizedChunks = append(summarizedChunks, summarizedChunk)
+		}
+
+		transcription = strings.Join(summarizedChunks, "\n\n")
+		isChunked = true
+	}
+
 	context := p.MakeConversationContext(nil, channel, nil)
-	context.PromptParameters = map[string]string{"Transcription": transcription}
+	context.PromptParameters = map[string]string{"Transcription": transcription, "IsChunked": fmt.Sprintf("%t", isChunked)}
 	summaryPrompt, err := p.prompts.ChatCompletion(ai.PromptMeetingSummaryOnly, context)
 	if err != nil {
 		return err

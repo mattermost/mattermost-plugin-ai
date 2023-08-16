@@ -27,6 +27,9 @@ func WithmaxTokens(maxTokens int) LanguageModelOption {
 type LanguageModel interface {
 	ChatCompletion(conversation BotConversation, opts ...LanguageModelOption) (*TextStreamResult, error)
 	ChatCompletionNoStream(conversation BotConversation, opts ...LanguageModelOption) (string, error)
+
+	CountTokens(text string) int
+	TokenLimit() int
 }
 
 type Transcriber interface {

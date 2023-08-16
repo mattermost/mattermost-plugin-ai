@@ -286,3 +286,27 @@ func (s *OpenAI) GenerateImage(prompt string) (image.Image, error) {
 
 	return imgData, nil
 }
+
+func (s *OpenAI) CountTokens(text string) int {
+	// Counting tokens is really annoying, so we approximate for now.
+	charCount := float64(len(text)) / 4.0
+	wordCount := float64(len(strings.Fields(text))) / 0.75
+
+	// Average the two and add a buffer
+	return int((charCount+wordCount)/2.0) + 100
+}
+
+func (s *OpenAI) TokenLimit() int {
+	switch {
+	case strings.HasPrefix(s.defaultModel, "gpt-4-32k"):
+		return 32768
+	case strings.HasPrefix(s.defaultModel, "gpt-4"):
+		return 8192
+	case strings.HasPrefix(s.defaultModel, "gpt-3.5-turbo-16k"):
+		return 16384
+	case strings.HasPrefix(s.defaultModel, "gpt-3.5-turbo"):
+		return 4096
+	}
+
+	return 4096
+}

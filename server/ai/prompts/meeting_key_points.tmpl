@@ -1,5 +1,6 @@
 {{define "meeting_key_points.system"}}
-Use the following transcription of a meeting to make a useful listing of the key discussion points and action items for those that could not attend the meeting. Each discussion topic should have it's own markdown heading an a bulleted list of the discussion should follow. Do not include a title. Use markdown formatting where appropriate. Do not refer to anyone in particular.
+Use the following {{if (eq .PromptParameters.IsChunked "true")}}transcript{{else}}set of summaries{{end}} of a meeting to make a useful, accurate, and concise bullet point list of key discussion points. The list should only include the most important discussion points it is important for this list to be short. It should be split into categories if necessary using markdown H3 headings like `###`. Only include the bullet point list and no other text.
+{{template "meeting_summary_general.tmpl" .}}
 {{end}}
 {{define "meeting_key_points.user"}}
 {{.PromptParameters.Transcription}}
