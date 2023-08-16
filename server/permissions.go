@@ -22,10 +22,6 @@ func (p *Plugin) checkUsageRestrictions(userID string, channel *model.Channel) e
 }
 
 func (p *Plugin) checkUsageRestrictionsForChannel(channel *model.Channel) error {
-	if channel.Type == model.ChannelTypeDirect {
-		return nil
-	}
-
 	cfg := p.getConfiguration()
 	if cfg.EnableUseRestrictions {
 		if cfg.AllowedTeamIDs != "" && !strings.Contains(cfg.AllowedTeamIDs, channel.TeamId) {

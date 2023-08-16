@@ -97,6 +97,22 @@ func TestPostRouter(t *testing.T) {
 					}, nil)
 				},
 			},
+			"not on dms": {
+				request:        httptest.NewRequest("POST", url, nil),
+				expectedStatus: http.StatusForbidden,
+				config: Config{
+					EnableUseRestrictions: true,
+					AllowPrivateChannels:  false,
+				},
+				envSetup: func(e *TestEnviroment) {
+					e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionReadChannel).Return(true)
+					e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
+						Id:     "channelid",
+						Type:   model.ChannelTypeDirect,
+						TeamId: "teamid",
+					}, nil)
+				},
+			},
 		} {
 			t.Run(urlName+" "+name, func(t *testing.T) {
 				e := SetupTestEnvironment(t)
@@ -294,6 +310,22 @@ func TestChannelRouter(t *testing.T) {
 					e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
 						Id:     "channelid",
 						Type:   model.ChannelTypePrivate,
+						TeamId: "teamid",
+					}, nil)
+				},
+			},
+			"not on dms": {
+				request:        httptest.NewRequest("POST", url, nil),
+				expectedStatus: http.StatusForbidden,
+				config: Config{
+					EnableUseRestrictions: true,
+					AllowPrivateChannels:  false,
+				},
+				envSetup: func(e *TestEnviroment) {
+					e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionReadChannel).Return(true)
+					e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
+						Id:     "channelid",
+						Type:   model.ChannelTypeDirect,
 						TeamId: "teamid",
 					}, nil)
 				},
