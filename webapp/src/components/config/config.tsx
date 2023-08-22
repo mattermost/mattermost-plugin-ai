@@ -20,6 +20,7 @@ type Value = {
     allowPrivateChannels: boolean
     allowedTeamIds: string
     onlyUsersOnTeam: string
+    enableAudioContentExtraction: boolean
 }
 
 type Props = {
@@ -381,6 +382,35 @@ const Config = (props: Props) => {
                         <span>{'false'}</span>
                     </label>
                     <div className='help-text'><span>{'Automatically create a summary of any recorded call.'}</span></div>
+                </div>
+            </div>
+
+            <div className='form-group'>
+                <label
+                    className='control-label col-sm-4'
+                >
+                    {'Enable Audio/Video content extraction:'}
+                </label>
+                <div className='col-sm-8'>
+                    <label className='radio-inline'>
+                        <input
+                            type='radio'
+                            value='true'
+                            checked={value.enableAudioContentExtraction}
+                            onChange={() => props.onChange(props.id, {...value, enableAudioContentExtraction: true})}
+                        />
+                        <span>{'true'}</span>
+                    </label>
+                    <label className='radio-inline'>
+                        <input
+                            type='radio'
+                            value='false'
+                            checked={!value.enableAudioContentExtraction}
+                            onChange={() => props.onChange(props.id, {...value, enableAudioContentExtraction: false})}
+                        />
+                        <span>{'false'}</span>
+                    </label>
+                    <div className='help-text'><span>{'Extract the audio transcription of uploaded audio or video files and add that information to the attachment information to be searchable.'}</span></div>
                 </div>
             </div>
 

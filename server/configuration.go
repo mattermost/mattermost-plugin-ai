@@ -24,10 +24,11 @@ type Config struct {
 	EnableLLMTrace              bool            `json:"enableLLMTrace"`
 	EnableAutomaticCallsSummary bool            `json:"enableAutomaticCallsSummary"`
 
-	EnableUseRestrictions bool   `json:"enableUserRestrictions"`
-	AllowPrivateChannels  bool   `json:"allowPrivateChannels"`
-	AllowedTeamIDs        string `json:"allowedTeamIDs"`
-	OnlyUsersOnTeam       string `json:"onlyUsersOnTeam"`
+	EnableUseRestrictions        bool   `json:"enableUserRestrictions"`
+	AllowPrivateChannels         bool   `json:"allowPrivateChannels"`
+	AllowedTeamIDs               string `json:"allowedTeamIDs"`
+	OnlyUsersOnTeam              string `json:"onlyUsersOnTeam"`
+	EnableAudioContentExtraction bool   `json:"enableAudioContentExtraction"`
 }
 
 // configuration captures the plugin's external configuration as exposed in the Mattermost server

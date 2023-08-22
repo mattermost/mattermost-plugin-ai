@@ -268,9 +268,27 @@ func (p *Plugin) handleAutoCallsRecording(post *model.Post, postingUser *model.U
 }
 
 func (p *Plugin) FileWillBeUploaded(c *plugin.Context, info *model.FileInfo, file io.Reader, output io.Writer) (*model.FileInfo, string) {
+	if info.Content != "" {
+		return nil, ""
+	}
+
+	if !p.getConfiguration().Config.EnableAudioContentExtraction {
+		return nil, ""
+	}
+
 	if !strings.HasPrefix(info.MimeType, "audio/") && !strings.HasPrefix(info.MimeType, "video/") {
 		return nil, ""
 	}
+
+	channel, appErr := p.API.GetChannel(info.ChannelId)
+	if appErr != nil {
+		return nil, ""
+	}
+
+	if err := p.checkUsageRestrictions(info.CreatorId, channel); err != nil {
+		return nil, ""
+	}
+
 	text, err := p.getTranscribe().Transcribe(file)
 	if err != nil {
 		return nil, ""
