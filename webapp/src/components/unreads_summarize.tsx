@@ -1,7 +1,7 @@
 import React, {useState, useCallback} from 'react';
 import styled from 'styled-components';
 
-import {summarizeChannelSince} from '../client';
+import {summarizeChannelSince, summarizeThreadSince} from '../client';
 
 import DotMenu from './dot_menu';
 
@@ -98,25 +98,31 @@ const Summary = (props: SummaryProps) => {
 type Props = {
     lastViewedAt: number
     channelId: string
+    threadId: string
 }
 
-const UnreadsSummarize = ({channelId, lastViewedAt}: Props) => {
+const UnreadsSummarize = ({channelId, threadId, lastViewedAt}: Props) => {
     const [summary, setSummary] = useState<null|string>(null);
     const [generating, setGenerating] = useState(true);
     const [error, setError] = useState('');
 
-    const generateSummary = useCallback(async (channelID, since) => {
+    const generateSummary = useCallback(async () => {
         setGenerating(true);
         setSummary('');
+        setError('');
         let data;
         try {
-            data = await summarizeChannelSince(channelID, since);
+            if (channelId) {
+                data = await summarizeChannelSince(channelId, lastViewedAt);
+            } else if (threadId) {
+                data = await summarizeThreadSince(threadId, lastViewedAt);
+            }
         } catch (err) {
             setError('Unable to summarize the unread posts');
         }
         setSummary(data.message);
         setGenerating(false);
-    }, []);
+    }, [channelId, threadId, lastViewedAt]);
 
     return (
         <Button
@@ -127,7 +133,7 @@ const UnreadsSummarize = ({channelId, lastViewedAt}: Props) => {
                 setGenerating(false);
                 setError('');
                 if (isOpen) {
-                    generateSummary(channelId, lastViewedAt);
+                    generateSummary();
                 }
             }}
         >
@@ -145,10 +151,7 @@ const UnreadsSummarize = ({channelId, lastViewedAt}: Props) => {
                         <div>{error}</div>
                         <MenuContentButtons>
                             <AIPrimaryButton
-                                onClick={() => {
-                                    setError('');
-                                    generateSummary(channelId, lastViewedAt);
-                                }}
+                                onClick={generateSummary}
                             >{'Try again'}</AIPrimaryButton>
                             <AISecondaryButton className='ai-error-cancel'>{'Cancel'}</AISecondaryButton>
                         </MenuContentButtons>
@@ -157,7 +160,7 @@ const UnreadsSummarize = ({channelId, lastViewedAt}: Props) => {
                 {!error && summary &&
                     <Summary
                         text={summary}
-                        onRegenerate={() => generateSummary(channelId, lastViewedAt)}
+                        onRegenerate={generateSummary}
                     />}
             </MenuContent>
         </Button>

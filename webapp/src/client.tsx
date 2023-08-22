@@ -162,3 +162,21 @@ export async function summarizeChannelSince(channelID: string, since: number) {
         url,
     });
 }
+
+export async function summarizeThreadSince(threadId: string, since: number) {
+    const url = `${postRoute(threadId)}/summarize/since`;
+    const response = await fetch(url, Client4.getOptions({
+        method: 'POST',
+        body: JSON.stringify({since}),
+    }));
+
+    if (response.ok) {
+        return response.json();
+    }
+
+    throw new ClientError(Client4.url, {
+        message: '',
+        status_code: response.status,
+        url,
+    });
+}
