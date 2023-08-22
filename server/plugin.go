@@ -23,6 +23,7 @@ const (
 	BotUsername = "ai"
 
 	CallsRecordingPostType = "custom_calls_recording"
+	CallsBotUsername       = "calls"
 
 	ffmpegPluginPath = "./plugins/mattermost-ai/server/dist/ffmpeg"
 )
@@ -95,23 +96,28 @@ func (p *Plugin) OnActivate() error {
 		p.pluginAPI.Log.Error("ffmpeg not installed, transcriptions will be disabled.", "error", err)
 	}
 
-	p.registerCommands()
-
 	return nil
 }
 
 func (p *Plugin) getLLM() ai.LanguageModel {
 	cfg := p.getConfiguration()
 	var llm ai.LanguageModel
-	switch cfg.LLMGenerator {
+	var llmService ServiceConfig
+	for _, service := range cfg.Services {
+		if service.Name == cfg.LLMGenerator {
+			llmService = service
+			break
+		}
+	}
+	switch llmService.ServiceName {
 	case "openai":
-		llm = openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel)
+		llm = openai.New(llmService.APIKey, llmService.DefaultModel)
 	case "openaicompatible":
-		llm = openai.NewCompatible(cfg.OpenAICompatibleKey, cfg.OpenAICompatibleUrl, cfg.OpenAICompatibleModel)
+		llm = openai.NewCompatible(llmService.APIKey, llmService.URL, llmService.DefaultModel)
 	case "anthropic":
-		llm = anthropic.New(cfg.AnthropicAPIKey, cfg.AnthropicDefaultModel)
+		llm = anthropic.New(llmService.APIKey, llmService.DefaultModel)
 	case "asksage":
-		llm = asksage.New(cfg.AskSageUsername, cfg.AskSagePassword, cfg.AskSageDefaultModel)
+		llm = asksage.New(llmService.Username, llmService.Password, llmService.DefaultModel)
 	}
 
 	if cfg.EnableLLMTrace {
@@ -123,11 +129,18 @@ func (p *Plugin) getLLM() ai.LanguageModel {
 
 func (p *Plugin) getImageGenerator() ai.ImageGenerator {
 	cfg := p.getConfiguration()
-	switch cfg.LLMGenerator {
+	var imageGeneratorService ServiceConfig
+	for _, service := range cfg.Services {
+		if service.Name == cfg.ImageGenerator {
+			imageGeneratorService = service
+			break
+		}
+	}
+	switch imageGeneratorService.ServiceName {
 	case "openai":
-		return openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel)
+		return openai.New(imageGeneratorService.APIKey, imageGeneratorService.DefaultModel)
 	case "openaicompatible":
-		return openai.NewCompatible(cfg.OpenAICompatibleKey, cfg.OpenAICompatibleUrl, cfg.OpenAICompatibleModel)
+		return openai.NewCompatible(imageGeneratorService.APIKey, imageGeneratorService.URL, imageGeneratorService.DefaultModel)
 	}
 
 	return nil
@@ -135,103 +148,123 @@ func (p *Plugin) getImageGenerator() ai.ImageGenerator {
 
 func (p *Plugin) getTranscribe() ai.Transcriber {
 	cfg := p.getConfiguration()
-	/*switch cfg.LLMGenerator {
+	var transcriptionService ServiceConfig
+	for _, service := range cfg.Services {
+		if service.Name == cfg.TranscriptGenerator {
+			transcriptionService = service
+			break
+		}
+	}
+	switch transcriptionService.ServiceName {
 	case "openai":
-		return openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel)
-	}*/
-	return openai.New(cfg.OpenAIAPIKey, cfg.OpenAIDefaultModel)
+		return openai.New(transcriptionService.APIKey, transcriptionService.DefaultModel)
+	case "openaicompatible":
+		return openai.NewCompatible(transcriptionService.APIKey, transcriptionService.URL, transcriptionService.DefaultModel)
+	}
+	return nil
 }
 
+var (
+	// ErrNoResponse is returned when no response is posted under a normal condition.
+	ErrNoResponse = errors.New("no response")
+)
+
 func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
+	if err := p.handleMessages(post); err != nil {
+		if errors.Is(err, ErrNoResponse) {
+			p.pluginAPI.Log.Debug(err.Error())
+		} else {
+			p.pluginAPI.Log.Error(err.Error())
+		}
+	}
+}
+
+// handleMessages Handled messages posted. Returns true if a response was posted.
+func (p *Plugin) handleMessages(post *model.Post) error {
 	// Don't respond to ouselves
 	if post.UserId == p.botid {
-		return
+		return errors.Wrap(ErrNoResponse, "not responding to ourselves")
 	}
 
 	// Never respond to remote posts
 	if post.RemoteId != nil && *post.RemoteId != "" {
-		return
+		return errors.Wrap(ErrNoResponse, "not responding to remote posts")
 	}
 
 	channel, err := p.pluginAPI.Channel.Get(post.ChannelId)
 	if err != nil {
-		p.pluginAPI.Log.Error(err.Error())
-		return
+		return errors.Wrap(err, "unable to get channel")
 	}
+
+	postingUser, err := p.pluginAPI.User.Get(post.UserId)
+	if err != nil {
+		return err
+	}
+
+	switch {
+	// Check we are mentioned like @ai
+	case userIsMentioned(post.Message, BotUsername):
+		return p.handleMentions(post, postingUser, channel)
 
 	// Check if this is post in the DM channel with the bot
-	if channel.Type == model.ChannelTypeDirect && strings.Contains(channel.Name, p.botid) {
-		postingUser, err := p.pluginAPI.User.Get(post.UserId)
-		if err != nil {
-			p.pluginAPI.Log.Error(err.Error())
-			return
-		}
-
-		// We don't talk to other bots
-		if postingUser.IsBot {
-			return
-		}
-
-		if p.getConfiguration().EnableUseRestrictions {
-			if !p.pluginAPI.User.HasPermissionToTeam(postingUser.Id, p.getConfiguration().OnlyUsersOnTeam, model.PermissionViewTeam) {
-				p.pluginAPI.Log.Error("User not on allowed team.")
-				return
-			}
-		}
-		err = p.processUserRequestToBot(p.MakeConversationContext(postingUser, channel, post))
-		if err != nil {
-			p.pluginAPI.Log.Error("Unable to process bot reqeust: " + err.Error())
-			return
-		}
-		return
-	}
-
-	// We are mentioned
-	if userIsMentioned(post.Message, BotUsername) {
-		postingUser, err := p.pluginAPI.User.Get(post.UserId)
-		if err != nil {
-			p.pluginAPI.Log.Error(err.Error())
-			return
-		}
-
-		// We don't talk to other bots
-		if postingUser.IsBot {
-			return
-		}
-
-		if err := p.checkUsageRestrictions(postingUser.Id, channel); err != nil {
-			p.pluginAPI.Log.Error(err.Error())
-			return
-		}
-
-		err = p.processUserRequestToBot(p.MakeConversationContext(postingUser, channel, post))
-		if err != nil {
-			p.pluginAPI.Log.Error("Unable to process bot mention: " + err.Error())
-			return
-		}
-		return
-	}
+	case channel.Type == model.ChannelTypeDirect && strings.Contains(channel.Name, p.botid):
+		return p.handleDMs(channel, postingUser, post)
 
 	// Its a bot post from the calls plugin
-	if post.Type == CallsRecordingPostType && p.getConfiguration().EnableAutomaticCallsSummary {
-		if p.getConfiguration().EnableUseRestrictions {
-			if !strings.Contains(p.getConfiguration().AllowedTeamIDs, channel.TeamId) {
-				return
-			}
-
-			if !p.getConfiguration().AllowPrivateChannels {
-				if channel.Type != model.ChannelTypeOpen {
-					return
-				}
-			}
-		}
-
-		if err := p.handleCallRecordingPost(post, channel); err != nil {
-			p.pluginAPI.Log.Error("Unable to process calls recording", "error", err)
-			return
-		}
-		return
+	case post.Type == CallsRecordingPostType && p.getConfiguration().EnableAutomaticCallsSummary:
+		return p.handleAutoCallsRecording(post, postingUser, channel)
 	}
+
+	return nil
+}
+
+func (p *Plugin) handleMentions(post *model.Post, postingUser *model.User, channel *model.Channel) error {
+	if err := p.checkUsageRestrictions(postingUser.Id, channel); err != nil {
+		return err
+	}
+
+	if postingUser.IsBot {
+		return errors.Wrap(ErrNoResponse, "not responding to other bots")
+	}
+
+	if err := p.processUserRequestToBot(p.MakeConversationContext(postingUser, channel, post)); err != nil {
+		return errors.Wrap(err, "unable to process bot mention")
+	}
+
+	return nil
+}
+
+func (p *Plugin) handleDMs(channel *model.Channel, postingUser *model.User, post *model.Post) error {
+	if err := p.checkUsageRestrictionsForUser(postingUser.Id); err != nil {
+		return err
+	}
+
+	if postingUser.IsBot {
+		return errors.Wrap(ErrNoResponse, "not responding to other bots")
+	}
+
+	if err := p.processUserRequestToBot(p.MakeConversationContext(postingUser, channel, post)); err != nil {
+		return errors.Wrap(err, "unable to process bot DM")
+	}
+
+	return nil
+
+}
+
+func (p *Plugin) handleAutoCallsRecording(post *model.Post, postingUser *model.User, channel *model.Channel) error {
+	if err := p.checkUsageRestrictionsForChannel(channel); err != nil {
+		return err
+	}
+
+	if !postingUser.IsBot || postingUser.Username != CallsBotUsername {
+		return errors.New("somone spoofing the calls plugin")
+	}
+
+	if err := p.handleCallRecordingPost(post, channel); err != nil {
+		return errors.Wrap(err, "unable to process calls recording")
+	}
+
+	return nil
 }
 
 func (p *Plugin) FileWillBeUploaded(c *plugin.Context, info *model.FileInfo, file io.Reader, output io.Writer) (*model.FileInfo, string) {

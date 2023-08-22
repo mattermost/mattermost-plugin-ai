@@ -3,13 +3,14 @@ import styled from 'styled-components';
 
 import {Draft} from '@mattermost/types/drafts';
 
-import {doSimplify, doChangeTone} from '../client';
+import {doSimplify, doChangeTone, doAskAiChangeText} from '../client';
 
 import LoadingSpinner from './assets/loading_spinner';
 import IconAI from './assets/icon_ai';
 import IconWand from './assets/icon_wand';
 import {SubtlePrimaryButton, TertiaryButton} from './assets/buttons';
 import DotMenu, {DropdownMenuItem} from './dot_menu';
+import AskAiInput from './ask_ai_input';
 
 type Props = {
     draft: Draft,
@@ -62,6 +63,7 @@ const EditorMenu = (props: Props) => {
     const [proposal, setProposal] = useState<null|string>(null);
     const [generating, setGenerating] = useState(false);
     const [currentAction, setCurrentAction] = useState('');
+    const [lastChangeAsk, setLastChangeAsk] = useState('');
     const [error, setError] = useState('');
 
     const simplify = async (e?: Event) => {
@@ -104,6 +106,25 @@ const EditorMenu = (props: Props) => {
         setProposal(data.message);
     };
 
+    const askAiChangeText = async (ask: string) => {
+        setCurrentAction('ask-ai-change-text');
+        setLastChangeAsk(ask);
+        setGenerating(true);
+        const {start, end} = props.getSelectedText();
+        let text = draft.message;
+        if (start < end) {
+            text = draft.message.substring(start, end);
+        }
+        let data = {message: ''};
+        try {
+            data = await doAskAiChangeText(ask, text);
+        } catch (e) {
+            setError('Unable to change the text');
+        }
+        setGenerating(false);
+        setProposal(data.message);
+    };
+
     const regenerate = async () => {
         setProposal('');
         setGenerating(true);
@@ -124,6 +145,12 @@ const EditorMenu = (props: Props) => {
                 data = await doChangeTone('professional', text);
             } catch (e) {
                 setError('Unable to change the tone');
+            }
+        } else if (currentAction === 'ask-ai-change-text') {
+            try {
+                data = await doAskAiChangeText(lastChangeAsk, text);
+            } catch (e) {
+                setError('Unable to change the text');
             }
         }
         setGenerating(false);
@@ -184,6 +211,12 @@ const EditorMenu = (props: Props) => {
                 </MenuContent>}
             {!error && !proposal && !generating &&
                 <>
+                    <AskAiInput
+                        placeholder='Ask AI to edit selection...'
+                        onRun={(text: string) => {
+                            askAiChangeText(text);
+                        }}
+                    />
                     <DropdownMenuItem onClick={simplify}>
                         <span className='icon'><IconAI/></span>{'Simplify'}
                     </DropdownMenuItem>

@@ -4,14 +4,14 @@ Change tone and voice to {{.PromptParameters.Tone}}.
 Use industry-specific language and terminology.
 Avoid complex words.
 {{end}}
-{{if eq .Tone "informal"}}
+{{if eq .PromptParameters.Tone "informal"}}
 Use informal and friendly language.
 Avoid complex words.
 {{end}}
 Provide only the resulting text as an answer.
 Avoid greetings and sign-offs.
-The original text is:
 {{end}}
 {{define "change_tone.user"}}
+The original text is:
 {{.PromptParameters.Message}}
 {{end}}

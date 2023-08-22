@@ -6,6 +6,30 @@ import (
 	"github.com/pkg/errors"
 )
 
+type ServiceConfig struct {
+	Name         string `json:"name"`
+	ServiceName  string `json:"serviceName"`
+	APIKey       string `json:"apiKey"`
+	DefaultModel string `json:"defaultModel"`
+	URL          string `json:"url"`
+	Username     string `json:"username"`
+	Password     string `json:"password"`
+}
+
+type Config struct {
+	Services                    []ServiceConfig `json:"services"`
+	LLMGenerator                string          `json:"llmBackend"`
+	ImageGenerator              string          `json:"imageGeneratorBackend"`
+	TranscriptGenerator         string          `json:"transcriptBackend"`
+	EnableLLMTrace              bool            `json:"enableLLMTrace"`
+	EnableAutomaticCallsSummary bool            `json:"enableAutomaticCallsSummary"`
+
+	EnableUseRestrictions bool   `json:"enableUserRestrictions"`
+	AllowPrivateChannels  bool   `json:"allowPrivateChannels"`
+	AllowedTeamIDs        string `json:"allowedTeamIDs"`
+	OnlyUsersOnTeam       string `json:"onlyUsersOnTeam"`
+}
+
 // configuration captures the plugin's external configuration as exposed in the Mattermost server
 // configuration, as well as values computed from the configuration. Any public fields will be
 // deserialized from the Mattermost server configuration in OnConfigurationChange.
@@ -18,31 +42,7 @@ import (
 // If you add non-reference types to your configuration struct, be sure to rewrite Clone as a deep
 // copy appropriate for your types.
 type configuration struct {
-	OpenAIAPIKey       string
-	OpenAIDefaultModel string
-
-	OpenAICompatibleUrl   string
-	OpenAICompatibleKey   string
-	OpenAICompatibleModel string
-
-	AnthropicAPIKey       string
-	AnthropicDefaultModel string
-
-	AskSageUsername     string
-	AskSagePassword     string // Not ideal but there is no API key support from AskSage yet
-	AskSageDefaultModel string
-
-	LLMGenerator   string
-	ImageGenerator string
-
-	EnableAutomaticCallsSummary bool
-
-	EnableUseRestrictions bool
-	AllowPrivateChannels  bool
-	AllowedTeamIDs        string
-	OnlyUsersOnTeam       string
-
-	EnableLLMTrace bool
+	Config `json:"config"`
 }
 
 // Clone shallow copies the configuration. Your implementation may require a deep copy if
