@@ -280,12 +280,7 @@ func (p *Plugin) FileWillBeUploaded(c *plugin.Context, info *model.FileInfo, fil
 		return nil, ""
 	}
 
-	channel, appErr := p.API.GetChannel(info.ChannelId)
-	if appErr != nil {
-		return nil, ""
-	}
-
-	if err := p.checkUsageRestrictions(info.CreatorId, channel); err != nil {
+	if err := p.checkUsageRestrictionsForUser(info.CreatorId); err != nil {
 		return nil, ""
 	}
 
