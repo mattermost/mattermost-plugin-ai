@@ -251,7 +251,7 @@ func (s *OpenAI) Transcribe(file io.Reader) (string, error) {
 		Model:    openaiClient.Whisper1,
 		Reader:   file,
 		FilePath: "input.mp3",
-		Format:   openaiClient.AudioResponseFormatJSON,
+		Format:   openaiClient.AudioResponseFormatVTT,
 	})
 	if err != nil {
 		return "", errors.Wrap(err, "unable to create whisper transcription")
@@ -290,10 +290,11 @@ func (s *OpenAI) GenerateImage(prompt string) (image.Image, error) {
 func (s *OpenAI) CountTokens(text string) int {
 	// Counting tokens is really annoying, so we approximate for now.
 	charCount := float64(len(text)) / 4.0
-	wordCount := float64(len(strings.Fields(text))) / 0.75
+	//wordCount := float64(len(strings.Fields(text))) / 0.75
 
 	// Average the two and add a buffer
-	return int((charCount+wordCount)/2.0) + 100
+	//return int((charCount+wordCount)/2.0) + 100
+	return int(charCount) + 100
 }
 
 func (s *OpenAI) TokenLimit() int {
