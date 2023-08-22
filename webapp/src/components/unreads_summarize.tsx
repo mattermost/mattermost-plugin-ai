@@ -18,11 +18,18 @@ export const Button = styled(DotMenu)`
         align-items: center;
         margin-bottom: 2px;
         width: auto;
-        color: var(--button-color);
+        pointer-events: auto;
+        color: rgba(var(--new-message-separator-rgb), 1);
+        background: rgba(var(--new-message-separator-rgb), 0.2);
         svg {
             margin-right: 2px;
             width: 16px;
             height: 16px;
+            fill: rgba(var(--new-message-separator-rgb), 1);
+        }
+        > span {
+            display: flex;
+            align-items: center;
         }
     }
 `;
@@ -89,7 +96,6 @@ const Summary = (props: SummaryProps) => {
 };
 
 type Props = {
-    unreadCount: number
     lastViewedAt: number
     channelId: string
 }

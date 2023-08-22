@@ -37,8 +37,8 @@ export default class Plugin {
 
         registry.registerAdminConsoleCustomSetting('Config', Config);
 
-        if (registry.registerUnreadsBarActionComponent) {
-            registry.registerUnreadsBarActionComponent(UnreadsSummarize);
+        if (registry.registerNewMessagesSeparatorActionComponent) {
+            registry.registerNewMessagesSeparatorActionComponent(UnreadsSummarize);
         }
     }
 }
