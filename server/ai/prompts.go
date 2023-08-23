@@ -19,17 +19,19 @@ const UserSubTemplateName = ".user"
 
 // Conviance vars for the filenames in ai/prompts/
 const (
-	PromptSummarizeThread       = "summarize_thread"
-	PromptDirectMessageQuestion = "direct_message_question"
-	PromptEmojiSelect           = "emoji_select"
-	PromptMeetingSummary        = "meeting_summary"
-	PromptMeetingSummaryOnly    = "summary_only"
-	PromptMeetingKeyPoints      = "meeting_key_points"
-	PromptSpellcheck            = "spellcheck"
-	PromptChangeTone            = "change_tone"
-	PromptSimplifyText          = "simplify_text"
-	PromptAIChangeText          = "ai_change_text"
-	PromptSummarizeChannelSince = "summarize_channel_since"
+	PromptSummarizeThread         = "summarize_thread"
+	PromptDirectMessageQuestion   = "direct_message_question"
+	PromptEmojiSelect             = "emoji_select"
+	PromptMeetingSummary          = "meeting_summary"
+	PromptMeetingSummaryOnly      = "summary_only"
+	PromptMeetingKeyPoints        = "meeting_key_points"
+	PromptSpellcheck              = "spellcheck"
+	PromptChangeTone              = "change_tone"
+	PromptSimplifyText            = "simplify_text"
+	PromptAIChangeText            = "ai_change_text"
+	PromptSummarizeChannelSince   = "summarize_channel_since"
+	PromptExplainCode             = "explain_code"
+	PromptSuggestCodeImprovements = "suggest_code_improvements"
 )
 
 func NewPrompts(input fs.FS, getBuiltInTools func() []Tool) (*Prompts, error) {

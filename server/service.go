@@ -423,3 +423,37 @@ func (p *Plugin) summarizeChannelSince(requestingUser *model.User, channel *mode
 
 	return result, nil
 }
+
+func (p *Plugin) explainCode(message string) (*string, error) {
+	context := ai.NewConversationContextParametersOnly(map[string]string{
+		"Message": message,
+	})
+	prompt, err := p.prompts.ChatCompletion(ai.PromptExplainCode, context)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := p.getLLM().ChatCompletionNoStream(prompt)
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func (p *Plugin) suggestCodeImprovements(message string) (*string, error) {
+	context := ai.NewConversationContextParametersOnly(map[string]string{
+		"Message": message,
+	})
+	prompt, err := p.prompts.ChatCompletion(ai.PromptSuggestCodeImprovements, context)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := p.getLLM().ChatCompletionNoStream(prompt)
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}

@@ -8,6 +8,7 @@ import {manifest} from '@/manifest';
 import {LLMBotPost} from './components/llmbot_post';
 import PostMenu from './components/post_menu';
 import EditorMenu from './components/editor_menu';
+import CodeMenu from './components/code_menu';
 import IconThreadSummarization from './components/assets/icon_thread_summarization';
 import IconReactForMe from './components/assets/icon_react_for_me';
 import Config from './components/config/config';
@@ -35,6 +36,10 @@ export default class Plugin {
         }
 
         registry.registerAdminConsoleCustomSetting('Config', Config);
+
+        if (registry.registerCodeBlockActionComponent) {
+            registry.registerCodeBlockActionComponent(CodeMenu);
+        }
     }
 }
 
