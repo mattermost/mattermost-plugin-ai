@@ -1,0 +1,13 @@
+{{define "summarize_thread_since.system"}}
+{{template "standard_personality.tmpl" .}}
+You are an expert that summarizes unread posts from a thread.
+When the user gives you a set of posts from a thread. Respond with a useful summary that informs them of what they need to know about the unread posts.
+Respond with only the summary.
+{{end}}
+{{define "summarize_thread_since.user"}}
+The posts are given below:
+
+---- Posts Start ----
+{{.PromptParameters.Posts}}
+---- Posts End ----
+{{end}}

@@ -424,3 +424,47 @@ func (p *Plugin) summarizeChannelSince(requestingUser *model.User, channel *mode
 
 	return result, nil
 }
+
+func (p *Plugin) summarizeThreadSince(requestingUser *model.User, channel *model.Channel, post *model.Post, since int64) (string, error) {
+	posts, err := p.pluginAPI.Post.GetPostsSince(channel.Id, since)
+	if err != nil {
+		return "", err
+	}
+
+	threadData, err := p.getMetadataForPosts(posts)
+	if err != nil {
+		return "", err
+	}
+
+	// Remove deleted posts
+	threadData.Posts = slices.DeleteFunc(threadData.Posts, func(p *model.Post) bool {
+		return p.DeleteAt != 0
+	})
+
+	// Remove non-thread posts and ensure only newer posts are included
+	threadData.Posts = slices.DeleteFunc(threadData.Posts, func(p *model.Post) bool {
+		if post.RootId != "" {
+			return p.CreateAt < since || (p.Id != post.RootId && p.RootId != post.RootId)
+		}
+		return p.CreateAt < since || (p.Id != post.Id && p.RootId != post.Id)
+	})
+
+	formattedThread := formatThread(threadData)
+
+	context := ai.NewConversationContext(requestingUser, channel, nil)
+	context.PromptParameters = map[string]string{
+		"Posts": formattedThread,
+	}
+
+	prompt, err := p.prompts.ChatCompletion(ai.PromptSummarizeThreadSince, context)
+	if err != nil {
+		return "", err
+	}
+
+	result, err := p.getLLM().ChatCompletionNoStream(prompt)
+	if err != nil {
+		return "", err
+	}
+
+	return result, nil
+}

@@ -24,6 +24,7 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	postRouter.POST("/feedback/positive", p.handlePositivePostFeedback)
 	postRouter.POST("/feedback/negative", p.handleNegativePostFeedback)
 	postRouter.POST("/summarize", p.handleSummarize)
+	postRouter.POST("/summarize/since", p.handleSummarizeThreadSince)
 	postRouter.POST("/transcribe", p.handleTranscribe)
 
 	textRouter := router.Group("/text")
