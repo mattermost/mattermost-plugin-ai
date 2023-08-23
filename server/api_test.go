@@ -24,6 +24,7 @@ func TestPostRouter(t *testing.T) {
 		"feedback positive": "/post/postid/feedback/positive",
 		"feedback negative": "/post/postid/feedback/negative",
 		"summarize":         "/post/postid/summarize",
+		"summarize since":   "/post/postid/summarize/since",
 		"transcribe":        "/post/postid/transcribe",
 	} {
 
