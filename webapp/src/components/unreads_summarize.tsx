@@ -13,16 +13,16 @@ export const Button = styled(DotMenu)`
     &&&&& {
         background: rgba(255,255,255,0.12);
         margin-left: 10px;
-        padding: 4px 10px;
+        padding: 2px 10px;
         display: inline-flex;
         align-items: center;
         margin-bottom: 2px;
         width: auto;
         pointer-events: auto;
         color: rgba(var(--new-message-separator-rgb), 1);
-        background: rgba(var(--new-message-separator-rgb), 0.2);
+        background: rgba(var(--new-message-separator-rgb), 0.08);
         svg {
-            margin-right: 2px;
+            margin-right: 4px;
             width: 16px;
             height: 16px;
             fill: rgba(var(--new-message-separator-rgb), 1);
