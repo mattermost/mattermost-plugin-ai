@@ -15,7 +15,7 @@ type Props = {
 
 export const Menu = styled(DotMenu)`
     margin-left: 4px;
-`
+`;
 
 export const MenuContent = styled.div`
  && {
