@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/go-github/v41/github"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
-	"github.com/mattermost/mattermost-server/v6/model"
+	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/pkg/errors"
 )
 

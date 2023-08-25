@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/mattermost/mattermost-server/v6/shared/markdown"
+	"github.com/mattermost/mattermost/server/public/shared/markdown"
 )
 
 // Adapted from https://github.com/mattermost/mattermost-server/blob/14fcc8a22e05efdb9e535e49257da80a9228507e/server/channels/app/notification.go#L1313

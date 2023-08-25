@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
-	"github.com/mattermost/mattermost-server/v6/model"
+	"github.com/mattermost/mattermost/server/public/model"
 )
 
 func (p *Plugin) MakeConversationContext(user *model.User, channel *model.Channel, post *model.Post) ai.ConversationContext {
