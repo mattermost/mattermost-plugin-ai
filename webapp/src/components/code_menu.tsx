@@ -13,6 +13,10 @@ type Props = {
     code: string
 }
 
+export const Menu = styled(DotMenu)`
+    margin-left: 4px;
+`
+
 export const MenuContent = styled.div`
  && {
      display: flex;
@@ -110,7 +114,7 @@ const CodeMenu = ({code}: Props) => {
     };
 
     return (
-        <DotMenu
+        <Menu
             icon={<IconAI/>}
             title='AI Actions'
             onOpenChange={() => {
@@ -159,7 +163,7 @@ const CodeMenu = ({code}: Props) => {
                         <span className='icon'><IconWand/></span>{'Suggest Improvements'}
                     </DropdownMenuItem>
                 </>}
-        </DotMenu>
+        </Menu>
     );
 };
 
