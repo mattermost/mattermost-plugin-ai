@@ -13,8 +13,12 @@ type Props = {
     code: string
 }
 
-export const Menu = styled(DotMenu)`
+export const Menu = styled(DotMenu).attrs((props: {$open: boolean}) => ({$open: props.$open}))`
     margin-left: 4px;
+    opacity: ${(props) => (props.$open ? '1' : '0')};
+    .post-code:hover & {
+        opacity: 1;
+    }
 `;
 
 export const MenuContent = styled.div`
@@ -61,6 +65,7 @@ const CodeMenu = ({code}: Props) => {
     const [generating, setGenerating] = useState(false);
     const [currentAction, setCurrentAction] = useState('');
     const [error, setError] = useState('');
+    const [open, setOpen] = useState(false);
 
     const explainCode = async (e?: Event) => {
         e?.stopPropagation();
@@ -117,7 +122,9 @@ const CodeMenu = ({code}: Props) => {
         <Menu
             icon={<IconAI/>}
             title='AI Actions'
-            onOpenChange={() => {
+            $open={open}
+            onOpenChange={(isOpen) => {
+                setOpen(isOpen);
                 setReply('');
                 setGenerating(false);
                 setCurrentAction('');
