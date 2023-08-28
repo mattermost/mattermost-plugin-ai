@@ -14,6 +14,7 @@ import (
 
 	"github.com/invopop/jsonschema"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
+	"github.com/mattermost/mattermost-plugin-ai/server/ai/subtitles"
 	"github.com/pkg/errors"
 	"github.com/sashabaranov/go-openai"
 	openaiClient "github.com/sashabaranov/go-openai"
@@ -246,7 +247,7 @@ func (s *OpenAI) ChatCompletionNoStream(conversation ai.BotConversation, opts ..
 	return result.ReadAll(), nil
 }
 
-func (s *OpenAI) Transcribe(file io.Reader) (string, error) {
+func (s *OpenAI) Transcribe(file io.Reader) (*subtitles.Subtitles, error) {
 	resp, err := s.client.CreateTranscription(context.Background(), openaiClient.AudioRequest{
 		Model:    openaiClient.Whisper1,
 		Reader:   file,
@@ -254,10 +255,15 @@ func (s *OpenAI) Transcribe(file io.Reader) (string, error) {
 		Format:   openaiClient.AudioResponseFormatVTT,
 	})
 	if err != nil {
-		return "", errors.Wrap(err, "unable to create whisper transcription")
+		return nil, errors.Wrap(err, "unable to create whisper transcription")
 	}
 
-	return resp.Text, nil
+	timedTranscript, err := subtitles.NewSubtitlesFromVTT(strings.NewReader(resp.Text))
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to parse whisper transcription")
+	}
+
+	return timedTranscript, nil
 }
 
 func (s *OpenAI) GenerateImage(prompt string) (image.Image, error) {
@@ -290,11 +296,10 @@ func (s *OpenAI) GenerateImage(prompt string) (image.Image, error) {
 func (s *OpenAI) CountTokens(text string) int {
 	// Counting tokens is really annoying, so we approximate for now.
 	charCount := float64(len(text)) / 4.0
-	//wordCount := float64(len(strings.Fields(text))) / 0.75
+	wordCount := float64(len(strings.Fields(text))) / 0.75
 
-	// Average the two and add a buffer
-	//return int((charCount+wordCount)/2.0) + 100
-	return int(charCount) + 100
+	// Average the two
+	return int((charCount + wordCount) / 2.0)
 }
 
 func (s *OpenAI) TokenLimit() int {

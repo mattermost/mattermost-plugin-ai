@@ -3,6 +3,8 @@ package ai
 import (
 	"image"
 	"io"
+
+	"github.com/mattermost/mattermost-plugin-ai/server/ai/subtitles"
 )
 
 type LLMConfig struct {
@@ -33,7 +35,7 @@ type LanguageModel interface {
 }
 
 type Transcriber interface {
-	Transcribe(file io.Reader) (string, error)
+	Transcribe(file io.Reader) (*subtitles.Subtitles, error)
 }
 
 type ImageGenerator interface {

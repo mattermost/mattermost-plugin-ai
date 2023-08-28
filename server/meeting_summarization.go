@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"os/exec"
@@ -12,7 +11,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-func (p *Plugin) handleCallRecordingPost(recordingPost *model.Post, channel *model.Channel) (err error) {
+func (p *Plugin) handleCallRecordingPost(recordingPost *model.Post, channel *model.Channel) (reterr error) {
 	if len(recordingPost.FileIds) != 1 {
 		return errors.New("Unexpected number of files in calls post")
 	}
@@ -37,7 +36,7 @@ func (p *Plugin) handleCallRecordingPost(recordingPost *model.Post, channel *mod
 
 	// Update to an error if we return one.
 	defer func() {
-		if err != nil {
+		if reterr != nil {
 			botPost.Message = "Sorry! Somthing went wrong. Check the server logs for details."
 			if err := p.pluginAPI.Post.UpdatePost(botPost); err != nil {
 				p.API.LogError("Failed to update post in error handling handleCallRecordingPost", "error", err)
@@ -86,6 +85,7 @@ func (p *Plugin) handleCallRecordingPost(recordingPost *model.Post, channel *mod
 	if err != nil {
 		return err
 	}
+	llmFormattedTranscription := transcription.FormatForLLM()
 
 	errout, err := io.ReadAll(errorReader)
 	if err != nil {
@@ -97,7 +97,7 @@ func (p *Plugin) handleCallRecordingPost(recordingPost *model.Post, channel *mod
 		return errors.Wrap(err, "error while waiting for ffmpeg")
 	}
 
-	transcriptFileInfo, err := p.pluginAPI.File.Upload(bytes.NewReader([]byte(transcription)), "transcript.txt", channel.Id)
+	transcriptFileInfo, err := p.pluginAPI.File.Upload(strings.NewReader(transcription.FormatTextOnly()), "transcript.txt", channel.Id)
 	if err != nil {
 		return errors.Wrap(err, "unable to upload transcript")
 	}
@@ -117,12 +117,13 @@ func (p *Plugin) handleCallRecordingPost(recordingPost *model.Post, channel *mod
 		return err
 	}
 
-	tokens := p.getLLM().CountTokens(transcription)
+	tokens := p.getLLM().CountTokens(llmFormattedTranscription)
 	isChunked := false
 	if tokens > p.getLLM().TokenLimit()-ContextTokenMargin {
-		p.pluginAPI.Log.Debug("Transcription too long, summarizing in chunks.")
-		chunks := splitPlaintextOnSentences(transcription, p.getLLM().TokenLimit()-ContextTokenMargin)
+		p.pluginAPI.Log.Debug("Transcription too long, summarizing in chunks.", "tokens", tokens, "limit", p.getLLM().TokenLimit()-ContextTokenMargin)
+		chunks := splitPlaintextOnSentences(llmFormattedTranscription, (p.getLLM().TokenLimit()-ContextTokenMargin)*4)
 		summarizedChunks := make([]string, 0, len(chunks))
+		p.pluginAPI.Log.Debug("Split into chunks", "chunks", len(chunks))
 		for _, chunk := range chunks {
 			context := p.MakeConversationContext(nil, channel, nil)
 			context.PromptParameters = map[string]string{"TranscriptionChunk": chunk}
@@ -139,12 +140,12 @@ func (p *Plugin) handleCallRecordingPost(recordingPost *model.Post, channel *mod
 			summarizedChunks = append(summarizedChunks, summarizedChunk)
 		}
 
-		transcription = strings.Join(summarizedChunks, "\n\n")
+		llmFormattedTranscription = strings.Join(summarizedChunks, "\n\n")
 		isChunked = true
 	}
 
 	context := p.MakeConversationContext(nil, channel, nil)
-	context.PromptParameters = map[string]string{"Transcription": transcription, "IsChunked": fmt.Sprintf("%t", isChunked)}
+	context.PromptParameters = map[string]string{"Transcription": llmFormattedTranscription, "IsChunked": fmt.Sprintf("%t", isChunked)}
 	summaryPrompt, err := p.prompts.ChatCompletion(ai.PromptMeetingSummaryOnly, context)
 	if err != nil {
 		return err
