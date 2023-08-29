@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
-	pluginapi "github.com/mattermost/mattermost-plugin-api"
+	"github.com/mattermost/mattermost/server/public/pluginapi"
 )
 
 type LanguageModelLogWrapper struct {
