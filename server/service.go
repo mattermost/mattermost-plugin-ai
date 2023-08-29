@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
-	"os/exec"
 	"slices"
 	"strings"
 
@@ -13,7 +11,8 @@ import (
 )
 
 const (
-	WhisperAPILimit           = 25 * (1024 * 1024) // 25 MB
+	WhisperAPILimit           = 25 * 1000 * 1000 // 25 MB
+	ContextTokenMargin        = 1000
 	defaultSpellcheckLanguage = "English"
 )
 
@@ -192,125 +191,6 @@ func (p *Plugin) selectEmoji(postToReact *model.Post, context ai.ConversationCon
 		UserId:    p.botid,
 		PostId:    postToReact.Id,
 	}); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (p *Plugin) handleCallRecordingPost(recordingPost *model.Post, channel *model.Channel) (err error) {
-	if len(recordingPost.FileIds) != 1 {
-		return errors.New("Unexpected number of files in calls post")
-	}
-
-	if p.ffmpegPath == "" {
-		return errors.New("ffmpeg not installed")
-	}
-
-	rootId := recordingPost.Id
-	if recordingPost.RootId != "" {
-		rootId = recordingPost.RootId
-	}
-
-	botPost := &model.Post{
-		ChannelId: recordingPost.ChannelId,
-		RootId:    rootId,
-		Message:   "Transcribing meeting...",
-	}
-	if err := p.botCreatePost(botPost); err != nil {
-		return err
-	}
-
-	// Update to an error if we return one.
-	defer func() {
-		if err != nil {
-			botPost.Message = "Sorry! Somthing went wrong. Check the server logs for details."
-			if err := p.pluginAPI.Post.UpdatePost(botPost); err != nil {
-				p.API.LogError("Failed to update post in error handling handleCallRecordingPost", "error", err)
-			}
-		}
-	}()
-
-	fileID := recordingPost.FileIds[0]
-	fileReader, err := p.pluginAPI.File.Get(fileID)
-	if err != nil {
-		return errors.Wrap(err, "unable to read calls file")
-	}
-
-	cmd := exec.Command(p.ffmpegPath, "-i", "pipe:0", "-f", "mp3", "pipe:1")
-	cmd.Stdin = fileReader
-
-	audioReader, err := cmd.StdoutPipe()
-	if err != nil {
-		return errors.Wrap(err, "couldn't create stdout pipe")
-	}
-
-	errorReader, err := cmd.StderrPipe()
-	if err != nil {
-		return errors.Wrap(err, "couldn't create stderr pipe")
-	}
-
-	if err := cmd.Start(); err != nil {
-		return errors.Wrap(err, "couldn't run ffmpeg")
-	}
-
-	transcriber := p.getTranscribe()
-	// Limit reader should probably error out instead of just silently failing
-	transcription, err := transcriber.Transcribe(io.LimitReader(audioReader, WhisperAPILimit))
-	if err != nil {
-		return err
-	}
-
-	errout, err := io.ReadAll(errorReader)
-	if err != nil {
-		return errors.Wrap(err, "unable to read stderr from ffmpeg")
-	}
-
-	if err := cmd.Wait(); err != nil {
-		p.pluginAPI.Log.Debug("ffmpeg stderr: " + string(errout))
-		return errors.Wrap(err, "error while waiting for ffmpeg")
-	}
-
-	botPost.Message += "\nRefining transcription..."
-	if err := p.pluginAPI.Post.UpdatePost(botPost); err != nil {
-		return err
-	}
-
-	context := p.MakeConversationContext(nil, channel, nil)
-	context.PromptParameters = map[string]string{"Transcription": transcription}
-	summaryPrompt, err := p.prompts.ChatCompletion(ai.PromptMeetingSummaryOnly, context)
-	if err != nil {
-		return err
-	}
-
-	keyPointsPrompt, err := p.prompts.ChatCompletion(ai.PromptMeetingKeyPoints, context)
-	if err != nil {
-		return err
-	}
-
-	summaryStream, err := p.getLLM().ChatCompletion(summaryPrompt)
-	if err != nil {
-		return err
-	}
-
-	keyPointsStream, err := p.getLLM().ChatCompletion(keyPointsPrompt)
-	if err != nil {
-		return err
-	}
-
-	botPost.Message = ""
-	template := []string{
-		"# Meeting Summary\n",
-		"",
-		"\n## Key Discussion Points\n",
-		"",
-		"\n\n_Summary generated using AI, and may contain inaccuracies. Do not take this summary as absolute truth._",
-	}
-	if err := p.pluginAPI.Post.UpdatePost(botPost); err != nil {
-		return err
-	}
-
-	if err := p.multiStreamResultToPost(botPost, template, summaryStream, keyPointsStream); err != nil {
 		return err
 	}
 

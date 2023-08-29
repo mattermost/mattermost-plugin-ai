@@ -75,3 +75,11 @@ func (a *Anthropic) ChatCompletionNoStream(conversation ai.BotConversation, opts
 
 	return result, nil
 }
+
+func (a *Anthropic) CountTokens(text string) int {
+	return 0
+}
+
+func (a *Anthropic) TokenLimit() int {
+	return 100000
+}

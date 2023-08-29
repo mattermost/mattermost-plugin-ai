@@ -53,6 +53,30 @@ func NewConversationContext(reqeustingUser *model.User, channel *model.Channel, 
 	}
 }
 
+func (c ConversationContext) String() string {
+	var result strings.Builder
+	result.WriteString(fmt.Sprintf("Time: %v\nServerName: %v\nCompanyName: %v", c.Time, c.ServerName, c.CompanyName))
+	if c.RequestingUser != nil {
+		result.WriteString(fmt.Sprintf("\nRequestingUser: %v", c.RequestingUser.Username))
+	}
+	if c.Channel != nil {
+		result.WriteString(fmt.Sprintf("\nChannel: %v", c.Channel.Name))
+	}
+	if c.Team != nil {
+		result.WriteString(fmt.Sprintf("\nTeam: %v", c.Team.Name))
+	}
+	if c.Post != nil {
+		result.WriteString(fmt.Sprintf("\nPost: %v", c.Post.Id))
+	}
+
+	result.WriteString("\nPromptParameters:")
+	for key := range c.PromptParameters {
+		result.WriteString(fmt.Sprintf(" %v", key))
+	}
+
+	return result.String()
+}
+
 func NewConversationContextParametersOnly(promptParameters map[string]string) ConversationContext {
 	return ConversationContext{
 		PromptParameters: promptParameters,
@@ -89,30 +113,26 @@ func (b *BotConversation) ExtractSystemMessage() string {
 func (b BotConversation) String() string {
 	// Create a string of all the posts with their role and message
 	var result strings.Builder
-	result.WriteString("--- Conversation ---\n")
+	result.WriteString("--- Conversation ---")
 	for _, post := range b.Posts {
 		switch post.Role {
 		case PostRoleUser:
-			result.WriteString("User: ")
+			result.WriteString("\n--- User ---\n")
 		case PostRoleBot:
-			result.WriteString("Bot: ")
+			result.WriteString("\n--- Bot ---\n")
 		case PostRoleSystem:
-			result.WriteString("System: ")
+			result.WriteString("\n--- System ---\n")
 		default:
-			result.WriteString("<unknown>: ")
+			result.WriteString("\n--- <Unknown> ---\n")
 		}
 		result.WriteString(post.Message)
-		result.WriteString("\n---------\n")
 	}
-	result.WriteString("--- Tools ---\n")
+	result.WriteString("\n--- Tools ---\n")
 	for _, tool := range b.Tools.GetTools() {
 		result.WriteString(tool.Name)
-		result.WriteString(": ")
-		result.WriteString(tool.Description)
-		result.WriteString("\n")
-		result.WriteString(fmt.Sprintf("%+v\n", tool.Schema))
+		result.WriteString(" ")
 	}
-	result.WriteString("--- Context ---\n")
+	result.WriteString("\n--- Context ---\n")
 	result.WriteString(fmt.Sprintf("%+v\n", b.Context))
 
 	return result.String()

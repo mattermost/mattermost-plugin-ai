@@ -182,7 +182,7 @@ The Ask Sage API doesn't yet support streaming, so there is less feedback to Mat
 
 ## Contributing
 
-Thank you for your interest in contributing to our open source project! ❤️ To get started, please read the [contributor guidelines](./CONTRIBUTING.md) for this repository.
+Thank you for your interest in contributing to our open source project! ❤️ To get started, please read the [contributor guidelines](./CONTRIBUTING.md) for this repository and check out the [Help Wanted ticket list](https://github.com/mattermost/mattermost-plugin-ai/labels/help%20wanted). 
 
 ## License
 
