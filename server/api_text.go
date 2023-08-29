@@ -81,3 +81,45 @@ func (p *Plugin) handleAiChangeText(c *gin.Context) {
 	data.Message = *newMessage
 	c.Render(200, render.JSON{Data: data})
 }
+
+func (p *Plugin) handleExplainCode(c *gin.Context) {
+	data := struct {
+		Message string `json:"message"`
+	}{}
+
+	err := json.NewDecoder(c.Request.Body).Decode(&data)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+	defer c.Request.Body.Close()
+
+	newMessage, err := p.explainCode(data.Message)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+	data.Message = *newMessage
+	c.Render(200, render.JSON{Data: data})
+}
+
+func (p *Plugin) handleSuggestCodeImprovements(c *gin.Context) {
+	data := struct {
+		Message string `json:"message"`
+	}{}
+
+	err := json.NewDecoder(c.Request.Body).Decode(&data)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+	defer c.Request.Body.Close()
+
+	newMessage, err := p.suggestCodeImprovements(data.Message)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+	data.Message = *newMessage
+	c.Render(200, render.JSON{Data: data})
+}

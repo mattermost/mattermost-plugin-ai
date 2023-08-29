@@ -162,3 +162,39 @@ export async function summarizeChannelSince(channelID: string, since: number) {
         url,
     });
 }
+
+export async function doExplainCode(message: string) {
+    const url = `${textRoute()}/explain_code`;
+    const response = await fetch(url, Client4.getOptions({
+        method: 'POST',
+        body: JSON.stringify({message}),
+    }));
+
+    if (response.ok) {
+        return response.json();
+    }
+
+    throw new ClientError(Client4.url, {
+        message: '',
+        status_code: response.status,
+        url,
+    });
+}
+
+export async function doSuggestCodeImprovements(message: string) {
+    const url = `${textRoute()}/suggest_code_improvements`;
+    const response = await fetch(url, Client4.getOptions({
+        method: 'POST',
+        body: JSON.stringify({message}),
+    }));
+
+    if (response.ok) {
+        return response.json();
+    }
+
+    throw new ClientError(Client4.url, {
+        message: '',
+        status_code: response.status,
+        url,
+    });
+}
