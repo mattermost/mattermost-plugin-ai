@@ -17,6 +17,9 @@ require (
 )
 
 require (
+	github.com/asticode/go-astikit v0.20.0 // indirect
+	github.com/asticode/go-astisub v0.26.0 // indirect
+	github.com/asticode/go-astits v1.8.0 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
