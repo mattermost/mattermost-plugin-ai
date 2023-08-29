@@ -1,6 +1,8 @@
 package asksage
 
 import (
+	"strings"
+
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 )
 
@@ -81,4 +83,18 @@ func (s *AskSage) ChatCompletionNoStream(conversation ai.BotConversation, opts .
 		return "", err
 	}
 	return response.Message, nil
+}
+
+// TODO: Implment actual token counting. For now just estimated based off OpenAI estimations
+func (a *AskSage) CountTokens(text string) int {
+	charCount := float64(len(text)) / 4.0
+	wordCount := float64(len(strings.Fields(text))) / 0.75
+
+	// Average the two and add a buffer
+	return int((charCount+wordCount)/2.0) + 100
+}
+
+// TODO: Figure out what the actual token limit is. For now just be conservative.
+func (a *AskSage) TokenLimit() int {
+	return 4096
 }

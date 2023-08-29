@@ -30,6 +30,7 @@ const (
 	PromptSimplifyText            = "simplify_text"
 	PromptAIChangeText            = "ai_change_text"
 	PromptSummarizeChannelSince   = "summarize_channel_since"
+	PromptSummarizeChunk          = "summarize_chunk"
 	PromptExplainCode             = "explain_code"
 	PromptSuggestCodeImprovements = "suggest_code_improvements"
 )

@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
-	pluginapi "github.com/mattermost/mattermost-plugin-api"
+	"github.com/mattermost/mattermost/server/public/pluginapi"
 )
 
 type LanguageModelLogWrapper struct {
@@ -32,4 +32,12 @@ func (w *LanguageModelLogWrapper) ChatCompletion(conversation ai.BotConversation
 func (w *LanguageModelLogWrapper) ChatCompletionNoStream(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (string, error) {
 	w.logInput(conversation, opts...)
 	return w.wrapped.ChatCompletionNoStream(conversation, opts...)
+}
+
+func (w *LanguageModelLogWrapper) CountTokens(text string) int {
+	return w.wrapped.CountTokens(text)
+}
+
+func (w *LanguageModelLogWrapper) TokenLimit() int {
+	return w.wrapped.TokenLimit()
 }

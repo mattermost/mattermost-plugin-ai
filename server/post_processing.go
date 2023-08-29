@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
-	"github.com/mattermost/mattermost-server/v6/model"
+	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/pkg/errors"
 )
 
@@ -128,7 +128,7 @@ func (p *Plugin) streamResultToPost(stream *ai.TextStreamResult, post *model.Pos
 					return
 				}
 				p.API.LogError("Streaming result to post failed", "error", err)
-				post.Message = "Sorry! An error occoured while accessing the LLM. See server logs for details."
+				post.Message = "Sorry! An error occurred while accessing the LLM. See server logs for details."
 				if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
 					p.API.LogError("Error recovering from streaming error", "error", err)
 					return
@@ -193,7 +193,7 @@ func (p *Plugin) multiStreamResultToPost(post *model.Post, messageTemplate []str
 					return
 				}
 				p.API.LogError("Streaming result to post failed", "error", err)
-				post.Message = "Sorry! An error occoured while accessing the LLM. See server logs for details."
+				post.Message = "Sorry! An error occurred while accessing the LLM. See server logs for details."
 				if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
 					p.API.LogError("Error recovering from streaming error", "error", err)
 					return
