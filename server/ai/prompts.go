@@ -31,6 +31,7 @@ const (
 	PromptAIChangeText          = "ai_change_text"
 	PromptSummarizeChannelSince = "summarize_channel_since"
 	PromptSummarizeThreadSince  = "summarize_thread_since"
+	PromptSummarizeChunk        = "summarize_chunk"
 )
 
 func NewPrompts(input fs.FS, getBuiltInTools func() []Tool) (*Prompts, error) {

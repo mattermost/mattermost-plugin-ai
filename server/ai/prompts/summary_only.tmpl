@@ -1,5 +1,6 @@
 {{define "summary_only.system"}}
-Use the following transcription of a meeting to make a useful and concise summary of the meeting. The transcription is imperfect and may contain errors. The summary should inform the reader of the important aspects of the meeting. Only include the summary no other text. Do not refer to anyone in particular.
+Use the following {{if (eq .PromptParameters.IsChunked "false")}}transcript{{else}}set of summaries{{end}} of a meeting to make a useful, accurate, and concise summary of the meeting. Only include the summary no other text.
+{{template "meeting_summary_general.tmpl" .}}
 {{end}}
 {{define "summary_only.user"}}
 {{.PromptParameters.Transcription}}

@@ -33,3 +33,11 @@ func (w *LanguageModelLogWrapper) ChatCompletionNoStream(conversation ai.BotConv
 	w.logInput(conversation, opts...)
 	return w.wrapped.ChatCompletionNoStream(conversation, opts...)
 }
+
+func (w *LanguageModelLogWrapper) CountTokens(text string) int {
+	return w.wrapped.CountTokens(text)
+}
+
+func (w *LanguageModelLogWrapper) TokenLimit() int {
+	return w.wrapped.TokenLimit()
+}

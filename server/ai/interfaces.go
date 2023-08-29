@@ -3,6 +3,8 @@ package ai
 import (
 	"image"
 	"io"
+
+	"github.com/mattermost/mattermost-plugin-ai/server/ai/subtitles"
 )
 
 type LLMConfig struct {
@@ -27,10 +29,13 @@ func WithmaxTokens(maxTokens int) LanguageModelOption {
 type LanguageModel interface {
 	ChatCompletion(conversation BotConversation, opts ...LanguageModelOption) (*TextStreamResult, error)
 	ChatCompletionNoStream(conversation BotConversation, opts ...LanguageModelOption) (string, error)
+
+	CountTokens(text string) int
+	TokenLimit() int
 }
 
 type Transcriber interface {
-	Transcribe(file io.Reader) (string, error)
+	Transcribe(file io.Reader) (*subtitles.Subtitles, error)
 }
 
 type ImageGenerator interface {

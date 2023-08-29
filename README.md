@@ -162,9 +162,11 @@ Configure the API key and the endpoint url for OpenAI Compatible in the system c
 Can support any backend that is OpenAI compatable such as [LocalAI](https://github.com/go-skynet/LocalAI) which we use in the [OpenOps](https://github.com/mattermost/openops) demo.
 
 ### Ask Sage
-If you can to use the OpenAI api directly, it is recommended you do that. Ask Sage does not support response streaming leading to a worse user experience. API tokens have not been implemented by Ask Sage therefore the Ask Sage integration requires username and password stored in plaintext in the server configuration. Hopefully these limitations will be resolved.
+Ask Sage is currently supported as an experimental stage feature. Token-based security is not yet available via the Ask Sage API, and server configuration would require securing the Mattermost server configuration data store, which will contain username and password in plaintext. 
 
-To configure enter your username and password on the system console page and set the default model such as `gpt-4` or `gpt-3.5-turbo`.
+To configure, you need to purchase a commercial account from [https://asksage.ai](https://asksage.ai), enter the account's `username` and `password` on the System Console page and set the default model such as `gpt-4` or `gpt-3.5-turbo`. 
+
+The Ask Sage API doesn't yet support streaming, so there is less feedback to Mattermost users on intermediate information. 
 
 ## Community Resources 
 
