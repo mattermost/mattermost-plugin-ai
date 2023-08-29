@@ -6,7 +6,7 @@
   "support_url": "https://github.com/mattermost/mattermost-plugin-ai/issues",
   "release_notes_url": "https://github.com/mattermost/mattermost-plugin-ai",
   "icon_path": "assets/bot_icon.png",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "min_server_version": "6.2.1",
   "server": {
     "executables": {
