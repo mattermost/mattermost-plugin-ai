@@ -54,7 +54,7 @@ func (p *Plugin) handleGetFeedback(c *gin.Context) {
 			return
 		}
 
-		conversation := ai.ThreadToBotConversation(p.botid, thread.Posts)
+		conversation := ThreadToBotConversation(p.botid, thread)
 
 		output = append(output, struct {
 			Conversation ai.BotConversation

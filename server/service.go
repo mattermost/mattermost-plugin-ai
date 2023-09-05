@@ -88,7 +88,7 @@ func (p *Plugin) continueConversation(context ai.ConversationContext) error {
 		if err != nil {
 			return err
 		}
-		prompt.AppendConversation(ai.ThreadToBotConversation(p.botid, threadData.Posts))
+		prompt.AppendConversation(ThreadToBotConversation(p.botid, threadData))
 
 		result, err = p.getLLM().ChatCompletion(prompt)
 		if err != nil {
@@ -119,7 +119,7 @@ func (p *Plugin) continueThreadConversation(questionThreadData *ThreadData, orig
 	if err != nil {
 		return nil, err
 	}
-	prompt.AppendConversation(ai.ThreadToBotConversation(p.botid, questionThreadData.Posts))
+	prompt.AppendConversation(ThreadToBotConversation(p.botid, questionThreadData))
 
 	result, err := p.getLLM().ChatCompletion(prompt)
 	if err != nil {

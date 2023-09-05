@@ -12,6 +12,7 @@ import (
 
 type ThreadData struct {
 	Posts     []*model.Post
+	FilesByID map[string]*model.FileInfo
 	UsersByID map[string]*model.User
 }
 
@@ -49,16 +50,61 @@ func (p *Plugin) getMetadataForPosts(posts *model.PostList) (*ThreadData, error)
 
 	postsSlice := posts.ToSlice()
 
-	return &ThreadData{
+	threadData := &ThreadData{
 		Posts:     postsSlice,
 		UsersByID: usersByID,
-	}, nil
+		FilesByID: make(map[string]*model.FileInfo),
+	}
+
+	for _, post := range postsSlice {
+		if len(post.FileIds) > 0 {
+			for _, fileID := range post.FileIds {
+				fileInfo, err := p.pluginAPI.File.GetInfo(fileID)
+				if err != nil {
+					return nil, err
+				}
+				threadData.FilesByID[fileID] = fileInfo
+			}
+		}
+	}
+
+	return threadData, nil
 }
 
 func formatThread(data *ThreadData) string {
-	result := ""
+	result := strings.Builder{}
 	for _, post := range data.Posts {
-		result += fmt.Sprintf("%s: %s\n\n", data.UsersByID[post.UserId].Username, post.Message)
+		result.WriteString(formatPost(data, post))
+	}
+
+	return result.String()
+}
+
+func formatPost(data *ThreadData, post *model.Post) string {
+	result := strings.Builder{}
+
+	result.WriteString(fmt.Sprintf("%s: %s\n", data.UsersByID[post.UserId].Username, post.Message))
+	if len(post.FileIds) > 0 {
+		for _, fileID := range post.FileIds {
+			file := data.FilesByID[fileID]
+			result.WriteString(fmt.Sprintf("File Attachment '%s': %s\n", file.Name, file.Content))
+		}
+	}
+	result.WriteString("\n")
+
+	return result.String()
+}
+
+func ThreadToBotConversation(botID string, threadData *ThreadData) ai.BotConversation {
+	result := ai.BotConversation{
+		Posts: make([]ai.Post, 0, len(threadData.Posts)),
+	}
+
+	for _, post := range threadData.Posts {
+		result.Posts = append(result.Posts, ai.Post{
+			Role:    ai.GetPostRole(botID, post),
+			Message: formatPost(threadData, post),
+		})
 	}
 
 	return result

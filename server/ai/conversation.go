@@ -144,18 +144,3 @@ func GetPostRole(botID string, post *model.Post) PostRole {
 	}
 	return PostRoleUser
 }
-
-func ThreadToBotConversation(botID string, posts []*model.Post) BotConversation {
-	result := BotConversation{
-		Posts: make([]Post, 0, len(posts)),
-	}
-
-	for _, post := range posts {
-		result.Posts = append(result.Posts, Post{
-			Role:    GetPostRole(botID, post),
-			Message: post.Message,
-		})
-	}
-
-	return result
-}
