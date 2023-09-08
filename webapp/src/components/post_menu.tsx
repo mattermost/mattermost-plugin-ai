@@ -1,13 +1,9 @@
 import React from 'react';
-import {useSelector} from 'react-redux';
+import {useDispatch} from 'react-redux';
 
-import {GlobalState} from '@mattermost/types/store';
-import {Team} from '@mattermost/types/teams';
 import {Post} from '@mattermost/types/posts';
 
-import {doReaction, doTranscribe, doSummarize} from '../client';
-
-import {BotUsername} from '../constants';
+import {doReaction, doTranscribe, doSummarize, viewMyChannel} from '../client';
 
 import IconAI from './assets/icon_ai';
 import IconReactForMe from './assets/icon_react_for_me';
@@ -18,13 +14,23 @@ type Props = {
     post: Post,
 }
 
-const PostMenu = (props: Props) => {
-    const post = props.post;
-    const team = useSelector<GlobalState, Team>((state) => state.entities.teams.teams[state.entities.teams.currentTeamId]);
+const selectPost = (postid: string, channelid: string) => {
+    return {
+        type: 'SELECT_POST',
+        postId: postid,
+        channelId: channelid,
+        timestamp: Date.now(),
+    };
+};
 
-    const summarizePost = (teamName: string, postId: string) => {
-        window.WebappUtils.browserHistory.push('/' + teamName + '/messages/@' + BotUsername);
-        doSummarize(postId);
+const PostMenu = (props: Props) => {
+    const dispatch = useDispatch();
+    const post = props.post;
+
+    const summarizePost = async (postId: string) => {
+        const result = await doSummarize(postId);
+        dispatch(selectPost(result.postid, result.channelid));
+        viewMyChannel(result.channelid);
     };
 
     return (
@@ -32,7 +38,7 @@ const PostMenu = (props: Props) => {
             icon={<IconAI/>}
             title='AI Actions'
         >
-            <DropdownMenuItem onClick={() => summarizePost(team.name, post.id)}><span className='icon'><IconThreadSummarization/></span>{'Summarize Thread'}</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => summarizePost(post.id)}><span className='icon'><IconThreadSummarization/></span>{'Summarize Thread'}</DropdownMenuItem>
             <DropdownMenuItem onClick={() => doTranscribe(post.id)}><span className='icon'><IconThreadSummarization/></span>{'Summarize Meeting Audio'}</DropdownMenuItem>
             <DropdownMenuItem onClick={() => doReaction(post.id)}><span className='icon'><IconReactForMe/></span>{'React for me'}</DropdownMenuItem>
         </DotMenu>

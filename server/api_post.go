@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/render"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/pkg/errors"
 )
@@ -93,12 +94,20 @@ func (p *Plugin) handleSummarize(c *gin.Context) {
 		return
 	}
 
-	if _, err := p.startNewSummaryThread(post.Id, p.MakeConversationContext(user, channel, nil)); err != nil {
+	createdPost, err := p.startNewSummaryThread(post.Id, p.MakeConversationContext(user, channel, nil))
+	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "Unable to produce summary"))
 		return
 	}
 
-	c.Status(http.StatusOK)
+	data := struct {
+		PostID    string `json:"postid"`
+		ChannelID string `json:"channelid"`
+	}{
+		PostID:    createdPost.Id,
+		ChannelID: createdPost.ChannelId,
+	}
+	c.Render(http.StatusOK, render.JSON{Data: data})
 }
 
 func (p *Plugin) handleTranscribe(c *gin.Context) {
