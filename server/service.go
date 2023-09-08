@@ -132,10 +132,10 @@ func (p *Plugin) continueThreadConversation(questionThreadData *ThreadData, orig
 const ThreadIDProp = "referenced_thread"
 
 // DM the user with a standard message. Run the inferance
-func (p *Plugin) startNewSummaryThread(postIDToSummarize string, context ai.ConversationContext) (string, error) {
+func (p *Plugin) startNewSummaryThread(postIDToSummarize string, context ai.ConversationContext) (*model.Post, error) {
 	threadData, err := p.getThreadAndMeta(postIDToSummarize)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	formattedThread := formatThread(threadData)
@@ -143,11 +143,11 @@ func (p *Plugin) startNewSummaryThread(postIDToSummarize string, context ai.Conv
 	context.PromptParameters = map[string]string{"Thread": formattedThread}
 	prompt, err := p.prompts.ChatCompletion(ai.PromptSummarizeThread, context)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	summaryStream, err := p.getLLM().ChatCompletion(prompt)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	post := &model.Post{
@@ -156,10 +156,10 @@ func (p *Plugin) startNewSummaryThread(postIDToSummarize string, context ai.Conv
 	post.AddProp(ThreadIDProp, postIDToSummarize)
 
 	if err := p.streamResultToNewDM(summaryStream, context.RequestingUser.Id, post); err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return post.Id, nil
+	return post, nil
 }
 
 func (p *Plugin) selectEmoji(postToReact *model.Post, context ai.ConversationContext) error {

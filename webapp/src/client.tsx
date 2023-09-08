@@ -40,7 +40,7 @@ export async function doSummarize(postid: string) {
     }));
 
     if (response.ok) {
-        return;
+        return response.json();
     }
 
     throw new ClientError(Client4.url, {
@@ -198,3 +198,8 @@ export async function doSuggestCodeImprovements(message: string) {
         url,
     });
 }
+
+export async function viewMyChannel(channelID: string) {
+    return Client4.viewMyChannel(channelID);
+}
+
