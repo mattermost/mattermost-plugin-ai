@@ -1,5 +1,6 @@
 import React from 'react';
 import {Store, Action} from 'redux';
+import styled from 'styled-components';
 
 import {GlobalState} from '@mattermost/types/lib/store';
 
@@ -11,9 +12,34 @@ import EditorMenu from './components/editor_menu';
 import CodeMenu from './components/code_menu';
 import IconThreadSummarization from './components/assets/icon_thread_summarization';
 import IconReactForMe from './components/assets/icon_react_for_me';
+import IconAI from './components/assets/icon_ai';
+import RHS from './components/rhs/rhs';
 import Config from './components/config/config';
 import {doReaction, doSummarize, doTranscribe} from './client';
 import {BotUsername} from './constants';
+
+const IconAIContainer = styled.span`
+    filter: invert(1);
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-items: center;
+    margin-right: 5px;
+    background-color: var(--center-channel-bg);
+`;
+
+const RHSTitle = () => {
+    return (
+        <span>
+            <IconAIContainer className='icon'>
+                <IconAI/>
+            </IconAIContainer>
+            {"Assistant AI"}
+        </span>
+    )
+}
 
 export default class Plugin {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-function
@@ -36,6 +62,10 @@ export default class Plugin {
         }
 
         registry.registerAdminConsoleCustomSetting('Config', Config);
+        const rhs = registry.registerRightHandSidebarComponent(() => <RHS selectedPostId="uw4h5jk6mtbrjqu31ygceh1sih"/>, RHSTitle)
+        registry.registerChannelHeaderButtonAction(<IconAIContainer className='icon'><IconAI/></IconAIContainer>, () => {
+            store.dispatch(rhs.toggleRHSPlugin)
+        })
 
         if (registry.registerCodeBlockActionComponent) {
             registry.registerCodeBlockActionComponent(CodeMenu);
