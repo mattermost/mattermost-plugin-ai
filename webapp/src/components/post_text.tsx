@@ -14,11 +14,12 @@ export type ChannelNamesMap = {
 };
 
 interface Props {
-    post: Post
+    message: string;
+    channelID: string;
 }
 
 const PostText = (props: Props) => {
-    const channel = useSelector<GlobalState, Channel>((state) => state.entities.channels.channels[props.post.channel_id]);
+    const channel = useSelector<GlobalState, Channel>((state) => state.entities.channels.channels[props.channelID]);
     const team = useSelector<GlobalState, Team>((state) => state.entities.teams.teams[channel?.team_id]);
 
     //const channelNamesMap = useSelector<GlobalState, ChannelNamesMap>(getChannelsNameMapInCurrentTeam);
@@ -40,7 +41,7 @@ const PostText = (props: Props) => {
     };
 
     const text = messageHtmlToComponent(
-        formatText(props.post.message, markdownOptions),
+        formatText(props.message, markdownOptions),
         true,
         messageHtmlToComponentOptions,
     );

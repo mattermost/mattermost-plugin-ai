@@ -119,12 +119,18 @@ func (p *Plugin) streamResultToPost(stream *ai.TextStreamResult, post *model.Pos
 			select {
 			case next := <-stream.Stream:
 				post.Message += next
-				if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
-					p.API.LogError("Streaming failed to update post", "error", err)
-					return
-				}
+				p.API.PublishWebSocketEvent("postupdate", map[string]interface{}{
+					"post_id": post.Id,
+					"next":    post.Message,
+				}, &model.WebsocketBroadcast{
+					ChannelId: post.ChannelId,
+				})
 			case err, ok := <-stream.Err:
 				if !ok {
+					if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
+						p.API.LogError("Streaming failed to update post", "error", err)
+						return
+					}
 					return
 				}
 				p.API.LogError("Streaming result to post failed", "error", err)
