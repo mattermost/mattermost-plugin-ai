@@ -14,11 +14,30 @@ import IconReactForMe from './components/assets/icon_react_for_me';
 import Config from './components/config/config';
 import {doReaction, doSummarize, doTranscribe} from './client';
 import {BotUsername} from './constants';
+import PostEventListener from './websocket';
+
+type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
+
+const StreamingPostWebsocketEvent = 'custom_mattermost-ai_postupdate';
 
 export default class Plugin {
+    postEventListener: PostEventListener = new PostEventListener();
+
     // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-function
-    public async initialize(registry: any, store: Store<GlobalState, Action<Record<string, unknown>>>) {
-        registry.registerPostTypeComponent('custom_llmbot', LLMBotPost);
+    public async initialize(registry: any, store: WebappStore) {
+        registry.registerWebSocketEventHandler(StreamingPostWebsocketEvent, this.postEventListener.handlePostUpdateWebsockets);
+        const LLMBotPostWithWebsockets = (props: any) => {
+            return (
+                <LLMBotPost
+                    {...props}
+                    websocketRegister={this.postEventListener.registerPostUpdateListener}
+                    websocketUnregister={this.postEventListener.unregisterPostUpdateListener}
+                />
+            )
+            ;
+        };
+
+        registry.registerPostTypeComponent('custom_llmbot', LLMBotPostWithWebsockets);
         if (registry.registerPostActionComponent) {
             registry.registerPostActionComponent(PostMenu);
         } else {
