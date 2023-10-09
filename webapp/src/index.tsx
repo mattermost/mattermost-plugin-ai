@@ -16,6 +16,7 @@ import IconAI from './components/assets/icon_ai';
 import RHS from './components/rhs/rhs';
 import Config from './components/config/config';
 import {doReaction, doSummarize, doTranscribe} from './client';
+import {setOpenRHSAction} from './redux_actions';
 import {BotUsername} from './constants';
 
 const IconAIContainer = styled.span`
@@ -44,6 +45,21 @@ const RHSTitle = () => {
 export default class Plugin {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-function
     public async initialize(registry: any, store: Store<GlobalState, Action<Record<string, unknown>>>) {
+        const rhs = registry.registerRightHandSidebarComponent(RHS, RHSTitle)
+        setOpenRHSAction(rhs.showRHSPlugin)
+
+        registry.registerReducer((state = {}, action: any) => {
+            switch (action.type) {
+            case 'SELECT_AI_POST':
+                return {
+                    ...state,
+                    selectedPostId: action.postId,
+                }
+            default:
+                return state;
+            }
+        });
+
         registry.registerPostTypeComponent('custom_llmbot', LLMBotPost);
         if (registry.registerPostActionComponent) {
             registry.registerPostActionComponent(PostMenu);
@@ -53,6 +69,7 @@ export default class Plugin {
                 const team = state.entities.teams.teams[state.entities.teams.currentTeamId];
                 window.WebappUtils.browserHistory.push('/' + team.name + '/messages/@' + BotUsername);
                 doSummarize(postId);
+                store.dispatch(rhs.showRHSPlugin)
             });
             registry.registerPostDropdownMenuAction(<><span className='icon'><IconThreadSummarization/></span>{'Summarize Meeting Audio'}</>, doTranscribe);
             registry.registerPostDropdownMenuAction(<><span className='icon'><IconReactForMe/></span>{'React for me'}</>, doReaction);
@@ -62,7 +79,6 @@ export default class Plugin {
         }
 
         registry.registerAdminConsoleCustomSetting('Config', Config);
-        const rhs = registry.registerRightHandSidebarComponent(() => <RHS selectedPostId="uw4h5jk6mtbrjqu31ygceh1sih"/>, RHSTitle)
         registry.registerChannelHeaderButtonAction(<IconAIContainer className='icon'><IconAI/></IconAIContainer>, () => {
             store.dispatch(rhs.toggleRHSPlugin)
         })

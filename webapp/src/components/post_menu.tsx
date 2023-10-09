@@ -10,18 +10,11 @@ import IconReactForMe from './assets/icon_react_for_me';
 import DotMenu, {DropdownMenuItem} from './dot_menu';
 import IconThreadSummarization from './assets/icon_thread_summarization';
 
+import {selectPost, openRHS} from '../redux_actions';
+
 type Props = {
     post: Post,
 }
-
-const selectPost = (postid: string, channelid: string) => {
-    return {
-        type: 'SELECT_POST',
-        postId: postid,
-        channelId: channelid,
-        timestamp: Date.now(),
-    };
-};
 
 const PostMenu = (props: Props) => {
     const dispatch = useDispatch();
@@ -29,8 +22,8 @@ const PostMenu = (props: Props) => {
 
     const summarizePost = async (postId: string) => {
         const result = await doSummarize(postId);
-        dispatch(selectPost(result.postid, result.channelid));
-        viewMyChannel(result.channelid);
+        dispatch(selectPost(result.postid));
+        dispatch(openRHS());
     };
 
     return (

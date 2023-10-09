@@ -1,4 +1,5 @@
 import React, {useState, useEffect} from 'react';
+import {useDispatch, useSelector} from 'react-redux';
 import styled from 'styled-components';
 import {
     FormatListBulletedIcon,
@@ -7,11 +8,15 @@ import {
     PlaylistCheckIcon,
 } from '@mattermost/compass-icons/components';
 
+import {manifest} from '@/manifest';
+
 import RHSImage from '../assets/rhs_image';
 import IconThread from '../assets/icon_thread';
 import ThreadItem from './thread_item';
 
 const AdvancedCreatePost = styled((window as any).Components.AdvancedCreatePost)`
+`;
+const AdvancedCreateComment = styled((window as any).Components.AdvancedCreateComment)`
 `;
 
 const ThreadViewer = styled((window as any).Components.ThreadViewer)`
@@ -116,27 +121,27 @@ const QuestionOptions = styled.div`
 `;
 
 
-type Props = {
-    selectedPostId: string;
-    threadsList: boolean;
-}
+type Props = {}
 
 export default function RHS(props: Props) {
+    const dispatch = useDispatch();
     const [currentTab, setCurrentTab] = useState('new');
-    useEffect(() => {
-        setCurrentTab(props.selectedPostId ? 'thread' : 'new');
-    }, []);
+
+    const selectedPostId = useSelector((state: any) => state["plugins-" + manifest.id].selectedPostId);
+
+    const selectPost = (postId: string) => {
+        dispatch({type: 'SELECT_AI_POST', postId})
+    };
 
     let content = null;
-    switch(currentTab) {
-    case 'thread':
+    if (selectedPostId) {
         content = <ThreadViewer
-            rootPostId={props.selectedPostId}
+            selected={selectedPostId}
+            rootPostId={selectedPostId}
             useRelativeTimestamp={false}
             isThreadView={false}
         />
-                break;
-    case 'threads':
+    } else if(currentTab == "threads") {
         content = (
             <div>
                 <ThreadItem
@@ -146,7 +151,6 @@ export default function RHS(props: Props) {
                     repliesCount={3}
                     lastActivityDate={5}
                     onClick={() => {
-                        console.log("CLIKING");
                         setCurrentTab('thread')
                         // TODO: Change the selected post
                     }}
@@ -165,8 +169,7 @@ export default function RHS(props: Props) {
                 />
             </div>
         )
-        break
-    case 'new':
+    } else if (currentTab == 'new') {
         content = (
             <NewQuestion>
                 <RHSImage />
@@ -178,30 +181,38 @@ export default function RHS(props: Props) {
                     <OptionButton><PlaylistCheckIcon/>{'To-do list'}</OptionButton>
                     <OptionButton>{'Pros and Cons'}</OptionButton>
                 </QuestionOptions>
-                <AdvancedCreatePost getChannelView={() => {}}/>
+                <AdvancedCreateComment getChannelView={() => {}} onSubmit={(...args) => console.log(args)}/>
             </NewQuestion>
         )
-        break;
     }
     const header = (
         <Header>
             <MenuButton
                 className={currentTab === 'new' ? 'active' : ''}
-                onClick={() => setCurrentTab('new')}
+                onClick={() => {
+                    setCurrentTab('new');
+                    selectPost('');
+                }}
             >
                 <IconThread/> New thread
             </MenuButton>
 
             <MenuButton
                 className={currentTab === 'threads' ? 'active' : ''}
-                onClick={() => setCurrentTab('threads')}
+                onClick={() => {
+                    setCurrentTab('threads');
+                    selectPost('');
+                }}
             >
                 <FormatListBulletedIcon/>All threads
             </MenuButton>
 
             <HeaderSpacer/>
 
-            <AddButton onClick={() => setCurrentTab('new')}>+</AddButton>
+            <AddButton onClick={() => {
+                setCurrentTab('new');
+                selectPost('');
+            }}>+</AddButton>
         </Header>
     )
     return (
