@@ -60,13 +60,13 @@ const ServiceForm = ({service, onChange, onDelete}: Props) => {
                         value={service.serviceName}
                     >
                         <option value='openai'>{'OpenAI'}</option>
-                        <option value='openai-compatible'>{'OpenAI Compatible'}</option>
+                        <option value='openaicompatible'>{'OpenAI Compatible'}</option>
                         <option value='anthropic'>{'Anthropic'}</option>
                         <option value='asksage'>{'Ask Sage'}</option>
                     </select>
                 </div>
             </div>
-            {service.serviceName === 'openai-compatible' && (
+            {service.serviceName === 'openaicompatible' && (
                 <div className='form-group'>
                     <label
                         className='control-label col-sm-4'
