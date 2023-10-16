@@ -18,6 +18,11 @@ import Config from './components/config/config';
 import {doReaction, doSummarize, doTranscribe} from './client';
 import {setOpenRHSAction} from './redux_actions';
 import {BotUsername} from './constants';
+import PostEventListener from './websocket';
+
+type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
+
+const StreamingPostWebsocketEvent = 'custom_mattermost-ai_postupdate';
 
 const IconAIContainer = styled.span`
     filter: invert(1);
@@ -43,8 +48,10 @@ const RHSTitle = () => {
 }
 
 export default class Plugin {
+    postEventListener: PostEventListener = new PostEventListener();
+
     // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-function
-    public async initialize(registry: any, store: Store<GlobalState, Action<Record<string, unknown>>>) {
+    public async initialize(registry: any, store: WebappStore) {
         const rhs = registry.registerRightHandSidebarComponent(RHS, RHSTitle)
         setOpenRHSAction(rhs.showRHSPlugin)
 
@@ -60,7 +67,19 @@ export default class Plugin {
             }
         });
 
-        registry.registerPostTypeComponent('custom_llmbot', LLMBotPost);
+        registry.registerWebSocketEventHandler(StreamingPostWebsocketEvent, this.postEventListener.handlePostUpdateWebsockets);
+        const LLMBotPostWithWebsockets = (props: any) => {
+            return (
+                <LLMBotPost
+                    {...props}
+                    websocketRegister={this.postEventListener.registerPostUpdateListener}
+                    websocketUnregister={this.postEventListener.unregisterPostUpdateListener}
+                />
+            )
+            ;
+        };
+
+        registry.registerPostTypeComponent('custom_llmbot', LLMBotPostWithWebsockets);
         if (registry.registerPostActionComponent) {
             registry.registerPostActionComponent(PostMenu);
         } else {

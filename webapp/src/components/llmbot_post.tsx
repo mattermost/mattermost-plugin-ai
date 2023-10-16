@@ -1,15 +1,13 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import styled from 'styled-components';
+
+import {WebSocketMessage} from '@mattermost/client';
 
 import {doFeedback} from '@/client';
 
 import PostText from './post_text';
 import IconThumbsUp from './assets/icon_thumbs_up';
 import IconThumbsDown from './assets/icon_thumbs_down';
-
-interface Props {
-    post: any;
-}
 
 const PostBody = styled.div`
 `;
@@ -60,7 +58,29 @@ const ThumbsDown = styled(IconThumbsDown)`
 	height: 20px;
 `;
 
+export interface PostUpdateWebsocketMessage {
+    next: string
+    post_id: string
+}
+
+interface Props {
+    post: any;
+    websocketRegister: (postID: string, handler: (msg: WebSocketMessage<PostUpdateWebsocketMessage>) => void) => void;
+    websocketUnregister: (postID: string) => void;
+}
+
 export const LLMBotPost = (props: Props) => {
+    const [message, setMessage] = useState(props.post.message);
+    useEffect(() => {
+        props.websocketRegister(props.post.id, (msg: WebSocketMessage<PostUpdateWebsocketMessage>) => {
+            const data = msg.data;
+            setMessage(data.next);
+        });
+        return () => {
+            props.websocketUnregister(props.post.id);
+        };
+    }, []);
+
     const userFeedbackPositive = () => {
         doFeedback(props.post.id, true);
     };
@@ -72,7 +92,8 @@ export const LLMBotPost = (props: Props) => {
     return (
         <PostBody>
             <PostText
-                post={props.post}
+                message={message}
+                channelID={props.post.channel_id}
             />
             <ControlsBar>
                 <RatingsContainer>
