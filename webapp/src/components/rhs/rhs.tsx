@@ -39,8 +39,9 @@ const RhsContainer = styled.div`
 
 const Header = styled.div`
     display: flex;
-    padding: 12px;
-    border-bottom: 1px solid rgba(var(--center-channel-color-rgb), 0.12)
+    padding: 12px 12px 0 12px;
+    border-bottom: 1px solid rgba(var(--center-channel-color-rgb), 0.12);
+    flex-wrap: wrap;
 `;
 
 const Button = styled.button`
@@ -88,14 +89,14 @@ const OptionButton = styled(Button)`
 
 const MenuButton = styled(Button)`
     display: flex;
-    margin-bottom: 0;
+    margin-bottom: 12px;
     width: auto;
     svg {
         min-width: 24px;
     }
     .thread-title {
         display: inline-block;
-        max-width: 240px;
+        max-width: 220px;
         text-overflow: ellipsis;
         white-space: nowrap;
         overflow: hidden;
@@ -217,7 +218,7 @@ export default function RHS(props: Props) {
     }
     const header = (
         <Header>
-            {currentTab !== 'thread' && (
+            {!selectedPost && (
                 <MenuButton
                     className={currentTab === 'new' ? 'active' : ''}
                     onClick={() => {
@@ -229,7 +230,7 @@ export default function RHS(props: Props) {
                 </MenuButton>
             )}
 
-            {currentTab === 'thread' && (
+            {selectedPost && (
                 <MenuButton className='active'>
                     <IconThread/> <span className='thread-title'>{selectedPost.message.split("\n")[0]}</span>
                 </MenuButton>
