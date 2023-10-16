@@ -8,6 +8,10 @@ import {
     PlaylistCheckIcon,
 } from '@mattermost/compass-icons/components';
 
+import {makeGetPostsInChannel, getPost} from 'mattermost-redux/selectors/entities/posts';
+import {getAllDirectChannels} from 'mattermost-redux/selectors/entities/channels';
+import {getPosts, createPostImmediately} from 'mattermost-redux/actions/posts';
+
 import {manifest} from '@/manifest';
 
 import RHSImage from '../assets/rhs_image';
@@ -21,6 +25,10 @@ const AdvancedCreateComment = styled((window as any).Components.AdvancedCreateCo
 
 const ThreadViewer = styled((window as any).Components.ThreadViewer)`
     height: 100%;
+`;
+
+const ThreadsList = styled.div`
+    overflow-y: scroll;
 `;
 
 const RhsContainer = styled.div`
@@ -79,8 +87,19 @@ const OptionButton = styled(Button)`
 `
 
 const MenuButton = styled(Button)`
+    display: flex;
     margin-bottom: 0;
     width: auto;
+    svg {
+        min-width: 24px;
+    }
+    .thread-title {
+        display: inline-block;
+        max-width: 240px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        overflow: hidden;
+    }
 `;
 
 const HeaderSpacer = styled.div`
@@ -127,7 +146,20 @@ export default function RHS(props: Props) {
     const dispatch = useDispatch();
     const [currentTab, setCurrentTab] = useState('new');
 
+    const channels = useSelector(getAllDirectChannels)
+    const aiDM = channels.find((v) => v.display_name == 'ai');
+    const getPostsInChannel = makeGetPostsInChannel()
+    let posts = useSelector((state) => getPostsInChannel(state as any, aiDM?.id || '', -1)) || []
+    posts = posts.sort((a, b) => b.update_at - a.update_at)
+
     const selectedPostId = useSelector((state: any) => state["plugins-" + manifest.id].selectedPostId);
+    const selectedPost = useSelector((state: any) => getPost(state, selectedPostId));
+
+    useEffect(() => {
+        if (currentTab === 'threads') {
+            dispatch(getPosts(aiDM?.id || '', 0, 60, false, true, true) as any);
+        }
+    }, [currentTab]);
 
     const selectPost = (postId: string) => {
         dispatch({type: 'SELECT_AI_POST', postId})
@@ -143,31 +175,20 @@ export default function RHS(props: Props) {
         />
     } else if(currentTab == "threads") {
         content = (
-            <div>
-                <ThreadItem
-                    key={'key1'}
-                    postMessage={'Title here with a long enough text to make the ellipsis'}
-                    postFirstReply={'Some text to include in the body to make it cool and also have to have at least 2 lines and whenever it reaches the end of the second line it should add ellipsis'}
-                    repliesCount={3}
-                    lastActivityDate={5}
-                    onClick={() => {
-                        setCurrentTab('thread')
-                        // TODO: Change the selected post
-                    }}
-                />
-                <ThreadItem
-                    key={'key2'}
-                    postMessage={'Title here with a long enough text to make the ellipsis'}
-                    postFirstReply={'Some text to include in the body to make it cool and also have to have at least 2 lines and whenever it reaches the end of the second line it should add ellipsis'}
-                    repliesCount={3}
-                    lastActivityDate={5}
-                    onClick={() => {
-                        console.log("CLIKING");
-                        setCurrentTab('thread')
-                        // TODO: Change the selected post
-                    }}
-                />
-            </div>
+            <ThreadsList>
+                {posts.map((p) => (
+                    <ThreadItem
+                        key={p.id}
+                        postMessage={p.message}
+                        postFirstReply={p.message.split('\n').slice(1).join('\n').slice(1, 300)}
+                        repliesCount={p.reply_count}
+                        lastActivityDate={p.update_at}
+                        onClick={() => {
+                            setCurrentTab('thread')
+                            selectPost(p.id);
+                        }}
+                    />))}
+            </ThreadsList>
         )
     } else if (currentTab == 'new') {
         content = (
@@ -181,21 +202,38 @@ export default function RHS(props: Props) {
                     <OptionButton><PlaylistCheckIcon/>{'To-do list'}</OptionButton>
                     <OptionButton>{'Pros and Cons'}</OptionButton>
                 </QuestionOptions>
-                <AdvancedCreateComment getChannelView={() => {}} onSubmit={(...args) => console.log(args)}/>
+                <AdvancedCreateComment
+                    getChannelView={() => {}}
+                    onSubmit={async (p: any) => {
+                        p.channel_id = aiDM?.id || '';
+                        const data = await dispatch(createPostImmediately(p) as any)
+                        selectPost(data.data.id)
+                        setCurrentTab('thread');
+                    }}
+                    onUpdateCommentDraft={(...args) => console.log("UPDATE DRAFT", args)}
+                />
             </NewQuestion>
         )
     }
     const header = (
         <Header>
-            <MenuButton
-                className={currentTab === 'new' ? 'active' : ''}
-                onClick={() => {
-                    setCurrentTab('new');
-                    selectPost('');
-                }}
-            >
-                <IconThread/> New thread
-            </MenuButton>
+            {currentTab !== 'thread' && (
+                <MenuButton
+                    className={currentTab === 'new' ? 'active' : ''}
+                    onClick={() => {
+                        setCurrentTab('new');
+                        selectPost('');
+                    }}
+                >
+                    <IconThread/> New thread
+                </MenuButton>
+            )}
+
+            {currentTab === 'thread' && (
+                <MenuButton className='active'>
+                    <IconThread/> <span className='thread-title'>{selectedPost.message.split("\n")[0]}</span>
+                </MenuButton>
+            )}
 
             <MenuButton
                 className={currentTab === 'threads' ? 'active' : ''}

@@ -3,6 +3,7 @@ import styled from 'styled-components';
 
 const ThreadItemContainer = styled.div`
     padding: 16px;
+    cursor: pointer;
     border-bottom: 1px solid rgba(var(--center-channel-color-rgb), 0.12)
 `;
 
@@ -14,6 +15,7 @@ const Title = styled.div`
     display: flex;
     align-items: center;
     margin-bottom: 4px;
+    justify-content: space-between;
     .title-text {
         font-size: 14px;
         font-weight: 600;

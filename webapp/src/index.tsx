@@ -2,6 +2,9 @@ import React from 'react';
 import {Store, Action} from 'redux';
 import styled from 'styled-components';
 
+import {makeGetPostsInChannel} from 'mattermost-redux/selectors/entities/posts';
+import {getAllDirectChannels} from 'mattermost-redux/selectors/entities/channels';
+
 import {GlobalState} from '@mattermost/types/lib/store';
 
 import {manifest} from '@/manifest';
