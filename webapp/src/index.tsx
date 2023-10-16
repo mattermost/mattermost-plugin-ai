@@ -55,20 +55,23 @@ export default class Plugin {
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-function
     public async initialize(registry: any, store: WebappStore) {
-        const rhs = registry.registerRightHandSidebarComponent(RHS, RHSTitle)
-        setOpenRHSAction(rhs.showRHSPlugin)
+        let rhs: any = null
+        if ((window as any).Components.AdvancedCreateComment) {
+            rhs = registry.registerRightHandSidebarComponent(RHS, RHSTitle)
+            setOpenRHSAction(rhs.showRHSPlugin)
 
-        registry.registerReducer((state = {}, action: any) => {
-            switch (action.type) {
-            case 'SELECT_AI_POST':
-                return {
-                    ...state,
-                    selectedPostId: action.postId,
+            registry.registerReducer((state = {}, action: any) => {
+                switch (action.type) {
+                case 'SELECT_AI_POST':
+                    return {
+                        ...state,
+                        selectedPostId: action.postId,
+                    }
+                default:
+                    return state;
                 }
-            default:
-                return state;
-            }
-        });
+            });
+        }
 
         registry.registerWebSocketEventHandler(StreamingPostWebsocketEvent, this.postEventListener.handlePostUpdateWebsockets);
         const LLMBotPostWithWebsockets = (props: any) => {
@@ -91,7 +94,9 @@ export default class Plugin {
                 const team = state.entities.teams.teams[state.entities.teams.currentTeamId];
                 window.WebappUtils.browserHistory.push('/' + team.name + '/messages/@' + BotUsername);
                 doSummarize(postId);
-                store.dispatch(rhs.showRHSPlugin)
+                if (rhs) {
+                    store.dispatch(rhs.showRHSPlugin)
+                }
             });
             registry.registerPostDropdownMenuAction(<><span className='icon'><IconThreadSummarization/></span>{'Summarize Meeting Audio'}</>, doTranscribe);
             registry.registerPostDropdownMenuAction(<><span className='icon'><IconReactForMe/></span>{'React for me'}</>, doReaction);
@@ -101,9 +106,11 @@ export default class Plugin {
         }
 
         registry.registerAdminConsoleCustomSetting('Config', Config);
-        registry.registerChannelHeaderButtonAction(<IconAIContainer className='icon'><IconAI/></IconAIContainer>, () => {
-            store.dispatch(rhs.toggleRHSPlugin)
-        })
+        if (rhs) {
+            registry.registerChannelHeaderButtonAction(<IconAIContainer className='icon'><IconAI/></IconAIContainer>, () => {
+                store.dispatch(rhs.toggleRHSPlugin)
+            })
+        }
 
         if (registry.registerCodeBlockActionComponent) {
             registry.registerCodeBlockActionComponent(CodeMenu);

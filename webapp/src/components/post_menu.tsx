@@ -16,14 +16,29 @@ type Props = {
     post: Post,
 }
 
+const selectPostLegacy = (postid: string, channelid: string) => {
+    return {
+        type: 'SELECT_POST',
+        postId: postid,
+        channelId: channelid,
+        timestamp: Date.now(),
+    };
+};
+
 const PostMenu = (props: Props) => {
     const dispatch = useDispatch();
     const post = props.post;
 
     const summarizePost = async (postId: string) => {
         const result = await doSummarize(postId);
-        dispatch(selectPost(result.postid));
-        dispatch(openRHS());
+        // This if is for legacy mode where the AdvancedCreatecomment is not exported
+        if ((window as any).Components.AdvancedCreateComment) {
+            dispatch(selectPost(result.postid));
+            dispatch(openRHS());
+        } else {
+            dispatch(selectPostLegacy(result.postid, result.channelid));
+            viewMyChannel(result.channelid);
+        }
     };
 
     return (

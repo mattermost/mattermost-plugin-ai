@@ -18,8 +18,6 @@ import RHSImage from '../assets/rhs_image';
 import IconThread from '../assets/icon_thread';
 import ThreadItem from './thread_item';
 
-const AdvancedCreatePost = styled((window as any).Components.AdvancedCreatePost)`
-`;
 const AdvancedCreateComment = styled((window as any).Components.AdvancedCreateComment)`
 `;
 
