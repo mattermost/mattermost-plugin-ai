@@ -19,6 +19,7 @@ import IconThread from '../assets/icon_thread';
 import ThreadItem from './thread_item';
 
 const AdvancedCreateComment = styled((window as any).Components.AdvancedCreateComment)`
+    padding: 0px;
 `;
 
 const ThreadViewer = styled((window as any).Components.ThreadViewer)`
@@ -121,6 +122,9 @@ const NewQuestion = styled.div`
     flex-direction: column;
     justify-content: flex-end;
     flex-grow: 1;
+    .AdvancedTextEditor {
+        padding: 0px;
+    }
 `;
 
 const QuestionTitle = styled.div`
@@ -145,10 +149,9 @@ export default function RHS(props: Props) {
     const dispatch = useDispatch();
     const [currentTab, setCurrentTab] = useState('new');
 
-    const channels = useSelector(getAllDirectChannels)
-    const aiDM = channels.find((v) => v.display_name == 'ai');
+    const botChannelId = useSelector((state: any) => state["plugins-" + manifest.id].botChannelId);
     const getPostsInChannel = makeGetPostsInChannel()
-    let posts = useSelector((state) => getPostsInChannel(state as any, aiDM?.id || '', -1)) || []
+    let posts = useSelector((state) => getPostsInChannel(state as any, botChannelId || '', -1)) || []
     posts = posts.sort((a, b) => b.update_at - a.update_at)
 
     const selectedPostId = useSelector((state: any) => state["plugins-" + manifest.id].selectedPostId);
@@ -156,7 +159,7 @@ export default function RHS(props: Props) {
 
     useEffect(() => {
         if (currentTab === 'threads') {
-            dispatch(getPosts(aiDM?.id || '', 0, 60, false, true, true) as any);
+            dispatch(getPosts(botChannelId || '', 0, 60, false, true, true) as any);
         }
     }, [currentTab]);
 
@@ -204,7 +207,7 @@ export default function RHS(props: Props) {
                 <AdvancedCreateComment
                     getChannelView={() => {}}
                     onSubmit={async (p: any) => {
-                        p.channel_id = aiDM?.id || '';
+                        p.channel_id = botChannelId || '';
                         const data = await dispatch(createPostImmediately(p) as any)
                         selectPost(data.data.id)
                         setCurrentTab('thread');

@@ -203,3 +203,10 @@ export async function viewMyChannel(channelID: string) {
     return Client4.viewMyChannel(channelID);
 }
 
+export async function getAIDirectChannel() {
+    const myUser = await Client4.getMe()
+    const botUser = await Client4.getUserByUsername('ai')
+    const dm = await Client4.createDirectChannel([myUser.id, botUser.id])
+    return dm.id;
+}
+

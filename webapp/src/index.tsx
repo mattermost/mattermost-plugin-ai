@@ -18,7 +18,7 @@ import IconReactForMe from './components/assets/icon_react_for_me';
 import IconAI from './components/assets/icon_ai';
 import RHS from './components/rhs/rhs';
 import Config from './components/config/config';
-import {doReaction, doSummarize, doTranscribe} from './client';
+import {doReaction, doSummarize, doTranscribe, getAIDirectChannel} from './client';
 import {setOpenRHSAction} from './redux_actions';
 import {BotUsername} from './constants';
 import PostEventListener from './websocket';
@@ -62,6 +62,11 @@ export default class Plugin {
 
             registry.registerReducer((state = {}, action: any) => {
                 switch (action.type) {
+                case 'SET_AI_BOT_CHANNEL':
+                    return {
+                        ...state,
+                        botChannelId: action.botChannelId,
+                    }
                 case 'SELECT_AI_POST':
                     return {
                         ...state,
@@ -71,6 +76,9 @@ export default class Plugin {
                     return state;
                 }
             });
+            getAIDirectChannel().then((botChannelId) => {
+                store.dispatch({type: 'SET_AI_BOT_CHANNEL', botChannelId} as any)
+            })
         }
 
         registry.registerWebSocketEventHandler(StreamingPostWebsocketEvent, this.postEventListener.handlePostUpdateWebsockets);
