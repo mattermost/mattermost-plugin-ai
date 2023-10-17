@@ -82,6 +82,7 @@ const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
                 getChannelView={() => null}
                 onSubmit={async (p: any) => {
                     p.channel_id = botChannelId || '';
+                    p.props = {};
                     const data = await dispatch(createPostImmediately(p) as any);
                     selectPost(data.data.id);
                     setCurrentTab('thread');
