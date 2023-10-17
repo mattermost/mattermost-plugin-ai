@@ -2,9 +2,6 @@ import React from 'react';
 import {Store, Action} from 'redux';
 import styled from 'styled-components';
 
-import {makeGetPostsInChannel} from 'mattermost-redux/selectors/entities/posts';
-import {getAllDirectChannels} from 'mattermost-redux/selectors/entities/channels';
-
 import {GlobalState} from '@mattermost/types/lib/store';
 
 import {manifest} from '@/manifest';
@@ -45,20 +42,20 @@ const RHSTitle = () => {
             <IconAIContainer className='icon'>
                 <IconAI/>
             </IconAIContainer>
-            {"Assistant AI"}
+            {'Assistant AI'}
         </span>
-    )
-}
+    );
+};
 
 export default class Plugin {
     postEventListener: PostEventListener = new PostEventListener();
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-function
     public async initialize(registry: any, store: WebappStore) {
-        let rhs: any = null
+        let rhs: any = null;
         if ((window as any).Components.AdvancedCreateComment) {
-            rhs = registry.registerRightHandSidebarComponent(RHS, RHSTitle)
-            setOpenRHSAction(rhs.showRHSPlugin)
+            rhs = registry.registerRightHandSidebarComponent(RHS, RHSTitle);
+            setOpenRHSAction(rhs.showRHSPlugin);
 
             registry.registerReducer((state = {}, action: any) => {
                 switch (action.type) {
@@ -66,20 +63,38 @@ export default class Plugin {
                     return {
                         ...state,
                         botChannelId: action.botChannelId,
-                    }
+                    };
                 case 'SELECT_AI_POST':
                     return {
                         ...state,
                         selectedPostId: action.postId,
-                    }
+                    };
                 default:
                     return state;
                 }
             });
-            getAIDirectChannel().then((botChannelId) => {
-                store.dispatch({type: 'SET_AI_BOT_CHANNEL', botChannelId} as any)
-            })
         }
+
+        let currentUserId = store.getState().entities.users.currentUserId;
+        if (currentUserId) {
+            getAIDirectChannel(currentUserId).then((botChannelId) => {
+                store.dispatch({type: 'SET_AI_BOT_CHANNEL', botChannelId} as any);
+            });
+        }
+
+        store.subscribe(() => {
+            const state = store.getState();
+            if (state && state.entities.users.currentUserId !== currentUserId) {
+                currentUserId = state.entities.users.currentUserId;
+                if (currentUserId) {
+                    getAIDirectChannel(currentUserId).then((botChannelId) => {
+                        store.dispatch({type: 'SET_AI_BOT_CHANNEL', botChannelId} as any);
+                    });
+                } else {
+                    store.dispatch({type: 'SET_AI_BOT_CHANNEL', botChannelId: ''} as any);
+                }
+            }
+        });
 
         registry.registerWebSocketEventHandler(StreamingPostWebsocketEvent, this.postEventListener.handlePostUpdateWebsockets);
         const LLMBotPostWithWebsockets = (props: any) => {
@@ -103,7 +118,7 @@ export default class Plugin {
                 window.WebappUtils.browserHistory.push('/' + team.name + '/messages/@' + BotUsername);
                 doSummarize(postId);
                 if (rhs) {
-                    store.dispatch(rhs.showRHSPlugin)
+                    store.dispatch(rhs.showRHSPlugin);
                 }
             });
             registry.registerPostDropdownMenuAction(<><span className='icon'><IconThreadSummarization/></span>{'Summarize Meeting Audio'}</>, doTranscribe);
@@ -116,8 +131,8 @@ export default class Plugin {
         registry.registerAdminConsoleCustomSetting('Config', Config);
         if (rhs) {
             registry.registerChannelHeaderButtonAction(<IconAIContainer className='icon'><IconAI/></IconAIContainer>, () => {
-                store.dispatch(rhs.toggleRHSPlugin)
-            })
+                store.dispatch(rhs.toggleRHSPlugin);
+            });
         }
 
         if (registry.registerCodeBlockActionComponent) {

@@ -18,4 +18,4 @@ export const openRHS = () => {
 
 export const setOpenRHSAction = (action: any) => {
     openRHSAction = action;
-}
+};

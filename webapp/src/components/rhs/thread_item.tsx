@@ -63,5 +63,5 @@ export default function ThreadItem(props: Props) {
             <FirstReply>{props.postFirstReply}</FirstReply>
             <RepliesCount>{props.repliesCount}{' replies'}</RepliesCount>
         </ThreadItemContainer>
-    )
+    );
 }

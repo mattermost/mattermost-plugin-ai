@@ -16,6 +16,7 @@ import {manifest} from '@/manifest';
 
 import RHSImage from '../assets/rhs_image';
 import IconThread from '../assets/icon_thread';
+
 import ThreadItem from './thread_item';
 
 const AdvancedCreateComment = styled((window as any).Components.AdvancedCreateComment)`
@@ -84,7 +85,7 @@ const OptionButton = styled(Button)`
     svg {
         fill: rgb(var(--link-color-rgb));
     }
-`
+`;
 
 const MenuButton = styled(Button)`
     display: flex;
@@ -142,19 +143,18 @@ const QuestionOptions = styled.div`
     flex-wrap: wrap;
 `;
 
-
 type Props = {}
 
 export default function RHS(props: Props) {
     const dispatch = useDispatch();
     const [currentTab, setCurrentTab] = useState('new');
 
-    const botChannelId = useSelector((state: any) => state["plugins-" + manifest.id].botChannelId);
-    const getPostsInChannel = makeGetPostsInChannel()
-    let posts = useSelector((state) => getPostsInChannel(state as any, botChannelId || '', -1)) || []
-    posts = posts.sort((a, b) => b.update_at - a.update_at)
+    const botChannelId = useSelector((state: any) => state['plugins-' + manifest.id].botChannelId);
+    const getPostsInChannel = makeGetPostsInChannel();
+    let posts = useSelector((state) => getPostsInChannel(state as any, botChannelId || '', -1)) || [];
+    posts = posts.sort((a, b) => b.update_at - a.update_at);
 
-    const selectedPostId = useSelector((state: any) => state["plugins-" + manifest.id].selectedPostId);
+    const selectedPostId = useSelector((state: any) => state['plugins-' + manifest.id].selectedPostId);
     const selectedPost = useSelector((state: any) => getPost(state, selectedPostId));
 
     useEffect(() => {
@@ -164,18 +164,20 @@ export default function RHS(props: Props) {
     }, [currentTab]);
 
     const selectPost = (postId: string) => {
-        dispatch({type: 'SELECT_AI_POST', postId})
+        dispatch({type: 'SELECT_AI_POST', postId});
     };
 
     let content = null;
     if (selectedPostId) {
-        content = <ThreadViewer
-            selected={selectedPostId}
-            rootPostId={selectedPostId}
-            useRelativeTimestamp={false}
-            isThreadView={false}
-        />
-    } else if(currentTab == "threads") {
+        content = (
+            <ThreadViewer
+                selected={selectedPostId}
+                rootPostId={selectedPostId}
+                useRelativeTimestamp={false}
+                isThreadView={false}
+            />
+        );
+    } else if (currentTab === 'threads') {
         content = (
             <ThreadsList>
                 {posts.map((p) => (
@@ -186,16 +188,16 @@ export default function RHS(props: Props) {
                         repliesCount={p.reply_count}
                         lastActivityDate={p.update_at}
                         onClick={() => {
-                            setCurrentTab('thread')
+                            setCurrentTab('thread');
                             selectPost(p.id);
                         }}
                     />))}
             </ThreadsList>
-        )
-    } else if (currentTab == 'new') {
+        );
+    } else if (currentTab === 'new') {
         content = (
             <NewQuestion>
-                <RHSImage />
+                <RHSImage/>
                 <QuestionTitle>{'Ask AI Assistant anything'}</QuestionTitle>
                 <QuestionDescription>{'The AI Assistant can help you with almost anything. Choose from the prompts below or write your own.'}</QuestionDescription>
                 <QuestionOptions>
@@ -205,17 +207,17 @@ export default function RHS(props: Props) {
                     <OptionButton>{'Pros and Cons'}</OptionButton>
                 </QuestionOptions>
                 <AdvancedCreateComment
-                    getChannelView={() => {}}
+                    getChannelView={() => null}
                     onSubmit={async (p: any) => {
                         p.channel_id = botChannelId || '';
-                        const data = await dispatch(createPostImmediately(p) as any)
-                        selectPost(data.data.id)
+                        const data = await dispatch(createPostImmediately(p) as any);
+                        selectPost(data.data.id);
                         setCurrentTab('thread');
                     }}
-                    onUpdateCommentDraft={(...args) => console.log("UPDATE DRAFT", args)}
+                    onUpdateCommentDraft={() => null}
                 />
             </NewQuestion>
-        )
+        );
     }
     const header = (
         <Header>
@@ -227,13 +229,13 @@ export default function RHS(props: Props) {
                         selectPost('');
                     }}
                 >
-                    <IconThread/> New thread
+                    <IconThread/> {'New thread'}
                 </MenuButton>
             )}
 
             {selectedPost && (
                 <MenuButton className='active'>
-                    <IconThread/> <span className='thread-title'>{selectedPost.message.split("\n")[0]}</span>
+                    <IconThread/> <span className='thread-title'>{selectedPost.message.split('\n')[0]}</span>
                 </MenuButton>
             )}
 
@@ -244,21 +246,23 @@ export default function RHS(props: Props) {
                     selectPost('');
                 }}
             >
-                <FormatListBulletedIcon/>All threads
+                <FormatListBulletedIcon/> {'All threads'}
             </MenuButton>
 
             <HeaderSpacer/>
 
-            <AddButton onClick={() => {
-                setCurrentTab('new');
-                selectPost('');
-            }}>+</AddButton>
+            <AddButton
+                onClick={() => {
+                    setCurrentTab('new');
+                    selectPost('');
+                }}
+            >{'+'}</AddButton>
         </Header>
-    )
+    );
     return (
         <RhsContainer>
             {header}
             {content}
         </RhsContainer>
-    )
+    );
 }

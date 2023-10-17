@@ -5,12 +5,12 @@ import {Post} from '@mattermost/types/posts';
 
 import {doReaction, doTranscribe, doSummarize, viewMyChannel} from '../client';
 
+import {selectPost, openRHS} from '../redux_actions';
+
 import IconAI from './assets/icon_ai';
 import IconReactForMe from './assets/icon_react_for_me';
 import DotMenu, {DropdownMenuItem} from './dot_menu';
 import IconThreadSummarization from './assets/icon_thread_summarization';
-
-import {selectPost, openRHS} from '../redux_actions';
 
 type Props = {
     post: Post,
@@ -31,6 +31,7 @@ const PostMenu = (props: Props) => {
 
     const summarizePost = async (postId: string) => {
         const result = await doSummarize(postId);
+
         // This if is for legacy mode where the AdvancedCreatecomment is not exported
         if ((window as any).Components.AdvancedCreateComment) {
             dispatch(selectPost(result.postid));
