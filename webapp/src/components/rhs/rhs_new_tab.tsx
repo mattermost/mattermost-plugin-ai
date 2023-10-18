@@ -78,15 +78,15 @@ const addBrainstormingIdeas = () => {
 };
 
 const addMeetingAgenda = () => {
-    setEditorText('Meeting agenda about ');
+    setEditorText('Write a meeting agenda about ');
 };
 
 const addToDoList = () => {
-    setEditorText('To-Do list about ');
+    setEditorText('Write a todo list about ');
 };
 
 const addProsAndCons = () => {
-    setEditorText('Pros And Cons about ');
+    setEditorText('Write a pros and cons list about ');
 };
 
 const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
