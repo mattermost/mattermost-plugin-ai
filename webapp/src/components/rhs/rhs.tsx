@@ -48,6 +48,9 @@ export default function RHS() {
 
     let content = null;
     if (selectedPostId) {
+        if (currentTab !== 'thread') {
+            setCurrentTab('thread')
+        }
         content = (
             <ThreadViewer
                 inputPlaceholder='Reply...'
