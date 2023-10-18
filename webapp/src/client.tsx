@@ -91,6 +91,40 @@ export async function doTranscribe(postid: string) {
     });
 }
 
+export async function doStopGenerating(postid: string) {
+    const url = `${postRoute(postid)}/stop`;
+    const response = await fetch(url, Client4.getOptions({
+        method: 'POST',
+    }));
+
+    if (response.ok) {
+        return response.json();
+    }
+
+    throw new ClientError(Client4.url, {
+        message: '',
+        status_code: response.status,
+        url,
+    });
+}
+
+export async function doRegenerate(postid: string) {
+    const url = `${postRoute(postid)}/regenerate`;
+    const response = await fetch(url, Client4.getOptions({
+        method: 'POST',
+    }));
+
+    if (response.ok) {
+        return response.json();
+    }
+
+    throw new ClientError(Client4.url, {
+        message: '',
+        status_code: response.status,
+        url,
+    });
+}
+
 export async function doSimplify(message: string) {
     const url = `${textRoute()}/simplify`;
     const response = await fetch(url, Client4.getOptions({

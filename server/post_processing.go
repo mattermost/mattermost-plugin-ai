@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -114,7 +115,32 @@ func (p *Plugin) streamResultToNewDM(stream *ai.TextStreamResult, userID string,
 }
 
 func (p *Plugin) streamResultToPost(stream *ai.TextStreamResult, post *model.Post) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	p.streamingContextsMutex.Lock()
+	p.streamingContexts[post.Id] = cancel
+	p.streamingContextsMutex.Unlock()
 	go func() {
+		defer func() {
+			p.streamingContextsMutex.Lock()
+			delete(p.streamingContexts, post.Id)
+			p.streamingContextsMutex.Unlock()
+		}()
+
+		p.API.PublishWebSocketEvent("postupdate", map[string]interface{}{
+			"post_id": post.Id,
+			"control": "start",
+		}, &model.WebsocketBroadcast{
+			ChannelId: post.ChannelId,
+		})
+		defer func() {
+			p.API.PublishWebSocketEvent("postupdate", map[string]interface{}{
+				"post_id": post.Id,
+				"control": "end",
+			}, &model.WebsocketBroadcast{
+				ChannelId: post.ChannelId,
+			})
+		}()
+
 		for {
 			select {
 			case next := <-stream.Stream:
@@ -139,6 +165,18 @@ func (p *Plugin) streamResultToPost(stream *ai.TextStreamResult, post *model.Pos
 					p.API.LogError("Error recovering from streaming error", "error", err)
 					return
 				}
+				return
+			case <-ctx.Done():
+				if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
+					p.API.LogError("Error recovering from streaming error", "error", err)
+					return
+				}
+				p.API.PublishWebSocketEvent("postupdate", map[string]interface{}{
+					"post_id": post.Id,
+					"control": "cancel",
+				}, &model.WebsocketBroadcast{
+					ChannelId: post.ChannelId,
+				})
 				return
 			}
 		}

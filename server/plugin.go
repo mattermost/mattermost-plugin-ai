@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"os/exec"
 	"strings"
@@ -51,6 +52,9 @@ type Plugin struct {
 	builder sq.StatementBuilderType
 
 	prompts *ai.Prompts
+
+	streamingContexts      map[string]context.CancelFunc
+	streamingContextsMutex sync.Mutex
 }
 
 func resolveffmpegPath() string {
@@ -94,6 +98,8 @@ func (p *Plugin) OnActivate() error {
 	if p.ffmpegPath == "" {
 		p.pluginAPI.Log.Error("ffmpeg not installed, transcriptions will be disabled.", "error", err)
 	}
+
+	p.streamingContexts = map[string]context.CancelFunc{}
 
 	return nil
 }

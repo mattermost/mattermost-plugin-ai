@@ -119,3 +119,43 @@ func (p *Plugin) handleTranscribe(c *gin.Context) {
 		return
 	}
 }
+
+func (p *Plugin) handleStop(c *gin.Context) {
+	p.streamingContextsMutex.Lock()
+	defer p.streamingContextsMutex.Unlock()
+
+	post := c.MustGet(ContextPostKey).(*model.Post)
+
+	cancel, ok := p.streamingContexts[post.Id]
+	if !ok {
+		c.AbortWithError(http.StatusBadRequest, errors.New("context already canceled"))
+		return
+	}
+
+	cancel()
+}
+
+func (p *Plugin) handleRegenerate(c *gin.Context) {
+	userID := c.GetHeader("Mattermost-User-Id")
+	post := c.MustGet(ContextPostKey).(*model.Post)
+	channel := c.MustGet(ContextChannelKey).(*model.Channel)
+
+	user, err := p.pluginAPI.User.Get(userID)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	thread, err := p.pluginAPI.Post.GetPostThread(post.Id)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	thread.SortByCreateAt()
+
+	if err := p.processUserRequestToBot(p.MakeConversationContext(user, channel, post)); err != nil {
+		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "unable to regenerate response"))
+		return
+	}
+}
