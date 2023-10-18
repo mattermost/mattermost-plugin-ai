@@ -33,7 +33,7 @@ const PostMenu = (props: Props) => {
         const result = await doSummarize(postId);
 
         // This if is for legacy mode where the AdvancedCreatecomment is not exported
-        if ((window as any).Components.AdvancedCreateComment) {
+        if ((window as any).Components.CreatePost) {
             dispatch(selectPost(result.postid));
             dispatch(openRHS());
         } else {

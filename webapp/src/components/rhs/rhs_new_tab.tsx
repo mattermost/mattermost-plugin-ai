@@ -14,7 +14,7 @@ import RHSImage from '../assets/rhs_image';
 
 import {Button} from './common';
 
-const AdvancedCreateComment = styled((window as any).Components.AdvancedCreateComment)`
+const CreatePost = styled((window as any).Components.CreatePost)`
     padding: 0px;
 `;
 
@@ -26,12 +26,10 @@ const OptionButton = styled(Button)`
     }
 `;
 
-
 const NewQuestion = styled.div`
     padding: 12px;
     display: flex;
     flex-direction: column;
-    justify-content: flex-end;
     flex-grow: 1;
     .AdvancedTextEditor {
         padding: 0px;
@@ -53,11 +51,43 @@ const QuestionOptions = styled.div`
     flex-wrap: wrap;
 `;
 
+const PlusMinus = styled.i`
+    width: 14px;
+    font-size: 14px;
+    font-weight: 400;
+    margin-right: 4px;
+`;
+
 type Props = {
     botChannelId: string
     selectPost: (postId: string) => void
     setCurrentTab: (tab: string) => void
 }
+
+const setEditorText = (text: string) => {
+    const replyBox = document.getElementById('reply_textbox');
+    if (replyBox) {
+        replyBox.innerHTML = text;
+        replyBox.dispatchEvent(new Event('input', {bubbles: true}));
+        replyBox.focus();
+    }
+};
+
+const addBrainstormingIdeas = () => {
+    setEditorText('Brainstorm ideas about ');
+};
+
+const addMeetingAgenda = () => {
+    setEditorText('Meeting agenda about ');
+};
+
+const addToDoList = () => {
+    setEditorText('To-Do list about ');
+};
+
+const addProsAndCons = () => {
+    setEditorText('Pros And Cons about ');
+};
 
 const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
     const dispatch = useDispatch();
@@ -67,19 +97,13 @@ const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
             <QuestionTitle>{'Ask AI Assistant anything'}</QuestionTitle>
             <QuestionDescription>{'The AI Assistant can help you with almost anything. Choose from the prompts below or write your own.'}</QuestionDescription>
             <QuestionOptions>
-                <OptionButton><LightbulbOutlineIcon/>{'Brainstorm ideas'}</OptionButton>
-                <OptionButton><FormatListNumberedIcon/>{'Meeting agenda'}</OptionButton>
-                <OptionButton><PlaylistCheckIcon/>{'To-do list'}</OptionButton>
-                <OptionButton>{'Pros and Cons'}</OptionButton>
+                <OptionButton onClick={addBrainstormingIdeas}><LightbulbOutlineIcon/>{'Brainstorm ideas'}</OptionButton>
+                <OptionButton onClick={addMeetingAgenda}><FormatListNumberedIcon/>{'Meeting agenda'}</OptionButton>
+                <OptionButton onClick={addToDoList}><PlaylistCheckIcon/>{'To-do list'}</OptionButton>
+                <OptionButton onClick={addProsAndCons}><PlusMinus className='icon'>{'±'}</PlusMinus>{'Pros and Cons'}</OptionButton>
             </QuestionOptions>
-            <AdvancedCreateComment
-                rootId={undefined}
-                rootDeleted={false}
-                updateCommentDraftWithRootId={() => null}
-                onMoveHistoryIndexBack={() => null}
-                onMoveHistoryIndexForward={() => null}
-                onEditLatestPost={() => null}
-                getChannelView={() => null}
+            <CreatePost
+                placeholder={'Ask AI Assistant anything...'}
                 onSubmit={async (p: any) => {
                     p.channel_id = botChannelId || '';
                     p.props = {};
@@ -87,10 +111,9 @@ const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
                     selectPost(data.data.id);
                     setCurrentTab('thread');
                 }}
-                onUpdateCommentDraft={() => null}
             />
         </NewQuestion>
     );
-}
+};
 
-export default React.memo(RHSNewTab)
+export default React.memo(RHSNewTab);

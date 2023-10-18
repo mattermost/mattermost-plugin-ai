@@ -1,7 +1,6 @@
 // Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
 // See License for license information.
 
-import React from 'react';
 import styled from 'styled-components';
 
 export const Button = styled.button`

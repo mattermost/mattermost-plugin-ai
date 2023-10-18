@@ -7,7 +7,6 @@ import {getPosts} from 'mattermost-redux/actions/posts';
 
 import {manifest} from '@/manifest';
 
-
 import ThreadItem from './thread_item';
 import RHSHeader from './rhs_header';
 import RHSNewTab from './rhs_new_tab';
@@ -26,10 +25,7 @@ const RhsContainer = styled.div`
     flex-direction: column;
 `;
 
-
-type Props = {}
-
-export default function RHS({}: Props) {
+export default function RHS() {
     const dispatch = useDispatch();
     const [currentTab, setCurrentTab] = useState('new');
 
@@ -39,7 +35,6 @@ export default function RHS({}: Props) {
     posts = posts.sort((a, b) => b.update_at - a.update_at);
 
     const selectedPostId = useSelector((state: any) => state['plugins-' + manifest.id].selectedPostId);
-    const selectedPost = useSelector((state: any) => getPost(state, selectedPostId));
 
     useEffect(() => {
         if (currentTab === 'threads') {
@@ -55,6 +50,7 @@ export default function RHS({}: Props) {
     if (selectedPostId) {
         content = (
             <ThreadViewer
+                inputPlaceholder='Reply...'
                 selected={selectedPostId}
                 rootPostId={selectedPostId}
                 useRelativeTimestamp={false}
@@ -91,7 +87,6 @@ export default function RHS({}: Props) {
         <RhsContainer>
             <RHSHeader
                 currentTab={currentTab}
-                selectedPost={selectedPost}
                 setCurrentTab={setCurrentTab}
                 selectPost={selectPost}
             />

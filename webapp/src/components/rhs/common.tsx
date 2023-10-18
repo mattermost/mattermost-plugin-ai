@@ -21,14 +21,6 @@ export const Button = styled.button`
         }
     }
 
-    &.active {
-        color: rgb(var(--link-color-rgb));
-        background-color: rgba(var(--button-bg-rgb), 0.04);
-        svg {
-            fill: rgb(var(--link-color-rgb))
-        }
-    }
-
     svg {
         fill: rgb(var(--center-channel-color));
         margin-right: 6px;

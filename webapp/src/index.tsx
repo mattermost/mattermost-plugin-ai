@@ -36,14 +36,19 @@ const IconAIContainer = styled.span`
     background-color: var(--center-channel-bg);
 `;
 
+const RHSTitleContainer = styled.span`
+    display: flex;
+    align-items: center;
+`;
+
 const RHSTitle = () => {
     return (
-        <span>
+        <RHSTitleContainer>
             <IconAIContainer className='icon'>
                 <IconAI/>
             </IconAIContainer>
-            {'Assistant AI'}
-        </span>
+            {'AI Assistant'}
+        </RHSTitleContainer>
     );
 };
 
@@ -53,7 +58,7 @@ export default class Plugin {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-function
     public async initialize(registry: any, store: WebappStore) {
         let rhs: any = null;
-        if ((window as any).Components.AdvancedCreateComment) {
+        if ((window as any).Components.CreatePost) {
             rhs = registry.registerRightHandSidebarComponent(RHS, RHSTitle);
             setOpenRHSAction(rhs.showRHSPlugin);
 
