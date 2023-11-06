@@ -28,7 +28,7 @@ const blinkKeyframes = keyframes`
 
 const TextContainer = styled.div<{showCursor?: boolean}>`
 	${(props) => props.showCursor && css`
-		p:last-of-type::after {
+		>p:last-of-type::after {
 			content: '';
 			width: 7px;
 			height: 16px;

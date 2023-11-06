@@ -1,5 +1,5 @@
-import React, {useEffect, useState} from 'react';
-import styled from 'styled-components';
+import React, {MouseEvent, useEffect, useState} from 'react';
+import styled, {css, createGlobalStyle} from 'styled-components';
 
 import {WebSocketMessage} from '@mattermost/client';
 
@@ -11,7 +11,29 @@ import IconThumbsDown from './assets/icon_thumbs_down';
 import IconRegenerate from './assets/icon_regenerate';
 import IconCancel from './assets/icon_cancel';
 
-const PostBody = styled.div`
+const FixPostHover = createGlobalStyle<{disableHover?: string}>`
+	${(props) => props.disableHover && css`
+	&&&& {
+		[data-testid="post-menu-${props.disableHover}"] {
+			display: none !important;
+		}
+		[data-testid="post-menu-${props.disableHover}"]:hover {
+			display: none !important;
+		}
+	}`}
+`;
+
+const PostBody = styled.div<{disableHover?: boolean}>`
+	${(props) => props.disableHover && css`
+	::before {
+		content: '';
+		position: absolute;
+		width: 110%;
+		height: 110%;
+		left: 50%;
+		top: 50%;
+		transform: translate(-50%, -50%);
+	}`}
 `;
 
 const ControlsBar = styled.div`
@@ -100,6 +122,9 @@ const StopGeneratingButton = styled.button`
 	transform: translateX(-50%);
 
 	color: var(--button-bg);
+
+	font-size: 12px;
+	font-weight: 600;
 `;
 
 export interface PostUpdateWebsocketMessage {
@@ -148,8 +173,20 @@ export const LLMBotPost = (props: Props) => {
         doStopGenerating(props.post.id);
     };
 
+    const stopPropagationIfGenerating = (e: MouseEvent) => {
+        if (generating) {
+            e.stopPropagation();
+        }
+    };
+
     return (
-        <PostBody>
+        <PostBody
+            disableHover={generating}
+            onMouseOver={stopPropagationIfGenerating}
+            onMouseEnter={stopPropagationIfGenerating}
+            onMouseMove={stopPropagationIfGenerating}
+        >
+            <FixPostHover disableHover={generating ? props.post.id : ''}/>
             <PostText
                 message={message}
                 channelID={props.post.channel_id}
