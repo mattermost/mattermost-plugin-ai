@@ -1,7 +1,9 @@
 import React, {MouseEvent, useEffect, useState} from 'react';
+import {useSelector} from 'react-redux';
 import styled, {css, createGlobalStyle} from 'styled-components';
 
 import {WebSocketMessage} from '@mattermost/client';
+import {GlobalState} from '@mattermost/types/store';
 
 import {doFeedback, doRegenerate, doStopGenerating} from '@/client';
 
@@ -142,6 +144,7 @@ interface Props {
 export const LLMBotPost = (props: Props) => {
     const [message, setMessage] = useState(props.post.message);
     const [generating, setGenerating] = useState(false);
+    const currentUserId = useSelector<GlobalState, string>((state) => state.entities.users.currentUserId);
     useEffect(() => {
         props.websocketRegister(props.post.id, (msg: WebSocketMessage<PostUpdateWebsocketMessage>) => {
             const data = msg.data;
@@ -157,14 +160,6 @@ export const LLMBotPost = (props: Props) => {
         };
     }, []);
 
-    const userFeedbackPositive = () => {
-        doFeedback(props.post.id, true);
-    };
-
-    const userFeedbackNegative = () => {
-        doFeedback(props.post.id, false);
-    };
-
     const regnerate = () => {
         doRegenerate(props.post.id);
     };
@@ -179,6 +174,8 @@ export const LLMBotPost = (props: Props) => {
         }
     };
 
+    const requesterIsCurrentUser = (props.post.props?.llm_requester_user_id === currentUserId);
+
     return (
         <PostBody
             disableHover={generating}
@@ -192,35 +189,24 @@ export const LLMBotPost = (props: Props) => {
                 channelID={props.post.channel_id}
                 showCursor={generating}
             />
+            { generating && requesterIsCurrentUser &&
+            <StopGeneratingButton
+                onClick={stopGenerating}
+            >
+                <IconCancel/>
+                {'Stop Generating'}
+            </StopGeneratingButton>
+            }
+            { !generating && requesterIsCurrentUser &&
             <ControlsBar>
-                { generating ? (
-                    <StopGeneratingButton
-                        onClick={stopGenerating}
-                    >
-                        <IconCancel/>
-                        {'Stop Generating'}
-                    </StopGeneratingButton>
-                ) : (
-                    <GenerationButton
-                        onClick={regnerate}
-                    >
-                        <IconRegenerate/>
-                        {'Regenerate'}
-                    </GenerationButton>
-                )}
-                {/*<RatingsContainer>
-                    <EmojiButton
-                        onClick={userFeedbackPositive}
-                    >
-                        <ThumbsUp/>
-                    </EmojiButton>
-                    <EmojiButton
-                        onClick={userFeedbackNegative}
-                    >
-                        <ThumbsDown/>
-                    </EmojiButton>
-                </RatingsContainer>*/}
+                <GenerationButton
+                    onClick={regnerate}
+                >
+                    <IconRegenerate/>
+                    {'Regenerate'}
+                </GenerationButton>
             </ControlsBar>
+            }
         </PostBody>
     );
 };
