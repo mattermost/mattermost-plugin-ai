@@ -14,7 +14,7 @@ import RHSImage from '../assets/rhs_image';
 
 import {Button} from './common';
 
-const CreatePost = styled((window as any).Components.CreatePost)`
+const CreatePost = (window as any).Components.CreatePost && styled((window as any).Components.CreatePost)`
     padding: 0px;
 `;
 

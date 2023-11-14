@@ -16,13 +16,14 @@ const Title = styled.div`
     align-items: center;
     margin-bottom: 4px;
     justify-content: space-between;
-    .title-text {
-        font-size: 14px;
-        font-weight: 600;
-        text-overflow: ellipsis;
-        overflow: hidden;
-        white-space: nowrap;
-    }
+`;
+
+const TitleText = styled.div`
+    font-size: 14px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
 `;
 
 const FirstReply = styled.div`
@@ -57,7 +58,7 @@ export default function ThreadItem(props: Props) {
     return (
         <ThreadItemContainer onClick={props.onClick}>
             <Title>
-                <div className='title-text'>{props.postMessage}</div>
+                <TitleText>{props.postMessage}</TitleText>
                 <LastActivityDate><Timestamp value={props.lastActivityDate}/></LastActivityDate>
             </Title>
             <FirstReply>{props.postFirstReply}</FirstReply>
