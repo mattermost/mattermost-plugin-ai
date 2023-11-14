@@ -37,7 +37,7 @@ export default function RHS() {
     const selectedPostId = useSelector((state: any) => state['plugins-' + manifest.id].selectedPostId);
 
     useEffect(() => {
-        if (currentTab === 'threads' && botChannelId ) {
+        if (currentTab === 'threads' && botChannelId) {
             dispatch(getPosts(botChannelId, 0, 60, false, true, true) as any);
         }
     }, [currentTab, botChannelId]);
