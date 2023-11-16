@@ -40,7 +40,7 @@ func (p *Plugin) newConversation(context ai.ConversationContext) error {
 		ChannelId: context.Channel.Id,
 		RootId:    context.Post.Id,
 	}
-	if err := p.streamResultToNewPost(result, responsePost); err != nil {
+	if err := p.streamResultToNewPost(context.RequestingUser.Id, result, responsePost); err != nil {
 		return err
 	}
 
@@ -73,7 +73,7 @@ func (p *Plugin) continueConversation(context ai.ConversationContext) error {
 				RootId:    context.Post.RootId,
 				Message:   "Sorry, you no longer have access to the original thread.",
 			}
-			if err := p.botCreatePost(responsePost); err != nil {
+			if err := p.botCreatePost(context.RequestingUser.Id, responsePost); err != nil {
 				return err
 			}
 			return nil
@@ -100,7 +100,7 @@ func (p *Plugin) continueConversation(context ai.ConversationContext) error {
 		ChannelId: context.Channel.Id,
 		RootId:    context.Post.RootId,
 	}
-	if err := p.streamResultToNewPost(result, responsePost); err != nil {
+	if err := p.streamResultToNewPost(context.RequestingUser.Id, result, responsePost); err != nil {
 		return err
 	}
 

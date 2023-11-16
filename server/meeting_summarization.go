@@ -30,7 +30,7 @@ func (p *Plugin) handleCallRecordingPost(recordingPost *model.Post, channel *mod
 		RootId:    rootId,
 		Message:   "Transcribing meeting...",
 	}
-	if err := p.botCreatePost(botPost); err != nil {
+	if err := p.botCreatePost("", botPost); err != nil {
 		return err
 	}
 
@@ -113,7 +113,7 @@ func (p *Plugin) handleCallRecordingPost(recordingPost *model.Post, channel *mod
 	botPost.EditAt = 0
 	botPost.Message += "\nRefining transcription..."
 	botPost.FileIds = []string{transcriptFileInfo.Id}
-	if err := p.botCreatePost(botPost); err != nil {
+	if err := p.botCreatePost("", botPost); err != nil {
 		return err
 	}
 
