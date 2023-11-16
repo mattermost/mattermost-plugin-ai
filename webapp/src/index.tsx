@@ -15,6 +15,7 @@ import Config from './components/config/config';
 import {doReaction, doSummarize, doTranscribe} from './client';
 import {BotUsername} from './constants';
 import PostEventListener from './websocket';
+import {setupRedux} from './redux';
 
 type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
 
@@ -25,6 +26,8 @@ export default class Plugin {
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-function
     public async initialize(registry: any, store: WebappStore) {
+        setupRedux(registry, store);
+
         registry.registerWebSocketEventHandler(StreamingPostWebsocketEvent, this.postEventListener.handlePostUpdateWebsockets);
         const LLMBotPostWithWebsockets = (props: any) => {
             return (
