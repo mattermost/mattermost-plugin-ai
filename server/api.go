@@ -30,6 +30,8 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	postRouter.POST("/feedback/negative", p.handleNegativePostFeedback)
 	postRouter.POST("/summarize", p.handleSummarize)
 	postRouter.POST("/transcribe", p.handleTranscribe)
+	postRouter.POST("/stop", p.handleStop)
+	postRouter.POST("/regenerate", p.handleRegenerate)
 
 	textRouter := router.Group("/text")
 	textRouter.Use(p.textAuthorizationRequired)

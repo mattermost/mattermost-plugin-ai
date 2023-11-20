@@ -19,6 +19,7 @@ import {doReaction, doSummarize, doTranscribe, getAIDirectChannel} from './clien
 import {setOpenRHSAction} from './redux_actions';
 import {BotUsername} from './constants';
 import PostEventListener from './websocket';
+import {setupRedux} from './redux';
 
 type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
 
@@ -57,6 +58,8 @@ export default class Plugin {
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-function
     public async initialize(registry: any, store: WebappStore) {
+        setupRedux(registry, store);
+
         let rhs: any = null;
         if ((window as any).Components.CreatePost) {
             rhs = registry.registerRightHandSidebarComponent(RHS, RHSTitle);

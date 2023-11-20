@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/render"
+	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/pkg/errors"
 )
@@ -118,4 +119,73 @@ func (p *Plugin) handleTranscribe(c *gin.Context) {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
+}
+
+func (p *Plugin) handleStop(c *gin.Context) {
+	userID := c.GetHeader("Mattermost-User-Id")
+	p.streamingContextsMutex.Lock()
+	defer p.streamingContextsMutex.Unlock()
+
+	post := c.MustGet(ContextPostKey).(*model.Post)
+
+	if post.UserId != p.botid {
+		c.AbortWithError(http.StatusBadRequest, errors.New("not a bot post"))
+		return
+	}
+
+	if post.GetProp("llm_requester_user_id") != userID {
+		c.AbortWithError(http.StatusForbidden, errors.New("only the original poster can stop the stream"))
+		return
+	}
+
+	cancel, ok := p.streamingContexts[post.Id]
+	if !ok {
+		c.AbortWithError(http.StatusBadRequest, errors.New("context already canceled"))
+		return
+	}
+
+	cancel()
+}
+
+func (p *Plugin) handleRegenerate(c *gin.Context) {
+	userID := c.GetHeader("Mattermost-User-Id")
+	post := c.MustGet(ContextPostKey).(*model.Post)
+	channel := c.MustGet(ContextChannelKey).(*model.Channel)
+
+	user, err := p.pluginAPI.User.Get(userID)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	threadData, err := p.getThreadAndMeta(post.RootId)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+	threadData.cutoffAtPostID(post.Id)
+
+	postToRegenerate := threadData.latestPost()
+
+	if user.Id != postToRegenerate.UserId {
+		c.AbortWithError(http.StatusForbidden, errors.New("only the original poster can regenerate"))
+		return
+	}
+
+	context := p.MakeConversationContext(user, channel, postToRegenerate)
+	conversation, err := p.prompts.ChatCompletion(ai.PromptDirectMessageQuestion, context)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+	conversation.AppendConversation(ai.ThreadToBotConversation(p.botid, threadData.Posts))
+
+	result, err := p.getLLM().ChatCompletion(conversation)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+	}
+
+	post.Message = ""
+
+	p.streamResultToPost(result, post)
 }

@@ -30,7 +30,9 @@ func (p *Plugin) checkUsageRestrictionsForChannel(channel *model.Channel) error 
 
 		if !cfg.AllowPrivateChannels {
 			if channel.Type != model.ChannelTypeOpen {
-				return errors.Wrap(ErrUsageRestriction, "can't work on private channels")
+				if !(channel.Type == model.ChannelTypeDirect && strings.Contains(channel.Name, p.botid)) {
+					return errors.Wrap(ErrUsageRestriction, "can't work on private channels")
+				}
 			}
 		}
 	}

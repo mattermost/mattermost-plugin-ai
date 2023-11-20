@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -13,6 +14,19 @@ import (
 type ThreadData struct {
 	Posts     []*model.Post
 	UsersByID map[string]*model.User
+}
+
+func (t *ThreadData) cutoffAtPostID(postID string) {
+	for i, post := range t.Posts {
+		if post.Id == postID {
+			t.Posts = t.Posts[:i]
+			break
+		}
+	}
+}
+
+func (t *ThreadData) latestPost() *model.Post {
+	return t.Posts[len(t.Posts)-1]
 }
 
 func (p *Plugin) getThreadAndMeta(postID string) (*ThreadData, error) {
@@ -64,13 +78,14 @@ func formatThread(data *ThreadData) string {
 	return result
 }
 
-func (p *Plugin) modifyPostForBot(post *model.Post) {
+func (p *Plugin) modifyPostForBot(requesterUserID string, post *model.Post) {
 	post.UserId = p.botid
-	post.Type = "custom_llmbot"
+	post.Type = "custom_llmbot" // This must be the only place we add this type for security.
+	post.AddProp("llm_requester_user_id", requesterUserID)
 }
 
-func (p *Plugin) botCreatePost(post *model.Post) error {
-	p.modifyPostForBot(post)
+func (p *Plugin) botCreatePost(requesterUserID string, post *model.Post) error {
+	p.modifyPostForBot(requesterUserID, post)
 
 	if err := p.pluginAPI.Post.CreatePost(post); err != nil {
 		return err
@@ -80,7 +95,7 @@ func (p *Plugin) botCreatePost(post *model.Post) error {
 }
 
 func (p *Plugin) botDM(userID string, post *model.Post) error {
-	p.modifyPostForBot(post)
+	p.modifyPostForBot(userID, post)
 
 	if err := p.pluginAPI.Post.DM(p.botid, userID, post); err != nil {
 		return err
@@ -89,8 +104,8 @@ func (p *Plugin) botDM(userID string, post *model.Post) error {
 	return nil
 }
 
-func (p *Plugin) streamResultToNewPost(stream *ai.TextStreamResult, post *model.Post) error {
-	if err := p.botCreatePost(post); err != nil {
+func (p *Plugin) streamResultToNewPost(requesterUserID string, stream *ai.TextStreamResult, post *model.Post) error {
+	if err := p.botCreatePost(requesterUserID, post); err != nil {
 		return err
 	}
 
@@ -114,7 +129,32 @@ func (p *Plugin) streamResultToNewDM(stream *ai.TextStreamResult, userID string,
 }
 
 func (p *Plugin) streamResultToPost(stream *ai.TextStreamResult, post *model.Post) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	p.streamingContextsMutex.Lock()
+	p.streamingContexts[post.Id] = cancel
+	p.streamingContextsMutex.Unlock()
 	go func() {
+		defer func() {
+			p.streamingContextsMutex.Lock()
+			delete(p.streamingContexts, post.Id)
+			p.streamingContextsMutex.Unlock()
+		}()
+
+		p.API.PublishWebSocketEvent("postupdate", map[string]interface{}{
+			"post_id": post.Id,
+			"control": "start",
+		}, &model.WebsocketBroadcast{
+			ChannelId: post.ChannelId,
+		})
+		defer func() {
+			p.API.PublishWebSocketEvent("postupdate", map[string]interface{}{
+				"post_id": post.Id,
+				"control": "end",
+			}, &model.WebsocketBroadcast{
+				ChannelId: post.ChannelId,
+			})
+		}()
+
 		for {
 			select {
 			case next := <-stream.Stream:
@@ -139,6 +179,18 @@ func (p *Plugin) streamResultToPost(stream *ai.TextStreamResult, post *model.Pos
 					p.API.LogError("Error recovering from streaming error", "error", err)
 					return
 				}
+				return
+			case <-ctx.Done():
+				if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
+					p.API.LogError("Error recovering from streaming error", "error", err)
+					return
+				}
+				p.API.PublishWebSocketEvent("postupdate", map[string]interface{}{
+					"post_id": post.Id,
+					"control": "cancel",
+				}, &model.WebsocketBroadcast{
+					ChannelId: post.ChannelId,
+				})
 				return
 			}
 		}
