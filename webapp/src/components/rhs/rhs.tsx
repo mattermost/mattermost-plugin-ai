@@ -2,10 +2,9 @@ import React, {useState, useEffect, useCallback} from 'react';
 import {useDispatch, useSelector} from 'react-redux';
 import styled from 'styled-components';
 
-import {makeGetPostsInChannel} from 'mattermost-redux/selectors/entities/posts';
-import {getPosts} from 'mattermost-redux/actions/posts';
-
 import {manifest} from '@/manifest';
+
+import {getAIThreads} from '@/client';
 
 import ThreadItem from './thread_item';
 import RHSHeader from './rhs_header';
@@ -25,22 +24,29 @@ const RhsContainer = styled.div`
     flex-direction: column;
 `;
 
+export interface AIThread {
+    ID: string;
+    Message: string;
+    ReplyCount: number;
+    UpdateAt: number;
+}
+
 export default function RHS() {
     const dispatch = useDispatch();
     const [currentTab, setCurrentTab] = useState('new');
-
     const botChannelId = useSelector((state: any) => state['plugins-' + manifest.id].botChannelId);
-    const getPostsInChannel = makeGetPostsInChannel();
-    let posts = useSelector((state) => getPostsInChannel(state as any, botChannelId || '', -1)) || [];
-    posts = posts.filter((p) => !p.root_id).sort((a, b) => b.update_at - a.update_at);
-
     const selectedPostId = useSelector((state: any) => state['plugins-' + manifest.id].selectedPostId);
 
+    const [threads, setThreads] = useState<AIThread[] | null>(null);
+
     useEffect(() => {
-        if (currentTab === 'threads' && botChannelId) {
-            dispatch(getPosts(botChannelId, 0, 60, false, true, true) as any);
+        const fetchThreads = async () => {
+            setThreads(await getAIThreads());
+        };
+        if (currentTab === 'threads') {
+            fetchThreads();
         }
-    }, [currentTab, botChannelId]);
+    }, [currentTab]);
 
     const selectPost = useCallback((postId: string) => {
         dispatch({type: 'SELECT_AI_POST', postId});
@@ -54,29 +60,32 @@ export default function RHS() {
         content = (
             <ThreadViewer
                 inputPlaceholder='Reply...'
-                selected={selectedPostId}
                 rootPostId={selectedPostId}
                 useRelativeTimestamp={false}
                 isThreadView={false}
             />
         );
     } else if (currentTab === 'threads') {
-        content = (
-            <ThreadsList>
-                {posts.map((p) => (
-                    <ThreadItem
-                        key={p.id}
-                        postMessage={p.message}
-                        postFirstReply={p.message.split('\n').slice(1).join('\n').slice(1, 300)}
-                        repliesCount={p.reply_count}
-                        lastActivityDate={p.update_at}
-                        onClick={() => {
-                            setCurrentTab('thread');
-                            selectPost(p.id);
-                        }}
-                    />))}
-            </ThreadsList>
-        );
+        if (threads) {
+            content = (
+                <ThreadsList>
+                    {threads.map((p) => (
+                        <ThreadItem
+                            key={p.ID}
+                            postMessage={p.Message}
+                            postFirstReply={p.Message.split('\n').slice(1).join('\n').slice(1, 300)}
+                            repliesCount={p.ReplyCount}
+                            lastActivityDate={p.UpdateAt}
+                            onClick={() => {
+                                setCurrentTab('thread');
+                                selectPost(p.ID);
+                            }}
+                        />))}
+                </ThreadsList>
+            );
+        } else {
+            content = null;
+        }
     } else if (currentTab === 'new') {
         content = (
             <RHSNewTab

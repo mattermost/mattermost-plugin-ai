@@ -1,5 +1,4 @@
 import React from 'react';
-import {useDispatch} from 'react-redux';
 import styled from 'styled-components';
 
 import {
@@ -8,9 +7,9 @@ import {
     PlaylistCheckIcon,
 } from '@mattermost/compass-icons/components';
 
-import {createPostImmediately} from 'mattermost-redux/actions/posts';
-
 import RHSImage from '../assets/rhs_image';
+
+import {createPost} from '@/client';
 
 import {Button} from './common';
 
@@ -90,7 +89,6 @@ const addProsAndCons = () => {
 };
 
 const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
-    const dispatch = useDispatch();
     return (
         <NewQuestion>
             <RHSImage/>
@@ -107,8 +105,8 @@ const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
                 onSubmit={async (p: any) => {
                     p.channel_id = botChannelId || '';
                     p.props = {};
-                    const data = await dispatch(createPostImmediately(p) as any);
-                    selectPost(data.data.id);
+                    const created = await createPost(p);
+                    selectPost(created.id);
                     setCurrentTab('thread');
                 }}
             />
