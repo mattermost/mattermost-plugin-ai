@@ -5,6 +5,8 @@ import {Post} from '@mattermost/types/posts';
 
 import {doReaction, doTranscribe, doSummarize, viewMyChannel} from '../client';
 
+import {selectPost, openRHS} from '../redux_actions';
+
 import IconAI from './assets/icon_ai';
 import IconReactForMe from './assets/icon_react_for_me';
 import DotMenu, {DropdownMenuItem} from './dot_menu';
@@ -14,7 +16,7 @@ type Props = {
     post: Post,
 }
 
-const selectPost = (postid: string, channelid: string) => {
+const selectPostLegacy = (postid: string, channelid: string) => {
     return {
         type: 'SELECT_POST',
         postId: postid,
@@ -29,8 +31,15 @@ const PostMenu = (props: Props) => {
 
     const summarizePost = async (postId: string) => {
         const result = await doSummarize(postId);
-        dispatch(selectPost(result.postid, result.channelid));
-        viewMyChannel(result.channelid);
+
+        // This if is for legacy mode where the AdvancedCreatecomment is not exported
+        if ((window as any).Components.CreatePost) {
+            dispatch(selectPost(result.postid));
+            dispatch(openRHS());
+        } else {
+            dispatch(selectPostLegacy(result.postid, result.channelid));
+            viewMyChannel(result.channelid);
+        }
     };
 
     return (

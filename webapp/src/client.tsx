@@ -4,16 +4,20 @@ import {manifest} from './manifest';
 
 const Client4 = new Client4Class();
 
+function baseRoute(): string {
+    return `/plugins/${manifest.id}`;
+}
+
 function postRoute(postid: string): string {
-    return `/plugins/${manifest.id}/post/${postid}`;
+    return `${baseRoute()}/post/${postid}`;
 }
 
 function textRoute(): string {
-    return `/plugins/${manifest.id}/text`;
+    return `${baseRoute()}/text`;
 }
 
 function channelRoute(channelid: string): string {
-    return `/plugins/${manifest.id}/channel/${channelid}`;
+    return `${baseRoute()}/channel/${channelid}`;
 }
 
 export async function doReaction(postid: string) {
@@ -237,3 +241,30 @@ export async function viewMyChannel(channelID: string) {
     return Client4.viewMyChannel(channelID);
 }
 
+export async function getAIDirectChannel(currentUserId: string) {
+    const botUser = await Client4.getUserByUsername('ai');
+    const dm = await Client4.createDirectChannel([currentUserId, botUser.id]);
+    return dm.id;
+}
+
+export async function getAIThreads() {
+    const url = `${baseRoute()}/ai_threads`;
+    const response = await fetch(url, Client4.getOptions({
+        method: 'GET',
+    }));
+
+    if (response.ok) {
+        return response.json();
+    }
+
+    throw new ClientError(Client4.url, {
+        message: '',
+        status_code: response.status,
+        url,
+    });
+}
+
+export async function createPost(post: any) {
+    const created = await Client4.createPost(post);
+    return created;
+}
