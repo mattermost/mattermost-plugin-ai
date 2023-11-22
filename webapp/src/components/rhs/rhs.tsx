@@ -73,7 +73,6 @@ export default function RHS() {
                         <ThreadItem
                             key={p.ID}
                             postMessage={p.Message}
-                            postFirstReply={p.Message.split('\n').slice(1).join('\n').slice(1, 300)}
                             repliesCount={p.ReplyCount}
                             lastActivityDate={p.UpdateAt}
                             onClick={() => {
