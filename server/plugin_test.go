@@ -10,12 +10,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type TestEnviroment struct {
+type TestEnvironment struct {
 	plugin  *Plugin
 	mockAPI *plugintest.API
 }
 
-func SetupTestEnvironment(t *testing.T) *TestEnviroment {
+func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 	p := Plugin{}
 
 	p.botid = "botid"
@@ -26,7 +26,7 @@ func SetupTestEnvironment(t *testing.T) *TestEnviroment {
 
 	p.ffmpegPath = ""
 
-	e := &TestEnviroment{
+	e := &TestEnvironment{
 		plugin: &p,
 	}
 	e.ResetMocks(t)
@@ -34,13 +34,13 @@ func SetupTestEnvironment(t *testing.T) *TestEnviroment {
 	return e
 }
 
-func (e *TestEnviroment) ResetMocks(t *testing.T) {
+func (e *TestEnvironment) ResetMocks(t *testing.T) {
 	e.mockAPI = &plugintest.API{}
 	e.plugin.SetAPI(e.mockAPI)
 	e.plugin.pluginAPI = pluginapi.NewClient(e.plugin.API, e.plugin.Driver)
 }
 
-func (e *TestEnviroment) Cleanup(t *testing.T) {
+func (e *TestEnvironment) Cleanup(t *testing.T) {
 	t.Helper()
 	e.mockAPI.AssertExpectations(t)
 }
@@ -267,7 +267,7 @@ func TestHandleAudioCallsRecording(t *testing.T) {
 		require.ErrorIs(t, err, ErrUsageRestriction)
 	})
 
-	t.Run("don't respond if somone is trying to spoof the calls bot", func(t *testing.T) {
+	t.Run("don't respond if someone is trying to spoof the calls bot", func(t *testing.T) {
 		e.ResetMocks(t)
 		e.plugin.setConfiguration(makeConfig(Config{
 			EnableAutomaticCallsSummary: true,

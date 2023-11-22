@@ -167,10 +167,10 @@ func (c *Client) do(method, path string, body interface{}, result interface{}) e
 	if resp.StatusCode != http.StatusOK {
 		body, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
-			return errors.Wrap(err, "unable to read responce body on error: "+resp.Status)
+			return errors.Wrap(err, "unable to read response body on error: "+resp.Status)
 		}
 
-		return errors.New("non 200 responce from asksage: " + resp.Status + "\nBody:\n" + string(body))
+		return errors.New("non 200 response from asksage: " + resp.Status + "\nBody:\n" + string(body))
 	}
 
 	// Decode response body into specified struct

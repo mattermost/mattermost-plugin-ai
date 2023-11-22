@@ -13,7 +13,7 @@ import (
 )
 
 type LookupMattermostUserArgs struct {
-	Username string `jsonschema_description:"The username of the user to lookup witout a leading '@'. Example: 'firstname.lastname'"`
+	Username string `jsonschema_description:"The username of the user to lookup without a leading '@'. Example: 'firstname.lastname'"`
 }
 
 func (p *Plugin) toolResolveLookupMattermostUser(context ai.ConversationContext, argsGetter ai.ToolArgumentGetter) (string, error) {
@@ -149,7 +149,7 @@ func (p *Plugin) getBuiltInTools() []ai.Tool {
 	builtInTools := []ai.Tool{
 		{
 			Name:        "LookupMattermostUser",
-			Description: "Lookup a Mattermost user by their username. Avalable information includes: username, full name, email, nickname, position, locale, timezone, last activity, and status.",
+			Description: "Lookup a Mattermost user by their username. Available information includes: username, full name, email, nickname, position, locale, timezone, last activity, and status.",
 			Schema:      LookupMattermostUserArgs{},
 			Resolver:    p.toolResolveLookupMattermostUser,
 		},
@@ -168,7 +168,7 @@ func (p *Plugin) getBuiltInTools() []ai.Tool {
 	} else if status != nil && status.State == model.PluginStateRunning {
 		builtInTools = append(builtInTools, ai.Tool{
 			Name:        "GetGithubIssue",
-			Description: "Retrive a single GitHub issue by owner, repo, and issue number.",
+			Description: "Retrieve a single GitHub issue by owner, repo, and issue number.",
 			Schema:      GetGithubIssueArgs{},
 			Resolver:    p.toolGetGithubIssue,
 		})

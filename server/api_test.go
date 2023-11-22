@@ -31,7 +31,7 @@ func TestPostRouter(t *testing.T) {
 			request        *http.Request
 			expectedStatus int
 			config         Config
-			envSetup       func(e *TestEnviroment)
+			envSetup       func(e *TestEnvironment)
 		}{
 			"test no permission to channel": {
 				request:        httptest.NewRequest("POST", url, nil),
@@ -39,7 +39,7 @@ func TestPostRouter(t *testing.T) {
 				config: Config{
 					EnableUseRestrictions: false,
 				},
-				envSetup: func(e *TestEnviroment) {
+				envSetup: func(e *TestEnvironment) {
 					e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
 						Id:     "channelid",
 						Type:   model.ChannelTypeOpen,
@@ -55,7 +55,7 @@ func TestPostRouter(t *testing.T) {
 					EnableUseRestrictions: true,
 					OnlyUsersOnTeam:       "someotherteam",
 				},
-				envSetup: func(e *TestEnviroment) {
+				envSetup: func(e *TestEnvironment) {
 					e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
 						Id:     "channelid",
 						Type:   model.ChannelTypeOpen,
@@ -72,7 +72,7 @@ func TestPostRouter(t *testing.T) {
 					EnableUseRestrictions: true,
 					AllowedTeamIDs:        "someteam",
 				},
-				envSetup: func(e *TestEnviroment) {
+				envSetup: func(e *TestEnvironment) {
 					e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
 						Id:     "channelid",
 						Type:   model.ChannelTypeOpen,
@@ -88,7 +88,7 @@ func TestPostRouter(t *testing.T) {
 					EnableUseRestrictions: true,
 					AllowPrivateChannels:  false,
 				},
-				envSetup: func(e *TestEnviroment) {
+				envSetup: func(e *TestEnvironment) {
 					e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionReadChannel).Return(true)
 					e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
 						Id:     "channelid",
@@ -104,7 +104,7 @@ func TestPostRouter(t *testing.T) {
 					EnableUseRestrictions: true,
 					AllowPrivateChannels:  false,
 				},
-				envSetup: func(e *TestEnviroment) {
+				envSetup: func(e *TestEnvironment) {
 					e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionReadChannel).Return(true)
 					e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
 						Id:     "channelid",
@@ -153,7 +153,7 @@ func TestTextRouter(t *testing.T) {
 			request        *http.Request
 			expectedStatus int
 			config         Config
-			envSetup       func(e *TestEnviroment)
+			envSetup       func(e *TestEnvironment)
 		}{
 			"test user not allowed": {
 				request:        httptest.NewRequest("POST", url, nil),
@@ -162,7 +162,7 @@ func TestTextRouter(t *testing.T) {
 					EnableUseRestrictions: true,
 					OnlyUsersOnTeam:       "someotherteam",
 				},
-				envSetup: func(e *TestEnviroment) {
+				envSetup: func(e *TestEnvironment) {
 					e.mockAPI.On("HasPermissionToTeam", "userid", "someotherteam", model.PermissionViewTeam).Return(false)
 				},
 			},
@@ -201,7 +201,7 @@ func TestAdminRouter(t *testing.T) {
 			request        *http.Request
 			expectedStatus int
 			config         Config
-			envSetup       func(e *TestEnviroment)
+			envSetup       func(e *TestEnvironment)
 		}{
 			"only admins": {
 				request:        httptest.NewRequest("GET", url, nil),
@@ -209,7 +209,7 @@ func TestAdminRouter(t *testing.T) {
 				config: Config{
 					EnableUseRestrictions: false,
 				},
-				envSetup: func(e *TestEnviroment) {
+				envSetup: func(e *TestEnvironment) {
 					e.mockAPI.On("HasPermissionTo", "userid", model.PermissionManageSystem).Return(false)
 				},
 			},
@@ -248,7 +248,7 @@ func TestChannelRouter(t *testing.T) {
 			request        *http.Request
 			expectedStatus int
 			config         Config
-			envSetup       func(e *TestEnviroment)
+			envSetup       func(e *TestEnvironment)
 		}{
 			"test no permission to channel": {
 				request:        httptest.NewRequest("POST", url, nil),
@@ -256,7 +256,7 @@ func TestChannelRouter(t *testing.T) {
 				config: Config{
 					EnableUseRestrictions: false,
 				},
-				envSetup: func(e *TestEnviroment) {
+				envSetup: func(e *TestEnvironment) {
 					e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
 						Id:     "channelid",
 						Type:   model.ChannelTypeOpen,
@@ -272,7 +272,7 @@ func TestChannelRouter(t *testing.T) {
 					EnableUseRestrictions: true,
 					OnlyUsersOnTeam:       "someotherteam",
 				},
-				envSetup: func(e *TestEnviroment) {
+				envSetup: func(e *TestEnvironment) {
 					e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
 						Id:     "channelid",
 						Type:   model.ChannelTypeOpen,
@@ -289,7 +289,7 @@ func TestChannelRouter(t *testing.T) {
 					EnableUseRestrictions: true,
 					AllowedTeamIDs:        "someteam",
 				},
-				envSetup: func(e *TestEnviroment) {
+				envSetup: func(e *TestEnvironment) {
 					e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
 						Id:     "channelid",
 						Type:   model.ChannelTypeOpen,
@@ -305,7 +305,7 @@ func TestChannelRouter(t *testing.T) {
 					EnableUseRestrictions: true,
 					AllowPrivateChannels:  false,
 				},
-				envSetup: func(e *TestEnviroment) {
+				envSetup: func(e *TestEnvironment) {
 					e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionReadChannel).Return(true)
 					e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
 						Id:     "channelid",
@@ -321,7 +321,7 @@ func TestChannelRouter(t *testing.T) {
 					EnableUseRestrictions: true,
 					AllowPrivateChannels:  false,
 				},
-				envSetup: func(e *TestEnviroment) {
+				envSetup: func(e *TestEnvironment) {
 					e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionReadChannel).Return(true)
 					e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
 						Id:     "channelid",

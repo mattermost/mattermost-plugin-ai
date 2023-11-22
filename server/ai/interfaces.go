@@ -20,7 +20,7 @@ func WithModel(model string) LanguageModelOption {
 	}
 }
 
-func WithmaxTokens(maxTokens int) LanguageModelOption {
+func WithMaxTokens(maxTokens int) LanguageModelOption {
 	return func(cfg *LLMConfig) {
 		cfg.MaxTokens = maxTokens
 	}
