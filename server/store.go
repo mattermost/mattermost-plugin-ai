@@ -64,5 +64,55 @@ func (p *Plugin) SetupTables() error {
 		return errors.Wrap(err, "can't create feeback table")
 	}
 
+	if _, err := p.db.Exec(`
+		CREATE TABLE IF NOT EXISTS LLM_Threads (
+			RootPostID TEXT NOT NULL REFERENCES Posts(ID) PRIMARY KEY,
+			Title TEXT NOT NULL
+		);
+	`); err != nil {
+		return errors.Wrap(err, "can't create feeback table")
+	}
+
 	return nil
+}
+
+func (p *Plugin) saveTitle(threadID, title string) error {
+	_, err := p.execBuilder(p.builder.Insert("LLM_Threads").
+		Columns("RootPostID", "Title").
+		Values(threadID, title).
+		Suffix("ON CONFLICT (RootPostID) DO UPDATE SET Title = ?", title))
+	return err
+}
+
+type AIThread struct {
+	ID         string
+	Message    string
+	Title      string
+	ReplyCount int
+	UpdateAt   int64
+}
+
+func (p *Plugin) getAIThreads(dmChannelID string) ([]AIThread, error) {
+	var posts []AIThread
+	if err := p.doQuery(&posts, p.builder.
+		Select(
+			"p.Id",
+			"p.Message",
+			"COALESCE(t.Title, '') as Title",
+			"(SELECT COUNT(*) FROM Posts WHERE Posts.RootId = p.Id AND DeleteAt = 0) AS ReplyCount",
+			"p.UpdateAt",
+		).
+		From("Posts as p").
+		Where(sq.Eq{"ChannelID": dmChannelID}).
+		Where(sq.Eq{"RootId": ""}).
+		Where(sq.Eq{"DeleteAt": 0}).
+		LeftJoin("LLM_Threads as t ON t.RootPostID = p.Id").
+		OrderBy("CreateAt DESC").
+		Limit(60).
+		Offset(0),
+	); err != nil {
+		return nil, errors.Wrap(err, "failed to get posts for bot DM")
+	}
+
+	return posts, nil
 }

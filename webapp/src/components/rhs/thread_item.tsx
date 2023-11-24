@@ -51,17 +51,20 @@ const LastActivityDate = styled.div`
 `;
 
 type Props = {
+    postTitle: string;
     postMessage: string;
     repliesCount: number;
     lastActivityDate: number;
     onClick: () => void;
 }
 
+const DefaultTitle = 'Conversation with AI Assistant';
+
 export default function ThreadItem(props: Props) {
     return (
         <ThreadItemContainer onClick={props.onClick}>
             <Title>
-                <TitleText>{''}</TitleText>
+                <TitleText>{props.postTitle || DefaultTitle}</TitleText>
                 <LastActivityDate>
                     <Timestamp // Matches the timestap format in the threads view
                         value={props.lastActivityDate}

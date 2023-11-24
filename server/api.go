@@ -3,7 +3,6 @@ package main
 import (
 	"net/http"
 
-	sq "github.com/Masterminds/squirrel"
 	"github.com/gin-gonic/gin"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
@@ -83,27 +82,8 @@ func (p *Plugin) handleGetAIThreads(c *gin.Context) {
 		return
 	}
 
-	var posts []struct {
-		ID         string
-		Message    string
-		ReplyCount int
-		UpdateAt   int64
-	}
-	if err := p.doQuery(&posts, p.builder.
-		Select(
-			"p.Id",
-			"p.Message",
-			"(SELECT COUNT(*) FROM Posts WHERE Posts.RootId = p.Id AND DeleteAt = 0) AS ReplyCount",
-			"p.UpdateAt",
-		).
-		From("Posts as p").
-		Where(sq.Eq{"ChannelID": botDMChannel.Id}).
-		Where(sq.Eq{"RootId": ""}).
-		Where(sq.Eq{"DeleteAt": 0}).
-		OrderBy("CreateAt DESC").
-		Limit(60).
-		Offset(0),
-	); err != nil {
+	posts, err := p.getAIThreads(botDMChannel.Id)
+	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "failed to get posts for bot DM"))
 		return
 	}
