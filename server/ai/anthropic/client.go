@@ -74,10 +74,10 @@ func (c *Client) CompletionNoStream(prompt string) (string, error) {
 	if resp.StatusCode != http.StatusOK {
 		body, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
-			return "", errors.Wrap(err, "unable to read responce body on error: "+resp.Status)
+			return "", errors.Wrap(err, "unable to read response body on error: "+resp.Status)
 		}
 
-		return "", errors.New("non 200 responce from anthropic: " + resp.Status + "\nBody:\n" + string(body))
+		return "", errors.New("non 200 response from anthropic: " + resp.Status + "\nBody:\n" + string(body))
 	}
 
 	completionResponse := CompletionResponse{}
@@ -126,11 +126,11 @@ func (c *Client) Completion(prompt string) (*ai.TextStreamResult, error) {
 		if resp.StatusCode != http.StatusOK {
 			body, err := ioutil.ReadAll(resp.Body)
 			if err != nil {
-				errChan <- errors.Wrap(err, "unable to read responce body on error: "+resp.Status)
+				errChan <- errors.Wrap(err, "unable to read response body on error: "+resp.Status)
 				return
 			}
 
-			errChan <- errors.New("non 200 responce from anthropic: " + resp.Status + "\nBody:\n" + string(body))
+			errChan <- errors.New("non 200 response from anthropic: " + resp.Status + "\nBody:\n" + string(body))
 			return
 		}
 

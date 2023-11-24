@@ -33,12 +33,12 @@ type ConversationContext struct {
 	PromptParameters map[string]string
 }
 
-func NewConversationContext(reqeustingUser *model.User, channel *model.Channel, post *model.Post) ConversationContext {
-	// Get current time and date formated nicely with the user's locale
+func NewConversationContext(requestingUser *model.User, channel *model.Channel, post *model.Post) ConversationContext {
+	// Get current time and date formatted nicely with the user's locale
 	now := time.Now()
 	nowString := now.Format(time.RFC1123)
-	if reqeustingUser != nil {
-		tz := reqeustingUser.GetPreferredTimezone()
+	if requestingUser != nil {
+		tz := requestingUser.GetPreferredTimezone()
 		loc, err := time.LoadLocation(tz)
 		if err != nil || loc == nil {
 			loc = time.UTC
@@ -47,7 +47,7 @@ func NewConversationContext(reqeustingUser *model.User, channel *model.Channel, 
 	}
 	return ConversationContext{
 		Time:           nowString,
-		RequestingUser: reqeustingUser,
+		RequestingUser: requestingUser,
 		Channel:        channel,
 		Post:           post,
 	}

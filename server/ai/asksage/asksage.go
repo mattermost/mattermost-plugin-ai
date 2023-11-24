@@ -85,7 +85,7 @@ func (s *AskSage) ChatCompletionNoStream(conversation ai.BotConversation, opts .
 	return response.Message, nil
 }
 
-// TODO: Implment actual token counting. For now just estimated based off OpenAI estimations
+// TODO: Implement actual token counting. For now just estimated based off OpenAI estimations
 func (a *AskSage) CountTokens(text string) int {
 	charCount := float64(len(text)) / 4.0
 	wordCount := float64(len(strings.Fields(text))) / 0.75

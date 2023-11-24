@@ -220,7 +220,7 @@ func (s *OpenAI) createConfig(opts []ai.LanguageModelOption) ai.LLMConfig {
 	return cfg
 }
 
-func (s *OpenAI) completionReqeustFromConfig(cfg ai.LLMConfig) openaiClient.ChatCompletionRequest {
+func (s *OpenAI) completionRequestFromConfig(cfg ai.LLMConfig) openaiClient.ChatCompletionRequest {
 	return openaiClient.ChatCompletionRequest{
 		Model:            cfg.Model,
 		MaxTokens:        cfg.MaxTokens,
@@ -232,7 +232,7 @@ func (s *OpenAI) completionReqeustFromConfig(cfg ai.LLMConfig) openaiClient.Chat
 }
 
 func (s *OpenAI) ChatCompletion(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (*ai.TextStreamResult, error) {
-	request := s.completionReqeustFromConfig(s.createConfig(opts))
+	request := s.completionRequestFromConfig(s.createConfig(opts))
 	request = modifyCompletionRequestWithConversation(request, conversation)
 	request.Stream = true
 	return s.streamResult(request, conversation)
