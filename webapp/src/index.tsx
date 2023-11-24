@@ -4,6 +4,7 @@ import styled from 'styled-components';
 
 import {GlobalState} from '@mattermost/types/lib/store';
 
+//@ts-ignore it exists
 import aiIcon from '../../assets/bot_icon.png';
 
 import {manifest} from '@/manifest';
