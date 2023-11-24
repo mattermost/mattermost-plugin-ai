@@ -27,6 +27,7 @@ const RhsContainer = styled.div`
 export interface AIThread {
     ID: string;
     Message: string;
+    Title: string;
     ReplyCount: number;
     UpdateAt: number;
 }
@@ -72,8 +73,8 @@ export default function RHS() {
                     {threads.map((p) => (
                         <ThreadItem
                             key={p.ID}
+                            postTitle={p.Title}
                             postMessage={p.Message}
-                            postFirstReply={p.Message.split('\n').slice(1).join('\n').slice(1, 300)}
                             repliesCount={p.ReplyCount}
                             lastActivityDate={p.UpdateAt}
                             onClick={() => {

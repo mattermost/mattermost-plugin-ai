@@ -13,8 +13,17 @@ import {createPost} from '@/client';
 
 import {Button} from './common';
 
-const CreatePost = (window as any).Components.CreatePost && styled((window as any).Components.CreatePost)`
-    padding: 0px;
+const CreatePost = (window as any).Components.CreatePost;
+
+const CreatePostContainer = styled.div`
+	.custom-textarea {
+		padding-top: 13px;
+		padding-bottom: 13px;
+		passing-left: 16px;
+	}
+    .AdvancedTextEditor {
+        padding: 0px;
+    }
 `;
 
 const OptionButton = styled(Button)`
@@ -23,16 +32,17 @@ const OptionButton = styled(Button)`
     svg {
         fill: rgb(var(--link-color-rgb));
     }
+	font-weight: 600;
+	line-height: 16px;
+	font-size: 12px;
 `;
 
 const NewQuestion = styled.div`
-    padding: 12px;
+	margin: 0 24px;
+	margin-top: 16px;
     display: flex;
     flex-direction: column;
-    flex-grow: 1;
-    .AdvancedTextEditor {
-        padding: 0px;
-    }
+	gap: 8px;
 `;
 
 const QuestionTitle = styled.div`
@@ -47,6 +57,9 @@ const QuestionDescription = styled.div`
 
 const QuestionOptions = styled.div`
     display: flex;
+	gap: 8px;
+	margin-top: 16px;
+	margin-bottom: 24px;
     flex-wrap: wrap;
 `;
 
@@ -93,23 +106,25 @@ const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
         <NewQuestion>
             <RHSImage/>
             <QuestionTitle>{'Ask AI Assistant anything'}</QuestionTitle>
-            <QuestionDescription>{'The AI Assistant can help you with almost anything. Choose from the prompts below or write your own.'}</QuestionDescription>
+            <QuestionDescription>{'The AI Assistant is here to help. Choose from the prompts below or write your own.'}</QuestionDescription>
             <QuestionOptions>
                 <OptionButton onClick={addBrainstormingIdeas}><LightbulbOutlineIcon/>{'Brainstorm ideas'}</OptionButton>
                 <OptionButton onClick={addMeetingAgenda}><FormatListNumberedIcon/>{'Meeting agenda'}</OptionButton>
-                <OptionButton onClick={addToDoList}><PlaylistCheckIcon/>{'To-do list'}</OptionButton>
                 <OptionButton onClick={addProsAndCons}><PlusMinus className='icon'>{'±'}</PlusMinus>{'Pros and Cons'}</OptionButton>
+                <OptionButton onClick={addToDoList}><PlaylistCheckIcon/>{'To-do list'}</OptionButton>
             </QuestionOptions>
-            <CreatePost
-                placeholder={'Ask AI Assistant anything...'}
-                onSubmit={async (p: any) => {
-                    p.channel_id = botChannelId || '';
-                    p.props = {};
-                    const created = await createPost(p);
-                    selectPost(created.id);
-                    setCurrentTab('thread');
-                }}
-            />
+            <CreatePostContainer>
+                <CreatePost
+                    placeholder={'Ask AI Assistant anything...'}
+                    onSubmit={async (p: any) => {
+                        p.channel_id = botChannelId || '';
+                        p.props = {};
+                        const created = await createPost(p);
+                        selectPost(created.id);
+                        setCurrentTab('thread');
+                    }}
+                />
+            </CreatePostContainer>
         </NewQuestion>
     );
 };

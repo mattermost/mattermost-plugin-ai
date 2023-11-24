@@ -4,6 +4,9 @@ import styled from 'styled-components';
 
 import {GlobalState} from '@mattermost/types/lib/store';
 
+//@ts-ignore it exists
+import aiIcon from '../../assets/bot_icon.png';
+
 import {manifest} from '@/manifest';
 
 import {LLMBotPost} from './components/llmbot_post';
@@ -12,7 +15,6 @@ import EditorMenu from './components/editor_menu';
 import CodeMenu from './components/code_menu';
 import IconThreadSummarization from './components/assets/icon_thread_summarization';
 import IconReactForMe from './components/assets/icon_react_for_me';
-import IconAI from './components/assets/icon_ai';
 import RHS from './components/rhs/rhs';
 import Config from './components/config/config';
 import {doReaction, doSummarize, doTranscribe, getAIDirectChannel} from './client';
@@ -25,29 +27,22 @@ type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
 
 const StreamingPostWebsocketEvent = 'custom_mattermost-ai_postupdate';
 
-const IconAIContainer = styled.span`
-    filter: invert(1);
-    border-radius: 50%;
-    width: 28px;
-    height: 28px;
-    display: inline-flex;
-    align-items: center;
-    justify-items: center;
-    margin-right: 5px;
-    background-color: var(--center-channel-bg);
+const IconAIContainer = styled.img`
+	border-radius: 50%;
+    width: 24px;
+    height: 24px;
 `;
 
 const RHSTitleContainer = styled.span`
     display: flex;
+	gap: 8px;
     align-items: center;
 `;
 
 const RHSTitle = () => {
     return (
         <RHSTitleContainer>
-            <IconAIContainer className='icon'>
-                <IconAI/>
-            </IconAIContainer>
+            <IconAIContainer src={aiIcon}/>
             {'AI Assistant'}
         </RHSTitleContainer>
     );
@@ -138,7 +133,7 @@ export default class Plugin {
 
         registry.registerAdminConsoleCustomSetting('Config', Config);
         if (rhs) {
-            registry.registerChannelHeaderButtonAction(<IconAIContainer className='icon'><IconAI/></IconAIContainer>, () => {
+            registry.registerChannelHeaderButtonAction(<IconAIContainer src={aiIcon}/>, () => {
                 store.dispatch(rhs.toggleRHSPlugin);
             });
         }

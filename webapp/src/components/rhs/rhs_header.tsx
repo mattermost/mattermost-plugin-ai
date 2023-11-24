@@ -3,40 +3,30 @@ import styled from 'styled-components';
 
 import {Button} from './common';
 
-const MenuButton = styled(Button)`
-    display: flex;
-    margin-bottom: 12px;
-    width: auto;
-    &.new-button {
-        color: rgb(var(--link-color-rgb));
-        &:hover {
-            background: transparent;
-            color: rgb(var(--link-color-rgb));
-        }
-    }
-    &.no-clickable {
-        &:hover {
-            background: transparent;
-            color: rgb(var(--center-channel-color));
-            cursor: unset;
-        }
-    }
-    .thread-title {
-        display: inline-block;
-        max-width: 220px;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        overflow: hidden;
-    }
+const HistoryButton = styled(Button)`
+    color: rgba(var(--center-channel-color-rgb), 0.64);
 `;
 
-const HeaderSpacer = styled.div`
-    flex-grow: 1;
+const ButtonDisabled = styled(Button)`
+	&:hover {
+		background: transparent;
+		color: rgb(var(--center-channel-color));
+		cursor: unset;
+	}
+`;
+
+const NewChatButton = styled(Button)`
+	color: rgb(var(--link-color-rgb));
+	&:hover {
+		background: transparent;
+		color: rgb(var(--link-color-rgb));
+	}
 `;
 
 const Header = styled.div`
     display: flex;
-    padding: 12px 12px 0 12px;
+	padding 8px;
+	justify-content: space-between;
     border-bottom: 1px solid rgba(var(--center-channel-color-rgb), 0.12);
     flex-wrap: wrap;
 `;
@@ -48,29 +38,30 @@ type Props = {
 }
 
 const RHSHeader = ({currentTab, setCurrentTab, selectPost}: Props) => {
+    let historyButton = null;
+    if (currentTab === 'threads') {
+        historyButton = (
+            <ButtonDisabled>
+                <i className='icon-clock-outline'/> {'Chat history'}
+            </ButtonDisabled>
+        );
+    } else {
+        historyButton = (
+            <HistoryButton
+                onClick={() => {
+                    setCurrentTab('threads');
+                    selectPost('');
+                }}
+            >
+                <i className='icon-clock-outline'/> {'View chat history'}
+            </HistoryButton>
+        );
+    }
     return (
         <Header>
-
-            {currentTab === 'threads' && (
-                <MenuButton className='no-clickable'>
-                    <i className='icon icon-clock-outline'/> {'Chat history'}
-                </MenuButton>
-            )}
-
-            {currentTab !== 'threads' && (
-                <MenuButton
-                    onClick={() => {
-                        setCurrentTab('threads');
-                        selectPost('');
-                    }}
-                >
-                    <i className='icon icon-clock-outline'/> {'View chat history'}
-                </MenuButton>)}
-
-            <HeaderSpacer/>
-
+            {historyButton}
             {currentTab !== 'new' && (
-                <MenuButton
+                <NewChatButton
                     className='new-button'
                     onClick={() => {
                         setCurrentTab('new');
@@ -78,7 +69,7 @@ const RHSHeader = ({currentTab, setCurrentTab, selectPost}: Props) => {
                     }}
                 >
                     <i className='icon icon-pencil-outline'/> {'New chat'}
-                </MenuButton>
+                </NewChatButton>
             )}
         </Header>
     );

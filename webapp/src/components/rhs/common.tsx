@@ -8,10 +8,7 @@ export const Button = styled.button`
     font-weight: 600;
     font-size: 12px;
     background-color: rgb(var(--center-channel-bg-rgb));
-    color: rgba(var(--center-channel-color), 0.6);
-    width: 172px;
     border: 0;
-    margin: 0 8px 8px 0;
 
     &:hover {
         background-color: rgba(var(--button-bg-rgb), 0.08);
@@ -25,4 +22,10 @@ export const Button = styled.button`
         fill: rgb(var(--center-channel-color));
         margin-right: 6px;
     }
+
+	i {
+		display: flex;
+		font-size: 14px;
+		margin-right: 2px;
+	}
 `;

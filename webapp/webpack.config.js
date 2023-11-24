@@ -66,6 +66,10 @@ const config = {
                     },
                 },
             },
+            {
+                test: /\.(png|eot|tiff|svg|woff2|woff|ttf|gif|mp3|jpg|jpeg)$/,
+                type: 'asset/inline',
+            },
         ],
     },
     externals: {

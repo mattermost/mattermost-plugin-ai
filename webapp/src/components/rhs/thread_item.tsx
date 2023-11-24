@@ -7,8 +7,7 @@ const ThreadItemContainer = styled.div`
     border-bottom: 1px solid rgba(var(--center-channel-color-rgb), 0.12)
 `;
 
-const Timestamp = styled((window as any).Components.Timestamp)`
-`;
+const Timestamp = (window as any).Components.Timestamp;
 
 const Title = styled.div`
     color: var(--center-channel-color);
@@ -26,20 +25,25 @@ const TitleText = styled.div`
     white-space: nowrap;
 `;
 
-const FirstReply = styled.div`
+const Preview = styled.div`
     overflow: hidden;
-    color: var(--denim-center-channel-text, #3F4350);
+    color: var(--center-channel-color);
     text-overflow: ellipsis;
     whitespace: nowrap;
     margin-bottom: 12px;
+	height: 40px;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
 `;
 
 const RepliesCount = styled.div`
-    color: rgba(var(--center-channel-color-rgb, 0.64));
+    color: rgba(var(--center-channel-color-rgb), 0.64);
+    font-weight: 600;
 `;
 
 const LastActivityDate = styled.div`
-    color: rgba(var(--center-channel-color-rgb, 0.64));
+    color: rgba(var(--center-channel-color-rgb), 0.64);
     font-size: 12px;
     font-weight: 400;
     white-space: nowrap;
@@ -47,21 +51,30 @@ const LastActivityDate = styled.div`
 `;
 
 type Props = {
+    postTitle: string;
     postMessage: string;
-    postFirstReply: string;
     repliesCount: number;
     lastActivityDate: number;
     onClick: () => void;
 }
 
+const DefaultTitle = 'Conversation with AI Assistant';
+
 export default function ThreadItem(props: Props) {
     return (
         <ThreadItemContainer onClick={props.onClick}>
             <Title>
-                <TitleText>{props.postMessage}</TitleText>
-                <LastActivityDate><Timestamp value={props.lastActivityDate}/></LastActivityDate>
+                <TitleText>{props.postTitle || DefaultTitle}</TitleText>
+                <LastActivityDate>
+                    <Timestamp // Matches the timestap format in the threads view
+                        value={props.lastActivityDate}
+                        units={['now', 'minute', 'hour', 'day', 'week']}
+                        useTime={false}
+                        day={'numeric'}
+                    />
+                </LastActivityDate>
             </Title>
-            <FirstReply>{props.postFirstReply}</FirstReply>
+            <Preview>{props.postMessage}</Preview>
             <RepliesCount>{props.repliesCount}{' replies'}</RepliesCount>
         </ThreadItemContainer>
     );
