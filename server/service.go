@@ -59,7 +59,7 @@ func (p *Plugin) generateTitle(context ai.ConversationContext) error {
 		Posts:   []ai.Post{{Role: ai.PostRoleUser, Message: "Write a short title for the following request. Include only the title and nothing else, no quotations. Request:\n" + context.Post.Message}},
 		Context: context,
 	}
-	conversationTitle, err := p.getLLM().ChatCompletionNoStream(titleRequest, ai.WithmaxTokens(25))
+	conversationTitle, err := p.getLLM().ChatCompletionNoStream(titleRequest, ai.WithMaxTokens(25))
 	if err != nil {
 		return errors.Wrap(err, "failed to get title")
 	}
