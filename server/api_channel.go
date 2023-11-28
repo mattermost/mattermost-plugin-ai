@@ -32,7 +32,7 @@ func (p *Plugin) channelAuthorizationRequired(c *gin.Context) {
 	}
 }
 
-func (p *Plugin) handleSummarizeSince(c *gin.Context) {
+func (p *Plugin) handleSince(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 
@@ -52,13 +52,18 @@ func (p *Plugin) handleSummarizeSince(c *gin.Context) {
 		return
 	}
 
-	result, err := p.summarizeChannelSince(user, channel, data.Since)
+	createdPost, err := p.summarizeChannelSince(user, channel, data.Since)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 
-	c.Render(200, render.JSON{Data: struct {
-		Message string `json:"message"`
-	}{result}})
+	result := struct {
+		PostID    string `json:"postid"`
+		ChannelID string `json:"channelid"`
+	}{
+		PostID:    createdPost.Id,
+		ChannelID: createdPost.ChannelId,
+	}
+	c.Render(http.StatusOK, render.JSON{Data: result})
 }

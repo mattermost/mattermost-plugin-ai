@@ -184,7 +184,7 @@ export async function doAskAiChangeText(ask: string, message: string) {
 }
 
 export async function summarizeChannelSince(channelID: string, since: number) {
-    const url = `${channelRoute(channelID)}/summarize/since`;
+    const url = `${channelRoute(channelID)}/since`;
     const response = await fetch(url, Client4.getOptions({
         method: 'POST',
         body: JSON.stringify({since}),

@@ -187,7 +187,7 @@ export const iconSplitStyling = css`
     gap: 8px;
 `;
 
-export const DropdownMenuItem = (props: { children: React.ReactNode, onClick: () => void, className?: string, disabled?: boolean, disabledAltText?: string }) => {
+export const DropdownMenuItem = (props: { children: React.ReactNode, onClick?: () => void, className?: string, disabled?: boolean, disabledAltText?: string }) => {
     return (
         <DropdownMenuItemStyled
             href='#'
