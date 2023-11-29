@@ -42,7 +42,7 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 
 	channelRouter := router.Group("/channel/:channelid")
 	channelRouter.Use(p.channelAuthorizationRequired)
-	channelRouter.POST("/summarize/since", p.handleSummarizeSince)
+	channelRouter.POST("/since", p.handleSince)
 
 	adminRouter := router.Group("/admin")
 	adminRouter.Use(p.mattermostAdminAuthorizationRequired)

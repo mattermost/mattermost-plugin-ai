@@ -22,6 +22,7 @@ import {setOpenRHSAction} from './redux_actions';
 import {BotUsername} from './constants';
 import PostEventListener from './websocket';
 import {setupRedux} from './redux';
+import UnreadsSumarize from './components/unreads_summarize';
 
 type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
 
@@ -140,6 +141,10 @@ export default class Plugin {
 
         if (registry.registerCodeBlockActionComponent) {
             registry.registerCodeBlockActionComponent(CodeMenu);
+        }
+
+        if (registry.registerNewMessagesSeparatorActionComponent) {
+            registry.registerNewMessagesSeparatorActionComponent(UnreadsSumarize);
         }
     }
 }

@@ -183,11 +183,14 @@ export async function doAskAiChangeText(ask: string, message: string) {
     });
 }
 
-export async function summarizeChannelSince(channelID: string, since: number) {
-    const url = `${channelRoute(channelID)}/summarize/since`;
+export async function summarizeChannelSince(channelID: string, since: number, prompt: string) {
+    const url = `${channelRoute(channelID)}/since`;
     const response = await fetch(url, Client4.getOptions({
         method: 'POST',
-        body: JSON.stringify({since}),
+        body: JSON.stringify({
+            since,
+            preset_prompt: prompt,
+        }),
     }));
 
     if (response.ok) {

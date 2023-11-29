@@ -3,9 +3,11 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/render"
+	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/pkg/errors"
 )
@@ -32,12 +34,14 @@ func (p *Plugin) channelAuthorizationRequired(c *gin.Context) {
 	}
 }
 
-func (p *Plugin) handleSummarizeSince(c *gin.Context) {
+func (p *Plugin) handleSince(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 
 	data := struct {
-		Since int64 `json:"since"`
+		Since        int64  `json:"since"`
+		PresetPrompt string `json:"preset_prompt"`
+		Prompt       string `json:"prompt"`
 	}{}
 	err := json.NewDecoder(c.Request.Body).Decode(&data)
 	if err != nil {
@@ -52,13 +56,69 @@ func (p *Plugin) handleSummarizeSince(c *gin.Context) {
 		return
 	}
 
-	result, err := p.summarizeChannelSince(user, channel, data.Since)
+	posts, err := p.pluginAPI.Post.GetPostsSince(channel.Id, data.Since)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 
-	c.Render(200, render.JSON{Data: struct {
-		Message string `json:"message"`
-	}{result}})
+	threadData, err := p.getMetadataForPosts(posts)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	// Remove deleted posts
+	threadData.Posts = slices.DeleteFunc(threadData.Posts, func(post *model.Post) bool {
+		return post.DeleteAt != 0
+	})
+
+	formattedThread := formatThread(threadData)
+
+	context := ai.NewConversationContext(user, channel, nil)
+	context.PromptParameters = map[string]string{
+		"Posts": formattedThread,
+	}
+
+	promptPreset := ""
+	switch data.PresetPrompt {
+	case "summarize":
+		promptPreset = ai.PromptSummarizeChannelSince
+	case "action_items":
+		promptPreset = ai.PromptFindActionItemsSince
+	case "open_questions":
+		promptPreset = ai.PromptFindOpenQuestionsSince
+	}
+
+	if promptPreset == "" {
+		c.AbortWithError(http.StatusBadRequest, errors.New("invalid preset prompt"))
+		return
+	}
+
+	prompt, err := p.prompts.ChatCompletion(promptPreset, context)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	resultStream, err := p.getLLM().ChatCompletion(prompt)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	post := &model.Post{}
+	if err := p.streamResultToNewDM(resultStream, user.Id, post); err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	result := struct {
+		PostID    string `json:"postid"`
+		ChannelID string `json:"channelid"`
+	}{
+		PostID:    post.Id,
+		ChannelID: post.ChannelId,
+	}
+	c.Render(http.StatusOK, render.JSON{Data: result})
 }
