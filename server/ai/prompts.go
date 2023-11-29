@@ -33,6 +33,8 @@ const (
 	PromptSummarizeChunk          = "summarize_chunk"
 	PromptExplainCode             = "explain_code"
 	PromptSuggestCodeImprovements = "suggest_code_improvements"
+	PromptFindActionItemsSince    = "find_action_items_since"
+	PromptFindOpenQuestionsSince  = "find_open_questions_since"
 )
 
 func NewPrompts(input fs.FS, getBuiltInTools func() []Tool) (*Prompts, error) {

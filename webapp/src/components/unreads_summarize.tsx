@@ -103,7 +103,17 @@ const UnreadsSumarize = (props: Props) => {
     const selectPost = useSelectPost();
 
     const summarizeNew = async () => {
-        const result = await summarizeChannelSince(props.channelId, props.lastViewedAt);
+        const result = await summarizeChannelSince(props.channelId, props.lastViewedAt, 'summarize');
+        selectPost(result.postid, result.channelid);
+    };
+
+    const actionItems = async () => {
+        const result = await summarizeChannelSince(props.channelId, props.lastViewedAt, 'action_items');
+        selectPost(result.postid, result.channelid);
+    };
+
+    const openQuestions = async () => {
+        const result = await summarizeChannelSince(props.channelId, props.lastViewedAt, 'open_questions');
         selectPost(result.postid, result.channelid);
     };
 
@@ -118,17 +128,13 @@ const UnreadsSumarize = (props: Props) => {
                 {'Summarize new messages'}
             </DropdownMenuItemStyled>
             <DropdownMenuItemStyled
-                onClick={() => {
-                    console.log('Summarize Unreads');
-                }}
+                onClick={actionItems}
             >
                 <IconSparkleCheckmarkStyled/>
                 {'Find action items'}
             </DropdownMenuItemStyled>
             <DropdownMenuItemStyled
-                onClick={() => {
-                    console.log('Summarize Unreads');
-                }}
+                onClick={openQuestions}
             >
                 <IconSparkleQuestionStyled/>
                 {'Find open questions'}

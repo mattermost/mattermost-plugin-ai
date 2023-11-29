@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
@@ -292,47 +291,6 @@ func (p *Plugin) aiChangeText(ask, message string) (*string, error) {
 	}
 
 	return &result, nil
-}
-
-func (p *Plugin) summarizeChannelSince(requestingUser *model.User, channel *model.Channel, since int64) (*model.Post, error) {
-	posts, err := p.pluginAPI.Post.GetPostsSince(channel.Id, since)
-	if err != nil {
-		return nil, err
-	}
-
-	threadData, err := p.getMetadataForPosts(posts)
-	if err != nil {
-		return nil, err
-	}
-
-	// Remove deleted posts
-	threadData.Posts = slices.DeleteFunc(threadData.Posts, func(post *model.Post) bool {
-		return post.DeleteAt != 0
-	})
-
-	formattedThread := formatThread(threadData)
-
-	context := ai.NewConversationContext(requestingUser, channel, nil)
-	context.PromptParameters = map[string]string{
-		"Posts": formattedThread,
-	}
-
-	prompt, err := p.prompts.ChatCompletion(ai.PromptSummarizeChannelSince, context)
-	if err != nil {
-		return nil, err
-	}
-
-	resultStream, err := p.getLLM().ChatCompletion(prompt)
-	if err != nil {
-		return nil, err
-	}
-
-	post := &model.Post{}
-	if err := p.streamResultToNewDM(resultStream, requestingUser.Id, post); err != nil {
-		return nil, err
-	}
-
-	return post, nil
 }
 
 func (p *Plugin) explainCode(message string) (*string, error) {
