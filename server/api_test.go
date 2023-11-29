@@ -20,11 +20,9 @@ func TestPostRouter(t *testing.T) {
 	gin.DefaultWriter = io.Discard
 
 	for urlName, url := range map[string]string{
-		"react":             "/post/postid/react",
-		"feedback positive": "/post/postid/feedback/positive",
-		"feedback negative": "/post/postid/feedback/negative",
-		"summarize":         "/post/postid/summarize",
-		"transcribe":        "/post/postid/transcribe",
+		"react":      "/post/postid/react",
+		"summarize":  "/post/postid/summarize",
+		"transcribe": "/post/postid/transcribe",
 	} {
 
 		for name, test := range map[string]struct {
@@ -193,9 +191,7 @@ func TestAdminRouter(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
 	gin.DefaultWriter = io.Discard
 
-	for urlName, url := range map[string]string{
-		"feedback": "/admin/feedback",
-	} {
+	for urlName, url := range map[string]string{} {
 
 		for name, test := range map[string]struct {
 			request        *http.Request

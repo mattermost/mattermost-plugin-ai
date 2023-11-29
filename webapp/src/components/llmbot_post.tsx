@@ -5,11 +5,9 @@ import styled, {css, createGlobalStyle} from 'styled-components';
 import {WebSocketMessage} from '@mattermost/client';
 import {GlobalState} from '@mattermost/types/store';
 
-import {doFeedback, doRegenerate, doStopGenerating} from '@/client';
+import {doRegenerate, doStopGenerating} from '@/client';
 
 import PostText from './post_text';
-import IconThumbsUp from './assets/icon_thumbs_up';
-import IconThumbsDown from './assets/icon_thumbs_down';
 import IconRegenerate from './assets/icon_regenerate';
 import IconCancel from './assets/icon_cancel';
 
@@ -44,45 +42,6 @@ const ControlsBar = styled.div`
 	justify-content: space-between;
 	height: 28px;
 	margin-top: 8px;
-`;
-
-const RatingsContainer = styled.div`
-	display: flex;
-	flex-direction: row;
-	gap: 4px;
-`;
-
-const EmojiButton = styled.button`
-	display: flex;
-	align-items: center;
-	justify-content: center;
-
-	width: 24px;
-	height: 24px;
-	padding: 6px;
-	border-radius: 4px;
-	border: none;
-
-	background: rgba(var(--center-channel-color-rgb), 0.04);
-
-	:hover {
-		background: rgba(var(--center-channel-color-rgb), 0.08);
-        color: rgba(var(--center-channel-color-rgb), 0.72);
-	}
-
-	:active {
-		background: rgba(var(--button-bg-rgb), 0.08);
-	}
-`;
-
-const ThumbsUp = styled(IconThumbsUp)`
-	width: 20px;
-	height: 20px;
-`;
-
-const ThumbsDown = styled(IconThumbsDown)`
-	width: 20px;
-	height: 20px;
 `;
 
 const GenerationButton = styled.button`
