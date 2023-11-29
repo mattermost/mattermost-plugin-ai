@@ -55,16 +55,6 @@ func (p *Plugin) execBuilder(b builder) (sql.Result, error) {
 
 func (p *Plugin) SetupTables() error {
 	if _, err := p.db.Exec(`
-		CREATE TABLE IF NOT EXISTS LLM_Feedback (
-			PostID TEXT NOT NULL REFERENCES Posts(ID) PRIMARY KEY,
-			UserID TEXT NOT NULL REFERENCES Users(ID),
-			PositiveFeedback BOOLEAN NOT NULL
-		);
-	`); err != nil {
-		return errors.Wrap(err, "can't create feeback table")
-	}
-
-	if _, err := p.db.Exec(`
 		CREATE TABLE IF NOT EXISTS LLM_Threads (
 			RootPostID TEXT NOT NULL REFERENCES Posts(ID) PRIMARY KEY,
 			Title TEXT NOT NULL

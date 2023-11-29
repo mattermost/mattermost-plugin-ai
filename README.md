@@ -22,7 +22,6 @@
   - [Channel posts lookup (OpenAI exclusive)](#channel-posts-lookup-openai-exclusive)
   - [GitHub integration (OpenAI exclusive, requires GitHub plugin)](#github-integration-openai-exclusive-requires-github-plugin)
   - [React for me](#react-for-me)
-  - [RLHF Feedback Collection](#rlhf-feedback-collection)
 - [Supported Backends](#supported-backends)
   - [OpenAI (recommended)](#openai-recommended)
   - [Anthropic](#anthropic)
@@ -126,9 +125,6 @@ OpenAI exclusive for now since it requires the function API.
 Just for fun! Use the post menu to ask the bot to react to the post. It will try to pick an appropriate reaction.
 
 https://github.com/mattermost/mattermost-plugin-ai/assets/3191642/5282b066-86b5-478d-ae10-57c3cb3ba038
-
-### RLHF Feedback Collection
-Bot posts have 👍 👎 icons that collect user feedback. The idea would be to use this as input for RLHF fine tuning or prompt development.
 
 ## Supported Backends
 

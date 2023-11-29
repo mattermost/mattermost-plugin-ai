@@ -25,8 +25,6 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	postRouter := router.Group("/post/:postid")
 	postRouter.Use(p.postAuthorizationRequired)
 	postRouter.POST("/react", p.handleReact)
-	postRouter.POST("/feedback/positive", p.handlePositivePostFeedback)
-	postRouter.POST("/feedback/negative", p.handleNegativePostFeedback)
 	postRouter.POST("/summarize", p.handleSummarize)
 	postRouter.POST("/transcribe", p.handleTranscribe)
 	postRouter.POST("/stop", p.handleStop)
@@ -46,7 +44,6 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 
 	adminRouter := router.Group("/admin")
 	adminRouter.Use(p.mattermostAdminAuthorizationRequired)
-	adminRouter.GET("/feedback", p.handleGetFeedback)
 
 	router.ServeHTTP(w, r)
 }

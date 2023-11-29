@@ -39,32 +39,6 @@ func (p *Plugin) postAuthorizationRequired(c *gin.Context) {
 	}
 }
 
-func (p *Plugin) handlePositivePostFeedback(c *gin.Context) {
-	p.handlePostFeedback(c, true)
-}
-func (p *Plugin) handleNegativePostFeedback(c *gin.Context) {
-	p.handlePostFeedback(c, false)
-}
-
-func (p *Plugin) handlePostFeedback(c *gin.Context, positive bool) {
-	userID := c.GetHeader("Mattermost-User-Id")
-	post := c.MustGet(ContextPostKey).(*model.Post)
-
-	if _, err := p.execBuilder(p.builder.
-		Insert("LLM_Feedback").
-		SetMap(map[string]interface{}{
-			"PostID":           post.Id,
-			"UserID":           userID,
-			"PositiveFeedback": positive,
-		}).
-		Suffix("ON CONFLICT (PostID) DO UPDATE SET PositiveFeedback = ?", positive)); err != nil {
-		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "couldn't insert feedback"))
-		return
-	}
-
-	c.Status(http.StatusOK)
-}
-
 func (p *Plugin) handleReact(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
