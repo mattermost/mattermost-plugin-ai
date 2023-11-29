@@ -30,14 +30,6 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	postRouter.POST("/stop", p.handleStop)
 	postRouter.POST("/regenerate", p.handleRegenerate)
 
-	textRouter := router.Group("/text")
-	textRouter.Use(p.textAuthorizationRequired)
-	textRouter.POST("/simplify", p.handleSimplify)
-	textRouter.POST("/change_tone/:tone", p.handleChangeTone)
-	textRouter.POST("/ask_ai_change_text", p.handleAiChangeText)
-	textRouter.POST("/explain_code", p.handleExplainCode)
-	textRouter.POST("/suggest_code_improvements", p.handleSuggestCodeImprovements)
-
 	channelRouter := router.Group("/channel/:channelid")
 	channelRouter.Use(p.channelAuthorizationRequired)
 	channelRouter.POST("/since", p.handleSince)
