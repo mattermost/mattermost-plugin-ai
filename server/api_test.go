@@ -241,7 +241,7 @@ func TestChannelRouter(t *testing.T) {
 	gin.DefaultWriter = io.Discard
 
 	for urlName, url := range map[string]string{
-		"summarize since": "/channel/channelid/summarize/since",
+		"summarize since": "/channel/channelid/since",
 	} {
 
 		for name, test := range map[string]struct {
