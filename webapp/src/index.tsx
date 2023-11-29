@@ -11,8 +11,6 @@ import {manifest} from '@/manifest';
 
 import {LLMBotPost} from './components/llmbot_post';
 import PostMenu from './components/post_menu';
-import EditorMenu from './components/editor_menu';
-import CodeMenu from './components/code_menu';
 import IconThreadSummarization from './components/assets/icon_thread_summarization';
 import IconReactForMe from './components/assets/icon_react_for_me';
 import RHS from './components/rhs/rhs';
@@ -128,19 +126,12 @@ export default class Plugin {
             registry.registerPostDropdownMenuAction(<><span className='icon'><IconThreadSummarization/></span>{'Summarize Meeting Audio'}</>, doTranscribe);
             registry.registerPostDropdownMenuAction(<><span className='icon'><IconReactForMe/></span>{'React for me'}</>, doReaction);
         }
-        if (registry.registerPostEditorActionComponent) {
-            registry.registerPostEditorActionComponent(EditorMenu);
-        }
 
         registry.registerAdminConsoleCustomSetting('Config', Config);
         if (rhs) {
             registry.registerChannelHeaderButtonAction(<IconAIContainer src={aiIcon}/>, () => {
                 store.dispatch(rhs.toggleRHSPlugin);
             });
-        }
-
-        if (registry.registerCodeBlockActionComponent) {
-            registry.registerCodeBlockActionComponent(CodeMenu);
         }
 
         if (registry.registerNewMessagesSeparatorActionComponent) {

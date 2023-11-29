@@ -135,56 +135,6 @@ func TestPostRouter(t *testing.T) {
 	}
 }
 
-func TestTextRouter(t *testing.T) {
-	// This just makes gin not output a whole bunch of debug stuff.
-	// maybe pipe this to the test log?
-	gin.SetMode(gin.ReleaseMode)
-	gin.DefaultWriter = io.Discard
-
-	for urlName, url := range map[string]string{
-		"simplify":            "/text/simplify",
-		"change tone":         "/text/change_tone/test",
-		"generic change text": "/text/ask_ai_change_text",
-	} {
-
-		for name, test := range map[string]struct {
-			request        *http.Request
-			expectedStatus int
-			config         Config
-			envSetup       func(e *TestEnvironment)
-		}{
-			"test user not allowed": {
-				request:        httptest.NewRequest("POST", url, nil),
-				expectedStatus: http.StatusForbidden,
-				config: Config{
-					EnableUseRestrictions: true,
-					OnlyUsersOnTeam:       "someotherteam",
-				},
-				envSetup: func(e *TestEnvironment) {
-					e.mockAPI.On("HasPermissionToTeam", "userid", "someotherteam", model.PermissionViewTeam).Return(false)
-				},
-			},
-		} {
-			t.Run(urlName+" "+name, func(t *testing.T) {
-				e := SetupTestEnvironment(t)
-				defer e.Cleanup(t)
-
-				e.plugin.setConfiguration(makeConfig(test.config))
-
-				e.mockAPI.On("LogError", mock.Anything).Maybe()
-
-				test.envSetup(e)
-
-				test.request.Header.Add("Mattermost-User-ID", "userid")
-				recorder := httptest.NewRecorder()
-				e.plugin.ServeHTTP(&plugin.Context{}, recorder, test.request)
-				resp := recorder.Result()
-				require.Equal(t, test.expectedStatus, resp.StatusCode)
-			})
-		}
-	}
-}
-
 func TestAdminRouter(t *testing.T) {
 	// This just makes gin not output a whole bunch of debug stuff.
 	// maybe pipe this to the test log?
