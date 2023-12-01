@@ -98,7 +98,7 @@ func (p *Plugin) botDM(userID string, post *model.Post) error {
 	p.modifyPostForBot(userID, post)
 
 	if err := p.pluginAPI.Post.DM(p.botid, userID, post); err != nil {
-		return err
+		return errors.Wrap(err, "failed to post DM")
 	}
 
 	return nil
