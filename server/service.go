@@ -175,8 +175,9 @@ func (p *Plugin) startNewSummaryThread(postIDToSummarize string, context ai.Conv
 		return nil, err
 	}
 
+	siteURL := p.API.GetConfig().ServiceSettings.SiteURL
 	post := &model.Post{
-		Message: fmt.Sprintf("A summary of [this thread](/_redirect/pl/%s):\n", postIDToSummarize),
+		Message: fmt.Sprintf("Sure, I will summarize this thread: %s/_redirect/pl/%s\n", *siteURL, postIDToSummarize),
 	}
 	post.AddProp(ThreadIDProp, postIDToSummarize)
 

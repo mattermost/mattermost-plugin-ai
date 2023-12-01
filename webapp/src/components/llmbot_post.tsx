@@ -11,6 +11,8 @@ import PostText from './post_text';
 import IconRegenerate from './assets/icon_regenerate';
 import IconCancel from './assets/icon_cancel';
 
+const PostMessagePreview = (window as any).Components.PostMessagePreview;
+
 const FixPostHover = createGlobalStyle<{disableHover?: string}>`
 	${(props) => props.disableHover && css`
 	&&&& {
@@ -134,6 +136,19 @@ export const LLMBotPost = (props: Props) => {
     };
 
     const requesterIsCurrentUser = (props.post.props?.llm_requester_user_id === currentUserId);
+    const isThreadSummaryPost = (props.post.props?.referenced_thread && props.post.props?.referenced_thread !== '');
+
+    let permalinkView = null;
+    if (PostMessagePreview) { // Ignore permalink if version does not exporrt PostMessagePreview
+        const permalinkData = extractPermalinkData(props.post);
+        if (permalinkData !== null) {
+            permalinkView = (
+                <PostMessagePreview
+                    metadata={permalinkData}
+                />
+            );
+        }
+    }
 
     return (
         <PostBody
@@ -143,6 +158,11 @@ export const LLMBotPost = (props: Props) => {
             onMouseMove={stopPropagationIfGenerating}
         >
             <FixPostHover disableHover={generating ? props.post.id : ''}/>
+            {isThreadSummaryPost && permalinkView &&
+            <>
+                {permalinkView}
+            </>
+            }
             <PostText
                 message={message}
                 channelID={props.post.channel_id}
@@ -169,3 +189,24 @@ export const LLMBotPost = (props: Props) => {
         </PostBody>
     );
 };
+
+type PermalinkData = {
+    channel_display_name: string
+    channel_id: string
+    post_id: string
+    team_name: string
+    post: {
+        message: string
+        user_id: string
+    }
+}
+
+function extractPermalinkData(post: any): PermalinkData | null {
+    for (const embed of post?.metadata?.embeds || []) {
+        if (embed.type === 'permalink') {
+            return embed.data;
+        }
+    }
+    return null;
+}
+
