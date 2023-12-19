@@ -7,4 +7,5 @@ export type ServiceData = {
     defaultModel: string
     username: string
     password: string
+    tokenLimit: number
 }

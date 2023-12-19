@@ -124,6 +124,24 @@ const ServiceForm = ({service, onChange, onDelete}: Props) => {
                     />
                 </div>
             </div>
+            <div className='form-group'>
+                <label
+                    className='control-label col-sm-4'
+                    htmlFor='ai-service-default-model'
+                >
+                    {'Token Limit'}
+                </label>
+                <div className='col-sm-8'>
+                    <input
+                        id='ai-service-default-model'
+                        className='form-control'
+                        type='number'
+                        placeholder='Token Limit'
+                        value={service.tokenLimit}
+                        onChange={(e) => onChange({...service, tokenLimit: Number(e.target.value)})}
+                    />
+                </div>
+            </div>
             {service.serviceName === 'asksage' && (
                 <div className='form-group'>
                     <label

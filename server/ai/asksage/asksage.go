@@ -9,17 +9,19 @@ import (
 type AskSage struct {
 	client       *Client
 	defaultModel string
+	maxTokens    int
 }
 
-func New(email string, password string, defaultModel string) *AskSage {
+func New(llmService ai.ServiceConfig) *AskSage {
 	client := NewClient("")
 	client.Login(GetTokenParams{
-		Email:    email,
-		Password: password,
+		Email:    llmService.Username,
+		Password: llmService.Password,
 	})
 	return &AskSage{
 		client:       client,
-		defaultModel: defaultModel,
+		defaultModel: llmService.DefaultModel,
+		maxTokens:    llmService.TokenLimit,
 	}
 }
 
@@ -96,5 +98,5 @@ func (a *AskSage) CountTokens(text string) int {
 
 // TODO: Figure out what the actual token limit is. For now just be conservative.
 func (a *AskSage) TokenLimit() int {
-	return 4096
+	return a.maxTokens
 }

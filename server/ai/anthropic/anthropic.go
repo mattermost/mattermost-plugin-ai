@@ -15,14 +15,16 @@ const (
 type Anthropic struct {
 	client       *Client
 	defaultModel string
+	maxTokens    int
 }
 
-func New(apiKey, defaultModel string) *Anthropic {
-	client := NewClient(apiKey)
+func New(llmService ai.ServiceConfig) *Anthropic {
+	client := NewClient(llmService.APIKey)
 
 	return &Anthropic{
 		client:       client,
-		defaultModel: defaultModel,
+		defaultModel: llmService.DefaultModel,
+		maxTokens:    llmService.TokenLimit,
 	}
 }
 
@@ -81,5 +83,8 @@ func (a *Anthropic) CountTokens(text string) int {
 }
 
 func (a *Anthropic) TokenLimit() int {
+	if a.maxTokens > 0 {
+		return a.maxTokens
+	}
 	return 100000
 }
