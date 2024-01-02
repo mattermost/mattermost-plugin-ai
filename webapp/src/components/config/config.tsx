@@ -359,35 +359,6 @@ const Config = (props: Props) => {
             <div className='form-group'>
                 <label
                     className='control-label col-sm-4'
-                >
-                    {'Enable Automatic Call Sumary:'}
-                </label>
-                <div className='col-sm-8'>
-                    <label className='radio-inline'>
-                        <input
-                            type='radio'
-                            value='true'
-                            checked={value.enableCallSummary}
-                            onChange={() => props.onChange(props.id, {...value, enableCallSummary: true})}
-                        />
-                        <span>{'true'}</span>
-                    </label>
-                    <label className='radio-inline'>
-                        <input
-                            type='radio'
-                            value='false'
-                            checked={!value.enableCallSummary}
-                            onChange={() => props.onChange(props.id, {...value, enableCallSummary: false})}
-                        />
-                        <span>{'false'}</span>
-                    </label>
-                    <div className='help-text'><span>{'Automatically create a summary of any recorded call.'}</span></div>
-                </div>
-            </div>
-
-            <div className='form-group'>
-                <label
-                    className='control-label col-sm-4'
                     htmlFor='ai-service-name'
                 >
                     {'Enable LLM Trace:'}

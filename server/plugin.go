@@ -216,10 +216,6 @@ func (p *Plugin) handleMessages(post *model.Post) error {
 	// Check if this is post in the DM channel with the bot
 	case channel.Type == model.ChannelTypeDirect && strings.Contains(channel.Name, p.botid):
 		return p.handleDMs(channel, postingUser, post)
-
-	// Its a bot post from the calls plugin
-	case post.Type == CallsRecordingPostType && p.getConfiguration().EnableAutomaticCallsSummary:
-		return p.handleAutoCallsRecording(post, postingUser, channel)
 	}
 
 	return nil
@@ -256,20 +252,4 @@ func (p *Plugin) handleDMs(channel *model.Channel, postingUser *model.User, post
 
 	return nil
 
-}
-
-func (p *Plugin) handleAutoCallsRecording(post *model.Post, postingUser *model.User, channel *model.Channel) error {
-	if err := p.checkUsageRestrictionsForChannel(channel); err != nil {
-		return err
-	}
-
-	if !postingUser.IsBot || postingUser.Username != CallsBotUsername {
-		return errors.New("somone spoofing the calls plugin")
-	}
-
-	if err := p.handleCallRecordingPost(post, channel); err != nil {
-		return errors.Wrap(err, "unable to process calls recording")
-	}
-
-	return nil
 }
