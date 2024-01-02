@@ -198,6 +198,16 @@ func (p *Plugin) handleMessages(post *model.Post) error {
 		return errors.Wrap(ErrNoResponse, "not responding to remote posts")
 	}
 
+	// Don't respond to plugins
+	if post.GetProp("from_plugin") != nil {
+		return errors.Wrap(ErrNoResponse, "not responding to plugin posts")
+	}
+
+	// Don't respond to webhooks
+	if post.GetProp("from_webhook") != nil {
+		return errors.Wrap(ErrNoResponse, "not responding to webhook posts")
+	}
+
 	channel, err := p.pluginAPI.Channel.Get(post.ChannelId)
 	if err != nil {
 		return errors.Wrap(err, "unable to get channel")
@@ -206,6 +216,11 @@ func (p *Plugin) handleMessages(post *model.Post) error {
 	postingUser, err := p.pluginAPI.User.Get(post.UserId)
 	if err != nil {
 		return err
+	}
+
+	// Don't respond to other bots
+	if postingUser.IsBot || post.GetProp("from_bot") != nil {
+		return errors.Wrap(ErrNoResponse, "not responding to other bots")
 	}
 
 	switch {
@@ -226,10 +241,6 @@ func (p *Plugin) handleMentions(post *model.Post, postingUser *model.User, chann
 		return err
 	}
 
-	if postingUser.IsBot {
-		return errors.Wrap(ErrNoResponse, "not responding to other bots")
-	}
-
 	if err := p.processUserRequestToBot(p.MakeConversationContext(postingUser, channel, post)); err != nil {
 		return errors.Wrap(err, "unable to process bot mention")
 	}
@@ -240,10 +251,6 @@ func (p *Plugin) handleMentions(post *model.Post, postingUser *model.User, chann
 func (p *Plugin) handleDMs(channel *model.Channel, postingUser *model.User, post *model.Post) error {
 	if err := p.checkUsageRestrictionsForUser(postingUser.Id); err != nil {
 		return err
-	}
-
-	if postingUser.IsBot {
-		return errors.Wrap(ErrNoResponse, "not responding to other bots")
 	}
 
 	if err := p.processUserRequestToBot(p.MakeConversationContext(postingUser, channel, post)); err != nil {
