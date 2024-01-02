@@ -86,13 +86,30 @@ func (p *Plugin) handleSummarize(c *gin.Context) {
 }
 
 func (p *Plugin) handleTranscribe(c *gin.Context) {
+	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 
-	if err := p.handleCallRecordingPost(post, channel); err != nil {
+	user, err := p.pluginAPI.User.Get(userID)
+	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
+
+	createdPost, err := p.handleCallRecordingPost(user, post, channel)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	data := struct {
+		PostID    string `json:"postid"`
+		ChannelID string `json:"channelid"`
+	}{
+		PostID:    createdPost.Id,
+		ChannelID: createdPost.ChannelId,
+	}
+	c.Render(http.StatusOK, render.JSON{Data: data})
 }
 
 func (p *Plugin) handleStop(c *gin.Context) {

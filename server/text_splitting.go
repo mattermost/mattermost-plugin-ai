@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -10,6 +11,12 @@ import (
 // It limits the amount a chunk can be smaller than the given size to 3/4 of the given size. There for the number
 // of chunks may be 25% greater than expected in worst case.
 func splitPlaintextOnSentences(text string, chunksize int) []string {
+	fmt.Println("----------------------------------------------")
+	fmt.Println("chunksize: ", chunksize)
+	fmt.Println("len(text): ", len(text))
+	fmt.Println("len(text)/chunksize: ", len(text)/chunksize)
+	fmt.Println("----------------------------------------------")
+	fmt.Println("text: ", text)
 	chunks := make([]string, 0, (len(text)/chunksize)+1)
 	chunkSizeLowerBound := int(float64(chunksize) * 0.75)
 	remainingText := text

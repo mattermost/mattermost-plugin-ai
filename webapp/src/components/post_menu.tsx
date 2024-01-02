@@ -24,13 +24,18 @@ const PostMenu = (props: Props) => {
         selectPost(result.postid, result.channelid);
     };
 
+    const meetingSummary = async (postId: string) => {
+        const result = await doTranscribe(postId);
+        selectPost(result.postid, result.channelid);
+    };
+
     return (
         <DotMenu
             icon={<IconAI/>}
             title='AI Actions'
         >
             <DropdownMenuItem onClick={() => summarizePost(post.id)}><span className='icon'><IconThreadSummarization/></span>{'Summarize Thread'}</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => doTranscribe(post.id)}><span className='icon'><IconThreadSummarization/></span>{'Summarize Meeting Audio'}</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => meetingSummary(post.id)}><span className='icon'><IconThreadSummarization/></span>{'Summarize Meeting Audio'}</DropdownMenuItem>
             <DropdownMenuItem onClick={() => doReaction(post.id)}><span className='icon'><IconReactForMe/></span>{'React for me'}</DropdownMenuItem>
         </DotMenu>
     );

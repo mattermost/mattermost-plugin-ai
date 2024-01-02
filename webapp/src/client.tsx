@@ -57,7 +57,7 @@ export async function doTranscribe(postid: string) {
     }));
 
     if (response.ok) {
-        return;
+        return response.json();
     }
 
     throw new ClientError(Client4.url, {
