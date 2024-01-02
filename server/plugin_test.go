@@ -75,6 +75,32 @@ func TestHandleMessages(t *testing.T) {
 		})
 		require.ErrorIs(t, err, ErrNoResponse)
 	})
+
+	t.Run("don't respond to plugins", func(t *testing.T) {
+		e.ResetMocks(t)
+		e.plugin.setConfiguration(makeConfig(Config{
+			EnableUseRestrictions: false,
+		}))
+		post := &model.Post{
+			UserId: "userid",
+		}
+		post.AddProp("from_plugin", true)
+		err := e.plugin.handleMessages(post)
+		require.ErrorIs(t, err, ErrNoResponse)
+	})
+
+	t.Run("don't respond to webhooks", func(t *testing.T) {
+		e.ResetMocks(t)
+		e.plugin.setConfiguration(makeConfig(Config{
+			EnableUseRestrictions: false,
+		}))
+		post := &model.Post{
+			UserId: "userid",
+		}
+		post.AddProp("from_webhook", true)
+		err := e.plugin.handleMessages(post)
+		require.ErrorIs(t, err, ErrNoResponse)
+	})
 }
 
 func TestHandleMentions(t *testing.T) {
