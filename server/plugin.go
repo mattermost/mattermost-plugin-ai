@@ -107,7 +107,7 @@ func (p *Plugin) OnActivate() error {
 func (p *Plugin) getLLM() ai.LanguageModel {
 	cfg := p.getConfiguration()
 	var llm ai.LanguageModel
-	var llmService ServiceConfig
+	var llmService ai.ServiceConfig
 	for _, service := range cfg.Services {
 		if service.Name == cfg.LLMGenerator {
 			llmService = service
@@ -116,25 +116,27 @@ func (p *Plugin) getLLM() ai.LanguageModel {
 	}
 	switch llmService.ServiceName {
 	case "openai":
-		llm = openai.New(llmService.APIKey, llmService.DefaultModel)
+		llm = openai.New(llmService)
 	case "openaicompatible":
-		llm = openai.NewCompatible(llmService.APIKey, llmService.URL, llmService.DefaultModel)
+		llm = openai.NewCompatible(llmService)
 	case "anthropic":
-		llm = anthropic.New(llmService.APIKey, llmService.DefaultModel)
+		llm = anthropic.New(llmService)
 	case "asksage":
-		llm = asksage.New(llmService.Username, llmService.Password, llmService.DefaultModel)
+		llm = asksage.New(llmService)
 	}
 
 	if cfg.EnableLLMTrace {
-		return NewLanguageModelLogWrapper(p.pluginAPI.Log, llm)
+		llm = NewLanguageModelLogWrapper(p.pluginAPI.Log, llm)
 	}
+
+	llm = NewLLMTruncationWrapper(llm)
 
 	return llm
 }
 
 func (p *Plugin) getImageGenerator() ai.ImageGenerator {
 	cfg := p.getConfiguration()
-	var imageGeneratorService ServiceConfig
+	var imageGeneratorService ai.ServiceConfig
 	for _, service := range cfg.Services {
 		if service.Name == cfg.ImageGenerator {
 			imageGeneratorService = service
@@ -143,9 +145,9 @@ func (p *Plugin) getImageGenerator() ai.ImageGenerator {
 	}
 	switch imageGeneratorService.ServiceName {
 	case "openai":
-		return openai.New(imageGeneratorService.APIKey, imageGeneratorService.DefaultModel)
+		return openai.New(imageGeneratorService)
 	case "openaicompatible":
-		return openai.NewCompatible(imageGeneratorService.APIKey, imageGeneratorService.URL, imageGeneratorService.DefaultModel)
+		return openai.NewCompatible(imageGeneratorService)
 	}
 
 	return nil
@@ -153,7 +155,7 @@ func (p *Plugin) getImageGenerator() ai.ImageGenerator {
 
 func (p *Plugin) getTranscribe() ai.Transcriber {
 	cfg := p.getConfiguration()
-	var transcriptionService ServiceConfig
+	var transcriptionService ai.ServiceConfig
 	for _, service := range cfg.Services {
 		if service.Name == cfg.TranscriptGenerator {
 			transcriptionService = service
@@ -162,9 +164,9 @@ func (p *Plugin) getTranscribe() ai.Transcriber {
 	}
 	switch transcriptionService.ServiceName {
 	case "openai":
-		return openai.New(transcriptionService.APIKey, transcriptionService.DefaultModel)
+		return openai.New(transcriptionService)
 	case "openaicompatible":
-		return openai.NewCompatible(transcriptionService.APIKey, transcriptionService.URL, transcriptionService.DefaultModel)
+		return openai.NewCompatible(transcriptionService)
 	}
 	return nil
 }

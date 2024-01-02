@@ -2,6 +2,7 @@ package ai
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	_ "time/tzdata"
@@ -136,6 +137,33 @@ func (b BotConversation) String() string {
 	result.WriteString(fmt.Sprintf("%+v\n", b.Context))
 
 	return result.String()
+}
+
+func (b *BotConversation) Truncate(maxTokens int, countTokens func(string) int) bool {
+	oldPosts := b.Posts
+	b.Posts = make([]Post, 0, len(oldPosts))
+	var totalTokens int
+	for i := len(oldPosts) - 1; i >= 0; i-- {
+		post := oldPosts[i]
+		if totalTokens >= maxTokens {
+			slices.Reverse(b.Posts)
+			return true
+		}
+		postTokens := countTokens(post.Message)
+		if (totalTokens + postTokens) > maxTokens {
+			charactorsToCut := (postTokens - (maxTokens - totalTokens)) * 4
+			post.Message = strings.TrimSpace(post.Message[charactorsToCut:])
+			postTokens = countTokens(post.Message)
+			b.Posts = append(b.Posts, post)
+			slices.Reverse(b.Posts)
+			return true
+		}
+		totalTokens += postTokens
+		b.Posts = append(b.Posts, post)
+	}
+
+	slices.Reverse(b.Posts)
+	return false
 }
 
 func GetPostRole(botID string, post *model.Post) PostRole {

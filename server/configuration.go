@@ -3,26 +3,17 @@ package main
 import (
 	"reflect"
 
+	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/pkg/errors"
 )
 
-type ServiceConfig struct {
-	Name         string `json:"name"`
-	ServiceName  string `json:"serviceName"`
-	APIKey       string `json:"apiKey"`
-	DefaultModel string `json:"defaultModel"`
-	URL          string `json:"url"`
-	Username     string `json:"username"`
-	Password     string `json:"password"`
-}
-
 type Config struct {
-	Services                    []ServiceConfig `json:"services"`
-	LLMGenerator                string          `json:"llmBackend"`
-	ImageGenerator              string          `json:"imageGeneratorBackend"`
-	TranscriptGenerator         string          `json:"transcriptBackend"`
-	EnableLLMTrace              bool            `json:"enableLLMTrace"`
-	EnableAutomaticCallsSummary bool            `json:"enableAutomaticCallsSummary"`
+	Services                    []ai.ServiceConfig `json:"services"`
+	LLMGenerator                string             `json:"llmBackend"`
+	ImageGenerator              string             `json:"imageGeneratorBackend"`
+	TranscriptGenerator         string             `json:"transcriptBackend"`
+	EnableLLMTrace              bool               `json:"enableLLMTrace"`
+	EnableAutomaticCallsSummary bool               `json:"enableAutomaticCallsSummary"`
 
 	EnableUseRestrictions bool   `json:"enableUserRestrictions"`
 	AllowPrivateChannels  bool   `json:"allowPrivateChannels"`

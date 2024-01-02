@@ -23,11 +23,15 @@ import (
 type OpenAI struct {
 	client       *openaiClient.Client
 	defaultModel string
+	maxTokens    int
 }
 
 const MaxFunctionCalls = 10
 
-func NewCompatible(apiKey, endpointUrl, defaultModel string) *OpenAI {
+func NewCompatible(llmService ai.ServiceConfig) *OpenAI {
+	apiKey := llmService.APIKey
+	endpointUrl := llmService.URL
+	defaultModel := llmService.DefaultModel
 	config := openai.DefaultConfig(apiKey)
 	config.BaseURL = endpointUrl
 
@@ -39,16 +43,19 @@ func NewCompatible(apiKey, endpointUrl, defaultModel string) *OpenAI {
 	return &OpenAI{
 		client:       openaiClient.NewClientWithConfig(config),
 		defaultModel: defaultModel,
+		maxTokens:    llmService.TokenLimit,
 	}
 }
 
-func New(apiKey, defaultModel string) *OpenAI {
+func New(llmService ai.ServiceConfig) *OpenAI {
+	defaultModel := llmService.DefaultModel
 	if defaultModel == "" {
 		defaultModel = openaiClient.GPT3Dot5Turbo
 	}
 	return &OpenAI{
-		client:       openaiClient.NewClient(apiKey),
+		client:       openaiClient.NewClient(llmService.APIKey),
 		defaultModel: defaultModel,
+		maxTokens:    llmService.TokenLimit,
 	}
 }
 
@@ -303,6 +310,10 @@ func (s *OpenAI) CountTokens(text string) int {
 }
 
 func (s *OpenAI) TokenLimit() int {
+	if s.maxTokens > 0 {
+		return s.maxTokens
+	}
+
 	switch {
 	case strings.HasPrefix(s.defaultModel, "gpt-4-32k"):
 		return 32768

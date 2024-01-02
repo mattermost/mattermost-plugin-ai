@@ -75,6 +75,7 @@ const Config = (props: Props) => {
             apiKey: '',
             username: '',
             password: '',
+            tokenLimit: 0,
         };
 
         let counter = 1;
