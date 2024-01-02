@@ -8,12 +8,11 @@ import (
 )
 
 type Config struct {
-	Services                    []ai.ServiceConfig `json:"services"`
-	LLMGenerator                string             `json:"llmBackend"`
-	ImageGenerator              string             `json:"imageGeneratorBackend"`
-	TranscriptGenerator         string             `json:"transcriptBackend"`
-	EnableLLMTrace              bool               `json:"enableLLMTrace"`
-	EnableAutomaticCallsSummary bool               `json:"enableAutomaticCallsSummary"`
+	Services            []ai.ServiceConfig `json:"services"`
+	LLMGenerator        string             `json:"llmBackend"`
+	ImageGenerator      string             `json:"imageGeneratorBackend"`
+	TranscriptGenerator string             `json:"transcriptBackend"`
+	EnableLLMTrace      bool               `json:"enableLLMTrace"`
 
 	EnableUseRestrictions bool   `json:"enableUserRestrictions"`
 	AllowPrivateChannels  bool   `json:"allowPrivateChannels"`
