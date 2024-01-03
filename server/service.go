@@ -81,7 +81,7 @@ func (p *Plugin) continueConversation(context ai.ConversationContext) error {
 	// Special handing for threads started by the bot in response to a summarization request.
 	var result *ai.TextStreamResult
 	originalThreadID, ok := threadData.Posts[0].GetProp(ThreadIDProp).(string)
-	if ok && originalThreadID != "" {
+	if ok && originalThreadID != "" && threadData.Posts[0].UserId == p.botid {
 		threadPost, err := p.pluginAPI.Post.GetPost(originalThreadID)
 		if err != nil {
 			return err
