@@ -126,6 +126,16 @@ func (p *Plugin) handleRegenerate(c *gin.Context) {
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 
+	if post.UserId != p.botid {
+		c.AbortWithError(http.StatusBadRequest, errors.New("Not a AI bot post"))
+		return
+	}
+
+	if post.GetProp("llm_requester_user_id") != userID {
+		c.AbortWithError(http.StatusForbidden, errors.New("only the original poster can regenerate"))
+		return
+	}
+
 	user, err := p.pluginAPI.User.Get(userID)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
@@ -140,11 +150,6 @@ func (p *Plugin) handleRegenerate(c *gin.Context) {
 	threadData.cutoffAtPostID(post.Id)
 
 	postToRegenerate := threadData.latestPost()
-
-	if user.Id != postToRegenerate.UserId {
-		c.AbortWithError(http.StatusForbidden, errors.New("only the original poster can regenerate"))
-		return
-	}
 
 	context := p.MakeConversationContext(user, channel, postToRegenerate)
 	conversation, err := p.prompts.ChatCompletion(ai.PromptDirectMessageQuestion, context)
