@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 
 	"github.com/google/go-github/v41/github"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
@@ -21,6 +22,10 @@ func (p *Plugin) toolResolveLookupMattermostUser(context ai.ConversationContext,
 	err := argsGetter(&args)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to get arguments for tool LookupMattermostUser")
+	}
+
+	if !model.IsValidUsername(args.Username) {
+		return "invalid username", errors.New("invalid username")
 	}
 
 	// Fail for guests.
@@ -75,6 +80,14 @@ func (p *Plugin) toolResolveGetChannelPosts(context ai.ConversationContext, args
 		return "invalid parameters to function", errors.Wrap(err, "failed to get arguments for tool GetChannelPosts")
 	}
 
+	if !model.IsValidChannelIdentifier(args.ChannelName) {
+		return "invalid channel name", errors.New("invalid channel name")
+	}
+
+	if args.NumberPosts < 1 || args.NumberPosts > 100 {
+		return "invalid number of posts. only 100 supported at a time", errors.New("invalid number of posts")
+	}
+
 	if context.Channel == nil || context.Channel.TeamId == "" {
 		//TODO: support DMs. This will require some way to disabiguate between channels with the same name on different teams.
 		return "Error: Ambiguous channel lookup. Unable to what channel the user is reffering to because DMs do not belong to specific teams. Tell the user to ask outside a DM channel.", errors.New("ambiguous channel lookup")
@@ -116,11 +129,28 @@ func formatIssue(issue *github.Issue) string {
 	return fmt.Sprintf("Title: %s\nNumber: %d\nState: %s\nSubmitter: %s\nIs Pull Request: %v\nBody: %s", issue.GetTitle(), issue.GetNumber(), issue.GetState(), issue.User.GetLogin(), issue.IsPullRequest(), issue.GetBody())
 }
 
+var validGithubRepoName = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
+
 func (p *Plugin) toolGetGithubIssue(context ai.ConversationContext, argsGetter ai.ToolArgumentGetter) (string, error) {
 	var args GetGithubIssueArgs
 	err := argsGetter(&args)
 	if err != nil {
 		return "invalid parameters to function", errors.Wrap(err, "failed to get arguments for tool GetGithubIssues")
+	}
+
+	// Fail for over lengh repo ownder or name.
+	if len(args.RepoOwner) > 39 || len(args.RepoName) > 100 {
+		return "invalid parameters to function", errors.New("invalid repo owner or repo name")
+	}
+
+	// Fail if repo ownder or repo name contain invalid characters.
+	if !validGithubRepoName.MatchString(args.RepoOwner) || !validGithubRepoName.MatchString(args.RepoName) {
+		return "invalid parameters to function", errors.New("invalid repo owner or repo name")
+	}
+
+	// Fail for bad issue numbers.
+	if args.Number < 1 {
+		return "invalid parameters to function", errors.New("invalid issue number")
 	}
 
 	req, err := http.NewRequest("GET", fmt.Sprintf("/github/api/v1/issue?owner=%s&repo=%s&number=%d", args.RepoOwner, args.RepoName, args.Number), nil)
