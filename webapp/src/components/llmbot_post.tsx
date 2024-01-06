@@ -137,6 +137,7 @@ export const LLMBotPost = (props: Props) => {
 
     const requesterIsCurrentUser = (props.post.props?.llm_requester_user_id === currentUserId);
     const isThreadSummaryPost = (props.post.props?.referenced_thread && props.post.props?.referenced_thread !== '');
+    const isNoShowRegen = (props.post.props?.no_regen && props.post.props?.no_regen !== '');
 
     let permalinkView = null;
     if (PostMessagePreview) { // Ignore permalink if version does not exporrt PostMessagePreview
@@ -149,6 +150,8 @@ export const LLMBotPost = (props: Props) => {
             );
         }
     }
+
+    const showRegenerate = !generating && requesterIsCurrentUser && !isNoShowRegen;
 
     return (
         <PostBody
@@ -176,7 +179,7 @@ export const LLMBotPost = (props: Props) => {
                 {'Stop Generating'}
             </StopGeneratingButton>
             }
-            { !generating && requesterIsCurrentUser &&
+            { showRegenerate &&
             <ControlsBar>
                 <GenerationButton
                     onClick={regnerate}

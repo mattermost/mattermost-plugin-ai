@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"strings"
 
+	sq "github.com/Masterminds/squirrel"
+
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/subtitles"
 	"github.com/mattermost/mattermost/server/public/model"
@@ -13,7 +15,7 @@ import (
 )
 
 const ReferencedRecordingPostID = "referenced_recording_post_id"
-const WaitingPost = "waiting_post"
+const NoRegen = "no_regen"
 
 func (p *Plugin) createTranscription(recordingFileID string) (*subtitles.Subtitles, error) {
 	if p.ffmpegPath == "" {
@@ -73,7 +75,7 @@ func (p *Plugin) createTranscription(recordingFileID string) (*subtitles.Subtitl
 	return transcription, nil
 }
 
-func (p *Plugin) handleCallRecordingPost(requestingUser *model.User, recordingPost *model.Post, channel *model.Channel) (*model.Post, error) {
+func (p *Plugin) newCallRecordingThread(requestingUser *model.User, recordingPost *model.Post, channel *model.Channel) (*model.Post, error) {
 	if len(recordingPost.FileIds) != 1 {
 		return nil, errors.New("Unexpected number of files in calls post")
 	}
@@ -82,21 +84,29 @@ func (p *Plugin) handleCallRecordingPost(requestingUser *model.User, recordingPo
 	surePost := &model.Post{
 		Message: fmt.Sprintf("Sure, I will summarize this recording: %s/_redirect/pl/%s\n", *siteURL, recordingPost.Id),
 	}
-	surePost.AddProp(ReferencedRecordingPostID, recordingPost.Id)
+	surePost.AddProp(NoRegen, "true")
 	if err := p.botDM(requestingUser.Id, surePost); err != nil {
 		return nil, err
 	}
 
-	go func(surePost *model.Post) (reterr error) {
-		transcriptPost := &model.Post{
-			RootId:  surePost.Id,
-			Message: "Processing audio into transcription. This will take some time...",
-		}
-		transcriptPost.AddProp(WaitingPost, "true")
-		if err := p.botDM(requestingUser.Id, transcriptPost); err != nil {
-			return err
-		}
+	if err := p.summarizeCallRecording(surePost.Id, requestingUser, recordingPost, channel); err != nil {
+		return nil, err
+	}
 
+	return surePost, nil
+}
+
+func (p *Plugin) summarizeCallRecording(rootID string, requestingUser *model.User, recordingPost *model.Post, channel *model.Channel) error {
+	transcriptPost := &model.Post{
+		RootId:  rootID,
+		Message: "Processing audio into transcription. This will take some time...",
+	}
+	transcriptPost.AddProp(ReferencedRecordingPostID, recordingPost.Id)
+	if err := p.botDM(requestingUser.Id, transcriptPost); err != nil {
+		return err
+	}
+
+	go func() (reterr error) {
 		// Update to an error if we return one.
 		defer func() {
 			if reterr != nil {
@@ -113,73 +123,95 @@ func (p *Plugin) handleCallRecordingPost(requestingUser *model.User, recordingPo
 			return errors.Wrap(err, "failed to create transcription")
 		}
 
-		transcriptFileInfo, err := p.pluginAPI.File.Upload(strings.NewReader(transcription.FormatTextOnly()), "transcript.txt", channel.Id)
+		transcriptFileInfo, err := p.pluginAPI.File.Upload(strings.NewReader(transcription.FormatVTT()), "transcript.txt", channel.Id)
 		if err != nil {
 			return errors.Wrap(err, "unable to upload transcript")
 		}
 
-		llmFormattedTranscription := transcription.FormatForLLM()
-		tokens := p.getLLM().CountTokens(llmFormattedTranscription)
-		tokenLimitWithMargin := int(float64(p.getLLM().TokenLimit())*0.75) - ContextTokenMargin
-		if tokenLimitWithMargin < 0 {
-			tokenLimitWithMargin = ContextTokenMargin / 2
-		}
-		isChunked := false
-		if tokens > tokenLimitWithMargin {
-			p.pluginAPI.Log.Debug("Transcription too long, summarizing in chunks.", "tokens", tokens, "limit", tokenLimitWithMargin)
-			chunks := splitPlaintextOnSentences(llmFormattedTranscription, tokenLimitWithMargin*4)
-			summarizedChunks := make([]string, 0, len(chunks))
-			p.pluginAPI.Log.Debug("Split into chunks", "chunks", len(chunks))
-			for _, chunk := range chunks {
-				context := p.MakeConversationContext(requestingUser, channel, nil)
-				context.PromptParameters = map[string]string{"TranscriptionChunk": chunk}
-				summarizeChunkPrompt, err := p.prompts.ChatCompletion(ai.PromptSummarizeChunk, context)
-				if err != nil {
-					return errors.Wrap(err, "unable to get summarize chunk prompt")
-				}
-
-				summarizedChunk, err := p.getLLM().ChatCompletionNoStream(summarizeChunkPrompt)
-				if err != nil {
-					return errors.Wrap(err, "unable to get summarized chunk")
-				}
-
-				summarizedChunks = append(summarizedChunks, summarizedChunk)
-			}
-
-			llmFormattedTranscription = strings.Join(summarizedChunks, "\n\n")
-			isChunked = true
-			p.pluginAPI.Log.Debug("Completed chunk summarization", "chunks", len(summarizedChunks), "tokens", p.getLLM().CountTokens(llmFormattedTranscription))
-		}
-
 		context := p.MakeConversationContext(requestingUser, channel, nil)
-		context.PromptParameters = map[string]string{"Transcription": llmFormattedTranscription, "IsChunked": fmt.Sprintf("%t", isChunked)}
-		summaryPrompt, err := p.prompts.ChatCompletion(ai.PromptMeetingSummary, context)
+		summaryStream, err := p.summarizeTranscription(transcription, context)
 		if err != nil {
-			return errors.Wrap(err, "unable to get meeting summary prompt")
+			return errors.Wrap(err, "unable to summarize transcription")
 		}
 
-		summaryStream, err := p.getLLM().ChatCompletion(summaryPrompt)
-		if err != nil {
-			return errors.Wrap(err, "unable to get meeting summary")
+		if err := p.updatePostWithFile(transcriptPost, transcriptFileInfo); err != nil {
+			return errors.Wrap(err, "unable to update transcript post")
 		}
 
-		// Can not update a post to include file attachments. So we have to delete and re-create.
-		if err := p.pluginAPI.Post.DeletePost(transcriptPost.Id); err != nil {
-			return errors.Wrap(err, "unable to delete transcript post")
-		}
-
-		summaryPost := &model.Post{
-			RootId:    surePost.Id,
-			ChannelId: surePost.ChannelId,
-			Message:   "",
-		}
-		summaryPost.FileIds = []string{transcriptFileInfo.Id}
-		if err := p.streamResultToNewPost(requestingUser.Id, summaryStream, summaryPost); err != nil {
-			return errors.Wrap(err, "unable to stream result to new post")
+		if err := p.streamResultToPost(summaryStream, transcriptPost); err != nil {
+			return errors.Wrap(err, "unable to stream result to post")
 		}
 
 		return nil
-	}(surePost)
+	}()
 
-	return surePost, nil
+	return nil
+}
+
+func (p *Plugin) summarizeTranscription(transcription *subtitles.Subtitles, context ai.ConversationContext) (*ai.TextStreamResult, error) {
+	llmFormattedTranscription := transcription.FormatForLLM()
+	tokens := p.getLLM().CountTokens(llmFormattedTranscription)
+	tokenLimitWithMargin := int(float64(p.getLLM().TokenLimit())*0.75) - ContextTokenMargin
+	if tokenLimitWithMargin < 0 {
+		tokenLimitWithMargin = ContextTokenMargin / 2
+	}
+	isChunked := false
+	if tokens > tokenLimitWithMargin {
+		p.pluginAPI.Log.Debug("Transcription too long, summarizing in chunks.", "tokens", tokens, "limit", tokenLimitWithMargin)
+		chunks := splitPlaintextOnSentences(llmFormattedTranscription, tokenLimitWithMargin*4)
+		summarizedChunks := make([]string, 0, len(chunks))
+		p.pluginAPI.Log.Debug("Split into chunks", "chunks", len(chunks))
+		for _, chunk := range chunks {
+			context.PromptParameters = map[string]string{"TranscriptionChunk": chunk}
+			summarizeChunkPrompt, err := p.prompts.ChatCompletion(ai.PromptSummarizeChunk, context)
+			if err != nil {
+				return nil, errors.Wrap(err, "unable to get summarize chunk prompt")
+			}
+
+			summarizedChunk, err := p.getLLM().ChatCompletionNoStream(summarizeChunkPrompt)
+			if err != nil {
+				return nil, errors.Wrap(err, "unable to get summarized chunk")
+			}
+
+			summarizedChunks = append(summarizedChunks, summarizedChunk)
+		}
+
+		llmFormattedTranscription = strings.Join(summarizedChunks, "\n\n")
+		isChunked = true
+		p.pluginAPI.Log.Debug("Completed chunk summarization", "chunks", len(summarizedChunks), "tokens", p.getLLM().CountTokens(llmFormattedTranscription))
+	}
+
+	context.PromptParameters = map[string]string{"Transcription": llmFormattedTranscription, "IsChunked": fmt.Sprintf("%t", isChunked)}
+	summaryPrompt, err := p.prompts.ChatCompletion(ai.PromptMeetingSummary, context)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to get meeting summary prompt")
+	}
+
+	summaryStream, err := p.getLLM().ChatCompletion(summaryPrompt)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to get meeting summary")
+	}
+
+	return summaryStream, nil
+}
+
+func (p *Plugin) updatePostWithFile(post *model.Post, fileinfo *model.FileInfo) error {
+	if _, err := p.execBuilder(p.builder.
+		Update("FileInfo").
+		Set("PostId", post.Id).
+		Set("ChannelId", post.ChannelId).
+		Where(sq.And{
+			sq.Eq{"Id": fileinfo.Id},
+			sq.Eq{"PostId": ""},
+		})); err != nil {
+		return errors.Wrap(err, "unable to update file info")
+	}
+
+	post.FileIds = []string{fileinfo.Id}
+	post.Message = ""
+	if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
+		return errors.Wrap(err, "unable to update post")
+	}
+
+	return nil
 }
