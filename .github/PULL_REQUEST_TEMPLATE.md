@@ -1,22 +1,27 @@
-<!-- Thank you for contributing a pull request! If this is your first contribution, make sure you've read the conribution guidelines: https://github.com/mattermost/openops/CONTRIBUTING.md
--->
+# Closes #<!-- GitHub issue number that this pull request closes. Pull requests without a reference to a GitHub issue may be closed. -->
 
-#### Summary
-<!--
-A description of what this pull request does, as well as QA test steps (if applicable)
--->
+## Description
 
-#### Ticket Link
-<!--
-Please include the GitHub issue this PR fixes:
-Fixes https://github.com/mattermost/mattermost/issues/XXX
--->
+<!-- Provide a clear and concise description of the changes made in this pull request. -->
 
-#### Screenshots
-<!--
-If the PR includes UI changes, include screenshots/GIFs.
-For an easier comparison of UI changes a table (template below) can be used.
-|  before  |  after  |
-|----|----|
-| <insert before screenshot here> | <insert after screenshot here> |
--->
+## Motivation
+
+<!-- Explain why these changes are needed. -->
+
+## Types of changes
+
+<!-- Indicate what types of changes are in this pull request. Put an `x` in all the boxes that apply: -->
+
+- [ ] Bug fix (non-breaking patch change which fixes an issue)
+- [ ] New feature (non-breaking minor change which adds functionality)
+- [ ] Breaking change (breaking major change which causes existing functionality to not work as expected)
+- [ ] Documentation update (including new documentation and translations)
+- [ ] Other (please describe):
+
+## Test plan
+
+<!-- Describe how the changes were tested. -->
+
+## Additional context
+
+<!-- Explain any alternatives you considered and why you chose your specific implementation. Be sure to link to any relevant discussions or resources. -->
