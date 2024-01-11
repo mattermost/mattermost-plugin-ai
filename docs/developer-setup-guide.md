@@ -1,22 +1,23 @@
 # Developer setup guide
 
-1. If you don't yet have a Mattermost server for development, first follow the [developer setup guide](https://developers.mattermost.com/contribute/server/developer-setup/).
+1. If you don't yet have a Mattermost instance for development, first follow the [Mattermost developer setup guide](https://developers.mattermost.com/contribute/server/developer-setup/). For additional information about Mattermost plugin development, check out the [plugin developer setup guide](https://developers.mattermost.com/integrate/plugins/developer-setup/).
 
-2. Clone and enter this repository:
+1. Clone and enter this repository:
 
     ```bash
     git clone https://github.com/mattermost/mattermost-plugin-ai && cd mattermost-plugin-ai
     ```
 
-3. Install this plugin on Mattermost:
+1. Install Mattermost AI Plugin on Mattermost by following the [plugin developer workflow documentation](https://developers.mattermost.com/integrate/plugins/developer-workflow/) or using this command:
 
     ```bash
     MM_SERVICESETTINGS_SITEURL=http://localhost:8065 MM_ADMIN_USERNAME=<YOUR_USERNAME> MM_ADMIN_PASSWORD=<YOUR_PASSWORD> make deploy
     ```
 
-4. Access Mattermost and configure the plugin:
+1. Access Mattermost and configure the Mattermost AI Plugin:
 
-- Open Mattermost at `http://localhost:8065`
-- Select **View in Browser**
-- In the top left Mattermost menu, click **System Console** ➡️ [**Mattermost AI Plugin**](http://localhost:8065/admin_console/plugins/plugin_mattermost-ai)
-- Enable the plugin and configure plugin settings as desired. See [Configuration](https://github.com/mattermost/mattermost-plugin-ai#configuration).
+   1. Log in to Mattermost as an administrator
+   1. Upload the Mattermost AI Plugin via **System Console** ➡️ **Plugin Management**
+   1. Enable the Mattermost AI Plugin via **System Console** ➡️ **Mattermost AI Plugin**.
+
+1. Follow the [configuration guide](./docs/configuration-guide.md) to set up the Mattermost AI Plugin.
