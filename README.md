@@ -2,6 +2,8 @@
 
 > Mattermost plugin for local and third-party LLMs
 
+![The Mattermost AI Plugin is an extension for mattermost that provides functionality for local and third-party LLMs](https://github.com/mattermost/mattermost-plugin-ai/assets/7295363/3c2f2547-53a8-4a65-838b-534947adf4d5)
+
 <!-- omit from toc -->
 ## Table of Contents
 
@@ -23,7 +25,7 @@ Join the discussion in the [~AI-Exchange channel](https://community.mattermost.c
 
 ## Install
 
-These installation instructions assume you already have a [Mattermost instance](https://mattermost.com/download/):
+These installation instructions assume you already have a [Mattermost instance](https://mattermost.com/download/) with [PostgreSQL](https://www.postgresql.org/):
 
 1. Download the [latest release](https://github.com/mattermost/mattermost-plugin-ai/releases) of the Mattermost AI Plugin
 2. Log in to Mattermost as an administrator
