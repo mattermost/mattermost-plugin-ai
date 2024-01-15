@@ -16,7 +16,9 @@ type ThreadData struct {
 }
 
 func (t *ThreadData) cutoffBeforePostID(postID string) {
-	for i, post := range t.Posts {
+	// Iterate in reverse because it's more likely that the post we are responding to is near the end.
+	for i := len(t.Posts) - 1; i >= 0; i-- {
+		post := t.Posts[i]
 		if post.Id == postID {
 			t.Posts = t.Posts[:i]
 			break
@@ -25,7 +27,9 @@ func (t *ThreadData) cutoffBeforePostID(postID string) {
 }
 
 func (t *ThreadData) cutoffAtPostID(postID string) {
-	for i, post := range t.Posts {
+	// Iterate in reverse because it's more likely that the post we are responding to is near the end.
+	for i := len(t.Posts) - 1; i >= 0; i-- {
+		post := t.Posts[i]
 		if post.Id == postID {
 			t.Posts = t.Posts[:i+1]
 			break
