@@ -25,6 +25,9 @@ func (p *Plugin) processUserRequestToBot(context ai.ConversationContext) error {
 		return err
 	}
 
+	// Cutoff the thread at the post we are responding to avoid races.
+	threadData.cutoffAtPostID(context.Post.Id)
+
 	result, err := p.continueConversation(threadData, context)
 	if err != nil {
 		return err
