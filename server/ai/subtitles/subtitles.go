@@ -57,6 +57,16 @@ func (s *Subtitles) FormatTextOnly() string {
 	return strings.TrimSpace(result.String())
 }
 
+func (s *Subtitles) FormatVTT() string {
+	var result strings.Builder
+	s.storage.WriteToWebVTT(&result)
+	return result.String()
+}
+
+func (s *Subtitles) IsEmpty() bool {
+	return s.storage.IsEmpty()
+}
+
 func formatDurationForLLM(dur time.Duration) string {
 	dur = dur.Round(time.Second)
 	hours := dur / time.Hour

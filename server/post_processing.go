@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost/server/public/model"
@@ -16,7 +15,7 @@ type ThreadData struct {
 	UsersByID map[string]*model.User
 }
 
-func (t *ThreadData) cutoffAtPostID(postID string) {
+func (t *ThreadData) cutoffBeforePostID(postID string) {
 	for i, post := range t.Posts {
 		if post.Id == postID {
 			t.Posts = t.Posts[:i]
@@ -25,7 +24,19 @@ func (t *ThreadData) cutoffAtPostID(postID string) {
 	}
 }
 
+func (t *ThreadData) cutoffAtPostID(postID string) {
+	for i, post := range t.Posts {
+		if post.Id == postID {
+			t.Posts = t.Posts[:i+1]
+			break
+		}
+	}
+}
+
 func (t *ThreadData) latestPost() *model.Post {
+	if len(t.Posts) == 0 {
+		return nil
+	}
 	return t.Posts[len(t.Posts)-1]
 }
 
@@ -78,10 +89,12 @@ func formatThread(data *ThreadData) string {
 	return result
 }
 
+const LLMRequesterUserID = "llm_requester_user_id"
+
 func (p *Plugin) modifyPostForBot(requesterUserID string, post *model.Post) {
 	post.UserId = p.botid
 	post.Type = "custom_llmbot" // This must be the only place we add this type for security.
-	post.AddProp("llm_requester_user_id", requesterUserID)
+	post.AddProp(LLMRequesterUserID, requesterUserID)
 }
 
 func (p *Plugin) botCreatePost(requesterUserID string, post *model.Post) error {
@@ -106,11 +119,11 @@ func (p *Plugin) botDM(userID string, post *model.Post) error {
 
 func (p *Plugin) streamResultToNewPost(requesterUserID string, stream *ai.TextStreamResult, post *model.Post) error {
 	if err := p.botCreatePost(requesterUserID, post); err != nil {
-		return err
+		return errors.Wrap(err, "unable to create post")
 	}
 
 	if err := p.streamResultToPost(stream, post); err != nil {
-		return err
+		return errors.Wrap(err, "unable to stream result to post")
 	}
 
 	return nil
@@ -204,7 +217,7 @@ type WorkerResult struct {
 	Value        string
 }
 
-func (p *Plugin) multiStreamResultToPost(post *model.Post, messageTemplate []string, streams ...*ai.TextStreamResult) error {
+/*func (p *Plugin) multiStreamResultToPost(post *model.Post, messageTemplate []string, streams ...*ai.TextStreamResult) error {
 	if len(messageTemplate) < 2*len(streams) {
 		return errors.New("bad multi stream template")
 	}
@@ -262,4 +275,4 @@ func (p *Plugin) multiStreamResultToPost(post *model.Post, messageTemplate []str
 	}()
 
 	return nil
-}
+}*/
