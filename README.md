@@ -182,4 +182,4 @@ Thank you for your interest in contributing to our open source project! ❤️ T
 
 ## License
 
-This repository is licensed under [Apache-2](./LICENSE).
+This repository is licensed under [Apache-2](./LICENSE), except for the [server/enterprise](server/enterprise) directory which is licensed under the [Mattermost Source Available License](LICENSE.enterprise). See [Mattermost Source Available License](https://docs.mattermost.com/overview/faq.html#mattermost-source-available-license) to learn more.
