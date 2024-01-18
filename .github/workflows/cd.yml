@@ -1,0 +1,19 @@
+name: cd
+on:
+  workflow_run:
+    workflows: ["ci"]
+    types:
+      - completed
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: read
+
+jobs:
+  plugin-cd:
+    uses: mattermost/actions-workflows/.github/workflows/plugin-cd.yml@main
+    with:
+      golang-version: "1.21"
+    secrets: inherit
