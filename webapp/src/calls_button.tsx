@@ -1,5 +1,9 @@
-import {doTranscribe} from './client';
+import {doSummarizeTranscription} from './client';
+import {doSelectPost} from './hooks';
 
-export function callsPostButtonClickedHandler(post: any) {
-    doTranscribe(post.id);
+export function makeCallsPostButtonClickedHandler(dispatch: any) {
+    return async (post: any) => {
+        const result = await doSummarizeTranscription(post.id);
+        doSelectPost(result.postid, result.channelid, dispatch);
+    };
 }

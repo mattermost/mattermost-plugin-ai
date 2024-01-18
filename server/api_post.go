@@ -113,6 +113,33 @@ func (p *Plugin) handleTranscribe(c *gin.Context) {
 	c.Render(http.StatusOK, render.JSON{Data: data})
 }
 
+func (p *Plugin) handleSummarizeTranscription(c *gin.Context) {
+	userID := c.GetHeader("Mattermost-User-Id")
+	post := c.MustGet(ContextPostKey).(*model.Post)
+	channel := c.MustGet(ContextChannelKey).(*model.Channel)
+
+	user, err := p.pluginAPI.User.Get(userID)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "unable to get user"))
+		return
+	}
+
+	createdPost, err := p.newCallTranscriptionSummaryThread(user, post, channel)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "unable to summarize transcription"))
+		return
+	}
+
+	data := struct {
+		PostID    string `json:"postid"`
+		ChannelID string `json:"channelid"`
+	}{
+		PostID:    createdPost.Id,
+		ChannelID: createdPost.ChannelId,
+	}
+	c.Render(http.StatusOK, render.JSON{Data: data})
+}
+
 func (p *Plugin) handleStop(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	p.streamingContextsMutex.Lock()
@@ -167,6 +194,7 @@ func (p *Plugin) handleRegenerate(c *gin.Context) {
 
 	summaryPostIDProp := post.GetProp(ThreadIDProp)
 	refrencedRecordingPostProp := post.GetProp(ReferencedRecordingPostID)
+	referencedTranscriptPostProp := post.GetProp(ReferencedTranscriptPostID)
 	var result *ai.TextStreamResult
 	switch {
 	case summaryPostIDProp != nil:
@@ -215,6 +243,32 @@ func (p *Plugin) handleRegenerate(c *gin.Context) {
 		if err != nil {
 			c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "could not summarize transcription on regen"))
 		}
+	case referencedTranscriptPostProp != nil:
+		post.Message = ""
+		refrencedTranscriptionPostID := referencedTranscriptPostProp.(string)
+		referencedTranscriptionPost, err := p.pluginAPI.Post.GetPost(refrencedTranscriptionPostID)
+		if err != nil {
+			c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "could not get transcription post on regen"))
+			return
+		}
+
+		transcriptionFileID := referencedTranscriptionPost.GetProp("web_vtt_file_id").(string)
+		transcriptionFileReader, err := p.pluginAPI.File.Get(transcriptionFileID)
+		if err != nil {
+			c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "unable to read calls file"))
+		}
+
+		transcription, err := subtitles.NewSubtitlesFromVTT(transcriptionFileReader)
+		if err != nil {
+			c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "unable to parse transcription file"))
+		}
+
+		context := p.MakeConversationContext(user, channel, nil)
+		result, err = p.summarizeTranscription(transcription, context)
+		if err != nil {
+			c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "unable to summarize transcription"))
+		}
+
 	default:
 		post.Message = ""
 

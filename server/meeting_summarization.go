@@ -15,6 +15,7 @@ import (
 )
 
 const ReferencedRecordingPostID = "referenced_recording_post_id"
+const ReferencedTranscriptPostID = "referenced_transcript_post_id"
 const NoRegen = "no_regen"
 
 func (p *Plugin) createTranscription(recordingFileID string) (*subtitles.Subtitles, error) {
@@ -91,6 +92,50 @@ func (p *Plugin) newCallRecordingThread(requestingUser *model.User, recordingPos
 
 	if err := p.summarizeCallRecording(surePost.Id, requestingUser, recordingPost, channel); err != nil {
 		return nil, err
+	}
+
+	return surePost, nil
+}
+
+func (p *Plugin) newCallTranscriptionSummaryThread(requestingUser *model.User, transcriptionPost *model.Post, channel *model.Channel) (*model.Post, error) {
+	if len(transcriptionPost.FileIds) != 1 {
+		return nil, errors.New("Unexpected number of files in calls post")
+	}
+
+	siteURL := p.API.GetConfig().ServiceSettings.SiteURL
+	surePost := &model.Post{
+		Message: fmt.Sprintf("Sure, I will summarize this transcription: %s/_redirect/pl/%s\n", *siteURL, transcriptionPost.Id),
+	}
+	surePost.AddProp(NoRegen, "true")
+	if err := p.botDM(requestingUser.Id, surePost); err != nil {
+		return nil, err
+	}
+
+	transcriptionFileID := transcriptionPost.GetProp("web_vtt_file_id").(string)
+	transcriptionFileReader, err := p.pluginAPI.File.Get(transcriptionFileID)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to read calls file")
+	}
+
+	transcription, err := subtitles.NewSubtitlesFromVTT(transcriptionFileReader)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to parse transcription file")
+	}
+
+	context := p.MakeConversationContext(requestingUser, channel, nil)
+	summaryStream, err := p.summarizeTranscription(transcription, context)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to summarize transcription")
+	}
+
+	summaryPost := &model.Post{
+		RootId:    surePost.Id,
+		ChannelId: surePost.ChannelId,
+		Message:   "",
+	}
+	summaryPost.AddProp(ReferencedTranscriptPostID, transcriptionPost.Id)
+	if err := p.streamResultToNewPost(requestingUser.Id, summaryStream, summaryPost); err != nil {
+		return nil, errors.Wrap(err, "unable to stream result to post")
 	}
 
 	return surePost, nil
