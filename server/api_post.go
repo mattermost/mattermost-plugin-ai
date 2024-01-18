@@ -252,21 +252,28 @@ func (p *Plugin) handleRegenerate(c *gin.Context) {
 			return
 		}
 
-		transcriptionFileID := referencedTranscriptionPost.GetProp("web_vtt_file_id").(string)
+		transcriptionFileID, err := getCaptionsFileIDFromProps(referencedTranscriptionPost)
+		if err != nil {
+			c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "unable to get transcription file id"))
+			return
+		}
 		transcriptionFileReader, err := p.pluginAPI.File.Get(transcriptionFileID)
 		if err != nil {
 			c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "unable to read calls file"))
+			return
 		}
 
 		transcription, err := subtitles.NewSubtitlesFromVTT(transcriptionFileReader)
 		if err != nil {
 			c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "unable to parse transcription file"))
+			return
 		}
 
 		context := p.MakeConversationContext(user, channel, nil)
 		result, err = p.summarizeTranscription(transcription, context)
 		if err != nil {
 			c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "unable to summarize transcription"))
+			return
 		}
 
 	default:

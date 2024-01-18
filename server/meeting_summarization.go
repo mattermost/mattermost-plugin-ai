@@ -18,6 +18,26 @@ const ReferencedRecordingPostID = "referenced_recording_post_id"
 const ReferencedTranscriptPostID = "referenced_transcript_post_id"
 const NoRegen = "no_regen"
 
+func getCaptionsFileIDFromProps(post *model.Post) (fileID string, err error) {
+	if post == nil {
+		return "", errors.New("post is nil")
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			err = errors.New("unable to parse captions on post")
+		}
+	}()
+
+	captions, ok := post.GetProp("captions").([]interface{})
+	if !ok || len(captions) == 0 {
+		return "", errors.New("no captions on post")
+	}
+
+	// Calls will only ever have one for now.
+	return captions[0].(map[string]interface{})["file_id"].(string), nil
+}
+
 func (p *Plugin) createTranscription(recordingFileID string) (*subtitles.Subtitles, error) {
 	if p.ffmpegPath == "" {
 		return nil, errors.New("ffmpeg not installed")
@@ -111,7 +131,10 @@ func (p *Plugin) newCallTranscriptionSummaryThread(requestingUser *model.User, t
 		return nil, err
 	}
 
-	transcriptionFileID := transcriptionPost.GetProp("web_vtt_file_id").(string)
+	transcriptionFileID, err := getCaptionsFileIDFromProps(transcriptionPost)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to get transcription file id")
+	}
 	transcriptionFileReader, err := p.pluginAPI.File.Get(transcriptionFileID)
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to read calls file")
