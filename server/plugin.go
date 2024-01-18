@@ -114,6 +114,11 @@ func (p *Plugin) getLLM() ai.LanguageModel {
 	var llm ai.LanguageModel
 	var llmService ai.ServiceConfig
 
+	if cfg == nil || cfg.Services == nil || len(cfg.Services) == 0 {
+		p.pluginAPI.Log.Error("No LLM services configured. Please configure a service in the plugin settings.")
+		return nil
+	}
+
 	if p.licenseChecker.IsMultiLLMLicensed() {
 		for _, service := range cfg.Services {
 			if service.Name == cfg.LLMGenerator {
