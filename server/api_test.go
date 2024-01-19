@@ -20,9 +20,12 @@ func TestPostRouter(t *testing.T) {
 	gin.DefaultWriter = io.Discard
 
 	for urlName, url := range map[string]string{
-		"react":      "/post/postid/react",
-		"summarize":  "/post/postid/summarize",
-		"transcribe": "/post/postid/transcribe",
+		"react":                   "/post/postid/react",
+		"summarize":               "/post/postid/summarize",
+		"transcribe":              "/post/postid/transcribe/file/fileid",
+		"summarize_transcription": "/post/postid/summarize_transcription",
+		"stop":                    "/post/postid/stop",
+		"regenerate":              "/post/postid/regenerate",
 	} {
 
 		for name, test := range map[string]struct {
