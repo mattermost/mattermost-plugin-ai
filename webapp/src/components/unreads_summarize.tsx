@@ -1,4 +1,3 @@
-import {LightbulbOutlineIcon} from '@mattermost/compass-icons/components';
 import React from 'react';
 import styled from 'styled-components';
 
@@ -12,6 +11,7 @@ import IconSparkleQuestion from './assets/icon_sparkle_question';
 import IconThreadSummarization from './assets/icon_thread_summarization';
 
 import DotMenu, {DropdownMenuItem} from './dot_menu';
+import {Divider, DropdownInfoOnlyVisibleToYou} from './dropdown_info';
 
 const AskAIButton = styled(DotMenu)`
 	display: flex;
@@ -53,43 +53,12 @@ const DropdownMenuItemStyled = styled(DropdownMenuItem)`
 	gap: 6px;
 `;
 
-const DropdownMenuItemInfo = styled.div`
-	display: flex;
-	align-items: flex-start;
-	gap: 8px;
-
-	font-size: 12px;
-	font-weight: 400;
-	line-height: 16px;
-	color: rgba(var(--center-channel-color-rgb), 0.72);
-
-	max-width: 236px;
-	margin: 8px 16px;
-`;
-
 const IconSparkleCheckmarkStyled = styled(IconSparkleCheckmark)`
 	color: rgba(var(--center-channel-color-rgb), 0.56);
 `;
 
 const IconSparkleQuestionStyled = styled(IconSparkleQuestion)`
 	color: rgba(var(--center-channel-color-rgb), 0.56);
-`;
-
-const LightbulbOutlineIconStyled = styled(LightbulbOutlineIcon)`
-	min-width: 22px;
-	min-height: 22px;
-
-	padding: 4px;
-
-	color: rgba(var(--center-channel-color-rgb), 0.56);
-	background: rgba(var(--center-channel-color-rgb), 0.08);
-	border-radius: 16px;
-`;
-
-const Divider = styled.div`
-    border: 1px solid rgba(var(--center-channel-color-rgb), 0.08);
-    margin-top: 8px;
-    margin-bottom: 8px;
 `;
 
 // ChannelID is undefined for threads view and threadID is undefined for channel view
@@ -140,10 +109,7 @@ const UnreadsSumarize = (props: Props) => {
                 {'Find open questions'}
             </DropdownMenuItemStyled>
             <Divider/>
-            <DropdownMenuItemInfo>
-                <LightbulbOutlineIconStyled/>
-                {'AI Assistant posts responses in the right panel which will only be visible to you.'}
-            </DropdownMenuItemInfo>
+            <DropdownInfoOnlyVisibleToYou/>
         </AskAIButton>
     );
 };

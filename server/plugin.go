@@ -13,6 +13,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/anthropic"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/asksage"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/openai"
+	"github.com/mattermost/mattermost-plugin-ai/server/enterprise"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
@@ -55,6 +56,8 @@ type Plugin struct {
 
 	streamingContexts      map[string]context.CancelFunc
 	streamingContextsMutex sync.Mutex
+
+	licenseChecker *enterprise.LicenseChecker
 }
 
 func resolveffmpegPath() string {
@@ -72,6 +75,8 @@ func resolveffmpegPath() string {
 
 func (p *Plugin) OnActivate() error {
 	p.pluginAPI = pluginapi.NewClient(p.API, p.Driver)
+
+	p.licenseChecker = enterprise.NewLicenseChecker(p.pluginAPI)
 
 	botID, err := p.pluginAPI.Bot.EnsureBot(&model.Bot{
 		Username:    BotUsername,
@@ -108,12 +113,23 @@ func (p *Plugin) getLLM() ai.LanguageModel {
 	cfg := p.getConfiguration()
 	var llm ai.LanguageModel
 	var llmService ai.ServiceConfig
-	for _, service := range cfg.Services {
-		if service.Name == cfg.LLMGenerator {
-			llmService = service
-			break
-		}
+
+	if cfg == nil || cfg.Services == nil || len(cfg.Services) == 0 {
+		p.pluginAPI.Log.Error("No LLM services configured. Please configure a service in the plugin settings.")
+		return nil
 	}
+
+	if p.licenseChecker.IsMultiLLMLicensed() {
+		for _, service := range cfg.Services {
+			if service.Name == cfg.LLMGenerator {
+				llmService = service
+				break
+			}
+		}
+	} else {
+		llmService = cfg.Services[0]
+	}
+
 	switch llmService.ServiceName {
 	case "openai":
 		llm = openai.New(llmService)

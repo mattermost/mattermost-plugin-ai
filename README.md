@@ -43,4 +43,4 @@ Interested in contributing to our open source project? Start by reviewing the [c
 
 ## License
 
-This repository is licensed under [Apache-2](./LICENSE.md).
+This repository is licensed under [Apache-2](./LICENSE), except for the [server/enterprise](server/enterprise) directory which is licensed under the [Mattermost Source Available License](LICENSE.enterprise). See [Mattermost Source Available License](https://docs.mattermost.com/overview/faq.html#mattermost-source-available-license) to learn more.

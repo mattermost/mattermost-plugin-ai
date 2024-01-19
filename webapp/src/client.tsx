@@ -57,7 +57,24 @@ export async function doTranscribe(postid: string) {
     }));
 
     if (response.ok) {
-        return;
+        return response.json();
+    }
+
+    throw new ClientError(Client4.url, {
+        message: '',
+        status_code: response.status,
+        url,
+    });
+}
+
+export async function doSummarizeTranscription(postid: string) {
+    const url = `${postRoute(postid)}/summarize_transcription`;
+    const response = await fetch(url, Client4.getOptions({
+        method: 'POST',
+    }));
+
+    if (response.ok) {
+        return response.json();
     }
 
     throw new ClientError(Client4.url, {
