@@ -22,6 +22,7 @@ import PostEventListener from './websocket';
 import {setupRedux} from './redux';
 import UnreadsSumarize from './components/unreads_summarize';
 import IconAI from './components/assets/icon_ai';
+import {doSelectPost} from './hooks';
 
 type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
 
@@ -156,8 +157,9 @@ export default class Plugin {
             registry.registerNewMessagesSeparatorActionComponent(UnreadsSumarize);
         }
 
-        registry.registerFileDropdownMenuAction(isProcessableAudio, <><SummarizeRecordingIconContainer className='icon'><IconAI/></SummarizeRecordingIconContainer>{'Summarize recording'}</>, (fileInfo: any) => {
-            doTranscribe(fileInfo.post_id, fileInfo.id);
+        registry.registerFileDropdownMenuAction(isProcessableAudio, <><SummarizeRecordingIconContainer className='icon'><IconAI/></SummarizeRecordingIconContainer>{'Summarize recording'}</>, async (fileInfo: any) => {
+            const result = await doTranscribe(fileInfo.post_id, fileInfo.id);
+            doSelectPost(result.postid, result.channelid, store.dispatch);
         });
     }
 }
