@@ -113,6 +113,21 @@ func (p *Plugin) handleSince(c *gin.Context) {
 		return
 	}
 
+	promptTitle := ""
+	switch data.PresetPrompt {
+	case "summarize":
+		promptTitle = "Summarize Unreads"
+	case "action_items":
+		promptTitle = "Find Action Items"
+	case "open_questions":
+		promptTitle = "Find Open Questions"
+	}
+
+	if err := p.saveTitle(post.Id, promptTitle); err != nil {
+		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "failed to save title"))
+		return
+	}
+
 	result := struct {
 		PostID    string `json:"postid"`
 		ChannelID string `json:"channelid"`

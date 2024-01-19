@@ -66,7 +66,8 @@ func (p *Plugin) newConversation(context ai.ConversationContext) error {
 	}
 
 	go func() {
-		if err := p.generateTitle(context); err != nil {
+		request := "Write a short title for the following request. Include only the title and nothing else, no quotations. Request:\n" + context.Post.Message
+		if err := p.generateTitle(request, context.Post.Id); err != nil {
 			p.API.LogError("Failed to generate title", "error", err.Error())
 			return
 		}
@@ -75,10 +76,9 @@ func (p *Plugin) newConversation(context ai.ConversationContext) error {
 	return nil
 }
 
-func (p *Plugin) generateTitle(context ai.ConversationContext) error {
+func (p *Plugin) generateTitle(request string, threadRootID string) error {
 	titleRequest := ai.BotConversation{
-		Posts:   []ai.Post{{Role: ai.PostRoleUser, Message: "Write a short title for the following request. Include only the title and nothing else, no quotations. Request:\n" + context.Post.Message}},
-		Context: context,
+		Posts: []ai.Post{{Role: ai.PostRoleUser, Message: request}},
 	}
 	conversationTitle, err := p.getLLM().ChatCompletionNoStream(titleRequest, ai.WithMaxTokens(25))
 	if err != nil {
@@ -87,7 +87,7 @@ func (p *Plugin) generateTitle(context ai.ConversationContext) error {
 
 	conversationTitle = strings.Trim(conversationTitle, "\n \"'")
 
-	if err := p.saveTitle(context.Post.Id, conversationTitle); err != nil {
+	if err := p.saveTitle(threadRootID, conversationTitle); err != nil {
 		return errors.Wrap(err, "failed to save title")
 	}
 
@@ -210,6 +210,10 @@ func (p *Plugin) startNewSummaryThread(postIDToSummarize string, context ai.Conv
 	post := p.makeSummaryPost(postIDToSummarize)
 	if err := p.streamResultToNewDM(summaryStream, context.RequestingUser.Id, post); err != nil {
 		return nil, err
+	}
+
+	if err := p.saveTitle(post.Id, "Thread Summary"); err != nil {
+		return nil, errors.Wrap(err, "failed to save title")
 	}
 
 	return post, nil

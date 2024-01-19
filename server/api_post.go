@@ -103,6 +103,11 @@ func (p *Plugin) handleTranscribe(c *gin.Context) {
 		return
 	}
 
+	if err := p.saveTitle(createdPost.Id, "Meeting Summary"); err != nil {
+		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "failed to save title"))
+		return
+	}
+
 	data := struct {
 		PostID    string `json:"postid"`
 		ChannelID string `json:"channelid"`
@@ -127,6 +132,11 @@ func (p *Plugin) handleSummarizeTranscription(c *gin.Context) {
 	createdPost, err := p.newCallTranscriptionSummaryThread(user, post, channel)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "unable to summarize transcription"))
+		return
+	}
+
+	if err := p.saveTitle(createdPost.Id, "Meeting Summary"); err != nil {
+		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "failed to save title"))
 		return
 	}
 
