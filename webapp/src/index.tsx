@@ -21,6 +21,7 @@ import {BotUsername} from './constants';
 import PostEventListener from './websocket';
 import {setupRedux} from './redux';
 import UnreadsSumarize from './components/unreads_summarize';
+import IconAI from './components/assets/icon_ai';
 
 type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
 
@@ -36,6 +37,10 @@ const RHSTitleContainer = styled.span`
     display: flex;
 	gap: 8px;
     align-items: center;
+`;
+
+const SummarizeRecordingIconContainer = styled.span`
+	color: rgba(var(--center-channel-color-rgb), 0.56);
 `;
 
 const RHSTitle = () => {
@@ -151,7 +156,7 @@ export default class Plugin {
             registry.registerNewMessagesSeparatorActionComponent(UnreadsSumarize);
         }
 
-        registry.registerFileDropdownMenuAction(isProcessableAudio, 'Summarize recording', (fileInfo: any) => {
+        registry.registerFileDropdownMenuAction(isProcessableAudio, <><SummarizeRecordingIconContainer className='icon'><IconAI/></SummarizeRecordingIconContainer>{'Summarize recording'}</>, (fileInfo: any) => {
             doTranscribe(fileInfo.post_id, fileInfo.id);
         });
     }
