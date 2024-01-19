@@ -2,13 +2,13 @@
 
 The Mattermost AI Plugin is configured via **System Console** ➡️ **Mattermost AI Plugin**.
 
-- [OpenAI (ChatGPT)](#openai-chatgpt)
+- [OpenAI](#openai)
 - [Anthropic (Claude)](#anthropic-claude)
-- [Azure OpenAI (ChatGPT)](#azure-openai-chatgpt)
-- [Ask Sage (ChatGPT)](#ask-sage-chatgpt)
+- [Azure OpenAI](#azure-openai)
+- [Ask Sage](#ask-sage)
 - [OpenAI Compatible](#openai-compatible)
 
-## OpenAI (ChatGPT)
+## OpenAI
 
 1. Obtain an [OpenAI API key](https://platform.openai.com/account/api-keys)
 1. In the **AI Service** dropdown, select **OpenAI**
@@ -22,7 +22,7 @@ The Mattermost AI Plugin is configured via **System Console** ➡️ **Mattermos
 1. In the **API Key** field, enter your OpenAI API key
 1. In the **Default Model** field, enter a model name that you can access with your API key (e.g., `claude-v1`)
 
-## [Azure OpenAI](https://learn.microsoft.com/en-us/azure/ai-services/openai/overview) (ChatGPT)
+## [Azure OpenAI](https://learn.microsoft.com/en-us/azure/ai-services/openai/overview)
 
 To learn about accessing OpenAI LLMs via Microsoft Azure, [refer to official documentation](https://learn.microsoft.com/en-us/azure/ai-services/openai/overview).
 
@@ -36,9 +36,11 @@ This requires functions to be supported, which has limited availability (e.g., m
 1. In the **API Key** field, enter your Azure resource API key
 1. In the **Default Model** field, enter the model name (e.g., `gpt-35-turbo`)
 
-## Ask Sage (ChatGPT)
+## Ask Sage
 
 Ask Sage is currently supported as an experimental feature. Token-based security is not yet available via the Ask Sage API, and server configuration would require securing the Mattermost server configuration data store, which will contain username and password in plaintext.
+
+The Ask Sage API does not yet support streaming, so there is less feedback to Mattermost users on intermediate information.
 
 1. Obtain [access to Ask Sage](https://asksage.ai)
 1. In the **AI Service** dropdown, select **Ask Sage**
@@ -51,7 +53,7 @@ Ask Sage is currently supported as an experimental feature. Token-based security
 
 The Mattermost AI Plugin can support any LLM provider that is OpenAI-compatible such as [LocalAI](https://github.com/go-skynet/LocalAI).
 
-1. Deploy your model on LocalAI
+1. Deploy your model on LocalAI or equivalent
 1. In the **AI Service** dropdown, select **OpenAI Compatible**
 1. In the **API URL** field, enter the URL to LocalAI
 1. In the **API Key** field, enter your OpenAI API key

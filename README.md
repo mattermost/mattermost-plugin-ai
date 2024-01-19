@@ -2,7 +2,7 @@
 
 > Mattermost plugin for local and third-party LLMs
 
-![The Mattermost AI Plugin is an extension for mattermost that provides functionality for local and third-party LLMs](https://github.com/mattermost/mattermost-plugin-ai/assets/7295363/3c2f2547-53a8-4a65-838b-534947adf4d5)
+![The Mattermost AI Plugin is an extension for mattermost that provides functionality for local and third-party LLMs](https://github.com/mattermost/openops/assets/7295363/37cc5337-16a0-4d88-971f-71cd0cdc52e9)
 
 <!-- omit from toc -->
 ## Table of Contents
@@ -36,8 +36,6 @@ These installation instructions assume you already have a [Mattermost instance](
 ## Usage
 
 After following the [configuration guide](./docs/configuration-guide.md) to connect your LLM to Mattermost, there many ways to integrate AI into your collaboration workflows. To help you get started, check out the examples in the [Usage](./docs/usage.md) documentation. 🚀
-
-Exploring AI-powered collaboration for your organization? Check out [OpenOps](https://openops.mattermost.com), an open source framework for experimenting with AI workflows in secure environments.
 
 ## Contributing
 

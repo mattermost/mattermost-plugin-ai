@@ -17,7 +17,4 @@
 1. Access Mattermost and configure the Mattermost AI Plugin:
 
    1. Log in to Mattermost as an administrator
-   1. Upload the Mattermost AI Plugin via **System Console** ➡️ **Plugin Management**
-   1. Enable the Mattermost AI Plugin via **System Console** ➡️ **Mattermost AI Plugin**.
-
-1. Follow the [configuration guide](./docs/configuration-guide.md) to set up the Mattermost AI Plugin.
+   1. Follow the [configuration guide](./docs/configuration-guide.md) to set up the Mattermost AI Plugin.
