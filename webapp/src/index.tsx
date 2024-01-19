@@ -47,6 +47,20 @@ const RHSTitle = () => {
     );
 };
 
+const isProcessableAudio = (fileInfo: any) => {
+    const acceptedExtensions = [
+        'mp3',
+        'mp4',
+        'mpeg',
+        'mpga',
+        'm4a',
+        'wav',
+        'webm',
+    ];
+
+    return acceptedExtensions.includes(fileInfo.extension);
+};
+
 export default class Plugin {
     postEventListener: PostEventListener = new PostEventListener();
 
@@ -123,7 +137,6 @@ export default class Plugin {
                     store.dispatch(rhs.showRHSPlugin);
                 }
             });
-            registry.registerPostDropdownMenuAction(<><span className='icon'><IconThreadSummarization/></span>{'Summarize Meeting Audio'}</>, doTranscribe);
             registry.registerPostDropdownMenuAction(<><span className='icon'><IconReactForMe/></span>{'React for me'}</>, doReaction);
         }
 
@@ -137,6 +150,10 @@ export default class Plugin {
         if (registry.registerNewMessagesSeparatorActionComponent) {
             registry.registerNewMessagesSeparatorActionComponent(UnreadsSumarize);
         }
+
+        registry.registerFileDropdownMenuAction(isProcessableAudio, 'Summarize recording', (fileInfo: any) => {
+            doTranscribe(fileInfo.post_id, fileInfo.id);
+        });
     }
 }
 
