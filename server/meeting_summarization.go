@@ -14,7 +14,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-const ReferencedRecordingPostID = "referenced_recording_post_id"
+const ReferencedRecordingFileID = "referenced_recording_file_id"
 const ReferencedTranscriptPostID = "referenced_transcript_post_id"
 const NoRegen = "no_regen"
 
@@ -96,11 +96,7 @@ func (p *Plugin) createTranscription(recordingFileID string) (*subtitles.Subtitl
 	return transcription, nil
 }
 
-func (p *Plugin) newCallRecordingThread(requestingUser *model.User, recordingPost *model.Post, channel *model.Channel) (*model.Post, error) {
-	if len(recordingPost.FileIds) != 1 {
-		return nil, errors.New("Unexpected number of files in calls post")
-	}
-
+func (p *Plugin) newCallRecordingThread(requestingUser *model.User, recordingPost *model.Post, channel *model.Channel, fileID string) (*model.Post, error) {
 	siteURL := p.API.GetConfig().ServiceSettings.SiteURL
 	surePost := &model.Post{
 		Message: fmt.Sprintf("Sure, I will summarize this recording: %s/_redirect/pl/%s\n", *siteURL, recordingPost.Id),
@@ -110,7 +106,7 @@ func (p *Plugin) newCallRecordingThread(requestingUser *model.User, recordingPos
 		return nil, err
 	}
 
-	if err := p.summarizeCallRecording(surePost.Id, requestingUser, recordingPost, channel); err != nil {
+	if err := p.summarizeCallRecording(surePost.Id, requestingUser, fileID, channel); err != nil {
 		return nil, err
 	}
 
@@ -164,12 +160,12 @@ func (p *Plugin) newCallTranscriptionSummaryThread(requestingUser *model.User, t
 	return surePost, nil
 }
 
-func (p *Plugin) summarizeCallRecording(rootID string, requestingUser *model.User, recordingPost *model.Post, channel *model.Channel) error {
+func (p *Plugin) summarizeCallRecording(rootID string, requestingUser *model.User, recordingFileID string, channel *model.Channel) error {
 	transcriptPost := &model.Post{
 		RootId:  rootID,
 		Message: "Processing audio into transcription. This will take some time...",
 	}
-	transcriptPost.AddProp(ReferencedRecordingPostID, recordingPost.Id)
+	transcriptPost.AddProp(ReferencedRecordingFileID, recordingFileID)
 	if err := p.botDM(requestingUser.Id, transcriptPost); err != nil {
 		return err
 	}
@@ -186,7 +182,7 @@ func (p *Plugin) summarizeCallRecording(rootID string, requestingUser *model.Use
 			}
 		}()
 
-		transcription, err := p.createTranscription(recordingPost.FileIds[0])
+		transcription, err := p.createTranscription(recordingFileID)
 		if err != nil {
 			return errors.Wrap(err, "failed to create transcription")
 		}

@@ -86,10 +86,11 @@ func (p *Plugin) handleSummarize(c *gin.Context) {
 	c.Render(http.StatusOK, render.JSON{Data: data})
 }
 
-func (p *Plugin) handleTranscribe(c *gin.Context) {
+func (p *Plugin) handleTranscribeFile(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
+	fileID := c.Param("fileid")
 
 	user, err := p.pluginAPI.User.Get(userID)
 	if err != nil {
@@ -97,7 +98,7 @@ func (p *Plugin) handleTranscribe(c *gin.Context) {
 		return
 	}
 
-	createdPost, err := p.newCallRecordingThread(user, post, channel)
+	createdPost, err := p.newCallRecordingThread(user, post, channel, fileID)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
@@ -203,7 +204,7 @@ func (p *Plugin) handleRegenerate(c *gin.Context) {
 	}
 
 	summaryPostIDProp := post.GetProp(ThreadIDProp)
-	refrencedRecordingPostProp := post.GetProp(ReferencedRecordingPostID)
+	refrencedRecordingFileIDProp := post.GetProp(ReferencedRecordingFileID)
 	referencedTranscriptPostProp := post.GetProp(ReferencedTranscriptPostID)
 	var result *ai.TextStreamResult
 	switch {
@@ -217,12 +218,13 @@ func (p *Plugin) handleRegenerate(c *gin.Context) {
 			c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "could not summarize post on regen"))
 			return
 		}
-	case refrencedRecordingPostProp != nil:
+	case refrencedRecordingFileIDProp != nil:
 		post.Message = ""
-		refrencedRecordingPostID := refrencedRecordingPostProp.(string)
-		referencedRecordingPost, err := p.pluginAPI.Post.GetPost(refrencedRecordingPostID)
+		refrencedRecordingFileID := refrencedRecordingFileIDProp.(string)
+
+		fileInfo, err := p.pluginAPI.File.GetInfo(refrencedRecordingFileID)
 		if err != nil {
-			c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "could not get transcription post on regen"))
+			c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "could not get transcription file on regen"))
 			return
 		}
 
@@ -242,7 +244,7 @@ func (p *Plugin) handleRegenerate(c *gin.Context) {
 			return
 		}
 
-		channel, err := p.pluginAPI.Channel.Get(referencedRecordingPost.ChannelId)
+		channel, err := p.pluginAPI.Channel.Get(fileInfo.ChannelId)
 		if err != nil {
 			c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "could not get channel of original recording on regen"))
 			return

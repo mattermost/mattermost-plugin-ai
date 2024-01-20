@@ -21,6 +21,8 @@ import {BotUsername} from './constants';
 import PostEventListener from './websocket';
 import {setupRedux} from './redux';
 import UnreadsSumarize from './components/unreads_summarize';
+import IconAI from './components/assets/icon_ai';
+import {doSelectPost} from './hooks';
 
 type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
 
@@ -38,6 +40,10 @@ const RHSTitleContainer = styled.span`
     align-items: center;
 `;
 
+const SummarizeRecordingIconContainer = styled.span`
+	color: rgba(var(--center-channel-color-rgb), 0.56);
+`;
+
 const RHSTitle = () => {
     return (
         <RHSTitleContainer>
@@ -45,6 +51,20 @@ const RHSTitle = () => {
             {'AI Assistant'}
         </RHSTitleContainer>
     );
+};
+
+const isProcessableAudio = (fileInfo: any) => {
+    const acceptedExtensions = [
+        'mp3',
+        'mp4',
+        'mpeg',
+        'mpga',
+        'm4a',
+        'wav',
+        'webm',
+    ];
+
+    return acceptedExtensions.includes(fileInfo.extension);
 };
 
 export default class Plugin {
@@ -123,7 +143,6 @@ export default class Plugin {
                     store.dispatch(rhs.showRHSPlugin);
                 }
             });
-            registry.registerPostDropdownMenuAction(<><span className='icon'><IconThreadSummarization/></span>{'Summarize Meeting Audio'}</>, doTranscribe);
             registry.registerPostDropdownMenuAction(<><span className='icon'><IconReactForMe/></span>{'React for me'}</>, doReaction);
         }
 
@@ -137,6 +156,11 @@ export default class Plugin {
         if (registry.registerNewMessagesSeparatorActionComponent) {
             registry.registerNewMessagesSeparatorActionComponent(UnreadsSumarize);
         }
+
+        registry.registerFileDropdownMenuAction(isProcessableAudio, <><SummarizeRecordingIconContainer className='icon'><IconAI/></SummarizeRecordingIconContainer>{'Summarize recording'}</>, async (fileInfo: any) => {
+            const result = await doTranscribe(fileInfo.post_id, fileInfo.id);
+            doSelectPost(result.postid, result.channelid, store.dispatch);
+        });
     }
 }
 

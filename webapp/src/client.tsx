@@ -50,8 +50,8 @@ export async function doSummarize(postid: string) {
     });
 }
 
-export async function doTranscribe(postid: string) {
-    const url = `${postRoute(postid)}/transcribe`;
+export async function doTranscribe(postid: string, fileID: string) {
+    const url = `${postRoute(postid)}/transcribe/file/${fileID}`;
     const response = await fetch(url, Client4.getOptions({
         method: 'POST',
     }));
