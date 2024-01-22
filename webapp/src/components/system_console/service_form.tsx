@@ -12,10 +12,12 @@ type Props = {
 }
 
 const FormContainer = styled.div`
-    position: relative;
-    border: 1px solid #ccc;
-    margin-bottom: 20px;
-    background: white;
+	position: relative;
+	border: 1px solid #ccc;
+	margin-bottom: 20px;
+	background: white;
+	border-radius: 4px;
+	box-shadow: 0px 2px 3px 0px rgba(0, 0, 0, 0.08);
 `;
 
 const CloseButton = styled.button`
@@ -36,7 +38,7 @@ const FormHeader = styled.div`
 	font-size: 14px;
 	font-weight: 600;
 	line-height: 20px;
-    padding: 16px 20px;
+	padding: 16px 20px;
 	border-bottom: 1px solid rgba(63, 67, 80, 0.12);
 `;
 
