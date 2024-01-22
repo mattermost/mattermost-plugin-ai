@@ -14,6 +14,7 @@ require (
 	github.com/r3labs/sse/v2 v2.10.0
 	github.com/sashabaranov/go-openai v1.14.1
 	github.com/stretchr/testify v1.8.4
+	github.com/yuin/goldmark v1.4.13
 )
 
 require (

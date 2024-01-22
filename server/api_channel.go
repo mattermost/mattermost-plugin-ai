@@ -67,6 +67,7 @@ func (p *Plugin) handleSince(c *gin.Context) {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
+	threadData.ScrubPostMarkdown()
 
 	// Remove deleted posts
 	threadData.Posts = slices.DeleteFunc(threadData.Posts, func(post *model.Post) bool {

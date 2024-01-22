@@ -116,6 +116,8 @@ func (p *Plugin) toolResolveGetChannelPosts(context ai.ConversationContext, args
 		return "internal failure", errors.Wrap(err, "failed to get metadata for posts")
 	}
 
+	postsData.ScrubPostMarkdown()
+
 	return formatThread(postsData), nil
 }
 

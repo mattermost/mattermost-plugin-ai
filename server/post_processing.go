@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
+	"github.com/mattermost/mattermost-plugin-ai/server/markdown"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/pkg/errors"
 )
@@ -44,13 +46,36 @@ func (t *ThreadData) latestPost() *model.Post {
 	return t.Posts[len(t.Posts)-1]
 }
 
+func (t *ThreadData) ScrubPostMarkdown() {
+	ProcessPostsText(t.Posts)
+}
+
+func ProcessPostText(message string) string {
+	message = markdown.RemoveHiddenText(message)
+	message = strings.TrimSpace(message)
+	return message
+}
+
+func ProcessPostsText(posts []*model.Post) {
+	for _, post := range posts {
+		post.Message = ProcessPostText(post.Message)
+	}
+}
+
 func (p *Plugin) getThreadAndMeta(postID string) (*ThreadData, error) {
 	posts, err := p.pluginAPI.Post.GetPostThread(postID)
 	if err != nil {
 		return nil, err
 	}
-	return p.getMetadataForPosts(posts)
 
+	threadData, err := p.getMetadataForPosts(posts)
+	if err != nil {
+		return nil, err
+	}
+
+	threadData.ScrubPostMarkdown()
+
+	return threadData, nil
 }
 
 func (p *Plugin) getMetadataForPosts(posts *model.PostList) (*ThreadData, error) {
