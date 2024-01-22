@@ -49,6 +49,7 @@ const NewQuestion = styled.div`
 `;
 
 const QuestionTitle = styled.div`
+    font-family: Metropolis;
     font-weight: 600;
     font-size: 22px;
 `;
