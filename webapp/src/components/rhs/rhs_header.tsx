@@ -18,8 +18,12 @@ const ButtonDisabled = styled(Button)`
 const NewChatButton = styled(Button)`
 	color: rgb(var(--link-color-rgb));
 	&:hover {
-		background: transparent;
 		color: rgb(var(--link-color-rgb));
+        background-color: rgba(var(--button-bg-rgb), 0.08);
+	}
+
+	&:active {
+		background-color: rgba(var(--button-bg-rgb), 0.12);
 	}
 `;
 
