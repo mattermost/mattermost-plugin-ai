@@ -142,6 +142,16 @@ func (p *Plugin) handleSummarizeTranscription(c *gin.Context) {
 		return
 	}
 
+	targetPostUser, err := p.pluginAPI.User.Get(post.UserId)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "unable to get calls user"))
+		return
+	}
+	if !targetPostUser.IsBot || targetPostUser.Username != CallsBotUsername {
+		c.AbortWithError(http.StatusBadRequest, errors.New("not a calls bot post"))
+		return
+	}
+
 	createdPost, err := p.newCallTranscriptionSummaryThread(user, post, channel)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "unable to summarize transcription"))
