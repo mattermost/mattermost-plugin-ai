@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"slices"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/render"
@@ -95,6 +96,17 @@ func (p *Plugin) handleTranscribeFile(c *gin.Context) {
 	user, err := p.pluginAPI.User.Get(userID)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	recordingFileInfo, err := p.pluginAPI.File.GetInfo(fileID)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	if recordingFileInfo.ChannelId != channel.Id || !slices.Contains(post.FileIds, fileID) {
+		c.AbortWithError(http.StatusBadRequest, errors.New("file not attached to specified post"))
 		return
 	}
 
