@@ -131,6 +131,17 @@ func (p *Plugin) newCallTranscriptionSummaryThread(requestingUser *model.User, t
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to get transcription file id")
 	}
+	transcriptionFileInfo, err := p.pluginAPI.File.GetInfo(transcriptionFileID)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to get transcription file info")
+	}
+	transcriptionFilePost, err := p.pluginAPI.Post.GetPost(transcriptionFileInfo.PostId)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to get transcription file post")
+	}
+	if transcriptionFilePost.ChannelId != channel.Id {
+		return nil, errors.New("strange configuration of calls transcription file")
+	}
 	transcriptionFileReader, err := p.pluginAPI.File.Get(transcriptionFileID)
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to read calls file")
