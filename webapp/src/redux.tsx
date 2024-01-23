@@ -17,6 +17,25 @@ export async function setupRedux(registry: any, store: WebappStore) {
         type: CallsClickHandler as any,
         handler: makeCallsPostButtonClickedHandler(store.dispatch),
     });
+
+    // This is a workaround for a bug where the the RHS was inaccessable to
+    // users that where not system admins. This is unable to be fixed properly
+    // because the Webapp does not export the AdvancedCreateComment directly.
+    // #120 filed to remove this workaround.
+    store.dispatch({
+        type: 'RECEIVED_MY_CHANNEL_MEMBER' as any,
+        data: {
+            channel_id: undefined, // eslint-disable-line no-undefined
+            roles: 'special_workaround',
+        },
+    });
+    store.dispatch({
+        type: 'RECEIVED_ROLE' as any,
+        data: {
+            name: 'special_workaround',
+            permissions: ['create_post'],
+        },
+    });
 }
 
 function callsPostButtonClickedTranscription(state = false, action: any) {
