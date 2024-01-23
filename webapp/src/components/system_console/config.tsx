@@ -42,10 +42,12 @@ type Props = {
 const PanelContainer = styled.div`
 	display: flex;
 	flex-direction: column;
-    padding: 32px;
+	padding: 32px;
 	gap: 32px;
-    border: 1px solid #ccc;
-    background: white;
+	border: 1px solid #ccc;
+	background: white;
+	border-radius: 4px;
+	box-shadow: 0px 2px 3px 0px rgba(0, 0, 0, 0.08);
 `;
 
 const PanelHeader = styled.div`
@@ -400,35 +402,40 @@ const Config = (props: Props) => {
                 )}
             </Panel>
 
-            <div className='form-group'>
-                <label
-                    className='control-label col-sm-4'
-                    htmlFor='ai-service-name'
-                >
-                    {'Enable LLM Trace:'}
-                </label>
-                <div className='col-sm-8'>
-                    <label className='radio-inline'>
-                        <input
-                            type='radio'
-                            value='true'
-                            checked={value.enableLLMTrace}
-                            onChange={() => props.onChange(props.id, {...value, enableLLMTrace: true})}
-                        />
-                        <span>{'true'}</span>
+            <Panel
+                title='Debug'
+                subtitle=''
+            >
+                <div className='form-group'>
+                    <label
+                        className='control-label col-sm-4'
+                        htmlFor='ai-service-name'
+                    >
+                        {'Enable LLM Trace:'}
                     </label>
-                    <label className='radio-inline'>
-                        <input
-                            type='radio'
-                            value='false'
-                            checked={!value.enableLLMTrace}
-                            onChange={() => props.onChange(props.id, {...value, enableLLMTrace: false})}
-                        />
-                        <span>{'false'}</span>
-                    </label>
-                    <div className='help-text'><span>{'Enable tracing of LLM requests. Outputs whole conversations to the logs.'}</span></div>
+                    <div className='col-sm-8'>
+                        <label className='radio-inline'>
+                            <input
+                                type='radio'
+                                value='true'
+                                checked={value.enableLLMTrace}
+                                onChange={() => props.onChange(props.id, {...value, enableLLMTrace: true})}
+                            />
+                            <span>{'true'}</span>
+                        </label>
+                        <label className='radio-inline'>
+                            <input
+                                type='radio'
+                                value='false'
+                                checked={!value.enableLLMTrace}
+                                onChange={() => props.onChange(props.id, {...value, enableLLMTrace: false})}
+                            />
+                            <span>{'false'}</span>
+                        </label>
+                        <div className='help-text'><span>{'Enable tracing of LLM requests. Outputs whole conversations to the logs.'}</span></div>
+                    </div>
                 </div>
-            </div>
+            </Panel>
         </ConfigContainer>
     );
 };

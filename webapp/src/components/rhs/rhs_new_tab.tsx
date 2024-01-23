@@ -28,10 +28,13 @@ const CreatePostContainer = styled.div`
 
 const OptionButton = styled(Button)`
     color: rgb(var(--link-color-rgb));
-    background-color: rgba(var(--button-bg-rgb), 0.04);
+    background-color: rgba(var(--button-bg-rgb), 0.08);
     svg {
         fill: rgb(var(--link-color-rgb));
     }
+    &:hover {
+        background-color: rgba(var(--button-bg-rgb), 0.12);
+	}
 	font-weight: 600;
 	line-height: 16px;
 	font-size: 12px;
@@ -46,6 +49,7 @@ const NewQuestion = styled.div`
 `;
 
 const QuestionTitle = styled.div`
+    font-family: Metropolis;
     font-weight: 600;
     font-size: 22px;
 `;
