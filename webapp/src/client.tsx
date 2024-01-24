@@ -91,7 +91,7 @@ export async function doStopGenerating(postid: string) {
     }));
 
     if (response.ok) {
-        return response.json();
+        return;
     }
 
     throw new ClientError(Client4.url, {
@@ -108,7 +108,7 @@ export async function doRegenerate(postid: string) {
     }));
 
     if (response.ok) {
-        return response.json();
+        return;
     }
 
     throw new ClientError(Client4.url, {
