@@ -2,7 +2,7 @@ import React, {useState, useEffect, useCallback} from 'react';
 import {useDispatch, useSelector} from 'react-redux';
 import styled from 'styled-components';
 
-import {manifest} from '@/manifest';
+import manifest from '@/manifest';
 
 import {getAIThreads} from '@/client';
 

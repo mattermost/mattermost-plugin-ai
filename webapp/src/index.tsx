@@ -7,7 +7,7 @@ import {GlobalState} from '@mattermost/types/lib/store';
 //@ts-ignore it exists
 import aiIcon from '../../assets/bot_icon.png';
 
-import {manifest} from '@/manifest';
+import manifest from '@/manifest';
 
 import {LLMBotPost} from './components/llmbot_post';
 import PostMenu from './components/post_menu';
