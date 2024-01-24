@@ -115,7 +115,7 @@ func (p *Plugin) continueConversation(threadData *ThreadData, context ai.Convers
 				RootId:    context.Post.RootId,
 				Message:   "Sorry, you no longer have access to the original thread.",
 			}
-			if err := p.botCreatePost(context.RequestingUser.Id, responsePost); err != nil {
+			if err = p.botCreatePost(context.RequestingUser.Id, responsePost); err != nil {
 				return nil, err
 			}
 			return nil, errors.New("user no longer has access to original thread")

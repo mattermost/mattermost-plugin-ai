@@ -50,7 +50,6 @@ func (p *Plugin) getThreadAndMeta(postID string) (*ThreadData, error) {
 		return nil, err
 	}
 	return p.getMetadataForPosts(posts)
-
 }
 
 func (p *Plugin) getMetadataForPosts(posts *model.PostList) (*ThreadData, error) {
@@ -184,7 +183,7 @@ func (p *Plugin) streamResultToPost(stream *ai.TextStreamResult, post *model.Pos
 				})
 			case err, ok := <-stream.Err:
 				if !ok {
-					if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
+					if err = p.pluginAPI.Post.UpdatePost(post); err != nil {
 						p.API.LogError("Streaming failed to update post", "error", err)
 						return
 					}
@@ -229,7 +228,7 @@ type WorkerResult struct {
 	results := make(chan WorkerResult)
 	errors := make(chan error)
 
-	// Create workers for recieving the text stream results.
+	// Create workers for receiving the text stream results.
 	for i, stream := range streams {
 		go func(streamNumber int, stream *ai.TextStreamResult) {
 			for {

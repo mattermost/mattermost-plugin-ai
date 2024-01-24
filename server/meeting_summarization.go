@@ -55,9 +55,9 @@ func (p *Plugin) createTranscription(recordingFileID string) (*subtitles.Subtitl
 
 	var cmd *exec.Cmd
 	if recordingFileInfo.Size > WhisperAPILimit {
-		cmd = exec.Command(p.ffmpegPath, "-i", "pipe:0", "-ac", "1", "-map", "0:a:0", "-b:a", "32k", "-ar", "16000", "-f", "mp3", "pipe:1")
+		cmd = exec.Command(p.ffmpegPath, "-i", "pipe:0", "-ac", "1", "-map", "0:a:0", "-b:a", "32k", "-ar", "16000", "-f", "mp3", "pipe:1") //nolint:gosec
 	} else {
-		cmd = exec.Command(p.ffmpegPath, "-i", "pipe:0", "-f", "mp3", "pipe:1")
+		cmd = exec.Command(p.ffmpegPath, "-i", "pipe:0", "-f", "mp3", "pipe:1") //nolint:gosec
 	}
 
 	cmd.Stdin = fileReader
@@ -72,7 +72,7 @@ func (p *Plugin) createTranscription(recordingFileID string) (*subtitles.Subtitl
 		return nil, errors.Wrap(err, "couldn't create stderr pipe")
 	}
 
-	if err := cmd.Start(); err != nil {
+	if err = cmd.Start(); err != nil {
 		return nil, errors.Wrap(err, "couldn't run ffmpeg")
 	}
 

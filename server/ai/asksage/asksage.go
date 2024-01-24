@@ -88,7 +88,7 @@ func (s *AskSage) ChatCompletionNoStream(conversation ai.BotConversation, opts .
 }
 
 // TODO: Implement actual token counting. For now just estimated based off OpenAI estimations
-func (a *AskSage) CountTokens(text string) int {
+func (s *AskSage) CountTokens(text string) int {
 	charCount := float64(len(text)) / 4.0
 	wordCount := float64(len(strings.Fields(text))) / 0.75
 
@@ -97,6 +97,6 @@ func (a *AskSage) CountTokens(text string) int {
 }
 
 // TODO: Figure out what the actual token limit is. For now just be conservative.
-func (a *AskSage) TokenLimit() int {
-	return a.maxTokens
+func (s *AskSage) TokenLimit() int {
+	return s.maxTokens
 }

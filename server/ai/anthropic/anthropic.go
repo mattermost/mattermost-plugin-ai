@@ -43,15 +43,15 @@ func conversationToPrompt(conversation ai.BotConversation) string {
 	return prompt.String()
 }
 
-func (s *Anthropic) GetDefaultConfig() ai.LLMConfig {
+func (a *Anthropic) GetDefaultConfig() ai.LLMConfig {
 	return ai.LLMConfig{
-		Model:     s.defaultModel,
+		Model:     a.defaultModel,
 		MaxTokens: 0,
 	}
 }
 
-func (s *Anthropic) createConfig(opts []ai.LanguageModelOption) ai.LLMConfig {
-	cfg := s.GetDefaultConfig()
+func (a *Anthropic) createConfig(opts []ai.LanguageModelOption) ai.LLMConfig { //nolint:unused
+	cfg := a.GetDefaultConfig()
 	for _, opt := range opts {
 		opt(&cfg)
 	}

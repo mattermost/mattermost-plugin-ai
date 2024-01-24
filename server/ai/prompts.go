@@ -47,7 +47,6 @@ func NewPrompts(input fs.FS, getBuiltInTools func() []Tool) (*Prompts, error) {
 		templates:       templates,
 		getBuiltInTools: getBuiltInTools,
 	}, nil
-
 }
 
 func withPromptExtension(filename string) string {

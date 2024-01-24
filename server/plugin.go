@@ -90,7 +90,7 @@ func (p *Plugin) OnActivate() error {
 	}
 	p.botid = botID
 
-	if err := p.SetupDB(); err != nil {
+	if err = p.SetupDB(); err != nil {
 		return err
 	}
 
@@ -148,25 +148,6 @@ func (p *Plugin) getLLM() ai.LanguageModel {
 	llm = NewLLMTruncationWrapper(llm)
 
 	return llm
-}
-
-func (p *Plugin) getImageGenerator() ai.ImageGenerator {
-	cfg := p.getConfiguration()
-	var imageGeneratorService ai.ServiceConfig
-	for _, service := range cfg.Services {
-		if service.Name == cfg.ImageGenerator {
-			imageGeneratorService = service
-			break
-		}
-	}
-	switch imageGeneratorService.ServiceName {
-	case "openai":
-		return openai.New(imageGeneratorService)
-	case "openaicompatible":
-		return openai.NewCompatible(imageGeneratorService)
-	}
-
-	return nil
 }
 
 func (p *Plugin) getTranscribe() ai.Transcriber {
@@ -274,5 +255,4 @@ func (p *Plugin) handleDMs(channel *model.Channel, postingUser *model.User, post
 	}
 
 	return nil
-
 }
