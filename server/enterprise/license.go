@@ -15,7 +15,7 @@ func NewLicenseChecker(pluginAPIClient *pluginapi.Client) *LicenseChecker {
 }
 
 // isAtLeastE20Licensed returns true when the server either has an E20 license or is configured for development.
-func (e *LicenseChecker) isAtLeastE20Licensed() bool {
+func (e *LicenseChecker) isAtLeastE20Licensed() bool { //nolint:unused
 	config := e.pluginAPIClient.Configuration.GetConfig()
 	license := e.pluginAPIClient.System.GetLicense()
 

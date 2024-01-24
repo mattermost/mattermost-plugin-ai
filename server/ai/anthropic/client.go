@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"strings"
 
@@ -15,7 +14,7 @@ import (
 
 const (
 	CompletionEndpoint = "https://api.anthropic.com/v1/complete"
-	APIKeyHeader       = "X-API-Key"
+	APIKeyHeader       = "X-API-Key" //nolint:gosec
 
 	StopReasonStopSequence = "stop_sequence"
 	StopReasonMaxTokens    = "max_tokens"
@@ -72,7 +71,7 @@ func (c *Client) CompletionNoStream(prompt string) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, err := ioutil.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return "", errors.Wrap(err, "unable to read response body on error: "+resp.Status)
 		}
@@ -124,7 +123,7 @@ func (c *Client) Completion(prompt string) (*ai.TextStreamResult, error) {
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			body, err := ioutil.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
 			if err != nil {
 				errChan <- errors.Wrap(err, "unable to read response body on error: "+resp.Status)
 				return

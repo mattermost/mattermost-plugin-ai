@@ -16,7 +16,6 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/subtitles"
 	"github.com/pkg/errors"
-	"github.com/sashabaranov/go-openai"
 	openaiClient "github.com/sashabaranov/go-openai"
 )
 
@@ -30,14 +29,14 @@ const MaxFunctionCalls = 10
 
 func NewCompatible(llmService ai.ServiceConfig) *OpenAI {
 	apiKey := llmService.APIKey
-	endpointUrl := llmService.URL
+	endpointURL := llmService.URL
 	defaultModel := llmService.DefaultModel
-	config := openai.DefaultConfig(apiKey)
-	config.BaseURL = endpointUrl
+	config := openaiClient.DefaultConfig(apiKey)
+	config.BaseURL = endpointURL
 
-	parsedUrl, err := url.Parse(endpointUrl)
-	if err == nil && strings.HasSuffix(parsedUrl.Host, "openai.azure.com") {
-		config = openai.DefaultAzureConfig(apiKey, endpointUrl)
+	parsedURL, err := url.Parse(endpointURL)
+	if err == nil && strings.HasSuffix(parsedURL.Host, "openai.azure.com") {
+		config = openaiClient.DefaultAzureConfig(apiKey, endpointURL)
 		config.APIVersion = "2023-07-01-preview"
 	}
 	return &OpenAI{
@@ -95,7 +94,7 @@ func postsToChatCompletionMessages(posts []ai.Post) []openaiClient.ChatCompletio
 		} else if post.Role == ai.PostRoleSystem {
 			role = openaiClient.ChatMessageRoleSystem
 		}
-		result = append(result, openai.ChatCompletionMessage{
+		result = append(result, openaiClient.ChatCompletionMessage{
 			Role:    role,
 			Content: post.Message,
 		})
@@ -116,7 +115,7 @@ func (s *OpenAI) handleStreamFunctionCall(request openaiClient.ChatCompletionReq
 	if err != nil {
 		fmt.Println("Error resolving function: ", err)
 	}
-	request.Messages = append(request.Messages, openai.ChatCompletionMessage{
+	request.Messages = append(request.Messages, openaiClient.ChatCompletionMessage{
 		Role:    openaiClient.ChatMessageRoleFunction,
 		Name:    name,
 		Content: toolResult,
@@ -276,8 +275,8 @@ func (s *OpenAI) Transcribe(file io.Reader) (*subtitles.Subtitles, error) {
 func (s *OpenAI) GenerateImage(prompt string) (image.Image, error) {
 	req := openaiClient.ImageRequest{
 		Prompt:         prompt,
-		Size:           openai.CreateImageSize256x256,
-		ResponseFormat: openai.CreateImageResponseFormatB64JSON,
+		Size:           openaiClient.CreateImageSize256x256,
+		ResponseFormat: openaiClient.CreateImageResponseFormatB64JSON,
 		N:              1,
 	}
 

@@ -1,6 +1,6 @@
 import {Client4 as Client4Class, ClientError} from '@mattermost/client';
 
-import {manifest} from './manifest';
+import manifest from './manifest';
 
 const Client4 = new Client4Class();
 

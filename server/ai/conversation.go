@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 	"time"
-	_ "time/tzdata"
+	_ "time/tzdata" // Needed to fill time.LoadLocation db
 
 	"github.com/mattermost/mattermost/server/public/model"
 )
@@ -153,7 +153,6 @@ func (b *BotConversation) Truncate(maxTokens int, countTokens func(string) int) 
 		if (totalTokens + postTokens) > maxTokens {
 			charactorsToCut := (postTokens - (maxTokens - totalTokens)) * 4
 			post.Message = strings.TrimSpace(post.Message[charactorsToCut:])
-			postTokens = countTokens(post.Message)
 			b.Posts = append(b.Posts, post)
 			slices.Reverse(b.Posts)
 			return true

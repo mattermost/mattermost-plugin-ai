@@ -9,10 +9,6 @@ import (
 
 // Tests truncation using words as tokens
 func TestBotConversationTruncate(t *testing.T) {
-	type args struct {
-		tokenLimit int
-		countFn    func(string) int
-	}
 	tests := []struct {
 		name               string
 		conversation       BotConversation

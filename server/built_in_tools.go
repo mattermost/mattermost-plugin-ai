@@ -90,7 +90,7 @@ func (p *Plugin) toolResolveGetChannelPosts(context ai.ConversationContext, args
 
 	if context.Channel == nil || context.Channel.TeamId == "" {
 		//TODO: support DMs. This will require some way to disabiguate between channels with the same name on different teams.
-		return "Error: Ambiguous channel lookup. Unable to what channel the user is reffering to because DMs do not belong to specific teams. Tell the user to ask outside a DM channel.", errors.New("ambiguous channel lookup")
+		return "Error: Ambiguous channel lookup. Unable to what channel the user is referring to because DMs do not belong to specific teams. Tell the user to ask outside a DM channel.", errors.New("ambiguous channel lookup")
 	}
 
 	channel, err := p.pluginAPI.Channel.GetByName(context.Channel.TeamId, args.ChannelName, false)
@@ -98,7 +98,7 @@ func (p *Plugin) toolResolveGetChannelPosts(context ai.ConversationContext, args
 		return "internal failure", errors.Wrap(err, "failed to lookup channel by name, may not exist")
 	}
 
-	if err := p.checkUsageRestrictionsForChannel(channel); err != nil {
+	if err = p.checkUsageRestrictionsForChannel(channel); err != nil {
 		return "user asked for a channel that is blocked by usage restrictions", errors.Wrap(err, "usage restrictions during channel lookup")
 	}
 
@@ -160,9 +160,13 @@ func (p *Plugin) toolGetGithubIssue(context ai.ConversationContext, argsGetter a
 	req.Header.Set("Mattermost-User-ID", context.RequestingUser.Id)
 
 	resp := p.pluginAPI.Plugin.HTTP(req)
-	if resp == nil || resp.StatusCode != http.StatusOK {
+	if resp == nil {
+		return "Error: unable to get issue, internal failure", errors.New("failed to get issue, response was nil")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
 		result, _ := io.ReadAll(resp.Body)
-		return "Error: unable to get issue, internal failure", errors.Errorf("failed to get issue, status code: %v\nbody: %v\n", resp.Status, string(result))
+		return "Error: unable to get issue, internal failure", errors.Errorf("failed to get issue, status code: %v\n body: %v", resp.Status, string(result))
 	}
 
 	var issue github.Issue

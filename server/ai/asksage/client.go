@@ -3,7 +3,7 @@ package asksage
 import (
 	"bytes"
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"net/http"
 
 	"github.com/pkg/errors"
@@ -125,13 +125,13 @@ func (c *Client) GetDatasets() ([]Dataset, error) {
 }
 
 func (c *Client) doServer(method, path string, body, result interface{}) error {
-	fullUrl := ServerBaseURL + path
-	return c.do(method, fullUrl, body, result)
+	fullURL := ServerBaseURL + path
+	return c.do(method, fullURL, body, result)
 }
 
 func (c *Client) doAuth(method, path string, body, result interface{}) error {
-	fullUrl := AuthBaseURL + path
-	return c.do(method, fullUrl, body, result)
+	fullURL := AuthBaseURL + path
+	return c.do(method, fullURL, body, result)
 }
 
 func (c *Client) do(method, path string, body interface{}, result interface{}) error {
@@ -165,7 +165,7 @@ func (c *Client) do(method, path string, body interface{}, result interface{}) e
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, err := ioutil.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return errors.Wrap(err, "unable to read response body on error: "+resp.Status)
 		}

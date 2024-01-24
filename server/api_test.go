@@ -27,7 +27,6 @@ func TestPostRouter(t *testing.T) {
 		"stop":                    "/post/postid/stop",
 		"regenerate":              "/post/postid/regenerate",
 	} {
-
 		for name, test := range map[string]struct {
 			request        *http.Request
 			expectedStatus int
@@ -145,7 +144,6 @@ func TestAdminRouter(t *testing.T) {
 	gin.DefaultWriter = io.Discard
 
 	for urlName, url := range map[string]string{} {
-
 		for name, test := range map[string]struct {
 			request        *http.Request
 			expectedStatus int
@@ -192,7 +190,6 @@ func TestChannelRouter(t *testing.T) {
 	for urlName, url := range map[string]string{
 		"summarize since": "/channel/channelid/since",
 	} {
-
 		for name, test := range map[string]struct {
 			request        *http.Request
 			expectedStatus int

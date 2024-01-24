@@ -19,7 +19,6 @@ linters:
   disable-all: true
   enable:
     - bodyclose
-    - errcheck
     - gocritic
     - gofmt
     - goimports

@@ -266,13 +266,13 @@ func (p *Plugin) handleRegenerate(c *gin.Context) {
 			return
 		}
 
-		channel, err := p.pluginAPI.Channel.Get(fileInfo.ChannelId)
+		originalFileChannel, err := p.pluginAPI.Channel.Get(fileInfo.ChannelId)
 		if err != nil {
 			c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "could not get channel of original recording on regen"))
 			return
 		}
 
-		context := p.MakeConversationContext(user, channel, nil)
+		context := p.MakeConversationContext(user, originalFileChannel, nil)
 		result, err = p.summarizeTranscription(transcription, context)
 		if err != nil {
 			c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "could not summarize transcription on regen"))

@@ -8,9 +8,12 @@ import (
 	"log"
 	"net"
 	"os"
+	"time"
 
 	"github.com/mattermost/mattermost/server/public/model"
 )
+
+const commandTimeout = 120 * time.Second
 
 const helpText = `
 Usage:
@@ -34,7 +37,10 @@ func pluginctl() error {
 		return errors.New("invalid number of arguments")
 	}
 
-	client, err := getClient()
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	defer cancel()
+
+	client, err := getClient(ctx)
 	if err != nil {
 		return err
 	}
@@ -44,19 +50,19 @@ func pluginctl() error {
 		if len(os.Args) < 4 {
 			return errors.New("invalid number of arguments")
 		}
-		return deploy(client, os.Args[2], os.Args[3])
+		return deploy(ctx, client, os.Args[2], os.Args[3])
 	case "disable":
-		return disablePlugin(client, os.Args[2])
+		return disablePlugin(ctx, client, os.Args[2])
 	case "enable":
-		return enablePlugin(client, os.Args[2])
+		return enablePlugin(ctx, client, os.Args[2])
 	case "reset":
-		return resetPlugin(client, os.Args[2])
+		return resetPlugin(ctx, client, os.Args[2])
 	default:
 		return errors.New("invalid second argument")
 	}
 }
 
-func getClient() (*model.Client4, error) {
+func getClient(ctx context.Context) (*model.Client4, error) {
 	socketPath := os.Getenv("MM_LOCALSOCKETPATH")
 	if socketPath == "" {
 		socketPath = model.LocalModeSocketPath
@@ -92,7 +98,7 @@ func getClient() (*model.Client4, error) {
 	if adminUsername != "" && adminPassword != "" {
 		client := model.NewAPIv4Client(siteURL)
 		log.Printf("Authenticating as %s against %s.", adminUsername, siteURL)
-		_, _, err := client.Login(context.Background(), adminUsername, adminPassword)
+		_, _, err := client.Login(ctx, adminUsername, adminPassword)
 		if err != nil {
 			return nil, fmt.Errorf("failed to login as %s: %w", adminUsername, err)
 		}
@@ -114,7 +120,7 @@ func getUnixClient(socketPath string) (*model.Client4, bool) {
 
 // deploy attempts to upload and enable a plugin via the Client4 API.
 // It will fail if plugin uploads are disabled.
-func deploy(client *model.Client4, pluginID, bundlePath string) error {
+func deploy(ctx context.Context, client *model.Client4, pluginID, bundlePath string) error {
 	pluginBundle, err := os.Open(bundlePath)
 	if err != nil {
 		return fmt.Errorf("failed to open %s: %w", bundlePath, err)
@@ -122,13 +128,13 @@ func deploy(client *model.Client4, pluginID, bundlePath string) error {
 	defer pluginBundle.Close()
 
 	log.Print("Uploading plugin via API.")
-	_, _, err = client.UploadPluginForced(context.Background(), pluginBundle)
+	_, _, err = client.UploadPluginForced(ctx, pluginBundle)
 	if err != nil {
 		return fmt.Errorf("failed to upload plugin bundle: %s", err.Error())
 	}
 
 	log.Print("Enabling plugin.")
-	_, err = client.EnablePlugin(context.Background(), pluginID)
+	_, err = client.EnablePlugin(ctx, pluginID)
 	if err != nil {
 		return fmt.Errorf("failed to enable plugin: %s", err.Error())
 	}
@@ -137,9 +143,9 @@ func deploy(client *model.Client4, pluginID, bundlePath string) error {
 }
 
 // disablePlugin attempts to disable the plugin via the Client4 API.
-func disablePlugin(client *model.Client4, pluginID string) error {
+func disablePlugin(ctx context.Context, client *model.Client4, pluginID string) error {
 	log.Print("Disabling plugin.")
-	_, err := client.DisablePlugin(context.Background(), pluginID)
+	_, err := client.DisablePlugin(ctx, pluginID)
 	if err != nil {
 		return fmt.Errorf("failed to disable plugin: %w", err)
 	}
@@ -148,9 +154,9 @@ func disablePlugin(client *model.Client4, pluginID string) error {
 }
 
 // enablePlugin attempts to enable the plugin via the Client4 API.
-func enablePlugin(client *model.Client4, pluginID string) error {
+func enablePlugin(ctx context.Context, client *model.Client4, pluginID string) error {
 	log.Print("Enabling plugin.")
-	_, err := client.EnablePlugin(context.Background(), pluginID)
+	_, err := client.EnablePlugin(ctx, pluginID)
 	if err != nil {
 		return fmt.Errorf("failed to enable plugin: %w", err)
 	}
@@ -159,13 +165,13 @@ func enablePlugin(client *model.Client4, pluginID string) error {
 }
 
 // resetPlugin attempts to reset the plugin via the Client4 API.
-func resetPlugin(client *model.Client4, pluginID string) error {
-	err := disablePlugin(client, pluginID)
+func resetPlugin(ctx context.Context, client *model.Client4, pluginID string) error {
+	err := disablePlugin(ctx, client, pluginID)
 	if err != nil {
 		return err
 	}
 
-	err = enablePlugin(client, pluginID)
+	err = enablePlugin(ctx, client, pluginID)
 	if err != nil {
 		return err
 	}
