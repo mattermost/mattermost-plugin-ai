@@ -38,6 +38,7 @@ const RHSTitleContainer = styled.span`
     display: flex;
 	gap: 8px;
     align-items: center;
+	margin-left: 8px;
 `;
 
 const SummarizeRecordingIconContainer = styled.span`

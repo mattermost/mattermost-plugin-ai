@@ -4,6 +4,7 @@ import styled from 'styled-components';
 import {Button} from './common';
 
 const HistoryButton = styled(Button)`
+	padding: 8px 12px;
     color: rgba(var(--center-channel-color-rgb), 0.64);
 `;
 
