@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"slices"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/render"
@@ -98,6 +99,17 @@ func (p *Plugin) handleTranscribeFile(c *gin.Context) {
 		return
 	}
 
+	recordingFileInfo, err := p.pluginAPI.File.GetInfo(fileID)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	if recordingFileInfo.ChannelId != channel.Id || !slices.Contains(post.FileIds, fileID) {
+		c.AbortWithError(http.StatusBadRequest, errors.New("file not attached to specified post"))
+		return
+	}
+
 	createdPost, err := p.newCallRecordingThread(user, post, channel, fileID)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
@@ -127,6 +139,16 @@ func (p *Plugin) handleSummarizeTranscription(c *gin.Context) {
 	user, err := p.pluginAPI.User.Get(userID)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "unable to get user"))
+		return
+	}
+
+	targetPostUser, err := p.pluginAPI.User.Get(post.UserId)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "unable to get calls user"))
+		return
+	}
+	if !targetPostUser.IsBot || targetPostUser.Username != CallsBotUsername {
+		c.AbortWithError(http.StatusBadRequest, errors.New("not a calls bot post"))
 		return
 	}
 
