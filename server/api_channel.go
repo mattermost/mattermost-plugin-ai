@@ -108,6 +108,7 @@ func (p *Plugin) handleSince(c *gin.Context) {
 	}
 
 	post := &model.Post{}
+	post.AddProp(NoRegen, "true")
 	if err := p.streamResultToNewDM(resultStream, user.Id, post); err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
