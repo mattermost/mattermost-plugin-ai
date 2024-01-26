@@ -170,3 +170,7 @@ export async function createPost(post: any) {
     const created = await Client4.createPost(post);
     return created;
 }
+
+export async function updateRead(userId: string, teamId: string, selectedPostId: string, timestamp: number) {
+    Client4.updateThreadReadForUser(userId, teamId, selectedPostId, timestamp);
+}
