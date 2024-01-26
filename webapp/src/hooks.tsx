@@ -20,8 +20,8 @@ export const doSelectPost = (postId: string, channelId: string, dispatch: any) =
         dispatch(openRHS());
     } else {
         dispatch(selectPostLegacy(postId, channelId));
-        viewMyChannel(channelId);
     }
+    viewMyChannel(channelId);
 };
 
 export const useSelectPost = () => {

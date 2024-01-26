@@ -2,9 +2,11 @@ import React, {useState, useEffect, useCallback} from 'react';
 import {useDispatch, useSelector} from 'react-redux';
 import styled from 'styled-components';
 
+import {GlobalState} from '@mattermost/types/store';
+
 import manifest from '@/manifest';
 
-import {getAIThreads} from '@/client';
+import {getAIThreads, updateRead} from '@/client';
 
 import ThreadItem from './thread_item';
 import RHSHeader from './rhs_header';
@@ -32,11 +34,15 @@ export interface AIThread {
     UpdateAt: number;
 }
 
+const twentyFourHoursInMS = 24 * 60 * 60 * 1000;
+
 export default function RHS() {
     const dispatch = useDispatch();
     const [currentTab, setCurrentTab] = useState('new');
     const botChannelId = useSelector((state: any) => state['plugins-' + manifest.id].botChannelId);
     const selectedPostId = useSelector((state: any) => state['plugins-' + manifest.id].selectedPostId);
+    const currentUserId = useSelector<GlobalState, string>((state) => state.entities.users.currentUserId);
+    const currentTeamId = useSelector<GlobalState, string>((state) => state.entities.teams.currentTeamId);
 
     const [threads, setThreads] = useState<AIThread[] | null>(null);
 
@@ -46,8 +52,17 @@ export default function RHS() {
         };
         if (currentTab === 'threads') {
             fetchThreads();
+        } else if (currentTab === 'thread' && Boolean(selectedPostId)) {
+            // Update read for the thread to tommorow. We don't really want the unreads thing to show up.
+            updateRead(currentUserId, currentTeamId, selectedPostId, Date.now() + twentyFourHoursInMS);
         }
-    }, [currentTab]);
+        return () => {
+            // Somtimes we are too fast for the server, so try again on unmount/switch.
+            if (selectedPostId) {
+                updateRead(currentUserId, currentTeamId, selectedPostId, Date.now() + twentyFourHoursInMS);
+            }
+        };
+    }, [currentTab, selectedPostId]);
 
     const selectPost = useCallback((postId: string) => {
         dispatch({type: 'SELECT_AI_POST', postId});
