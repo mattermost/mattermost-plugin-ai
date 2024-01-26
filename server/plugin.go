@@ -222,7 +222,7 @@ func (p *Plugin) handleMessages(post *model.Post) error {
 
 	switch {
 	// Check we are mentioned like @ai
-	case userIsMentioned(post.Message, BotUsername):
+	case userIsMentionedMarkdown(post.Message, BotUsername):
 		return p.handleMentions(post, postingUser, channel)
 
 	// Check if this is post in the DM channel with the bot
