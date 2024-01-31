@@ -24,6 +24,7 @@ type Post struct {
 }
 
 type ConversationContext struct {
+	BotID            string
 	Time             string
 	ServerName       string
 	CompanyName      string
@@ -34,7 +35,7 @@ type ConversationContext struct {
 	PromptParameters map[string]string
 }
 
-func NewConversationContext(requestingUser *model.User, channel *model.Channel, post *model.Post) ConversationContext {
+func NewConversationContext(botID string, requestingUser *model.User, channel *model.Channel, post *model.Post) ConversationContext {
 	// Get current time and date formatted nicely with the user's locale
 	now := time.Now()
 	nowString := now.Format(time.RFC1123)
@@ -52,6 +53,10 @@ func NewConversationContext(requestingUser *model.User, channel *model.Channel, 
 		Channel:        channel,
 		Post:           post,
 	}
+}
+
+func (c *ConversationContext) IsDMWithBot() bool {
+	return c.Channel != nil && c.Channel.Type == model.ChannelTypeDirect && strings.Contains(c.Channel.Name, c.BotID)
 }
 
 func (c ConversationContext) String() string {
