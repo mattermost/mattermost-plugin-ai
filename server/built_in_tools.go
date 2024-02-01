@@ -38,13 +38,6 @@ func (p *Plugin) toolResolveLookupMattermostUser(context ai.ConversationContext,
 		return "", errors.Wrap(err, "failed to lookup user")
 	}
 
-	// If this isn't a DM fail for users who are not SSO users.
-	if !context.IsDMWithBot() {
-		if user.AuthService != model.UserAuthServiceSaml && user.AuthService != model.UserAuthServiceLdap {
-			return "can't access because they are not an SSO user", errors.New("user is not an SSO user")
-		}
-	}
-
 	userStatus, err := p.pluginAPI.User.GetStatus(user.Id)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to get user status")
@@ -188,44 +181,10 @@ func (p *Plugin) toolGetGithubIssue(context ai.ConversationContext, argsGetter a
 	return formatIssue(&issue), nil
 }
 
-func checkProfileConfiguredSafe(cfg *model.Config) bool {
-	if cfg.LdapSettings.Enable != nil &&
-		*cfg.LdapSettings.Enable &&
-		cfg.LdapSettings.EnableSync != nil &&
-		*cfg.LdapSettings.EnableSync &&
-		*cfg.LdapSettings.NicknameAttribute != "" &&
-		*cfg.LdapSettings.FirstNameAttribute != "" &&
-		*cfg.LdapSettings.PositionAttribute != "" &&
-		*cfg.LdapSettings.LastNameAttribute != "" {
-		return true
-	}
-
-	if cfg.SamlSettings.Enable != nil &&
-		*cfg.SamlSettings.Enable &&
-		*cfg.SamlSettings.FirstNameAttribute != "" &&
-		*cfg.SamlSettings.LastNameAttribute != "" &&
-		*cfg.SamlSettings.PositionAttribute != "" &&
-		*cfg.SamlSettings.UsernameAttribute != "" {
-		return true
-	}
-
-	return false
-}
-
 // getBuiltInTools returns the built-in tools that are available to all users.
 // isDM is true if the response will be in a DM with the user. More tools are available in DMs because of security properties.
 func (p *Plugin) getBuiltInTools(isDM bool) []ai.Tool {
 	builtInTools := []ai.Tool{}
-
-	// Allow looking up users in DMs or if SSO is enabled.
-	if isDM || checkProfileConfiguredSafe(p.pluginAPI.Configuration.GetConfig()) {
-		builtInTools = append(builtInTools, ai.Tool{
-			Name:        "LookupMattermostUser",
-			Description: "Lookup a Mattermost user by their username. Available information includes: username, full name, email, nickname, position, locale, timezone, last activity, and status.",
-			Schema:      LookupMattermostUserArgs{},
-			Resolver:    p.toolResolveLookupMattermostUser,
-		})
-	}
 
 	if isDM {
 		builtInTools = append(builtInTools, ai.Tool{
@@ -233,6 +192,13 @@ func (p *Plugin) getBuiltInTools(isDM bool) []ai.Tool {
 			Description: "Get the most recent posts from a Mattermost channel. Returns posts in the format 'username: message'",
 			Schema:      GetChannelPosts{},
 			Resolver:    p.toolResolveGetChannelPosts,
+		})
+
+		builtInTools = append(builtInTools, ai.Tool{
+			Name:        "LookupMattermostUser",
+			Description: "Lookup a Mattermost user by their username. Available information includes: username, full name, email, nickname, position, locale, timezone, last activity, and status.",
+			Schema:      LookupMattermostUserArgs{},
+			Resolver:    p.toolResolveLookupMattermostUser,
 		})
 
 		// Github plugin tools

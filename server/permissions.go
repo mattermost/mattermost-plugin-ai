@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 
+	"github.com/mattermost/mattermost-plugin-ai/server/mmapi"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/pkg/errors"
 )
@@ -30,7 +31,7 @@ func (p *Plugin) checkUsageRestrictionsForChannel(channel *model.Channel) error 
 
 		if !cfg.AllowPrivateChannels {
 			if channel.Type != model.ChannelTypeOpen {
-				if !(channel.Type == model.ChannelTypeDirect && strings.Contains(channel.Name, p.botid)) {
+				if !mmapi.IsDMWith(p.botid, channel) {
 					return errors.Wrap(ErrUsageRestriction, "can't work on private channels")
 				}
 			}

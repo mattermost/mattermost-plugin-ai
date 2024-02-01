@@ -7,6 +7,7 @@ import (
 	"time"
 	_ "time/tzdata" // Needed to fill time.LoadLocation db
 
+	"github.com/mattermost/mattermost-plugin-ai/server/mmapi"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
@@ -52,11 +53,12 @@ func NewConversationContext(botID string, requestingUser *model.User, channel *m
 		RequestingUser: requestingUser,
 		Channel:        channel,
 		Post:           post,
+		BotID:          botID,
 	}
 }
 
 func (c *ConversationContext) IsDMWithBot() bool {
-	return c.Channel != nil && c.Channel.Type == model.ChannelTypeDirect && strings.Contains(c.Channel.Name, c.BotID)
+	return mmapi.IsDMWith(c.BotID, c.Channel)
 }
 
 func (c ConversationContext) String() string {
