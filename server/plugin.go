@@ -4,7 +4,6 @@ import (
 	"context"
 	"embed"
 	"os/exec"
-	"strings"
 	"sync"
 
 	sq "github.com/Masterminds/squirrel"
@@ -14,6 +13,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/asksage"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/openai"
 	"github.com/mattermost/mattermost-plugin-ai/server/enterprise"
+	"github.com/mattermost/mattermost-plugin-ai/server/mmapi"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
@@ -225,8 +225,8 @@ func (p *Plugin) handleMessages(post *model.Post) error {
 	case userIsMentionedMarkdown(post.Message, BotUsername):
 		return p.handleMentions(post, postingUser, channel)
 
-	// Check if this is post in the DM channel with the bot
-	case channel.Type == model.ChannelTypeDirect && strings.Contains(channel.Name, p.botid):
+		// Check if this is post in the DM channel with the bot
+	case mmapi.IsDMWith(p.botid, channel):
 		return p.handleDMs(channel, postingUser, post)
 	}
 

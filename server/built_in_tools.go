@@ -63,7 +63,10 @@ func (p *Plugin) toolResolveLookupMattermostUser(context ai.ConversationContext,
 	}
 	result += fmt.Sprintf("\nTimezone: %s", model.GetPreferredTimezone(user.Timezone))
 	result += fmt.Sprintf("\nLast Activity: %s", model.GetTimeForMillis(userStatus.LastActivityAt).Format("2006-01-02 15:04:05 MST"))
-	result += fmt.Sprintf("\nStatus: %s", userStatus.Status)
+	// Exclude manual statuses because they could be prompt injections
+	if userStatus.Status != "" && !userStatus.Manual {
+		result += fmt.Sprintf("\nStatus: %s", userStatus.Status)
+	}
 
 	return result, nil
 }
@@ -178,34 +181,38 @@ func (p *Plugin) toolGetGithubIssue(context ai.ConversationContext, argsGetter a
 	return formatIssue(&issue), nil
 }
 
-func (p *Plugin) getBuiltInTools() []ai.Tool {
-	// Unconditional tools
-	builtInTools := []ai.Tool{
-		{
-			Name:        "LookupMattermostUser",
-			Description: "Lookup a Mattermost user by their username. Available information includes: username, full name, email, nickname, position, locale, timezone, last activity, and status.",
-			Schema:      LookupMattermostUserArgs{},
-			Resolver:    p.toolResolveLookupMattermostUser,
-		},
-		{
+// getBuiltInTools returns the built-in tools that are available to all users.
+// isDM is true if the response will be in a DM with the user. More tools are available in DMs because of security properties.
+func (p *Plugin) getBuiltInTools(isDM bool) []ai.Tool {
+	builtInTools := []ai.Tool{}
+
+	if isDM {
+		builtInTools = append(builtInTools, ai.Tool{
 			Name:        "GetChannelPosts",
 			Description: "Get the most recent posts from a Mattermost channel. Returns posts in the format 'username: message'",
 			Schema:      GetChannelPosts{},
 			Resolver:    p.toolResolveGetChannelPosts,
-		},
-	}
-
-	// Github plugin tools
-	status, err := p.pluginAPI.Plugin.GetPluginStatus("github")
-	if err != nil {
-		p.API.LogError("failed to get github plugin status", "error", err.Error())
-	} else if status != nil && status.State == model.PluginStateRunning {
-		builtInTools = append(builtInTools, ai.Tool{
-			Name:        "GetGithubIssue",
-			Description: "Retrieve a single GitHub issue by owner, repo, and issue number.",
-			Schema:      GetGithubIssueArgs{},
-			Resolver:    p.toolGetGithubIssue,
 		})
+
+		builtInTools = append(builtInTools, ai.Tool{
+			Name:        "LookupMattermostUser",
+			Description: "Lookup a Mattermost user by their username. Available information includes: username, full name, email, nickname, position, locale, timezone, last activity, and status.",
+			Schema:      LookupMattermostUserArgs{},
+			Resolver:    p.toolResolveLookupMattermostUser,
+		})
+
+		// Github plugin tools
+		status, err := p.pluginAPI.Plugin.GetPluginStatus("github")
+		if err != nil {
+			p.API.LogError("failed to get github plugin status", "error", err.Error())
+		} else if status != nil && status.State == model.PluginStateRunning {
+			builtInTools = append(builtInTools, ai.Tool{
+				Name:        "GetGithubIssue",
+				Description: "Retrieve a single GitHub issue by owner, repo, and issue number.",
+				Schema:      GetGithubIssueArgs{},
+				Resolver:    p.toolGetGithubIssue,
+			})
+		}
 	}
 
 	return builtInTools

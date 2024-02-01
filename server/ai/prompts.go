@@ -8,9 +8,11 @@ import (
 	"github.com/pkg/errors"
 )
 
+type BuiltInToolsFunc func(isDM bool) []Tool
+
 type Prompts struct {
 	templates       *template.Template
-	getBuiltInTools func() []Tool
+	getBuiltInTools BuiltInToolsFunc
 }
 
 const PromptExtension = "tmpl"
@@ -37,7 +39,7 @@ const (
 	PromptFindOpenQuestionsSince  = "find_open_questions_since"
 )
 
-func NewPrompts(input fs.FS, getBuiltInTools func() []Tool) (*Prompts, error) {
+func NewPrompts(input fs.FS, getBuiltInTools BuiltInToolsFunc) (*Prompts, error) {
 	templates, err := template.ParseFS(input, "ai/prompts/*")
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to parse prompt templates")
@@ -53,9 +55,9 @@ func withPromptExtension(filename string) string {
 	return filename + "." + PromptExtension
 }
 
-func (p *Prompts) getDefaultTools() ToolStore {
+func (p *Prompts) getDefaultTools(isDMWithBot bool) ToolStore {
 	tools := NewToolStore()
-	tools.AddTools(p.getBuiltInTools())
+	tools.AddTools(p.getBuiltInTools(isDMWithBot))
 	return tools
 }
 
@@ -63,7 +65,7 @@ func (p *Prompts) ChatCompletion(templateName string, context ConversationContex
 	conversation := BotConversation{
 		Posts:   []Post{},
 		Context: context,
-		Tools:   p.getDefaultTools(),
+		Tools:   p.getDefaultTools(context.IsDMWithBot()),
 	}
 
 	template := p.templates.Lookup(withPromptExtension(templateName))

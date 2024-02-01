@@ -75,7 +75,7 @@ func (p *Plugin) handleSince(c *gin.Context) {
 
 	formattedThread := formatThread(threadData)
 
-	context := ai.NewConversationContext(user, channel, nil)
+	context := p.MakeConversationContext(user, channel, nil)
 	context.PromptParameters = map[string]string{
 		"Posts": formattedThread,
 	}
