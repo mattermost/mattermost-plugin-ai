@@ -213,7 +213,7 @@ func checkProfileConfiguredSafe(cfg *model.Config) bool {
 }
 
 // getBuiltInTools returns the built-in tools that are available to all users.
-// isDM is true if the response will be in a DM with the user. More tools are available in DMs becuase of security properties.
+// isDM is true if the response will be in a DM with the user. More tools are available in DMs because of security properties.
 func (p *Plugin) getBuiltInTools(isDM bool) []ai.Tool {
 	builtInTools := []ai.Tool{}
 
@@ -225,7 +225,6 @@ func (p *Plugin) getBuiltInTools(isDM bool) []ai.Tool {
 			Schema:      LookupMattermostUserArgs{},
 			Resolver:    p.toolResolveLookupMattermostUser,
 		})
-
 	}
 
 	if isDM {
