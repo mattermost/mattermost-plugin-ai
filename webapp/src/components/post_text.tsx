@@ -55,6 +55,7 @@ const PostText = (props: Props) => {
         mentionHighlight: true,
         atMentions: true,
         team,
+        unsafeLinks: true,
 
         //channelNamesMap,
     };
