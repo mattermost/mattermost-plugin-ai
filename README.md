@@ -15,7 +15,7 @@
 
 ## Background
 
-The Mattermost AI Plugin adds functionality for local (self-hosted) and third-party (vendor-hosted) LLMs within Mattermost.
+The Mattermost AI Plugin adds functionality for local (self-hosted) and third-party (vendor-hosted) LLMs within Mattermost v9.6 and above.
 
 This plugin is currently experimental. Contributions and suggestions are welcome. See the [Contributing](#contributing) section for more details!
 
@@ -25,7 +25,7 @@ Join the discussion in the [~AI-Exchange channel](https://community.mattermost.c
 
 ## Install
 
-These installation instructions assume you already have a [Mattermost instance](https://mattermost.com/download/) with [PostgreSQL](https://www.postgresql.org/):
+These installation instructions assume you already have a [Mattermost v9.6 server](https://mattermost.com/download/) with [PostgreSQL](https://www.postgresql.org/):
 
 1. Download the [latest release](https://github.com/mattermost/mattermost-plugin-ai/releases) of the Mattermost AI Plugin
 2. Log in to Mattermost as an administrator
