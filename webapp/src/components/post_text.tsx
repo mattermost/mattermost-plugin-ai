@@ -44,6 +44,7 @@ const TextContainer = styled.div<{showCursor?: boolean}>`
 const PostText = (props: Props) => {
     const channel = useSelector<GlobalState, Channel>((state) => state.entities.channels.channels[props.channelID]);
     const team = useSelector<GlobalState, Team>((state) => state.entities.teams.teams[channel?.team_id]);
+    const siteURL = useSelector<GlobalState, string | undefined>((state) => state.entities.general.config.SiteURL);
 
     //const channelNamesMap = useSelector<GlobalState, ChannelNamesMap>(getChannelsNameMapInCurrentTeam);
 
@@ -56,6 +57,7 @@ const PostText = (props: Props) => {
         atMentions: true,
         team,
         unsafeLinks: true,
+        siteURL,
 
         //channelNamesMap,
     };
