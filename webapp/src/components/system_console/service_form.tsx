@@ -145,6 +145,26 @@ const ServiceForm = ({service, onChange, onDelete}: Props) => {
                         </div>
                     </div>
                 )}
+                {service.serviceName === 'openai' && (
+                    <div className='form-group'>
+                        <label
+                            className='control-label col-sm-4'
+                            htmlFor='openai-org-id'
+                        >
+                            {'Organization ID'}
+                        </label>
+                        <div className='col-sm-8'>
+                            <input
+                                id='openai-org-id'
+                                className='form-control'
+                                type='text'
+                                placeholder='Organization ID'
+                                value={service.orgId}
+                                onChange={(e) => onChange({...service, orgId: e.target.value})}
+                            />
+                        </div>
+                    </div>
+                )}
                 <div className='form-group'>
                     <label
                         className='control-label col-sm-4'

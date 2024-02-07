@@ -51,8 +51,10 @@ func New(llmService ai.ServiceConfig) *OpenAI {
 	if defaultModel == "" {
 		defaultModel = openaiClient.GPT3Dot5Turbo
 	}
+	config := openaiClient.DefaultConfig(llmService.APIKey)
+	config.OrgID = llmService.OrgID
 	return &OpenAI{
-		client:       openaiClient.NewClient(llmService.APIKey),
+		client:       openaiClient.NewClientWithConfig(config),
 		defaultModel: defaultModel,
 		maxTokens:    llmService.TokenLimit,
 	}
