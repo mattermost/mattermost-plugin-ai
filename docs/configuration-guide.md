@@ -14,6 +14,7 @@ The Mattermost AI Plugin is configured via **System Console** ➡️ **Mattermos
 1. In the **AI Service** dropdown, select **OpenAI**
 1. In the **API Key** field, enter your OpenAI API key
 1. In the **Default Model** field, enter a model name that you can access with your API key (e.g. `gpt-4` or `gpt-3.5-turbo`)
+1. **(Optional)** If you're part of multiple organizations on OpenAI and prefer not to use the default one, enter your specific **Organization ID**. This step ensures API usage and billing are attributed to your selected organization.
 
 ## Anthropic (Claude)
 
