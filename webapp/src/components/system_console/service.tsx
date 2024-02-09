@@ -4,6 +4,7 @@ export type ServiceData = {
     serviceName: string
     url: string
     apiKey: string
+    orgId: string
     defaultModel: string
     username: string
     password: string
