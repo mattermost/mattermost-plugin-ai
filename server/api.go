@@ -10,8 +10,9 @@ import (
 )
 
 const (
-	ContextPostKey    = "post"
-	ContextChannelKey = "channel"
+	ContextPostKey        = "post"
+	ContextChannelKey     = "channel"
+	ContextPlaybookRunKey = "playbookrun"
 )
 
 // ServeHTTP demonstrates a plugin that handles HTTP requests by greeting the world.
@@ -34,6 +35,10 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	channelRouter := router.Group("/channel/:channelid")
 	channelRouter.Use(p.channelAuthorizationRequired)
 	channelRouter.POST("/since", p.handleSince)
+
+	playbookRunRouter := router.Group("/playbook_run/:playbookrunid")
+	playbookRunRouter.Use(p.playbookRunAuthorizationRequired)
+	playbookRunRouter.GET("/generate_status", p.handleGenerateStatus)
 
 	adminRouter := router.Group("/admin")
 	adminRouter.Use(p.mattermostAdminAuthorizationRequired)

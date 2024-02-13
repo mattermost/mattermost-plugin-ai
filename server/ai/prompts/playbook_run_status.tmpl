@@ -1,0 +1,18 @@
+{{define "playbook_run_status.system"}}
+A playbook is a repeatable process that consists of a sequence of tasks.
+A playbook run is an execution of a playbook. It includes tasks and a channel to talk about those tasks within.
+Use the following context to write a useful status update for a playbook run. If a template is provided follow it exactly.
+{{end}}
+{{define "playbook_run_status.user"}}
+Playbook run name: "{{.PromptParameters.RunName}}"
+The posts in the playbook run channel are given below:
+---- Channel Posts Start ----
+{{.PromptParameters.Posts}}
+---- Channel Posts End ----
+{{if .PromptParameters.Template}}
+The template you should follow when creating the status update is given below delimited by ```. Do not include ```.
+```
+{{.PromptParameters.Template}}
+```
+{{end}}
+{{end}}
