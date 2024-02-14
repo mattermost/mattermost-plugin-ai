@@ -3,6 +3,7 @@ package ai
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 	"time"
@@ -20,9 +21,16 @@ const (
 	PostRoleSystem
 )
 
+type File struct {
+	MimeType string
+	Size     int64
+	Reader   io.Reader
+}
+
 type Post struct {
 	Role    PostRole
 	Message string
+	Files   []File
 }
 
 type ConversationContext struct {
@@ -99,11 +107,8 @@ type BotConversation struct {
 	Context ConversationContext
 }
 
-func (b *BotConversation) AddUserPost(post *model.Post) {
-	b.Posts = append(b.Posts, Post{
-		Role:    PostRoleUser,
-		Message: FormatPostBody(post),
-	})
+func (b *BotConversation) AddPost(post Post) {
+	b.Posts = append(b.Posts, post)
 }
 
 func (b *BotConversation) AppendConversation(conversation BotConversation) {
@@ -179,21 +184,6 @@ func GetPostRole(botID string, post *model.Post) PostRole {
 		return PostRoleBot
 	}
 	return PostRoleUser
-}
-
-func ThreadToBotConversation(botID string, posts []*model.Post) BotConversation {
-	result := BotConversation{
-		Posts: make([]Post, 0, len(posts)),
-	}
-
-	for _, post := range posts {
-		result.Posts = append(result.Posts, Post{
-			Role:    GetPostRole(botID, post),
-			Message: FormatPostBody(post),
-		})
-	}
-
-	return result
 }
 
 func FormatPostBody(post *model.Post) string {

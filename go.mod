@@ -12,7 +12,7 @@ require (
 	github.com/jmoiron/sqlx v1.3.5
 	github.com/mattermost/mattermost/server/public v0.0.8
 	github.com/r3labs/sse/v2 v2.10.0
-	github.com/sashabaranov/go-openai v1.14.1
+	github.com/sashabaranov/go-openai v1.24.0
 	github.com/stretchr/testify v1.8.4
 )
 

@@ -51,7 +51,7 @@ func (p *Plugin) newConversation(bot *Bot, context ai.ConversationContext) error
 	if err != nil {
 		return err
 	}
-	conversation.AddUserPost(context.Post)
+	conversation.AddPost(p.PostToAIPost(bot, context.Post))
 
 	result, err := p.getLLM(bot.cfg.Service).ChatCompletion(conversation)
 	if err != nil {
@@ -131,7 +131,7 @@ func (p *Plugin) continueConversation(bot *Bot, threadData *ThreadData, context 
 		if err != nil {
 			return nil, err
 		}
-		prompt.AppendConversation(ai.ThreadToBotConversation(bot.mmBot.UserId, threadData.Posts))
+		prompt.AppendConversation(p.ThreadToBotConversation(bot, threadData.Posts))
 
 		result, err = p.getLLM(bot.cfg.Service).ChatCompletion(prompt)
 		if err != nil {
@@ -154,7 +154,7 @@ func (p *Plugin) continueThreadConversation(bot *Bot, questionThreadData *Thread
 	if err != nil {
 		return nil, err
 	}
-	prompt.AppendConversation(ai.ThreadToBotConversation(bot.mmBot.UserId, questionThreadData.Posts))
+	prompt.AppendConversation(p.ThreadToBotConversation(bot, questionThreadData.Posts))
 
 	result, err := p.getLLM(bot.cfg.Service).ChatCompletion(prompt)
 	if err != nil {
