@@ -1,6 +1,6 @@
 # Configuration guide
 
-The Mattermost AI Plugin is configured via **System Console** ➡️ **Mattermost AI Plugin**.
+The Mattermost AI Copilot Plugin is configured via **System Console** ➡️ **Mattermost AI Copilot Plugin**.
 
 - [OpenAI](#openai)
 - [Anthropic (Claude)](#anthropic-claude)
@@ -52,7 +52,7 @@ The Ask Sage API does not yet support streaming, so there is less feedback to Ma
 
 ## OpenAI Compatible
 
-The Mattermost AI Plugin can support any LLM provider that is OpenAI-compatible such as [LocalAI](https://github.com/go-skynet/LocalAI).
+The Mattermost AI Copilot Plugin can support any LLM provider that is OpenAI-compatible such as [LocalAI](https://github.com/go-skynet/LocalAI).
 
 1. Deploy your model on LocalAI or equivalent
 1. In the **AI Service** dropdown, select **OpenAI Compatible**
