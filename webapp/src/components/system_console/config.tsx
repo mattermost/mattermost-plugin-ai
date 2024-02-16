@@ -134,6 +134,7 @@ const Config = (props: Props) => {
             defaultModel: '',
             url: '',
             apiKey: '',
+            orgId: '',
             username: '',
             password: '',
             tokenLimit: 0,

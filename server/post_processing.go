@@ -93,11 +93,15 @@ func formatThread(data *ThreadData) string {
 }
 
 const LLMRequesterUserID = "llm_requester_user_id"
+const UnsafeLinksPostProp = "unsafe_links"
 
 func (p *Plugin) modifyPostForBot(requesterUserID string, post *model.Post) {
 	post.UserId = p.botid
 	post.Type = "custom_llmbot" // This must be the only place we add this type for security.
 	post.AddProp(LLMRequesterUserID, requesterUserID)
+	// This tags that the post has unsafe links since they could have been generted by a prompt injection.
+	// This will prevent the server from making OpenGraph requests and markdown images being rendered.
+	post.AddProp(UnsafeLinksPostProp, "true")
 }
 
 func (p *Plugin) botCreatePost(requesterUserID string, post *model.Post) error {
