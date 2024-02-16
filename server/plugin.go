@@ -80,8 +80,8 @@ func (p *Plugin) OnActivate() error {
 
 	botID, err := p.pluginAPI.Bot.EnsureBot(&model.Bot{
 		Username:    BotUsername,
-		DisplayName: "AI Assistant",
-		Description: "Your helpful assistant within Mattermost",
+		DisplayName: "AI Copilot",
+		Description: "Your helpful copilot within Mattermost",
 	},
 		pluginapi.ProfileImagePath("assets/bot_icon.png"),
 	)

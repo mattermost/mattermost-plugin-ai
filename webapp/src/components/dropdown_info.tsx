@@ -37,7 +37,7 @@ export const DropdownInfoOnlyVisibleToYou = () => {
     return (
         <DropdownMenuItemInfo>
             <LightbulbOutlineIconStyled/>
-            {'AI Assistant posts responses in the right panel which will only be visible to you.'}
+            {'AI Copilot posts responses in the right panel which will only be visible to you.'}
         </DropdownMenuItemInfo>
     );
 };
