@@ -75,6 +75,7 @@ export default function RHS() {
         }
         content = (
             <ThreadViewer
+                data-testid='rhs-thread-viewer'
                 inputPlaceholder='Reply...'
                 rootPostId={selectedPostId}
                 useRelativeTimestamp={false}
@@ -84,7 +85,9 @@ export default function RHS() {
     } else if (currentTab === 'threads') {
         if (threads) {
             content = (
-                <ThreadsList>
+                <ThreadsList
+                    data-testid='rhs-threads-list'
+                >
                     {threads.map((p) => (
                         <ThreadItem
                             key={p.ID}
@@ -105,6 +108,7 @@ export default function RHS() {
     } else if (currentTab === 'new') {
         content = (
             <RHSNewTab
+                data-testid='rhs-new-tab'
                 botChannelId={botChannelId}
                 setCurrentTab={setCurrentTab}
                 selectPost={selectPost}

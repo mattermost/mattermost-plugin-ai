@@ -119,6 +119,7 @@ const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
             </QuestionOptions>
             <CreatePostContainer>
                 <CreatePost
+                    data-testid='rhs-new-tab-create-post'
                     channelId={botChannelId}
                     placeholder={'Ask AI Assistant anything...'}
                     onSubmit={async (p: any) => {
