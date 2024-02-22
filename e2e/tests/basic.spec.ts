@@ -4,24 +4,27 @@ import RunContainer from 'helpers/plugincontainer';
 import MattermostContainer from 'helpers/mmcontainer';
 import {login} from 'helpers/mm';
 import {openRHS} from 'helpers/ai-plugin';
-import { RunOpenAIMocks } from 'helpers/openai-mock';
+import { OpenAIMockContainer, RunOpenAIMocks } from 'helpers/openai-mock';
 
 let mattermost: MattermostContainer;
+let openAIMock: OpenAIMockContainer;
 
 test.beforeAll(async () => {
+	test.setTimeout(60000);
 	mattermost = await RunContainer();
-	await RunOpenAIMocks(mattermost.network)
+	openAIMock = await RunOpenAIMocks(mattermost.network)
 });
 
 test.afterAll(async () => {
+	await openAIMock.stop();
 	await mattermost.stop();
 })
 
-/*test('was installed', async ({ page }) => {
+test('was installed', async ({ page }) => {
 	const url = mattermost.url()
 	await login(page, url, "regularuser", "regularuser");;
 	await openRHS(page);
-});*/
+});
 
 
 test('rhs bot interaction', async ({ page }) => {

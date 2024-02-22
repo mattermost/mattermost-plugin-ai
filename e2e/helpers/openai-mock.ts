@@ -57,10 +57,16 @@ export class OpenAIMockContainer {
 			}]),
 		})
 	}
+
+	stop = async () => {
+		await this.container.stop()
+	}
 }
 
-export const RunOpenAIMocks = async (network: StartedNetwork) => {
+export const RunOpenAIMocks = async (network: StartedNetwork): Promise<OpenAIMockContainer> => {
 	const container = new OpenAIMockContainer()
 	await container.start(network)
+
+	return container
 }
 
