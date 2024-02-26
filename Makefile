@@ -204,7 +204,7 @@ detach: setup-attach
 
 ## Runs any lints and unit tests defined for the server and webapp, if they exist.
 .PHONY: test
-test: apply webapp/node_modules install-go-tools
+test: apply webapp/node_modules install-go-tools e2e
 ifneq ($(HAS_SERVER),)
 	$(GOBIN)/gotestsum -- -v ./...
 endif
@@ -241,6 +241,16 @@ else
 	cd $(MM_UTILITIES_DIR) && npm install && npm run babel && node mmjstool/build/index.js i18n extract-webapp --webapp-dir $(PWD)/webapp
 endif
 endif
+
+## Install NPM dependencies for e2e tests
+e2e/node_modules: e2e/package.json
+	cd e2e && $(NPM) install
+	touch $@
+
+## Run E2E tests
+.PHONY: e2e
+e2e: e2e/node_modules
+	cd e2e && npx playwright test
 
 ## Disable the plugin.
 .PHONY: disable
