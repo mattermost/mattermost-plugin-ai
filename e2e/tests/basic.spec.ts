@@ -32,8 +32,40 @@ test('rhs bot interaction', async ({ page }) => {
 	await login(page, url, "regularuser", "regularuser");;
 	await openRHS(page);
 	await page.getByTestId('reply_textbox').click();
-	await page.getByTestId('reply_textbox').fill('Respond with "green"');
+	await page.getByTestId('reply_textbox').fill('Hello!');
 	await page.getByTestId('reply_textbox').press('Enter');
 	await expect(page.getByText("Hello! How can I assist you today?")).toBeVisible();
 })
 
+test('rhs prompt templates', async ({ page }) => {
+	const url = mattermost.url()
+	await login(page, url, "regularuser", "regularuser");;
+	await openRHS(page);
+
+	// Clicking prompt template adds message
+	await page.getByRole('button', { name: 'Brainstorm ideas' }).click();
+	await expect(page.getByTestId('reply_textbox')).toHaveText("Brainstorm ideas about ");
+
+	// Clicking without editing replaces the text
+	await page.getByRole('button', { name: 'To-do list' }).click();
+	await expect(page.getByTestId('reply_textbox')).toHaveText("Write a todo list about ");
+
+	// If text has been edited, clicking will not replace the text
+	/*await page.getByTestId('reply_textbox').fill('Edited text');
+	await page.getByRole('button', { name: 'Pros and Cons' }).click();
+	await expect(page.getByTestId('reply_textbox')).toHaveText("Edited text");*/
+})
+
+test ('regenerate button', async ({ page }) => {
+	const url = mattermost.url()
+	await login(page, url, "regularuser", "regularuser");;
+	await openRHS(page);
+
+	await page.getByTestId('reply_textbox').click();
+	await page.getByTestId('reply_textbox').fill('Hello!');
+	await page.getByTestId('reply_textbox').press('Enter');
+	await expect(page.getByText("Hello! How can I assist you today?")).toBeVisible();
+
+	await page.getByRole('button', { name: 'Regenerate' }).click();
+	await expect(page.getByText("Hello! This is a second message.")).toBeVisible();
+})

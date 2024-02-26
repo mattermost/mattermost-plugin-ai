@@ -53,6 +53,7 @@ const RHSHeader = ({currentTab, setCurrentTab, selectPost}: Props) => {
     } else {
         historyButton = (
             <HistoryButton
+                data-testid='chat-history'
                 onClick={() => {
                     setCurrentTab('threads');
                     selectPost('');
@@ -67,6 +68,7 @@ const RHSHeader = ({currentTab, setCurrentTab, selectPost}: Props) => {
             {historyButton}
             {currentTab !== 'new' && (
                 <NewChatButton
+                    data-testid='new-chat'
                     className='new-button'
                     onClick={() => {
                         setCurrentTab('new');
