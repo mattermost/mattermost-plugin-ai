@@ -66,7 +66,7 @@ func (p *Plugin) handleSummarize(c *gin.Context) {
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 
-	if !p.licenseChecker.IsBasicsLicenseed() {
+	if !p.licenseChecker.IsBasicsLicensed() {
 		c.AbortWithError(http.StatusForbidden, enterprise.ErrNotLicensed)
 		return
 	}

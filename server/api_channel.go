@@ -39,7 +39,7 @@ func (p *Plugin) handleSince(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 
-	if !p.licenseChecker.IsBasicsLicenseed() {
+	if !p.licenseChecker.IsBasicsLicensed() {
 		c.AbortWithError(http.StatusForbidden, enterprise.ErrNotLicensed)
 		return
 	}
