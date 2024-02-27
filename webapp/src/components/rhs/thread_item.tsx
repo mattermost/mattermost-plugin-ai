@@ -58,7 +58,7 @@ type Props = {
     onClick: () => void;
 }
 
-const DefaultTitle = 'Conversation with AI Assistant';
+const DefaultTitle = 'Conversation with AI Copilot';
 
 export default function ThreadItem(props: Props) {
     return (

@@ -49,7 +49,7 @@ const RHSTitle = () => {
     return (
         <RHSTitleContainer>
             <IconAIContainer src={aiIcon}/>
-            {'AI Assistant'}
+            {'AI Copilot'}
         </RHSTitleContainer>
     );
 };
