@@ -19,13 +19,11 @@ The Mattermost AI Copilot Plugin adds functionality for local (self-hosted) and 
 
 This plugin is currently experimental. Contributions and suggestions are welcome. See the [Contributing](#contributing) section for more details!
 
-Mattermost AI Copilot Plugin is also part of the [Mattermost OpenOps](https://openops.mattermost.com) framework for responsible development of AI-enhanced workflows.
-
 Join the discussion in the [~AI-Exchange channel](https://community.mattermost.com/core/channels/ai-exchange) and explore the [Discourse forum](https://forum.mattermost.com/c/openops-ai/40). 💬
 
 ## Install
 
-These installation instructions assume you already have a [Mattermost v9.6 server](https://mattermost.com/download/) with [PostgreSQL](https://www.postgresql.org/):
+These installation instructions assume you already have a [Mattermost server](https://mattermost.com/download/) (version >=9.6 recommended) with [PostgreSQL](https://www.postgresql.org/):
 
 1. Download the [latest release](https://github.com/mattermost/mattermost-plugin-ai/releases) of the Mattermost AI Copilot Plugin
 2. Log in to Mattermost as an administrator
