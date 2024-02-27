@@ -39,7 +39,7 @@ func (e *LicenseChecker) IsMultiLLMLicensed() bool {
 	return e.isAtLeastE20Licensed()
 }
 
-// IsBasicsLicensed returns true when the server either has a licence for baseic features or is configured for development.
+// IsBasicsLicensed returns true when the server either has a license for basic features or is configured for development.
 func (e *LicenseChecker) IsBasicsLicensed() bool {
 	return e.isAtLeastE20Licensed()
 }
