@@ -1,8 +1,12 @@
 package enterprise
 
 import (
+	"errors"
+
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 )
+
+var ErrNotLicensed = errors.New("license does not support this feature")
 
 type LicenseChecker struct {
 	pluginAPIClient *pluginapi.Client
@@ -32,5 +36,10 @@ func (e *LicenseChecker) isAtLeastE10Licensed() bool {
 
 // isMultiLLMLicensed returns true when the server either has a multi-LLM license or is configured for development.
 func (e *LicenseChecker) IsMultiLLMLicensed() bool {
-	return e.isAtLeastE10Licensed()
+	return e.isAtLeastE20Licensed()
+}
+
+// IsBasicsLicenseed returns true when the server either has a licence for baseic features or is configured for development.
+func (e *LicenseChecker) IsBasicsLicenseed() bool {
+	return e.isAtLeastE20Licensed()
 }

@@ -6,6 +6,8 @@ import {doReaction, doSummarize} from '../client';
 
 import {useSelectPost} from '@/hooks';
 
+import {useIsBasicsLicensed} from '@/license';
+
 import IconAI from './assets/icon_ai';
 import IconReactForMe from './assets/icon_react_for_me';
 import DotMenu, {DropdownMenuItem} from './dot_menu';
@@ -19,11 +21,16 @@ type Props = {
 const PostMenu = (props: Props) => {
     const selectPost = useSelectPost();
     const post = props.post;
+    const isBasicsLicensed = useIsBasicsLicensed();
 
     const summarizePost = async (postId: string) => {
         const result = await doSummarize(postId);
         selectPost(result.postid, result.channelid);
     };
+
+    if (!isBasicsLicensed) {
+        return null;
+    }
 
     return (
         <DotMenu

@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin/render"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/subtitles"
+	"github.com/mattermost/mattermost-plugin-ai/server/enterprise"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/pkg/errors"
 )
@@ -64,6 +65,11 @@ func (p *Plugin) handleSummarize(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
+
+	if !p.licenseChecker.IsBasicsLicenseed() {
+		c.AbortWithError(http.StatusForbidden, enterprise.ErrNotLicensed)
+		return
+	}
 
 	user, err := p.pluginAPI.User.Get(userID)
 	if err != nil {

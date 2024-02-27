@@ -4,6 +4,7 @@ import styled from 'styled-components';
 import {useSelectPost} from '@/hooks';
 
 import {summarizeChannelSince} from '@/client';
+import {useIsBasicsLicensed} from '@/license';
 
 import IconAI from './assets/icon_ai';
 import IconSparkleCheckmark from './assets/icon_sparkle_checkmark';
@@ -70,6 +71,7 @@ interface Props {
 
 const UnreadsSumarize = (props: Props) => {
     const selectPost = useSelectPost();
+    const isBasicsLicensed = useIsBasicsLicensed();
 
     const summarizeNew = async () => {
         const result = await summarizeChannelSince(props.channelId, props.lastViewedAt, 'summarize');
@@ -85,6 +87,10 @@ const UnreadsSumarize = (props: Props) => {
         const result = await summarizeChannelSince(props.channelId, props.lastViewedAt, 'open_questions');
         selectPost(result.postid, result.channelid);
     };
+
+    if (!isBasicsLicensed) {
+        return null;
+    }
 
     return (
         <AskAIButton
