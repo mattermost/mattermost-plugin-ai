@@ -23,6 +23,7 @@ import {setupRedux} from './redux';
 import UnreadsSumarize from './components/unreads_summarize';
 import IconAI from './components/assets/icon_ai';
 import {doSelectPost} from './hooks';
+import Pill from './components/pill';
 
 type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
 
@@ -50,6 +51,9 @@ const RHSTitle = () => {
         <RHSTitleContainer>
             <IconAIContainer src={aiIcon}/>
             {'AI Copilot'}
+            <Pill>
+                {'BETA'}
+            </Pill>
         </RHSTitleContainer>
     );
 };
@@ -151,7 +155,10 @@ export default class Plugin {
         if (rhs) {
             registry.registerChannelHeaderButtonAction(<IconAIContainer src={aiIcon}/>, () => {
                 store.dispatch(rhs.toggleRHSPlugin);
-            });
+            },
+            'AI Copilot',
+            'AI Copilot',
+            );
         }
 
         if (registry.registerNewMessagesSeparatorActionComponent) {

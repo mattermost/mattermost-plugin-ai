@@ -73,15 +73,15 @@ func resolveffmpegPath() string {
 	return "ffmpeg"
 }
 
-func (p *Plugin) OnActivate() error {
-	p.pluginAPI = pluginapi.NewClient(p.API, p.Driver)
-
-	p.licenseChecker = enterprise.NewLicenseChecker(p.pluginAPI)
-
+func (p *Plugin) EnsureMainBot() error {
+	serviceName := "a third party AI Service"
+	if llmConfig, err := p.getActiveLLMConfig(); err == nil {
+		serviceName = llmConfig.Name
+	}
 	botID, err := p.pluginAPI.Bot.EnsureBot(&model.Bot{
 		Username:    BotUsername,
 		DisplayName: "AI Copilot",
-		Description: "Your helpful copilot within Mattermost",
+		Description: "Powered by " + serviceName,
 	},
 		pluginapi.ProfileImagePath("assets/bot_icon.png"),
 	)
@@ -90,10 +90,23 @@ func (p *Plugin) OnActivate() error {
 	}
 	p.botid = botID
 
-	if err = p.SetupDB(); err != nil {
+	return nil
+}
+
+func (p *Plugin) OnActivate() error {
+	p.pluginAPI = pluginapi.NewClient(p.API, p.Driver)
+
+	p.licenseChecker = enterprise.NewLicenseChecker(p.pluginAPI)
+
+	if err := p.EnsureMainBot(); err != nil {
 		return err
 	}
 
+	if err := p.SetupDB(); err != nil {
+		return err
+	}
+
+	var err error
 	p.prompts, err = ai.NewPrompts(promptsFolder, p.getBuiltInTools)
 	if err != nil {
 		return err
@@ -109,38 +122,43 @@ func (p *Plugin) OnActivate() error {
 	return nil
 }
 
-func (p *Plugin) getLLM() ai.LanguageModel {
+func (p *Plugin) getActiveLLMConfig() (ai.ServiceConfig, error) {
 	cfg := p.getConfiguration()
-	var llm ai.LanguageModel
-	var llmService ai.ServiceConfig
-
 	if cfg == nil || cfg.Services == nil || len(cfg.Services) == 0 {
-		p.pluginAPI.Log.Error("No LLM services configured. Please configure a service in the plugin settings.")
-		return nil
+		return ai.ServiceConfig{}, errors.New("no LLM services configured. Please configure a service in the plugin settings")
 	}
 
 	if p.licenseChecker.IsMultiLLMLicensed() {
 		for _, service := range cfg.Services {
 			if service.Name == cfg.LLMGenerator {
-				llmService = service
-				break
+				return service, nil
 			}
 		}
-	} else {
-		llmService = cfg.Services[0]
 	}
 
-	switch llmService.ServiceName {
+	return cfg.Services[0], nil
+}
+
+func (p *Plugin) getLLM() ai.LanguageModel {
+	llmServiceConfig, err := p.getActiveLLMConfig()
+	if err != nil {
+		p.pluginAPI.Log.Error(err.Error())
+		return nil
+	}
+
+	var llm ai.LanguageModel
+	switch llmServiceConfig.ServiceName {
 	case "openai":
-		llm = openai.New(llmService)
+		llm = openai.New(llmServiceConfig)
 	case "openaicompatible":
-		llm = openai.NewCompatible(llmService)
+		llm = openai.NewCompatible(llmServiceConfig)
 	case "anthropic":
-		llm = anthropic.New(llmService)
+		llm = anthropic.New(llmServiceConfig)
 	case "asksage":
-		llm = asksage.New(llmService)
+		llm = asksage.New(llmServiceConfig)
 	}
 
+	cfg := p.getConfiguration()
 	if cfg.EnableLLMTrace {
 		llm = NewLanguageModelLogWrapper(p.pluginAPI.Log, llm)
 	}

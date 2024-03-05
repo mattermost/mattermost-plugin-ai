@@ -94,5 +94,15 @@ func (p *Plugin) OnConfigurationChange() error {
 
 	p.setConfiguration(configuration)
 
+	// If OnActivate hasn't run yet then don't do the change tasks
+	if p.pluginAPI == nil {
+		return nil
+	}
+
+	// Extra config change tasks
+	if err := p.EnsureMainBot(); err != nil {
+		return errors.Wrap(err, "failed on config change")
+	}
+
 	return nil
 }
