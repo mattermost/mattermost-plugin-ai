@@ -125,7 +125,7 @@ func (p *Plugin) OnActivate() error {
 func (p *Plugin) getActiveLLMConfig() (ai.ServiceConfig, error) {
 	cfg := p.getConfiguration()
 	if cfg == nil || cfg.Services == nil || len(cfg.Services) == 0 {
-		return ai.ServiceConfig{}, errors.New("No LLM services configured. Please configure a service in the plugin settings.")
+		return ai.ServiceConfig{}, errors.New("no LLM services configured. Please configure a service in the plugin settings")
 	}
 
 	if p.licenseChecker.IsMultiLLMLicensed() {
