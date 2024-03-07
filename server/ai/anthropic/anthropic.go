@@ -10,7 +10,7 @@ const DefaultMaxTokens = 4096
 type Anthropic struct {
 	client       *Client
 	defaultModel string
-	maxTokens    int
+	tokenLimit   int
 }
 
 func New(llmService ai.ServiceConfig) *Anthropic {
@@ -19,7 +19,7 @@ func New(llmService ai.ServiceConfig) *Anthropic {
 	return &Anthropic{
 		client:       client,
 		defaultModel: llmService.DefaultModel,
-		maxTokens:    llmService.TokenLimit,
+		tokenLimit:   llmService.TokenLimit,
 	}
 }
 
@@ -53,8 +53,8 @@ func conversationToMessages(conversation ai.BotConversation) (string, []InputMes
 
 func (a *Anthropic) GetDefaultConfig() ai.LLMConfig {
 	return ai.LLMConfig{
-		Model:     a.defaultModel,
-		MaxTokens: DefaultMaxTokens,
+		Model:              a.defaultModel,
+		MaxGeneratedTokens: DefaultMaxTokens,
 	}
 }
 
@@ -73,7 +73,7 @@ func (a *Anthropic) createCompletionRequest(conversation ai.BotConversation, opt
 		Model:     cfg.Model,
 		Messages:  messages,
 		System:    system,
-		MaxTokens: cfg.MaxTokens,
+		MaxTokens: cfg.MaxGeneratedTokens,
 	}
 }
 
@@ -104,8 +104,8 @@ func (a *Anthropic) CountTokens(text string) int {
 }
 
 func (a *Anthropic) TokenLimit() int {
-	if a.maxTokens > 0 {
-		return a.maxTokens
+	if a.tokenLimit > 0 {
+		return a.tokenLimit
 	}
 	return 100000
 }
