@@ -10,6 +10,7 @@ import (
 	"github.com/google/go-github/v41/github"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost/server/public/model"
+	"github.com/mattermost/mattermost/server/public/pluginapi"
 	"github.com/pkg/errors"
 )
 
@@ -203,7 +204,7 @@ func (p *Plugin) getBuiltInTools(isDM bool) []ai.Tool {
 
 		// Github plugin tools
 		status, err := p.pluginAPI.Plugin.GetPluginStatus("github")
-		if err != nil {
+		if err != nil && !errors.Is(err, pluginapi.ErrNotFound) {
 			p.API.LogError("failed to get github plugin status", "error", err.Error())
 		} else if status != nil && status.State == model.PluginStateRunning {
 			builtInTools = append(builtInTools, ai.Tool{
