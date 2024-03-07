@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/pkg/errors"
@@ -13,23 +12,64 @@ import (
 )
 
 const (
-	CompletionEndpoint = "https://api.anthropic.com/v1/complete"
-	APIKeyHeader       = "X-API-Key" //nolint:gosec
+	MessageEndpoint = "https://api.anthropic.com/v1/messages"
+	APIKeyHeader    = "X-API-Key" //nolint:gosec
 
 	StopReasonStopSequence = "stop_sequence"
 	StopReasonMaxTokens    = "max_tokens"
 )
 
-type CompletionRequest struct {
-	Prompt            string `json:"prompt"`
-	Model             string `json:"model"`
-	MaxTokensToSample int    `json:"max_tokens_to_sample"`
-	Stream            bool   `json:"stream"`
+const RoleUser = "user"
+const RoleAssistant = "assistant"
+
+type InputMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
 }
 
-type CompletionResponse struct {
-	Completion string `json:"completion"`
+type RequestMetadata struct {
+	UserID string `json:"user_id"`
+}
+
+type MessageRequest struct {
+	Model     string          `json:"model"`
+	Messages  []InputMessage  `json:"messages"`
+	System    string          `json:"system"`
+	MaxTokens int             `json:"max_tokens"`
+	Metadata  RequestMetadata `json:"metadata"`
+	Stream    bool            `json:"stream"`
+}
+
+type Content struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+type Usage struct {
+	InputTokens  int `json:"input_tokens"`
+	OutputTokens int `json:"output_tokens"`
+}
+
+type OutputMessage struct {
+	ID         string    `json:"id"`
+	Content    []Content `json:"content"`
+	StopReason string    `json:"stop_reason"`
+	Usage      Usage     `json:"usage"`
+}
+
+type StreamDelta struct {
+	Type       string `json:"type"`
+	Text       string `json:"text"`
 	StopReason string `json:"stop_reason"`
+	Usage      Usage  `json:"usage"`
+}
+
+type MessageStreamEvent struct {
+	Type         string `json:"type"`
+	Message      OutputMessage
+	Index        int         `json:"index"`
+	ContentBlock StreamDelta `json:"content_block"`
+	Delta        StreamDelta `json:"delta"`
 }
 
 type Client struct {
@@ -44,29 +84,24 @@ func NewClient(apiKey string) *Client {
 	}
 }
 
-func (c *Client) CompletionNoStream(prompt string) (string, error) {
-	reqBody := CompletionRequest{
-		Prompt:            prompt,
-		Model:             "claude-v1",
-		MaxTokensToSample: 1000,
-		Stream:            false,
-	}
-	reqBodyBytes, err := json.Marshal(reqBody)
+func (c *Client) MessageCompletionNoStream(completionRequest MessageRequest) (string, error) {
+	reqBodyBytes, err := json.Marshal(completionRequest)
 	if err != nil {
-		return "", err
+		return "", errors.Wrap(err, "could not marshal completion request")
 	}
 
-	req, err := http.NewRequest("POST", CompletionEndpoint, bytes.NewReader(reqBodyBytes))
+	req, err := http.NewRequest("POST", MessageEndpoint, bytes.NewReader(reqBodyBytes))
 	if err != nil {
-		return "", err
+		return "", errors.Wrap(err, "could not create request")
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", c.apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", err
+		return "", errors.Wrap(err, "could not send request")
 	}
 	defer resp.Body.Close()
 
@@ -79,27 +114,21 @@ func (c *Client) CompletionNoStream(prompt string) (string, error) {
 		return "", errors.New("non 200 response from anthropic: " + resp.Status + "\nBody:\n" + string(body))
 	}
 
-	completionResponse := CompletionResponse{}
-	if err := json.NewDecoder(resp.Body).Decode(&completionResponse); err != nil {
-		return "", err
+	outputMessage := OutputMessage{}
+	if err := json.NewDecoder(resp.Body).Decode(&outputMessage); err != nil {
+		return "", errors.Wrap(err, "couldn't unmarshal response body")
 	}
 
-	return completionResponse.Completion, nil
+	return outputMessage.Content[0].Text, nil
 }
 
-func (c *Client) Completion(prompt string) (*ai.TextStreamResult, error) {
-	reqBody := CompletionRequest{
-		Prompt:            prompt,
-		Model:             "claude-v1",
-		MaxTokensToSample: 1000,
-		Stream:            true,
-	}
-	reqBodyBytes, err := json.Marshal(reqBody)
+func (c *Client) MessageCompletion(completionRequest MessageRequest) (*ai.TextStreamResult, error) {
+	reqBodyBytes, err := json.Marshal(completionRequest)
 	if err != nil {
 		return nil, err
 	}
 
-	req, err := http.NewRequest("POST", CompletionEndpoint, bytes.NewReader(reqBodyBytes))
+	req, err := http.NewRequest("POST", MessageEndpoint, bytes.NewReader(reqBodyBytes))
 	if err != nil {
 		return nil, err
 	}
@@ -108,6 +137,7 @@ func (c *Client) Completion(prompt string) (*ai.TextStreamResult, error) {
 	req.Header.Set("X-API-Key", c.apiKey)
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Connection", "keep-alive")
+	req.Header.Set("anthropic-version", "2023-06-01")
 
 	output := make(chan string)
 	errChan := make(chan error)
@@ -134,8 +164,6 @@ func (c *Client) Completion(prompt string) (*ai.TextStreamResult, error) {
 		}
 
 		reader := sse.NewEventStreamReader(resp.Body, 65536)
-
-		seen := strings.Builder{}
 		for {
 			nextEvent, err := reader.ReadEvent()
 			if err != nil {
@@ -146,22 +174,28 @@ func (c *Client) Completion(prompt string) (*ai.TextStreamResult, error) {
 				return
 			}
 
-			nextEvent = bytes.TrimPrefix(nextEvent, []byte("data: "))
-
-			// There is a bunch of other garbage that can be sent. Just skip it.
-			if !json.Valid(nextEvent) {
-				continue
+			var nextData []byte
+			for _, line := range bytes.FieldsFunc(nextEvent, func(r rune) bool { return r == '\n' || r == '\r' }) {
+				if result, isData := bytes.CutPrefix(line, []byte("data: ")); isData {
+					nextData = result
+				}
 			}
 
-			completionResponse := CompletionResponse{}
-			if err := json.Unmarshal(nextEvent, &completionResponse); err != nil {
+			messageStreamEvent := MessageStreamEvent{}
+			if err := json.Unmarshal(nextData, &messageStreamEvent); err != nil {
 				errChan <- errors.Wrap(err, "couldn't unmarshal data block")
 				return
 			}
 
-			nextString := strings.TrimPrefix(completionResponse.Completion, seen.String())
-			output <- nextString
-			seen.WriteString(nextString)
+			if messageStreamEvent.Type == "content_block_delta" {
+				// Handle future anthropic changes
+				if messageStreamEvent.Index != 0 {
+					continue
+				}
+				output <- messageStreamEvent.Delta.Text
+			} else if messageStreamEvent.Type == "message_stop" {
+				return
+			}
 		}
 	}()
 
