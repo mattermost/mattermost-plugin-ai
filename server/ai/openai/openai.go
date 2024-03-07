@@ -22,7 +22,7 @@ import (
 type OpenAI struct {
 	client       *openaiClient.Client
 	defaultModel string
-	maxTokens    int
+	tokenLimit   int
 }
 
 const MaxFunctionCalls = 10
@@ -42,7 +42,7 @@ func NewCompatible(llmService ai.ServiceConfig) *OpenAI {
 	return &OpenAI{
 		client:       openaiClient.NewClientWithConfig(config),
 		defaultModel: defaultModel,
-		maxTokens:    llmService.TokenLimit,
+		tokenLimit:   llmService.TokenLimit,
 	}
 }
 
@@ -56,7 +56,7 @@ func New(llmService ai.ServiceConfig) *OpenAI {
 	return &OpenAI{
 		client:       openaiClient.NewClientWithConfig(config),
 		defaultModel: defaultModel,
-		maxTokens:    llmService.TokenLimit,
+		tokenLimit:   llmService.TokenLimit,
 	}
 }
 
@@ -215,8 +215,8 @@ func (s *OpenAI) streamResult(request openaiClient.ChatCompletionRequest, conver
 
 func (s *OpenAI) GetDefaultConfig() ai.LLMConfig {
 	return ai.LLMConfig{
-		Model:     s.defaultModel,
-		MaxTokens: 0,
+		Model:              s.defaultModel,
+		MaxGeneratedTokens: 0,
 	}
 }
 
@@ -231,7 +231,7 @@ func (s *OpenAI) createConfig(opts []ai.LanguageModelOption) ai.LLMConfig {
 func (s *OpenAI) completionRequestFromConfig(cfg ai.LLMConfig) openaiClient.ChatCompletionRequest {
 	return openaiClient.ChatCompletionRequest{
 		Model:            cfg.Model,
-		MaxTokens:        cfg.MaxTokens,
+		MaxTokens:        cfg.MaxGeneratedTokens,
 		Temperature:      1.0,
 		TopP:             1.0,
 		FrequencyPenalty: 0,
@@ -311,8 +311,8 @@ func (s *OpenAI) CountTokens(text string) int {
 }
 
 func (s *OpenAI) TokenLimit() int {
-	if s.maxTokens > 0 {
-		return s.maxTokens
+	if s.tokenLimit > 0 {
+		return s.tokenLimit
 	}
 
 	switch {

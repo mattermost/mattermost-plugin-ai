@@ -46,8 +46,8 @@ func conversationToMessagesList(conversation ai.BotConversation) []Message {
 
 func (s *AskSage) GetDefaultConfig() ai.LLMConfig {
 	return ai.LLMConfig{
-		Model:     s.defaultModel,
-		MaxTokens: 0,
+		Model:              s.defaultModel,
+		MaxGeneratedTokens: 0,
 	}
 }
 

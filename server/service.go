@@ -80,7 +80,7 @@ func (p *Plugin) generateTitle(request string, threadRootID string) error {
 	titleRequest := ai.BotConversation{
 		Posts: []ai.Post{{Role: ai.PostRoleUser, Message: request}},
 	}
-	conversationTitle, err := p.getLLM().ChatCompletionNoStream(titleRequest, ai.WithMaxTokens(25))
+	conversationTitle, err := p.getLLM().ChatCompletionNoStream(titleRequest, ai.WithMaxGeneratedTokens(25))
 	if err != nil {
 		return errors.Wrap(err, "failed to get title")
 	}
@@ -226,7 +226,7 @@ func (p *Plugin) selectEmoji(postToReact *model.Post, context ai.ConversationCon
 		return err
 	}
 
-	emojiName, err := p.getLLM().ChatCompletionNoStream(prompt, ai.WithMaxTokens(25))
+	emojiName, err := p.getLLM().ChatCompletionNoStream(prompt, ai.WithMaxGeneratedTokens(25))
 	if err != nil {
 		return err
 	}

@@ -8,8 +8,8 @@ import (
 )
 
 type LLMConfig struct {
-	Model     string
-	MaxTokens int
+	Model              string
+	MaxGeneratedTokens int
 }
 
 type LanguageModelOption func(*LLMConfig)
@@ -20,9 +20,9 @@ func WithModel(model string) LanguageModelOption {
 	}
 }
 
-func WithMaxTokens(maxTokens int) LanguageModelOption {
+func WithMaxGeneratedTokens(maxGeneratedTokens int) LanguageModelOption {
 	return func(cfg *LLMConfig) {
-		cfg.MaxTokens = maxTokens
+		cfg.MaxGeneratedTokens = maxGeneratedTokens
 	}
 }
 
