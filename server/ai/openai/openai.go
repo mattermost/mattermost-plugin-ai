@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/invopop/jsonschema"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
@@ -27,9 +28,11 @@ type OpenAI struct {
 
 const MaxFunctionCalls = 10
 
+var ErrStreamingTimeout = errors.New("timeout streaming")
+
 func NewCompatible(llmService ai.ServiceConfig) *OpenAI {
 	apiKey := llmService.APIKey
-	endpointURL := llmService.URL
+	endpointURL := strings.TrimSuffix(llmService.URL, "/")
 	defaultModel := llmService.DefaultModel
 	config := openaiClient.DefaultConfig(apiKey)
 	config.BaseURL = endpointURL
@@ -126,11 +129,42 @@ func (s *OpenAI) handleStreamFunctionCall(request openaiClient.ChatCompletionReq
 	return request, nil
 }
 
+const StreamTimeout = 5 * time.Second
+
 func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionRequest, conversation ai.BotConversation, output chan<- string, errChan chan<- error) {
 	request.Stream = true
-	stream, err := s.client.CreateChatCompletionStream(context.Background(), request)
+
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+
+	// watchdog to cancel if the streaming stalls
+	watchdog := make(chan struct{})
+	go func() {
+		timer := time.NewTimer(StreamTimeout)
+		defer timer.Stop()
+		for {
+			select {
+			case <-timer.C:
+				cancel(ErrStreamingTimeout)
+				return
+			case <-ctx.Done():
+				return
+			case <-watchdog:
+				if !timer.Stop() {
+					<-timer.C
+				}
+				timer.Reset(StreamTimeout)
+			}
+		}
+	}()
+
+	stream, err := s.client.CreateChatCompletionStream(ctx, request)
 	if err != nil {
-		errChan <- err
+		if ctxErr := context.Cause(ctx); ctxErr != nil {
+			errChan <- ctxErr
+		} else {
+			errChan <- err
+		}
 		return
 	}
 
@@ -145,9 +179,16 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 			return
 		}
 		if err != nil {
-			errChan <- err
+			if ctxErr := context.Cause(ctx); ctxErr != nil {
+				errChan <- ctxErr
+			} else {
+				errChan <- err
+			}
 			return
 		}
+
+		// Ping the watchdog when we receive a response
+		watchdog <- struct{}{}
 
 		if len(response.Choices) == 0 {
 			continue
