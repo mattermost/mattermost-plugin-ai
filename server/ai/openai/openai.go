@@ -21,10 +21,13 @@ import (
 )
 
 type OpenAI struct {
-	client       *openaiClient.Client
-	defaultModel string
-	tokenLimit   int
+	client           *openaiClient.Client
+	defaultModel     string
+	tokenLimit       int
+	streamingTimeout time.Duration
 }
+
+const StreamingTimeoutDefault = 5 * time.Second
 
 const MaxFunctionCalls = 10
 
@@ -42,10 +45,16 @@ func NewCompatible(llmService ai.ServiceConfig) *OpenAI {
 		config = openaiClient.DefaultAzureConfig(apiKey, endpointURL)
 		config.APIVersion = "2023-07-01-preview"
 	}
+
+	streamingTimeout := StreamingTimeoutDefault
+	if llmService.StreamingTimeoutSeconds > 0 {
+		streamingTimeout = time.Duration(llmService.StreamingTimeoutSeconds) * time.Second
+	}
 	return &OpenAI{
-		client:       openaiClient.NewClientWithConfig(config),
-		defaultModel: defaultModel,
-		tokenLimit:   llmService.TokenLimit,
+		client:           openaiClient.NewClientWithConfig(config),
+		defaultModel:     defaultModel,
+		tokenLimit:       llmService.TokenLimit,
+		streamingTimeout: streamingTimeout,
 	}
 }
 
@@ -129,8 +138,6 @@ func (s *OpenAI) handleStreamFunctionCall(request openaiClient.ChatCompletionReq
 	return request, nil
 }
 
-const StreamTimeout = 5 * time.Second
-
 func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionRequest, conversation ai.BotConversation, output chan<- string, errChan chan<- error) {
 	request.Stream = true
 
@@ -140,7 +147,7 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 	// watchdog to cancel if the streaming stalls
 	watchdog := make(chan struct{})
 	go func() {
-		timer := time.NewTimer(StreamTimeout)
+		timer := time.NewTimer(s.streamingTimeout)
 		defer timer.Stop()
 		for {
 			select {
@@ -153,7 +160,7 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 				if !timer.Stop() {
 					<-timer.C
 				}
-				timer.Reset(StreamTimeout)
+				timer.Reset(s.streamingTimeout)
 			}
 		}
 	}()
