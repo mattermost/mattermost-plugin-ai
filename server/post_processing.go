@@ -149,6 +149,28 @@ func (p *Plugin) streamResultToNewDM(stream *ai.TextStreamResult, userID string,
 	return nil
 }
 
+func (p *Plugin) sendPostStreamingUpdateEvent(post *model.Post, message string) {
+	p.API.PublishWebSocketEvent("postupdate", map[string]interface{}{
+		"post_id": post.Id,
+		"next":    message,
+	}, &model.WebsocketBroadcast{
+		ChannelId: post.ChannelId,
+	})
+}
+
+const PostStreamingControlCancel = "cancel"
+const PostStreamingControlEnd = "end"
+const PostStreamingControlStart = "start"
+
+func (p *Plugin) sendPostStreamingControlEvent(post *model.Post, control string) {
+	p.API.PublishWebSocketEvent("postupdate", map[string]interface{}{
+		"post_id": post.Id,
+		"control": control,
+	}, &model.WebsocketBroadcast{
+		ChannelId: post.ChannelId,
+	})
+}
+
 func (p *Plugin) streamResultToPost(stream *ai.TextStreamResult, post *model.Post) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	p.streamingContextsMutex.Lock()
@@ -161,33 +183,24 @@ func (p *Plugin) streamResultToPost(stream *ai.TextStreamResult, post *model.Pos
 			p.streamingContextsMutex.Unlock()
 		}()
 
-		p.API.PublishWebSocketEvent("postupdate", map[string]interface{}{
-			"post_id": post.Id,
-			"control": "start",
-		}, &model.WebsocketBroadcast{
-			ChannelId: post.ChannelId,
-		})
+		p.sendPostStreamingControlEvent(post, PostStreamingControlStart)
 		defer func() {
-			p.API.PublishWebSocketEvent("postupdate", map[string]interface{}{
-				"post_id": post.Id,
-				"control": "end",
-			}, &model.WebsocketBroadcast{
-				ChannelId: post.ChannelId,
-			})
+			p.sendPostStreamingControlEvent(post, PostStreamingControlEnd)
 		}()
 
 		for {
 			select {
 			case next := <-stream.Stream:
 				post.Message += next
-				p.API.PublishWebSocketEvent("postupdate", map[string]interface{}{
-					"post_id": post.Id,
-					"next":    post.Message,
-				}, &model.WebsocketBroadcast{
-					ChannelId: post.ChannelId,
-				})
+				p.sendPostStreamingUpdateEvent(post, post.Message)
 			case err, ok := <-stream.Err:
+				// Stream has closed cleanly
 				if !ok {
+					if strings.TrimSpace(post.Message) == "" {
+						p.API.LogError("LLM closed stream with no result")
+						post.Message = "Sorry! The LLM did not return a result."
+						p.sendPostStreamingUpdateEvent(post, post.Message)
+					}
 					if err = p.pluginAPI.Post.UpdatePost(post); err != nil {
 						p.API.LogError("Streaming failed to update post", "error", err)
 						return
@@ -206,24 +219,14 @@ func (p *Plugin) streamResultToPost(stream *ai.TextStreamResult, post *model.Pos
 					p.API.LogError("Error recovering from streaming error", "error", err)
 					return
 				}
-				p.API.PublishWebSocketEvent("postupdate", map[string]interface{}{
-					"post_id": post.Id,
-					"next":    post.Message,
-				}, &model.WebsocketBroadcast{
-					ChannelId: post.ChannelId,
-				})
+				p.sendPostStreamingUpdateEvent(post, post.Message)
 				return
 			case <-ctx.Done():
 				if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
 					p.API.LogError("Error updating post on stop signaled", "error", err)
 					return
 				}
-				p.API.PublishWebSocketEvent("postupdate", map[string]interface{}{
-					"post_id": post.Id,
-					"control": "cancel",
-				}, &model.WebsocketBroadcast{
-					ChannelId: post.ChannelId,
-				})
+				p.sendPostStreamingControlEvent(post, PostStreamingControlCancel)
 				return
 			}
 		}
