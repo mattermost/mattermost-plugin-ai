@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost/server/public/model"
@@ -193,16 +194,28 @@ func (p *Plugin) streamResultToPost(stream *ai.TextStreamResult, post *model.Pos
 					}
 					return
 				}
-				p.API.LogError("Streaming result to post failed", "error", err)
-				post.Message = "Sorry! An error occurred while accessing the LLM. See server logs for details."
+				// Handle partial results
+				if strings.TrimSpace(post.Message) == "" {
+					p.API.LogError("Streaming result to post failed", "error", err)
+					post.Message = "Sorry! An error occurred while accessing the LLM. See server logs for details."
+				} else {
+					p.API.LogError("Streaming result to post failed partway", "error", err)
+					post.Message += "\n\nSorry! An error occurred while streaming from the LLM. See server logs for details."
+				}
 				if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
 					p.API.LogError("Error recovering from streaming error", "error", err)
 					return
 				}
+				p.API.PublishWebSocketEvent("postupdate", map[string]interface{}{
+					"post_id": post.Id,
+					"next":    post.Message,
+				}, &model.WebsocketBroadcast{
+					ChannelId: post.ChannelId,
+				})
 				return
 			case <-ctx.Done():
 				if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
-					p.API.LogError("Error recovering from streaming error", "error", err)
+					p.API.LogError("Error updating post on stop signaled", "error", err)
 					return
 				}
 				p.API.PublishWebSocketEvent("postupdate", map[string]interface{}{
