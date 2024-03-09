@@ -249,7 +249,7 @@ e2e/node_modules: e2e/package.json
 
 ## Run E2E tests
 .PHONY: e2e
-e2e: e2e/node_modules
+e2e: e2e/node_modules dist
 	cd e2e && npx playwright test
 
 ## Disable the plugin.
