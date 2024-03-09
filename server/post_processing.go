@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost/server/public/model"
-	"github.com/pkg/errors"
 )
 
 type ThreadData struct {
@@ -118,7 +118,7 @@ func (p *Plugin) botDM(userID string, post *model.Post) error {
 	p.modifyPostForBot(userID, post)
 
 	if err := p.pluginAPI.Post.DM(p.botid, userID, post); err != nil {
-		return errors.Wrap(err, "failed to post DM")
+		return fmt.Errorf("failed to post DM: %w", err)
 	}
 
 	return nil
@@ -126,11 +126,11 @@ func (p *Plugin) botDM(userID string, post *model.Post) error {
 
 func (p *Plugin) streamResultToNewPost(requesterUserID string, stream *ai.TextStreamResult, post *model.Post) error {
 	if err := p.botCreatePost(requesterUserID, post); err != nil {
-		return errors.Wrap(err, "unable to create post")
+		return fmt.Errorf("unable to create post: %w", err)
 	}
 
 	if err := p.streamResultToPost(stream, post); err != nil {
-		return errors.Wrap(err, "unable to stream result to post")
+		return fmt.Errorf("unable to stream result to post: %w", err)
 	}
 
 	return nil
@@ -148,6 +148,28 @@ func (p *Plugin) streamResultToNewDM(stream *ai.TextStreamResult, userID string,
 	return nil
 }
 
+func (p *Plugin) sendPostStreamingUpdateEvent(post *model.Post, message string) {
+	p.API.PublishWebSocketEvent("postupdate", map[string]interface{}{
+		"post_id": post.Id,
+		"next":    message,
+	}, &model.WebsocketBroadcast{
+		ChannelId: post.ChannelId,
+	})
+}
+
+const PostStreamingControlCancel = "cancel"
+const PostStreamingControlEnd = "end"
+const PostStreamingControlStart = "start"
+
+func (p *Plugin) sendPostStreamingControlEvent(post *model.Post, control string) {
+	p.API.PublishWebSocketEvent("postupdate", map[string]interface{}{
+		"post_id": post.Id,
+		"control": control,
+	}, &model.WebsocketBroadcast{
+		ChannelId: post.ChannelId,
+	})
+}
+
 func (p *Plugin) streamResultToPost(stream *ai.TextStreamResult, post *model.Post) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	p.streamingContextsMutex.Lock()
@@ -160,57 +182,50 @@ func (p *Plugin) streamResultToPost(stream *ai.TextStreamResult, post *model.Pos
 			p.streamingContextsMutex.Unlock()
 		}()
 
-		p.API.PublishWebSocketEvent("postupdate", map[string]interface{}{
-			"post_id": post.Id,
-			"control": "start",
-		}, &model.WebsocketBroadcast{
-			ChannelId: post.ChannelId,
-		})
+		p.sendPostStreamingControlEvent(post, PostStreamingControlStart)
 		defer func() {
-			p.API.PublishWebSocketEvent("postupdate", map[string]interface{}{
-				"post_id": post.Id,
-				"control": "end",
-			}, &model.WebsocketBroadcast{
-				ChannelId: post.ChannelId,
-			})
+			p.sendPostStreamingControlEvent(post, PostStreamingControlEnd)
 		}()
 
 		for {
 			select {
 			case next := <-stream.Stream:
 				post.Message += next
-				p.API.PublishWebSocketEvent("postupdate", map[string]interface{}{
-					"post_id": post.Id,
-					"next":    post.Message,
-				}, &model.WebsocketBroadcast{
-					ChannelId: post.ChannelId,
-				})
+				p.sendPostStreamingUpdateEvent(post, post.Message)
 			case err, ok := <-stream.Err:
+				// Stream has closed cleanly
 				if !ok {
+					if strings.TrimSpace(post.Message) == "" {
+						p.API.LogError("LLM closed stream with no result")
+						post.Message = "Sorry! The LLM did not return a result."
+						p.sendPostStreamingUpdateEvent(post, post.Message)
+					}
 					if err = p.pluginAPI.Post.UpdatePost(post); err != nil {
 						p.API.LogError("Streaming failed to update post", "error", err)
 						return
 					}
 					return
 				}
-				p.API.LogError("Streaming result to post failed", "error", err)
-				post.Message = "Sorry! An error occurred while accessing the LLM. See server logs for details."
+				// Handle partial results
+				if strings.TrimSpace(post.Message) == "" {
+					p.API.LogError("Streaming result to post failed", "error", err)
+					post.Message = "Sorry! An error occurred while accessing the LLM. See server logs for details."
+				} else {
+					p.API.LogError("Streaming result to post failed partway", "error", err)
+					post.Message += "\n\nSorry! An error occurred while streaming from the LLM. See server logs for details."
+				}
 				if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
 					p.API.LogError("Error recovering from streaming error", "error", err)
 					return
 				}
+				p.sendPostStreamingUpdateEvent(post, post.Message)
 				return
 			case <-ctx.Done():
 				if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
-					p.API.LogError("Error recovering from streaming error", "error", err)
+					p.API.LogError("Error updating post on stop signaled", "error", err)
 					return
 				}
-				p.API.PublishWebSocketEvent("postupdate", map[string]interface{}{
-					"post_id": post.Id,
-					"control": "cancel",
-				}, &model.WebsocketBroadcast{
-					ChannelId: post.ChannelId,
-				})
+				p.sendPostStreamingControlEvent(post, PostStreamingControlCancel)
 				return
 			}
 		}

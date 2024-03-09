@@ -11,25 +11,32 @@ import (
 	"io"
 	"net/url"
 	"strings"
+	"time"
+
+	"errors"
 
 	"github.com/invopop/jsonschema"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/subtitles"
-	"github.com/pkg/errors"
 	openaiClient "github.com/sashabaranov/go-openai"
 )
 
 type OpenAI struct {
-	client       *openaiClient.Client
-	defaultModel string
-	maxTokens    int
+	client           *openaiClient.Client
+	defaultModel     string
+	tokenLimit       int
+	streamingTimeout time.Duration
 }
+
+const StreamingTimeoutDefault = 5 * time.Second
 
 const MaxFunctionCalls = 10
 
+var ErrStreamingTimeout = errors.New("timeout streaming")
+
 func NewCompatible(llmService ai.ServiceConfig) *OpenAI {
 	apiKey := llmService.APIKey
-	endpointURL := llmService.URL
+	endpointURL := strings.TrimSuffix(llmService.URL, "/")
 	defaultModel := llmService.DefaultModel
 	config := openaiClient.DefaultConfig(apiKey)
 	config.BaseURL = endpointURL
@@ -39,10 +46,16 @@ func NewCompatible(llmService ai.ServiceConfig) *OpenAI {
 		config = openaiClient.DefaultAzureConfig(apiKey, endpointURL)
 		config.APIVersion = "2023-07-01-preview"
 	}
+
+	streamingTimeout := StreamingTimeoutDefault
+	if llmService.StreamingTimeoutSeconds > 0 {
+		streamingTimeout = time.Duration(llmService.StreamingTimeoutSeconds) * time.Second
+	}
 	return &OpenAI{
-		client:       openaiClient.NewClientWithConfig(config),
-		defaultModel: defaultModel,
-		maxTokens:    llmService.TokenLimit,
+		client:           openaiClient.NewClientWithConfig(config),
+		defaultModel:     defaultModel,
+		tokenLimit:       llmService.TokenLimit,
+		streamingTimeout: streamingTimeout,
 	}
 }
 
@@ -56,7 +69,7 @@ func New(llmService ai.ServiceConfig) *OpenAI {
 	return &OpenAI{
 		client:       openaiClient.NewClientWithConfig(config),
 		defaultModel: defaultModel,
-		maxTokens:    llmService.TokenLimit,
+		tokenLimit:   llmService.TokenLimit,
 	}
 }
 
@@ -128,9 +141,38 @@ func (s *OpenAI) handleStreamFunctionCall(request openaiClient.ChatCompletionReq
 
 func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionRequest, conversation ai.BotConversation, output chan<- string, errChan chan<- error) {
 	request.Stream = true
-	stream, err := s.client.CreateChatCompletionStream(context.Background(), request)
+
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+
+	// watchdog to cancel if the streaming stalls
+	watchdog := make(chan struct{})
+	go func() {
+		timer := time.NewTimer(s.streamingTimeout)
+		defer timer.Stop()
+		for {
+			select {
+			case <-timer.C:
+				cancel(ErrStreamingTimeout)
+				return
+			case <-ctx.Done():
+				return
+			case <-watchdog:
+				if !timer.Stop() {
+					<-timer.C
+				}
+				timer.Reset(s.streamingTimeout)
+			}
+		}
+	}()
+
+	stream, err := s.client.CreateChatCompletionStream(ctx, request)
 	if err != nil {
-		errChan <- err
+		if ctxErr := context.Cause(ctx); ctxErr != nil {
+			errChan <- ctxErr
+		} else {
+			errChan <- err
+		}
 		return
 	}
 
@@ -145,9 +187,16 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 			return
 		}
 		if err != nil {
-			errChan <- err
+			if ctxErr := context.Cause(ctx); ctxErr != nil {
+				errChan <- ctxErr
+			} else {
+				errChan <- err
+			}
 			return
 		}
+
+		// Ping the watchdog when we receive a response
+		watchdog <- struct{}{}
 
 		if len(response.Choices) == 0 {
 			continue
@@ -170,7 +219,7 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 				}
 			}
 			if numFunctionCalls > MaxFunctionCalls {
-				errChan <- errors.New("Too many function calls")
+				errChan <- errors.New("too many function calls")
 				return
 			}
 
@@ -215,8 +264,8 @@ func (s *OpenAI) streamResult(request openaiClient.ChatCompletionRequest, conver
 
 func (s *OpenAI) GetDefaultConfig() ai.LLMConfig {
 	return ai.LLMConfig{
-		Model:     s.defaultModel,
-		MaxTokens: 0,
+		Model:              s.defaultModel,
+		MaxGeneratedTokens: 0,
 	}
 }
 
@@ -231,7 +280,7 @@ func (s *OpenAI) createConfig(opts []ai.LanguageModelOption) ai.LLMConfig {
 func (s *OpenAI) completionRequestFromConfig(cfg ai.LLMConfig) openaiClient.ChatCompletionRequest {
 	return openaiClient.ChatCompletionRequest{
 		Model:            cfg.Model,
-		MaxTokens:        cfg.MaxTokens,
+		MaxTokens:        cfg.MaxGeneratedTokens,
 		Temperature:      1.0,
 		TopP:             1.0,
 		FrequencyPenalty: 0,
@@ -263,12 +312,12 @@ func (s *OpenAI) Transcribe(file io.Reader) (*subtitles.Subtitles, error) {
 		Format:   openaiClient.AudioResponseFormatVTT,
 	})
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to create whisper transcription")
+		return nil, fmt.Errorf("unable to create whisper transcription: %w", err)
 	}
 
 	timedTranscript, err := subtitles.NewSubtitlesFromVTT(strings.NewReader(resp.Text))
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to parse whisper transcription")
+		return nil, fmt.Errorf("unable to parse whisper transcription: %w", err)
 	}
 
 	return timedTranscript, nil
@@ -311,8 +360,8 @@ func (s *OpenAI) CountTokens(text string) int {
 }
 
 func (s *OpenAI) TokenLimit() int {
-	if s.maxTokens > 0 {
-		return s.maxTokens
+	if s.tokenLimit > 0 {
+		return s.tokenLimit
 	}
 
 	switch {

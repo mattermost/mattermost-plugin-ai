@@ -79,5 +79,9 @@ const isE10LicensedOrDevelopment = (state: GlobalState): boolean => {
 };
 
 export function useIsMultiLLMLicensed() {
-    return useSelector(isE10LicensedOrDevelopment);
+    return useSelector(isE20LicensedOrDevelopment);
+}
+
+export function useIsBasicsLicensed() {
+    return useSelector(isE20LicensedOrDevelopment);
 }

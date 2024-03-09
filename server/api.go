@@ -1,12 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
+
+	"errors"
 
 	"github.com/gin-gonic/gin"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
-	"github.com/pkg/errors"
 )
 
 const (
@@ -62,7 +64,7 @@ func (p *Plugin) handleGetAIThreads(c *gin.Context) {
 
 	botDMChannel, err := p.pluginAPI.Channel.GetDirect(userID, p.botid)
 	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "unable to get DM with AI bot"))
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to get DM with AI bot: %w", err))
 		return
 	}
 
@@ -74,7 +76,7 @@ func (p *Plugin) handleGetAIThreads(c *gin.Context) {
 
 	posts, err := p.getAIThreads(botDMChannel.Id)
 	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "failed to get posts for bot DM"))
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to get posts for bot DM: %w", err))
 		return
 	}
 

@@ -3,9 +3,10 @@ package main
 import (
 	"net/http"
 
+	"errors"
+
 	"github.com/gin-gonic/gin"
 	"github.com/mattermost/mattermost/server/public/model"
-	"github.com/pkg/errors"
 )
 
 func (p *Plugin) mattermostAdminAuthorizationRequired(c *gin.Context) {

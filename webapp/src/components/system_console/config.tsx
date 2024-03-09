@@ -7,6 +7,8 @@ import {TertiaryButton} from '../assets/buttons';
 
 import {useIsMultiLLMLicensed} from '@/license';
 
+import Pill from '../pill';
+
 import {ServiceData} from './service';
 import ServiceForm from './service_form';
 import EnterpriseChip from './enterprise_chip';
@@ -38,6 +40,17 @@ type Props = {
     onChange: (id: string, value: any) => void
     setSaveNeeded: () => void
 }
+
+const MessageContainer = styled.div`
+	display: flex;
+	align-items: center;
+	flex-direction: row;
+	gap: 5px;
+	padding: 10px 12px;
+	background: white;
+	border-radius: 4px;
+	border: 1px solid rgba(63, 67, 80, 0.08);
+`;
 
 const PanelContainer = styled.div`
 	display: flex;
@@ -84,6 +97,10 @@ const EnterpriseChipContainer = styled.div`
 	flex-direction: row;
 	align-items: center;
 	gap: 8px;
+`;
+
+const PanelFooterText = styled(PanelSubtitle)`
+	margin-top: 20px;
 `;
 
 const defaultConfig = {
@@ -205,6 +222,21 @@ const Config = (props: Props) => {
 
     return (
         <ConfigContainer>
+            <MessageContainer>
+                <Pill>
+                    {'BETA'}
+                </Pill>
+                <span>
+                    {'This plugin is currently in beta. To report a bug or to provide feedback, '}
+                    <a
+                        target={'_blank'}
+                        rel={'noopener noreferrer'}
+                        href='http://github.com/mattermost/mattermost-plugin-ai/issues'
+                    >
+                        {'create a new issue in the plugin repository'}
+                    </a>
+                </span>
+            </MessageContainer>
             <Panel
                 title='AI Services'
                 subtitle='Multiple AI services can be configured with the AI plugin.'
@@ -229,6 +261,9 @@ const Config = (props: Props) => {
                         <EnterpriseChip subtext={'Multiple AI services is available on Enterprise plans'}/>
                     )}
                 </EnterpriseChipContainer>
+                <PanelFooterText>
+                    {'AI services are third party services; Mattermost is not responsible for output.'}
+                </PanelFooterText>
             </Panel>
             <Panel
                 title='AI functions'

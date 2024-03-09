@@ -17,6 +17,7 @@ export type ChannelNamesMap = {
 interface Props {
     message: string;
     channelID: string;
+    postID: string;
     showCursor?: boolean;
 }
 
@@ -46,8 +47,6 @@ const PostText = (props: Props) => {
     const team = useSelector<GlobalState, Team>((state) => state.entities.teams.teams[channel?.team_id]);
     const siteURL = useSelector<GlobalState, string | undefined>((state) => state.entities.general.config.SiteURL);
 
-    //const channelNamesMap = useSelector<GlobalState, ChannelNamesMap>(getChannelsNameMapInCurrentTeam);
-
     // @ts-ignore
     const {formatText, messageHtmlToComponent} = window.PostUtils;
 
@@ -57,18 +56,19 @@ const PostText = (props: Props) => {
         atMentions: true,
         team,
         unsafeLinks: true,
+        minimumHashtagLength: 1000000000,
         siteURL,
-
-        //channelNamesMap,
     };
 
     const messageHtmlToComponentOptions = {
         hasPluginTooltips: true,
+        latex: false,
+        inlinelatex: false,
+        postId: props.postID,
     };
 
     const text = messageHtmlToComponent(
         formatText(props.message, markdownOptions),
-        true,
         messageHtmlToComponentOptions,
     );
 

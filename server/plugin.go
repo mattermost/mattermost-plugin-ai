@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"embed"
+	"fmt"
 	"os/exec"
 	"sync"
+
+	"errors"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
@@ -17,7 +20,6 @@ import (
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
-	"github.com/pkg/errors"
 )
 
 const (
@@ -73,27 +75,40 @@ func resolveffmpegPath() string {
 	return "ffmpeg"
 }
 
+func (p *Plugin) EnsureMainBot() error {
+	serviceName := "a third party AI Service"
+	if llmConfig, err := p.getActiveLLMConfig(); err == nil {
+		serviceName = llmConfig.Name
+	}
+	botID, err := p.pluginAPI.Bot.EnsureBot(&model.Bot{
+		Username:    BotUsername,
+		DisplayName: "AI Copilot",
+		Description: "Powered by " + serviceName,
+	},
+		pluginapi.ProfileImagePath("assets/bot_icon.png"),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to ensure bot: %w", err)
+	}
+	p.botid = botID
+
+	return nil
+}
+
 func (p *Plugin) OnActivate() error {
 	p.pluginAPI = pluginapi.NewClient(p.API, p.Driver)
 
 	p.licenseChecker = enterprise.NewLicenseChecker(p.pluginAPI)
 
-	botID, err := p.pluginAPI.Bot.EnsureBot(&model.Bot{
-		Username:    BotUsername,
-		DisplayName: "AI Assistant",
-		Description: "Your helpful assistant within Mattermost",
-	},
-		pluginapi.ProfileImagePath("assets/bot_icon.png"),
-	)
-	if err != nil {
-		return errors.Wrapf(err, "failed to ensure bot")
-	}
-	p.botid = botID
-
-	if err = p.SetupDB(); err != nil {
+	if err := p.EnsureMainBot(); err != nil {
 		return err
 	}
 
+	if err := p.SetupDB(); err != nil {
+		return err
+	}
+
+	var err error
 	p.prompts, err = ai.NewPrompts(promptsFolder, p.getBuiltInTools)
 	if err != nil {
 		return err
@@ -109,38 +124,43 @@ func (p *Plugin) OnActivate() error {
 	return nil
 }
 
-func (p *Plugin) getLLM() ai.LanguageModel {
+func (p *Plugin) getActiveLLMConfig() (ai.ServiceConfig, error) {
 	cfg := p.getConfiguration()
-	var llm ai.LanguageModel
-	var llmService ai.ServiceConfig
-
 	if cfg == nil || cfg.Services == nil || len(cfg.Services) == 0 {
-		p.pluginAPI.Log.Error("No LLM services configured. Please configure a service in the plugin settings.")
-		return nil
+		return ai.ServiceConfig{}, errors.New("no LLM services configured. Please configure a service in the plugin settings")
 	}
 
 	if p.licenseChecker.IsMultiLLMLicensed() {
 		for _, service := range cfg.Services {
 			if service.Name == cfg.LLMGenerator {
-				llmService = service
-				break
+				return service, nil
 			}
 		}
-	} else {
-		llmService = cfg.Services[0]
 	}
 
-	switch llmService.ServiceName {
+	return cfg.Services[0], nil
+}
+
+func (p *Plugin) getLLM() ai.LanguageModel {
+	llmServiceConfig, err := p.getActiveLLMConfig()
+	if err != nil {
+		p.pluginAPI.Log.Error(err.Error())
+		return nil
+	}
+
+	var llm ai.LanguageModel
+	switch llmServiceConfig.ServiceName {
 	case "openai":
-		llm = openai.New(llmService)
+		llm = openai.New(llmServiceConfig)
 	case "openaicompatible":
-		llm = openai.NewCompatible(llmService)
+		llm = openai.NewCompatible(llmServiceConfig)
 	case "anthropic":
-		llm = anthropic.New(llmService)
+		llm = anthropic.New(llmServiceConfig)
 	case "asksage":
-		llm = asksage.New(llmService)
+		llm = asksage.New(llmServiceConfig)
 	}
 
+	cfg := p.getConfiguration()
 	if cfg.EnableLLMTrace {
 		llm = NewLanguageModelLogWrapper(p.pluginAPI.Log, llm)
 	}
@@ -187,27 +207,27 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 func (p *Plugin) handleMessages(post *model.Post) error {
 	// Don't respond to ouselves
 	if post.UserId == p.botid {
-		return errors.Wrap(ErrNoResponse, "not responding to ourselves")
+		return fmt.Errorf("not responding to ourselves: %w", ErrNoResponse)
 	}
 
 	// Never respond to remote posts
 	if post.RemoteId != nil && *post.RemoteId != "" {
-		return errors.Wrap(ErrNoResponse, "not responding to remote posts")
+		return fmt.Errorf("not responding to remote posts: %w", ErrNoResponse)
 	}
 
 	// Don't respond to plugins
 	if post.GetProp("from_plugin") != nil {
-		return errors.Wrap(ErrNoResponse, "not responding to plugin posts")
+		return fmt.Errorf("not responding to plugin posts: %w", ErrNoResponse)
 	}
 
 	// Don't respond to webhooks
 	if post.GetProp("from_webhook") != nil {
-		return errors.Wrap(ErrNoResponse, "not responding to webhook posts")
+		return fmt.Errorf("not responding to webhook posts: %w", ErrNoResponse)
 	}
 
 	channel, err := p.pluginAPI.Channel.Get(post.ChannelId)
 	if err != nil {
-		return errors.Wrap(err, "unable to get channel")
+		return fmt.Errorf("unable to get channel: %w", err)
 	}
 
 	postingUser, err := p.pluginAPI.User.Get(post.UserId)
@@ -217,7 +237,7 @@ func (p *Plugin) handleMessages(post *model.Post) error {
 
 	// Don't respond to other bots
 	if postingUser.IsBot || post.GetProp("from_bot") != nil {
-		return errors.Wrap(ErrNoResponse, "not responding to other bots")
+		return fmt.Errorf("not responding to other bots: %w", ErrNoResponse)
 	}
 
 	switch {
@@ -239,7 +259,7 @@ func (p *Plugin) handleMentions(post *model.Post, postingUser *model.User, chann
 	}
 
 	if err := p.processUserRequestToBot(p.MakeConversationContext(postingUser, channel, post)); err != nil {
-		return errors.Wrap(err, "unable to process bot mention")
+		return fmt.Errorf("unable to process bot mention: %w", err)
 	}
 
 	return nil
@@ -251,7 +271,7 @@ func (p *Plugin) handleDMs(channel *model.Channel, postingUser *model.User, post
 	}
 
 	if err := p.processUserRequestToBot(p.MakeConversationContext(postingUser, channel, post)); err != nil {
-		return errors.Wrap(err, "unable to process bot DM")
+		return fmt.Errorf("unable to process bot DM: %w", err)
 	}
 
 	return nil

@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"strings"
 
+	"errors"
+
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost/server/public/model"
-	"github.com/pkg/errors"
 )
 
 const (
@@ -80,15 +81,15 @@ func (p *Plugin) generateTitle(request string, threadRootID string) error {
 	titleRequest := ai.BotConversation{
 		Posts: []ai.Post{{Role: ai.PostRoleUser, Message: request}},
 	}
-	conversationTitle, err := p.getLLM().ChatCompletionNoStream(titleRequest, ai.WithMaxTokens(25))
+	conversationTitle, err := p.getLLM().ChatCompletionNoStream(titleRequest, ai.WithMaxGeneratedTokens(25))
 	if err != nil {
-		return errors.Wrap(err, "failed to get title")
+		return fmt.Errorf("failed to get title: %w", err)
 	}
 
 	conversationTitle = strings.Trim(conversationTitle, "\n \"'")
 
 	if err := p.saveTitle(threadRootID, conversationTitle); err != nil {
-		return errors.Wrap(err, "failed to save title")
+		return fmt.Errorf("failed to save title: %w", err)
 	}
 
 	return nil
@@ -213,7 +214,7 @@ func (p *Plugin) startNewSummaryThread(postIDToSummarize string, context ai.Conv
 	}
 
 	if err := p.saveTitle(post.Id, "Thread Summary"); err != nil {
-		return nil, errors.Wrap(err, "failed to save title")
+		return nil, fmt.Errorf("failed to save title: %w", err)
 	}
 
 	return post, nil
@@ -226,7 +227,7 @@ func (p *Plugin) selectEmoji(postToReact *model.Post, context ai.ConversationCon
 		return err
 	}
 
-	emojiName, err := p.getLLM().ChatCompletionNoStream(prompt, ai.WithMaxTokens(25))
+	emojiName, err := p.getLLM().ChatCompletionNoStream(prompt, ai.WithMaxGeneratedTokens(25))
 	if err != nil {
 		return err
 	}

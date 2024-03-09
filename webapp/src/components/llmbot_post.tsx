@@ -176,6 +176,7 @@ export const LLMBotPost = (props: Props) => {
             <PostText
                 message={message}
                 channelID={props.post.channel_id}
+                postID={props.post.id}
                 showCursor={generating}
             />
             { generating && requesterIsCurrentUser &&
