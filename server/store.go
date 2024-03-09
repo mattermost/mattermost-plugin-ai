@@ -2,11 +2,13 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
+
+	"errors"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
 	"github.com/mattermost/mattermost/server/public/model"
-	"github.com/pkg/errors"
 )
 
 type builder interface {
@@ -34,7 +36,7 @@ func (p *Plugin) SetupDB() error {
 func (p *Plugin) doQuery(dest interface{}, b builder) error {
 	sqlString, args, err := b.ToSql()
 	if err != nil {
-		return errors.Wrap(err, "failed to build sql")
+		return fmt.Errorf("failed to build sql: %w", err)
 	}
 
 	sqlString = p.db.Rebind(sqlString)
@@ -45,7 +47,7 @@ func (p *Plugin) doQuery(dest interface{}, b builder) error {
 func (p *Plugin) execBuilder(b builder) (sql.Result, error) {
 	sqlString, args, err := b.ToSql()
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to build sql")
+		return nil, fmt.Errorf("failed to build sql: %w", err)
 	}
 
 	sqlString = p.db.Rebind(sqlString)
@@ -60,7 +62,7 @@ func (p *Plugin) SetupTables() error {
 			Title TEXT NOT NULL
 		);
 	`); err != nil {
-		return errors.Wrap(err, "can't create feeback table")
+		return fmt.Errorf("can't create feeback table: %w", err)
 	}
 
 	return nil
@@ -101,7 +103,7 @@ func (p *Plugin) getAIThreads(dmChannelID string) ([]AIThread, error) {
 		Limit(60).
 		Offset(0),
 	); err != nil {
-		return nil, errors.Wrap(err, "failed to get posts for bot DM")
+		return nil, fmt.Errorf("failed to get posts for bot DM: %w", err)
 	}
 
 	return posts, nil

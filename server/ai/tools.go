@@ -1,7 +1,7 @@
 package ai
 
 import (
-	"github.com/pkg/errors"
+	"errors"
 )
 
 type Tool struct {

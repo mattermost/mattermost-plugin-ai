@@ -7,11 +7,12 @@ import (
 	"net/http"
 	"regexp"
 
+	"errors"
+
 	"github.com/google/go-github/v41/github"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
-	"github.com/pkg/errors"
 )
 
 type LookupMattermostUserArgs struct {
@@ -22,7 +23,7 @@ func (p *Plugin) toolResolveLookupMattermostUser(context ai.ConversationContext,
 	var args LookupMattermostUserArgs
 	err := argsGetter(&args)
 	if err != nil {
-		return "", errors.Wrap(err, "failed to get arguments for tool LookupMattermostUser")
+		return "", fmt.Errorf("failed to get arguments for tool LookupMattermostUser: %w", err)
 	}
 
 	if !model.IsValidUsername(args.Username) {
@@ -36,12 +37,12 @@ func (p *Plugin) toolResolveLookupMattermostUser(context ai.ConversationContext,
 
 	user, err := p.pluginAPI.User.GetByUsername(args.Username)
 	if err != nil {
-		return "", errors.Wrap(err, "failed to lookup user")
+		return "", fmt.Errorf("failed to lookup user: %w", err)
 	}
 
 	userStatus, err := p.pluginAPI.User.GetStatus(user.Id)
 	if err != nil {
-		return "", errors.Wrap(err, "failed to get user status")
+		return "", fmt.Errorf("failed to get user status: %w", err)
 	}
 
 	result := fmt.Sprintf("Username: %s", user.Username)
@@ -81,7 +82,7 @@ func (p *Plugin) toolResolveGetChannelPosts(context ai.ConversationContext, args
 	var args GetChannelPosts
 	err := argsGetter(&args)
 	if err != nil {
-		return "invalid parameters to function", errors.Wrap(err, "failed to get arguments for tool GetChannelPosts")
+		return "invalid parameters to function", fmt.Errorf("failed to get arguments for tool GetChannelPosts: %w", err)
 	}
 
 	if !model.IsValidChannelIdentifier(args.ChannelName) {
@@ -99,11 +100,11 @@ func (p *Plugin) toolResolveGetChannelPosts(context ai.ConversationContext, args
 
 	channel, err := p.pluginAPI.Channel.GetByName(context.Channel.TeamId, args.ChannelName, false)
 	if err != nil {
-		return "internal failure", errors.Wrap(err, "failed to lookup channel by name, may not exist")
+		return "internal failure", fmt.Errorf("failed to lookup channel by name, may not exist: %w", err)
 	}
 
 	if err = p.checkUsageRestrictionsForChannel(channel); err != nil {
-		return "user asked for a channel that is blocked by usage restrictions", errors.Wrap(err, "usage restrictions during channel lookup")
+		return "user asked for a channel that is blocked by usage restrictions", fmt.Errorf("usage restrictions during channel lookup: %w", err)
 	}
 
 	if !p.pluginAPI.User.HasPermissionToChannel(context.RequestingUser.Id, channel.Id, model.PermissionReadChannel) {
@@ -112,12 +113,12 @@ func (p *Plugin) toolResolveGetChannelPosts(context ai.ConversationContext, args
 
 	posts, err := p.pluginAPI.Post.GetPostsForChannel(channel.Id, 0, args.NumberPosts)
 	if err != nil {
-		return "internal failure", errors.Wrap(err, "failed to get posts for channel")
+		return "internal failure", fmt.Errorf("failed to get posts for channel: %w", err)
 	}
 
 	postsData, err := p.getMetadataForPosts(posts)
 	if err != nil {
-		return "internal failure", errors.Wrap(err, "failed to get metadata for posts")
+		return "internal failure", fmt.Errorf("failed to get metadata for posts: %w", err)
 	}
 
 	return formatThread(postsData), nil
@@ -139,7 +140,7 @@ func (p *Plugin) toolGetGithubIssue(context ai.ConversationContext, argsGetter a
 	var args GetGithubIssueArgs
 	err := argsGetter(&args)
 	if err != nil {
-		return "invalid parameters to function", errors.Wrap(err, "failed to get arguments for tool GetGithubIssues")
+		return "invalid parameters to function", fmt.Errorf("failed to get arguments for tool GetGithubIssues: %w", err)
 	}
 
 	// Fail for over lengh repo ownder or name.
@@ -159,7 +160,7 @@ func (p *Plugin) toolGetGithubIssue(context ai.ConversationContext, argsGetter a
 
 	req, err := http.NewRequest("GET", fmt.Sprintf("/github/api/v1/issue?owner=%s&repo=%s&number=%d", args.RepoOwner, args.RepoName, args.Number), nil)
 	if err != nil {
-		return "internal failure", errors.Wrap(err, "failed to create request")
+		return "internal failure", fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Mattermost-User-ID", context.RequestingUser.Id)
 
@@ -170,13 +171,13 @@ func (p *Plugin) toolGetGithubIssue(context ai.ConversationContext, argsGetter a
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		result, _ := io.ReadAll(resp.Body)
-		return "Error: unable to get issue, internal failure", errors.Errorf("failed to get issue, status code: %v\n body: %v", resp.Status, string(result))
+		return "Error: unable to get issue, internal failure", fmt.Errorf("failed to get issue, status code: %v\n body: %v", resp.Status, string(result))
 	}
 
 	var issue github.Issue
 	err = json.NewDecoder(resp.Body).Decode(&issue)
 	if err != nil {
-		return "internal failure", errors.Wrap(err, "failed to decode response")
+		return "internal failure", fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	return formatIssue(&issue), nil

@@ -1,10 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"reflect"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
-	"github.com/pkg/errors"
 )
 
 type Config struct {
@@ -89,7 +89,7 @@ func (p *Plugin) OnConfigurationChange() error {
 
 	// Load the public configuration fields from the Mattermost server configuration.
 	if err := p.API.LoadPluginConfiguration(configuration); err != nil {
-		return errors.Wrap(err, "failed to load plugin configuration")
+		return fmt.Errorf("failed to load plugin configuration: %w", err)
 	}
 
 	p.setConfiguration(configuration)
@@ -101,7 +101,7 @@ func (p *Plugin) OnConfigurationChange() error {
 
 	// Extra config change tasks
 	if err := p.EnsureMainBot(); err != nil {
-		return errors.Wrap(err, "failed on config change")
+		return fmt.Errorf("failed on config change: %w", err)
 	}
 
 	return nil

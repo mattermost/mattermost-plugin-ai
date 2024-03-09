@@ -8,7 +8,6 @@ import (
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost/server/public/model"
-	"github.com/pkg/errors"
 )
 
 type ThreadData struct {
@@ -119,7 +118,7 @@ func (p *Plugin) botDM(userID string, post *model.Post) error {
 	p.modifyPostForBot(userID, post)
 
 	if err := p.pluginAPI.Post.DM(p.botid, userID, post); err != nil {
-		return errors.Wrap(err, "failed to post DM")
+		return fmt.Errorf("failed to post DM: %w", err)
 	}
 
 	return nil
@@ -127,11 +126,11 @@ func (p *Plugin) botDM(userID string, post *model.Post) error {
 
 func (p *Plugin) streamResultToNewPost(requesterUserID string, stream *ai.TextStreamResult, post *model.Post) error {
 	if err := p.botCreatePost(requesterUserID, post); err != nil {
-		return errors.Wrap(err, "unable to create post")
+		return fmt.Errorf("unable to create post: %w", err)
 	}
 
 	if err := p.streamResultToPost(stream, post); err != nil {
-		return errors.Wrap(err, "unable to stream result to post")
+		return fmt.Errorf("unable to stream result to post: %w", err)
 	}
 
 	return nil

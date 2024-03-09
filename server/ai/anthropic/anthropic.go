@@ -1,8 +1,9 @@
 package anthropic
 
 import (
+	"fmt"
+
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
-	"github.com/pkg/errors"
 )
 
 const DefaultMaxTokens = 4096
@@ -82,7 +83,7 @@ func (a *Anthropic) ChatCompletion(conversation ai.BotConversation, opts ...ai.L
 	request.Stream = true
 	result, err := a.client.MessageCompletion(request)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to send query to anthropic")
+		return nil, fmt.Errorf("failed to send query to anthropic: %w", err)
 	}
 
 	return result, nil
@@ -93,7 +94,7 @@ func (a *Anthropic) ChatCompletionNoStream(conversation ai.BotConversation, opts
 	request.Stream = false
 	result, err := a.client.MessageCompletionNoStream(request)
 	if err != nil {
-		return "", errors.Wrap(err, "failed to send query to anthropic")
+		return "", fmt.Errorf("failed to send query to anthropic: %w", err)
 	}
 
 	return result, nil
