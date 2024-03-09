@@ -3,10 +3,11 @@ package asksage
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 
-	"github.com/pkg/errors"
+	"errors"
 )
 
 const (
@@ -167,7 +168,7 @@ func (c *Client) do(method, path string, body interface{}, result interface{}) e
 	if resp.StatusCode != http.StatusOK {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return errors.Wrap(err, "unable to read response body on error: "+resp.Status)
+			return fmt.Errorf("unable to read response body on status %v. Error: %w", resp.Status, err)
 		}
 
 		return errors.New("non 200 response from asksage: " + resp.Status + "\nBody:\n" + string(body))

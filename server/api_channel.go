@@ -2,15 +2,17 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"slices"
+
+	"errors"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/render"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-plugin-ai/server/enterprise"
 	"github.com/mattermost/mattermost/server/public/model"
-	"github.com/pkg/errors"
 )
 
 func (p *Plugin) channelAuthorizationRequired(c *gin.Context) {
@@ -131,7 +133,7 @@ func (p *Plugin) handleSince(c *gin.Context) {
 	}
 
 	if err := p.saveTitle(post.Id, promptTitle); err != nil {
-		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "failed to save title"))
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to save title: %w", err))
 		return
 	}
 

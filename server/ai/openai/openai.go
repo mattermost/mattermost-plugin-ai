@@ -13,10 +13,11 @@ import (
 	"strings"
 	"time"
 
+	"errors"
+
 	"github.com/invopop/jsonschema"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/subtitles"
-	"github.com/pkg/errors"
 	openaiClient "github.com/sashabaranov/go-openai"
 )
 
@@ -218,7 +219,7 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 				}
 			}
 			if numFunctionCalls > MaxFunctionCalls {
-				errChan <- errors.New("Too many function calls")
+				errChan <- errors.New("too many function calls")
 				return
 			}
 
@@ -311,12 +312,12 @@ func (s *OpenAI) Transcribe(file io.Reader) (*subtitles.Subtitles, error) {
 		Format:   openaiClient.AudioResponseFormatVTT,
 	})
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to create whisper transcription")
+		return nil, fmt.Errorf("unable to create whisper transcription: %w", err)
 	}
 
 	timedTranscript, err := subtitles.NewSubtitlesFromVTT(strings.NewReader(resp.Text))
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to parse whisper transcription")
+		return nil, fmt.Errorf("unable to parse whisper transcription: %w", err)
 	}
 
 	return timedTranscript, nil

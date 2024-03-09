@@ -10,7 +10,6 @@ require (
 	github.com/invopop/jsonschema v0.7.0
 	github.com/jmoiron/sqlx v1.3.5
 	github.com/mattermost/mattermost/server/public v0.0.8
-	github.com/pkg/errors v0.9.1
 	github.com/r3labs/sse/v2 v2.10.0
 	github.com/sashabaranov/go-openai v1.14.1
 	github.com/stretchr/testify v1.8.4
@@ -58,6 +57,7 @@ require (
 	github.com/pborman/uuid v1.2.1 // indirect
 	github.com/pelletier/go-toml v1.9.5 // indirect
 	github.com/philhofer/fwd v1.1.2 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/stretchr/objx v0.5.0 // indirect

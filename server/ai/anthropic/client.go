@@ -3,11 +3,13 @@ package anthropic
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 
+	"errors"
+
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
-	"github.com/pkg/errors"
 	"github.com/r3labs/sse/v2"
 )
 
@@ -87,12 +89,12 @@ func NewClient(apiKey string) *Client {
 func (c *Client) MessageCompletionNoStream(completionRequest MessageRequest) (string, error) {
 	reqBodyBytes, err := json.Marshal(completionRequest)
 	if err != nil {
-		return "", errors.Wrap(err, "could not marshal completion request")
+		return "", fmt.Errorf("could not marshal completion request: %w", err)
 	}
 
 	req, err := http.NewRequest("POST", MessageEndpoint, bytes.NewReader(reqBodyBytes))
 	if err != nil {
-		return "", errors.Wrap(err, "could not create request")
+		return "", fmt.Errorf("could not create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -101,14 +103,14 @@ func (c *Client) MessageCompletionNoStream(completionRequest MessageRequest) (st
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", errors.Wrap(err, "could not send request")
+		return "", fmt.Errorf("could not send request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return "", errors.Wrap(err, "unable to read response body on error: "+resp.Status)
+			return "", fmt.Errorf("unable to read response body on status %v. Error: %w", resp.Status, err)
 		}
 
 		return "", errors.New("non 200 response from anthropic: " + resp.Status + "\nBody:\n" + string(body))
@@ -116,7 +118,7 @@ func (c *Client) MessageCompletionNoStream(completionRequest MessageRequest) (st
 
 	outputMessage := OutputMessage{}
 	if err := json.NewDecoder(resp.Body).Decode(&outputMessage); err != nil {
-		return "", errors.Wrap(err, "couldn't unmarshal response body")
+		return "", fmt.Errorf("couldn't unmarshal response body: %w", err)
 	}
 
 	return outputMessage.Content[0].Text, nil
@@ -155,7 +157,7 @@ func (c *Client) MessageCompletion(completionRequest MessageRequest) (*ai.TextSt
 		if resp.StatusCode != http.StatusOK {
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
-				errChan <- errors.Wrap(err, "unable to read response body on error: "+resp.Status)
+				errChan <- fmt.Errorf("unable to read response body on status %v. Error: %w", resp.Status, err)
 				return
 			}
 
@@ -170,7 +172,7 @@ func (c *Client) MessageCompletion(completionRequest MessageRequest) (*ai.TextSt
 				if errors.Is(err, io.EOF) {
 					return
 				}
-				errChan <- errors.Wrap(err, "error while reading event")
+				errChan <- fmt.Errorf("error while reading event: %w", err)
 				return
 			}
 
@@ -183,7 +185,7 @@ func (c *Client) MessageCompletion(completionRequest MessageRequest) (*ai.TextSt
 
 			messageStreamEvent := MessageStreamEvent{}
 			if err := json.Unmarshal(nextData, &messageStreamEvent); err != nil {
-				errChan <- errors.Wrap(err, "couldn't unmarshal data block")
+				errChan <- fmt.Errorf("couldn't unmarshal data block: %w", err)
 				return
 			}
 

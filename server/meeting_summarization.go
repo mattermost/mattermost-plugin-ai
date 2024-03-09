@@ -8,10 +8,11 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 
+	"errors"
+
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/subtitles"
 	"github.com/mattermost/mattermost/server/public/model"
-	"github.com/pkg/errors"
 )
 
 const ReferencedRecordingFileID = "referenced_recording_file_id"
@@ -45,12 +46,12 @@ func (p *Plugin) createTranscription(recordingFileID string) (*subtitles.Subtitl
 
 	recordingFileInfo, err := p.pluginAPI.File.GetInfo(recordingFileID)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to get calls file info")
+		return nil, fmt.Errorf("unable to get calls file info: %w", err)
 	}
 
 	fileReader, err := p.pluginAPI.File.Get(recordingFileID)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to read calls file")
+		return nil, fmt.Errorf("unable to read calls file: %w", err)
 	}
 
 	var cmd *exec.Cmd
@@ -64,33 +65,33 @@ func (p *Plugin) createTranscription(recordingFileID string) (*subtitles.Subtitl
 
 	audioReader, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, errors.Wrap(err, "couldn't create stdout pipe")
+		return nil, fmt.Errorf("couldn't create stdout pipe: %w", err)
 	}
 
 	errorReader, err := cmd.StderrPipe()
 	if err != nil {
-		return nil, errors.Wrap(err, "couldn't create stderr pipe")
+		return nil, fmt.Errorf("couldn't create stderr pipe: %w", err)
 	}
 
 	if err = cmd.Start(); err != nil {
-		return nil, errors.Wrap(err, "couldn't run ffmpeg")
+		return nil, fmt.Errorf("couldn't run ffmpeg: %w", err)
 	}
 
 	transcriber := p.getTranscribe()
 	// Limit reader should probably error out instead of just silently failing
 	transcription, err := transcriber.Transcribe(io.LimitReader(audioReader, WhisperAPILimit))
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to transcribe")
+		return nil, fmt.Errorf("unable to transcribe: %w", err)
 	}
 
 	errout, err := io.ReadAll(errorReader)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to read stderr from ffmpeg")
+		return nil, fmt.Errorf("unable to read stderr from ffmpeg: %w", err)
 	}
 
 	if err := cmd.Wait(); err != nil {
 		p.pluginAPI.Log.Debug("ffmpeg stderr: " + string(errout))
-		return nil, errors.Wrap(err, "error while waiting for ffmpeg")
+		return nil, fmt.Errorf("error while waiting for ffmpeg: %w", err)
 	}
 
 	return transcription, nil
@@ -115,7 +116,7 @@ func (p *Plugin) newCallRecordingThread(requestingUser *model.User, recordingPos
 
 func (p *Plugin) newCallTranscriptionSummaryThread(requestingUser *model.User, transcriptionPost *model.Post, channel *model.Channel) (*model.Post, error) {
 	if len(transcriptionPost.FileIds) != 1 {
-		return nil, errors.New("Unexpected number of files in calls post")
+		return nil, errors.New("unexpected number of files in calls post")
 	}
 
 	siteURL := p.API.GetConfig().ServiceSettings.SiteURL
@@ -129,33 +130,33 @@ func (p *Plugin) newCallTranscriptionSummaryThread(requestingUser *model.User, t
 
 	transcriptionFileID, err := getCaptionsFileIDFromProps(transcriptionPost)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to get transcription file id")
+		return nil, fmt.Errorf("unable to get transcription file id: %w", err)
 	}
 	transcriptionFileInfo, err := p.pluginAPI.File.GetInfo(transcriptionFileID)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to get transcription file info")
+		return nil, fmt.Errorf("unable to get transcription file info: %w", err)
 	}
 	transcriptionFilePost, err := p.pluginAPI.Post.GetPost(transcriptionFileInfo.PostId)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to get transcription file post")
+		return nil, fmt.Errorf("unable to get transcription file post: %w", err)
 	}
 	if transcriptionFilePost.ChannelId != channel.Id {
 		return nil, errors.New("strange configuration of calls transcription file")
 	}
 	transcriptionFileReader, err := p.pluginAPI.File.Get(transcriptionFileID)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to read calls file")
+		return nil, fmt.Errorf("unable to read calls file: %w", err)
 	}
 
 	transcription, err := subtitles.NewSubtitlesFromVTT(transcriptionFileReader)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to parse transcription file")
+		return nil, fmt.Errorf("unable to parse transcription file: %w", err)
 	}
 
 	context := p.MakeConversationContext(requestingUser, channel, nil)
 	summaryStream, err := p.summarizeTranscription(transcription, context)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to summarize transcription")
+		return nil, fmt.Errorf("unable to summarize transcription: %w", err)
 	}
 
 	summaryPost := &model.Post{
@@ -165,7 +166,7 @@ func (p *Plugin) newCallTranscriptionSummaryThread(requestingUser *model.User, t
 	}
 	summaryPost.AddProp(ReferencedTranscriptPostID, transcriptionPost.Id)
 	if err := p.streamResultToNewPost(requestingUser.Id, summaryStream, summaryPost); err != nil {
-		return nil, errors.Wrap(err, "unable to stream result to post")
+		return nil, fmt.Errorf("unable to stream result to post: %w", err)
 	}
 
 	return surePost, nil
@@ -195,26 +196,26 @@ func (p *Plugin) summarizeCallRecording(rootID string, requestingUser *model.Use
 
 		transcription, err := p.createTranscription(recordingFileID)
 		if err != nil {
-			return errors.Wrap(err, "failed to create transcription")
+			return fmt.Errorf("failed to create transcription: %w", err)
 		}
 
 		transcriptFileInfo, err := p.pluginAPI.File.Upload(strings.NewReader(transcription.FormatVTT()), "transcript.txt", channel.Id)
 		if err != nil {
-			return errors.Wrap(err, "unable to upload transcript")
+			return fmt.Errorf("unable to upload transcript: %w", err)
 		}
 
 		context := p.MakeConversationContext(requestingUser, channel, nil)
 		summaryStream, err := p.summarizeTranscription(transcription, context)
 		if err != nil {
-			return errors.Wrap(err, "unable to summarize transcription")
+			return fmt.Errorf("unable to summarize transcription: %w", err)
 		}
 
 		if err := p.updatePostWithFile(transcriptPost, transcriptFileInfo); err != nil {
-			return errors.Wrap(err, "unable to update transcript post")
+			return fmt.Errorf("unable to update transcript post: %w", err)
 		}
 
 		if err := p.streamResultToPost(summaryStream, transcriptPost); err != nil {
-			return errors.Wrap(err, "unable to stream result to post")
+			return fmt.Errorf("unable to stream result to post: %w", err)
 		}
 
 		return nil
@@ -240,12 +241,12 @@ func (p *Plugin) summarizeTranscription(transcription *subtitles.Subtitles, cont
 			context.PromptParameters = map[string]string{"TranscriptionChunk": chunk}
 			summarizeChunkPrompt, err := p.prompts.ChatCompletion(ai.PromptSummarizeChunk, context)
 			if err != nil {
-				return nil, errors.Wrap(err, "unable to get summarize chunk prompt")
+				return nil, fmt.Errorf("unable to get summarize chunk prompt: %w", err)
 			}
 
 			summarizedChunk, err := p.getLLM().ChatCompletionNoStream(summarizeChunkPrompt)
 			if err != nil {
-				return nil, errors.Wrap(err, "unable to get summarized chunk")
+				return nil, fmt.Errorf("unable to get summarized chunk: %w", err)
 			}
 
 			summarizedChunks = append(summarizedChunks, summarizedChunk)
@@ -259,12 +260,12 @@ func (p *Plugin) summarizeTranscription(transcription *subtitles.Subtitles, cont
 	context.PromptParameters = map[string]string{"Transcription": llmFormattedTranscription, "IsChunked": fmt.Sprintf("%t", isChunked)}
 	summaryPrompt, err := p.prompts.ChatCompletion(ai.PromptMeetingSummary, context)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to get meeting summary prompt")
+		return nil, fmt.Errorf("unable to get meeting summary prompt: %w", err)
 	}
 
 	summaryStream, err := p.getLLM().ChatCompletion(summaryPrompt)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to get meeting summary")
+		return nil, fmt.Errorf("unable to get meeting summary: %w", err)
 	}
 
 	return summaryStream, nil
@@ -279,13 +280,13 @@ func (p *Plugin) updatePostWithFile(post *model.Post, fileinfo *model.FileInfo) 
 			sq.Eq{"Id": fileinfo.Id},
 			sq.Eq{"PostId": ""},
 		})); err != nil {
-		return errors.Wrap(err, "unable to update file info")
+		return fmt.Errorf("unable to update file info: %w", err)
 	}
 
 	post.FileIds = []string{fileinfo.Id}
 	post.Message = ""
 	if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
-		return errors.Wrap(err, "unable to update post")
+		return fmt.Errorf("unable to update post: %w", err)
 	}
 
 	return nil

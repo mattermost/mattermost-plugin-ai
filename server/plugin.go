@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"embed"
+	"fmt"
 	"os/exec"
 	"sync"
+
+	"errors"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
@@ -17,7 +20,6 @@ import (
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
-	"github.com/pkg/errors"
 )
 
 const (
@@ -86,7 +88,7 @@ func (p *Plugin) EnsureMainBot() error {
 		pluginapi.ProfileImagePath("assets/bot_icon.png"),
 	)
 	if err != nil {
-		return errors.Wrapf(err, "failed to ensure bot")
+		return fmt.Errorf("failed to ensure bot: %w", err)
 	}
 	p.botid = botID
 
@@ -205,27 +207,27 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 func (p *Plugin) handleMessages(post *model.Post) error {
 	// Don't respond to ouselves
 	if post.UserId == p.botid {
-		return errors.Wrap(ErrNoResponse, "not responding to ourselves")
+		return fmt.Errorf("not responding to ourselves: %w", ErrNoResponse)
 	}
 
 	// Never respond to remote posts
 	if post.RemoteId != nil && *post.RemoteId != "" {
-		return errors.Wrap(ErrNoResponse, "not responding to remote posts")
+		return fmt.Errorf("not responding to remote posts: %w", ErrNoResponse)
 	}
 
 	// Don't respond to plugins
 	if post.GetProp("from_plugin") != nil {
-		return errors.Wrap(ErrNoResponse, "not responding to plugin posts")
+		return fmt.Errorf("not responding to plugin posts: %w", ErrNoResponse)
 	}
 
 	// Don't respond to webhooks
 	if post.GetProp("from_webhook") != nil {
-		return errors.Wrap(ErrNoResponse, "not responding to webhook posts")
+		return fmt.Errorf("not responding to webhook posts: %w", ErrNoResponse)
 	}
 
 	channel, err := p.pluginAPI.Channel.Get(post.ChannelId)
 	if err != nil {
-		return errors.Wrap(err, "unable to get channel")
+		return fmt.Errorf("unable to get channel: %w", err)
 	}
 
 	postingUser, err := p.pluginAPI.User.Get(post.UserId)
@@ -235,7 +237,7 @@ func (p *Plugin) handleMessages(post *model.Post) error {
 
 	// Don't respond to other bots
 	if postingUser.IsBot || post.GetProp("from_bot") != nil {
-		return errors.Wrap(ErrNoResponse, "not responding to other bots")
+		return fmt.Errorf("not responding to other bots: %w", ErrNoResponse)
 	}
 
 	switch {
@@ -257,7 +259,7 @@ func (p *Plugin) handleMentions(post *model.Post, postingUser *model.User, chann
 	}
 
 	if err := p.processUserRequestToBot(p.MakeConversationContext(postingUser, channel, post)); err != nil {
-		return errors.Wrap(err, "unable to process bot mention")
+		return fmt.Errorf("unable to process bot mention: %w", err)
 	}
 
 	return nil
@@ -269,7 +271,7 @@ func (p *Plugin) handleDMs(channel *model.Channel, postingUser *model.User, post
 	}
 
 	if err := p.processUserRequestToBot(p.MakeConversationContext(postingUser, channel, post)); err != nil {
-		return errors.Wrap(err, "unable to process bot DM")
+		return fmt.Errorf("unable to process bot DM: %w", err)
 	}
 
 	return nil

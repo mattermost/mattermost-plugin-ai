@@ -1,11 +1,12 @@
 package ai
 
 import (
+	"fmt"
 	"io/fs"
 	"strings"
 	"text/template"
 
-	"github.com/pkg/errors"
+	"errors"
 )
 
 type BuiltInToolsFunc func(isDM bool) []Tool
@@ -42,7 +43,7 @@ const (
 func NewPrompts(input fs.FS, getBuiltInTools BuiltInToolsFunc) (*Prompts, error) {
 	templates, err := template.ParseFS(input, "ai/prompts/*")
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to parse prompt templates")
+		return nil, fmt.Errorf("unable to parse prompt templates: %w", err)
 	}
 
 	return &Prompts{
@@ -103,7 +104,7 @@ func (p *Prompts) ChatCompletion(templateName string, context ConversationContex
 func (p *Prompts) execute(template *template.Template, data ConversationContext) (string, error) {
 	out := &strings.Builder{}
 	if err := template.Execute(out, data); err != nil {
-		return "", errors.Wrap(err, "unable to execute template")
+		return "", fmt.Errorf("unable to execute template: %w", err)
 	}
 	return strings.TrimSpace(out.String()), nil
 }
