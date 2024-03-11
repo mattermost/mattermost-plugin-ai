@@ -28,7 +28,7 @@ type OpenAI struct {
 	streamingTimeout time.Duration
 }
 
-const StreamingTimeoutDefault = 5 * time.Second
+const StreamingTimeoutDefault = 10 * time.Second
 
 const MaxFunctionCalls = 10
 
@@ -66,10 +66,17 @@ func New(llmService ai.ServiceConfig) *OpenAI {
 	}
 	config := openaiClient.DefaultConfig(llmService.APIKey)
 	config.OrgID = llmService.OrgID
+
+	streamingTimeout := StreamingTimeoutDefault
+	if llmService.StreamingTimeoutSeconds > 0 {
+		streamingTimeout = time.Duration(llmService.StreamingTimeoutSeconds) * time.Second
+	}
+
 	return &OpenAI{
-		client:       openaiClient.NewClientWithConfig(config),
-		defaultModel: defaultModel,
-		tokenLimit:   llmService.TokenLimit,
+		client:           openaiClient.NewClientWithConfig(config),
+		defaultModel:     defaultModel,
+		tokenLimit:       llmService.TokenLimit,
+		streamingTimeout: streamingTimeout,
 	}
 }
 
