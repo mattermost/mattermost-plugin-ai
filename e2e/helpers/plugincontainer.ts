@@ -70,6 +70,8 @@ const RunContainer = async (): Promise<MattermostContainer> => {
       install_plugins: [],
   });
 
+  await new Promise(resolve => setTimeout(resolve, 1000))
+
   return mattermost;
 }
 
