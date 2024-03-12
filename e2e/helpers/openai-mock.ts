@@ -70,7 +70,7 @@ export class OpenAIMockContainer {
 	}
 
 	addMock = async (body: any) => {
-		await fetch(`http://localhost:${this.container.getMappedPort(8081)}/mocks`, {
+		return fetch(`http://localhost:${this.container.getMappedPort(8081)}/mocks?reset=true`, {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
@@ -80,7 +80,7 @@ export class OpenAIMockContainer {
 	}
 
 	addCompletionMock = async (response: string) => {
-		await this.addMock({
+		return this.addMock({
 			request: {
 				method: "POST",
 				path: "/chat/completions",
