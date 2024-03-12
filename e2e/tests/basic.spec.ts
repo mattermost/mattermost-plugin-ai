@@ -31,10 +31,11 @@ test('rhs bot interaction', async ({ page }) => {
 	const url = mattermost.url()
 	await login(page, url, "regularuser", "regularuser");;
 	await openRHS(page);
+
+	await openAIMock.addCompletionMock(responseTest);
 	await page.getByTestId('reply_textbox').click();
 	await page.getByTestId('reply_textbox').fill('Hello!');
 	await page.getByTestId('reply_textbox').press('Enter');
-	await openAIMock.addCompletionMock(responseTest);
 	await expect(page.getByText("Hello! How can I assist you today?")).toBeVisible();
 })
 
