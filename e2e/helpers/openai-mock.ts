@@ -1,6 +1,6 @@
 import {StartedTestContainer, GenericContainer, StartedNetwork, Network, Wait} from "testcontainers";
 
-const responseTest = `
+export const responseTest = `
 data: {"id":"chatcmpl-8t1WLFfcSfmK0sfBcFbj8VEhOqNYd","object":"chat.completion.chunk","created":1708124577,"model":"gpt-3.5-turbo-0613","system_fingerprint":null,"choices":[{"index":0,"delta":{"role":"assistant","content":""},"logprobs":null,"finish_reason":null}]}
 
 data: {"id":"chatcmpl-8t1WLFfcSfmK0sfBcFbj8VEhOqNYd","object":"chat.completion.chunk","created":1708124577,"model":"gpt-3.5-turbo-0613","system_fingerprint":null,"choices":[{"index":0,"delta":{"content":"Hello"},"logprobs":null,"finish_reason":null}]}
@@ -26,7 +26,7 @@ data: {"id":"chatcmpl-8t1WLFfcSfmK0sfBcFbj8VEhOqNYd","object":"chat.completion.c
 data: [DONE]
 `
 
-const responseTest2 = `
+export const responseTest2 = `
 data: {"id":"chatcmpl-8t1WLFfcSfmK0sfBcFbj8VEhOqNYd","object":"chat.completion.chunk","created":1708124577,"model":"gpt-3.5-turbo-0613","system_fingerprint":null,"choices":[{"index":0,"delta":{"role":"assistant","content":""},"logprobs":null,"finish_reason":null}]}
 
 data: {"id":"chatcmpl-8t1WLFfcSfmK0sfBcFbj8VEhOqNYd","object":"chat.completion.chunk","created":1708124577,"model":"gpt-3.5-turbo-0613","system_fingerprint":null,"choices":[{"index":0,"delta":{"content":"Hello"},"logprobs":null,"finish_reason":null}]}
@@ -63,59 +63,39 @@ export class OpenAIMockContainer {
 		await fetch(`http://localhost:${this.container.getMappedPort(8081)}/reset`, {
 			method: "POST",
 		})
-		await fetch(`http://localhost:${this.container.getMappedPort(8081)}/mocks`, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify([{
-				request: {
-					method: "POST",
-					path: "/chat/completions",
-					body: {
-						matcher: "ShouldNotContainSubstring",
-						value: "CONTROL_DO_STREAM",
-					}
-				},
-				response: {
-					status: 200,
-					headers: {
-						"Content-Type": "text/event-stream",
-					},
-					body: responseTest2,
-				},
-			}]),
-		})
-		await fetch(`http://localhost:${this.container.getMappedPort(8081)}/mocks`, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify([{
-				request: {
-					method: "POST",
-					path: "/chat/completions",
-					body: {
-						matcher: "ShouldNotContainSubstring",
-						value: "CONTROL_DO_STREAM",
-					}
-				},
-				context: {
-					times: 1,
-				},
-				response: {
-					status: 200,
-					headers: {
-						"Content-Type": "text/event-stream",
-					},
-					body: responseTest,
-				},
-			}]),
-		})
 	}
 
 	stop = async () => {
 		await this.container.stop()
+	}
+
+	addMock = async (body: any) => {
+		await fetch(`http://localhost:${this.container.getMappedPort(8081)}/mocks`, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify([body]),
+		})
+	}
+
+	addCompletionMock = async (response: string) => {
+		await this.addMock({
+			request: {
+				method: "POST",
+				path: "/chat/completions",
+			},
+			context: {
+				times: 1,
+			},
+			response: {
+				status: 200,
+				headers: {
+					"Content-Type": "text/event-stream",
+				},
+				body: response,
+			},
+		})
 	}
 }
 

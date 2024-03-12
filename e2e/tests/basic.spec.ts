@@ -4,7 +4,7 @@ import RunContainer from 'helpers/plugincontainer';
 import MattermostContainer from 'helpers/mmcontainer';
 import {login} from 'helpers/mm';
 import {openRHS} from 'helpers/ai-plugin';
-import { OpenAIMockContainer, RunOpenAIMocks } from 'helpers/openai-mock';
+import { OpenAIMockContainer, RunOpenAIMocks, responseTest, responseTest2 } from 'helpers/openai-mock';
 
 let mattermost: MattermostContainer;
 let openAIMock: OpenAIMockContainer;
@@ -34,6 +34,7 @@ test('rhs bot interaction', async ({ page }) => {
 	await page.getByTestId('reply_textbox').click();
 	await page.getByTestId('reply_textbox').fill('Hello!');
 	await page.getByTestId('reply_textbox').press('Enter');
+	openAIMock.addCompletionMock(responseTest);
 	await expect(page.getByText("Hello! How can I assist you today?")).toBeVisible();
 })
 
@@ -60,11 +61,14 @@ test ('regenerate button', async ({ page }) => {
 	const url = mattermost.url()
 	await login(page, url, "regularuser", "regularuser");;
 	await openRHS(page);
+	openAIMock.addCompletionMock(responseTest);
 
 	await page.getByTestId('reply_textbox').click();
 	await page.getByTestId('reply_textbox').fill('Hello!');
 	await page.getByTestId('reply_textbox').press('Enter');
 	await expect(page.getByText("Hello! How can I assist you today?")).toBeVisible();
+
+	openAIMock.addCompletionMock(responseTest2);
 
 	await page.getByRole('button', { name: 'Regenerate' }).click();
 	await expect(page.getByText("Hello! This is a second message.")).toBeVisible();
