@@ -150,6 +150,7 @@ export const LLMBotPost = (props: Props) => {
         if (permalinkData !== null) {
             permalinkView = (
                 <PostMessagePreview
+                    data-testid='llm-bot-permalink'
                     metadata={permalinkData}
                 />
             );
@@ -160,6 +161,7 @@ export const LLMBotPost = (props: Props) => {
 
     return (
         <PostBody
+            data-testid='llm-bot-post'
             disableHover={generating}
             onMouseOver={stopPropagationIfGenerating}
             onMouseEnter={stopPropagationIfGenerating}
@@ -179,6 +181,7 @@ export const LLMBotPost = (props: Props) => {
             />
             { generating && requesterIsCurrentUser &&
             <StopGeneratingButton
+                data-testid='stop-generating-button'
                 onClick={stopGenerating}
             >
                 <IconCancel/>
@@ -188,6 +191,7 @@ export const LLMBotPost = (props: Props) => {
             { showRegenerate &&
             <ControlsBar>
                 <GenerationButton
+                    data-testid='regenerate-button'
                     onClick={regnerate}
                 >
                     <IconRegenerate/>

@@ -242,6 +242,16 @@ else
 endif
 endif
 
+## Install NPM dependencies for e2e tests
+e2e/node_modules: e2e/package.json
+	cd e2e && $(NPM) install
+	touch $@
+
+## Run E2E tests
+.PHONY: e2e
+e2e: e2e/node_modules dist
+	cd e2e && npx playwright test
+
 ## Disable the plugin.
 .PHONY: disable
 disable: detach

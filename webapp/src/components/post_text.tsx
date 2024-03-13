@@ -77,7 +77,10 @@ const PostText = (props: Props) => {
     }
 
     return (
-        <TextContainer showCursor={props.showCursor}>
+        <TextContainer
+            data-testid='posttext'
+            showCursor={props.showCursor}
+        >
             {text}
         </TextContainer>
     );
