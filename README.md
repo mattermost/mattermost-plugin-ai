@@ -23,7 +23,15 @@ Join the discussion in the [~AI-Exchange channel](https://community.mattermost.c
 
 ## Install
 
-These installation instructions assume you already have a [Mattermost server](https://mattermost.com/download/) (version >=9.6 recommended) with [PostgreSQL](https://www.postgresql.org/):
+We recommend using Mattermost Server v9.6 or later for the best experience. Compatible Mattermost server versions include:
+
+- v9.6 or later
+- v9.5.2+ ([ESR](https://docs.mattermost.com/deploy/mattermost-changelog.html#release-v9-5-extended-support-release))
+- v9.4.4+
+- v9.3.3+
+- v8.1.11+ ([ESR](https://docs.mattermost.com/deploy/mattermost-changelog.html))
+
+These installation instructions assume you already have [Mattermost Server](https://mattermost.com/download/) installed and configured with [PostgreSQL](https://www.postgresql.org/):
 
 1. Download the [latest release](https://github.com/mattermost/mattermost-plugin-ai/releases) of the Mattermost AI Copilot Plugin
 2. Log in to Mattermost as an administrator
