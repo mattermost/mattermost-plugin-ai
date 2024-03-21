@@ -1,4 +1,4 @@
-import React, {MouseEvent, useEffect, useState} from 'react';
+import React, {MouseEvent, useEffect, useRef, useState} from 'react';
 import {useSelector} from 'react-redux';
 import styled, {css, createGlobalStyle} from 'styled-components';
 
@@ -109,16 +109,30 @@ interface Props {
 
 export const LLMBotPost = (props: Props) => {
     const [message, setMessage] = useState(props.post.message);
+
+    // Generating is true while we are reciving new content from the websocket
     const [generating, setGenerating] = useState(false);
+
+    // Stopped is a flag that is used to prevent the websocket from updating the message after the user has stopped the generation
+    // Needs a ref because of the useEffect closure.
+    const [stopped, setStopped] = useState(false);
+    const stoppedRef = useRef(stopped);
+    stoppedRef.current = stopped;
+
     const currentUserId = useSelector<GlobalState, string>((state) => state.entities.users.currentUserId);
+
     useEffect(() => {
         props.websocketRegister(props.post.id, (msg: WebSocketMessage<PostUpdateWebsocketMessage>) => {
             const data = msg.data;
-            if (!data.control) {
+            if (!data.control && !stoppedRef.current) {
                 setGenerating(true);
                 setMessage(data.next);
             } else if (data.control === 'end') {
                 setGenerating(false);
+                setStopped(false);
+            } else if (data.control === 'start') {
+                setGenerating(true);
+                setStopped(false);
             }
         });
         return () => {
@@ -127,10 +141,15 @@ export const LLMBotPost = (props: Props) => {
     }, []);
 
     const regnerate = () => {
+        setGenerating(true);
+        setStopped(false);
+        setMessage('');
         doRegenerate(props.post.id);
     };
 
     const stopGenerating = () => {
+        setStopped(true);
+        setGenerating(false);
         doStopGenerating(props.post.id);
     };
 

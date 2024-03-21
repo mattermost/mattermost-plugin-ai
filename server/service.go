@@ -213,9 +213,7 @@ func (p *Plugin) startNewSummaryThread(postIDToSummarize string, context ai.Conv
 		return nil, err
 	}
 
-	if err := p.saveTitle(post.Id, "Thread Summary"); err != nil {
-		return nil, fmt.Errorf("failed to save title: %w", err)
-	}
+	p.saveTitleAsync(post.Id, "Thread Summary")
 
 	return post, nil
 }

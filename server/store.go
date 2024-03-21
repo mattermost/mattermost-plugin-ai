@@ -68,6 +68,14 @@ func (p *Plugin) SetupTables() error {
 	return nil
 }
 
+func (p *Plugin) saveTitleAsync(threadID, title string) {
+	go func() {
+		if err := p.saveTitle(threadID, title); err != nil {
+			p.API.LogError("failed to save title: " + err.Error())
+		}
+	}()
+}
+
 func (p *Plugin) saveTitle(threadID, title string) error {
 	_, err := p.execBuilder(p.builder.Insert("LLM_Threads").
 		Columns("RootPostID", "Title").
