@@ -18,6 +18,7 @@ const AskAIButton = styled(DotMenu)`
 	display: flex;
 	height: 24px;
 	align-items: center;
+	align-self: center;
 	gap: 6px;
 	color: rgba(var(--new-message-separator-rgb), 1);
 	background: rgba(var(--new-message-separator-rgb), 0.08);
