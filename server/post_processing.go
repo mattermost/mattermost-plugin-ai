@@ -44,6 +44,10 @@ func (t *ThreadData) latestPost() *model.Post {
 	return t.Posts[len(t.Posts)-1]
 }
 
+type PostStreamContext struct {
+	cancel context.CancelFunc
+}
+
 func (p *Plugin) getThreadAndMeta(postID string) (*ThreadData, error) {
 	posts, err := p.pluginAPI.Post.GetPostThread(postID)
 	if err != nil {
@@ -129,9 +133,15 @@ func (p *Plugin) streamResultToNewPost(requesterUserID string, stream *ai.TextSt
 		return fmt.Errorf("unable to create post: %w", err)
 	}
 
-	if err := p.streamResultToPost(stream, post); err != nil {
-		return fmt.Errorf("unable to stream result to post: %w", err)
+	ctx, err := p.getPostStreamingContext(context.Background(), post.Id)
+	if err != nil {
+		return err
 	}
+
+	go func() {
+		defer p.finishPostStreaming(post.Id)
+		p.streamResultToPost(ctx, stream, post)
+	}()
 
 	return nil
 }
@@ -141,9 +151,15 @@ func (p *Plugin) streamResultToNewDM(stream *ai.TextStreamResult, userID string,
 		return err
 	}
 
-	if err := p.streamResultToPost(stream, post); err != nil {
+	ctx, err := p.getPostStreamingContext(context.Background(), post.Id)
+	if err != nil {
 		return err
 	}
+
+	go func() {
+		defer p.finishPostStreaming(post.Id)
+		p.streamResultToPost(ctx, stream, post)
+	}()
 
 	return nil
 }
@@ -170,68 +186,94 @@ func (p *Plugin) sendPostStreamingControlEvent(post *model.Post, control string)
 	})
 }
 
-func (p *Plugin) streamResultToPost(stream *ai.TextStreamResult, post *model.Post) error {
-	ctx, cancel := context.WithCancel(context.Background())
+func (p *Plugin) stopPostStreaming(postID string) {
 	p.streamingContextsMutex.Lock()
-	p.streamingContexts[post.Id] = cancel
-	p.streamingContextsMutex.Unlock()
-	go func() {
-		defer func() {
-			p.streamingContextsMutex.Lock()
-			delete(p.streamingContexts, post.Id)
-			p.streamingContextsMutex.Unlock()
-		}()
+	defer p.streamingContextsMutex.Unlock()
+	if streamContext, ok := p.streamingContexts[postID]; ok {
+		streamContext.cancel()
+	}
+	delete(p.streamingContexts, postID)
+}
 
-		p.sendPostStreamingControlEvent(post, PostStreamingControlStart)
-		defer func() {
-			p.sendPostStreamingControlEvent(post, PostStreamingControlEnd)
-		}()
+var ErrAlreadyStreamingToPost = fmt.Errorf("already streaming to post")
 
-		for {
-			select {
-			case next := <-stream.Stream:
-				post.Message += next
-				p.sendPostStreamingUpdateEvent(post, post.Message)
-			case err, ok := <-stream.Err:
-				// Stream has closed cleanly
-				if !ok {
-					if strings.TrimSpace(post.Message) == "" {
-						p.API.LogError("LLM closed stream with no result")
-						post.Message = "Sorry! The LLM did not return a result."
-						p.sendPostStreamingUpdateEvent(post, post.Message)
-					}
-					if err = p.pluginAPI.Post.UpdatePost(post); err != nil {
-						p.API.LogError("Streaming failed to update post", "error", err)
-						return
-					}
-					return
-				}
-				// Handle partial results
-				if strings.TrimSpace(post.Message) == "" {
-					p.API.LogError("Streaming result to post failed", "error", err)
-					post.Message = "Sorry! An error occurred while accessing the LLM. See server logs for details."
-				} else {
-					p.API.LogError("Streaming result to post failed partway", "error", err)
-					post.Message += "\n\nSorry! An error occurred while streaming from the LLM. See server logs for details."
-				}
-				if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
-					p.API.LogError("Error recovering from streaming error", "error", err)
-					return
-				}
-				p.sendPostStreamingUpdateEvent(post, post.Message)
-				return
-			case <-ctx.Done():
-				if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
-					p.API.LogError("Error updating post on stop signaled", "error", err)
-					return
-				}
-				p.sendPostStreamingControlEvent(post, PostStreamingControlCancel)
-				return
-			}
-		}
+func (p *Plugin) getPostStreamingContext(inCtx context.Context, postID string) (context.Context, error) {
+	p.streamingContextsMutex.Lock()
+	defer p.streamingContextsMutex.Unlock()
+
+	if _, ok := p.streamingContexts[postID]; ok {
+		return nil, ErrAlreadyStreamingToPost
+	}
+
+	ctx, cancel := context.WithCancel(inCtx)
+
+	streamingContext := PostStreamContext{
+		cancel: cancel,
+	}
+
+	p.streamingContexts[postID] = streamingContext
+
+	return ctx, nil
+}
+
+// finishPostStreaming should be called when a post streaming operation is finished on success or failure.
+// It is save to call multiple times, must be called at least once.
+func (p *Plugin) finishPostStreaming(postID string) {
+	p.streamingContextsMutex.Lock()
+	defer p.streamingContextsMutex.Unlock()
+	delete(p.streamingContexts, postID)
+}
+
+// streamResultToPost streams the result of a TextStreamResult to a post.
+// it will internally handle logging needs and updating the post.
+func (p *Plugin) streamResultToPost(ctx context.Context, stream *ai.TextStreamResult, post *model.Post) {
+	p.sendPostStreamingControlEvent(post, PostStreamingControlStart)
+	defer func() {
+		p.sendPostStreamingControlEvent(post, PostStreamingControlEnd)
 	}()
 
-	return nil
+	for {
+		select {
+		case next := <-stream.Stream:
+			post.Message += next
+			p.sendPostStreamingUpdateEvent(post, post.Message)
+		case err, ok := <-stream.Err:
+			// Stream has closed cleanly
+			if !ok {
+				if strings.TrimSpace(post.Message) == "" {
+					p.API.LogError("LLM closed stream with no result")
+					post.Message = "Sorry! The LLM did not return a result."
+					p.sendPostStreamingUpdateEvent(post, post.Message)
+				}
+				if err = p.pluginAPI.Post.UpdatePost(post); err != nil {
+					p.API.LogError("Streaming failed to update post", "error", err)
+					return
+				}
+				return
+			}
+			// Handle partial results
+			if strings.TrimSpace(post.Message) == "" {
+				p.API.LogError("Streaming result to post failed", "error", err)
+				post.Message = "Sorry! An error occurred while accessing the LLM. See server logs for details."
+			} else {
+				p.API.LogError("Streaming result to post failed partway", "error", err)
+				post.Message += "\n\nSorry! An error occurred while streaming from the LLM. See server logs for details."
+			}
+			if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
+				p.API.LogError("Error recovering from streaming error", "error", err)
+				return
+			}
+			p.sendPostStreamingUpdateEvent(post, post.Message)
+			return
+		case <-ctx.Done():
+			if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
+				p.API.LogError("Error updating post on stop signaled", "error", err)
+				return
+			}
+			p.sendPostStreamingControlEvent(post, PostStreamingControlCancel)
+			return
+		}
+	}
 }
 
 type WorkerResult struct {

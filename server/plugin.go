@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"embed"
 	"fmt"
 	"os/exec"
@@ -56,7 +55,7 @@ type Plugin struct {
 
 	prompts *ai.Prompts
 
-	streamingContexts      map[string]context.CancelFunc
+	streamingContexts      map[string]PostStreamContext
 	streamingContextsMutex sync.Mutex
 
 	licenseChecker *enterprise.LicenseChecker
@@ -119,7 +118,7 @@ func (p *Plugin) OnActivate() error {
 		p.pluginAPI.Log.Error("ffmpeg not installed, transcriptions will be disabled.", "error", err)
 	}
 
-	p.streamingContexts = map[string]context.CancelFunc{}
+	p.streamingContexts = map[string]PostStreamContext{}
 
 	return nil
 }

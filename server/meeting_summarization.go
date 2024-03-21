@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os/exec"
@@ -128,46 +129,61 @@ func (p *Plugin) newCallTranscriptionSummaryThread(requestingUser *model.User, t
 		return nil, err
 	}
 
-	transcriptionFileID, err := getCaptionsFileIDFromProps(transcriptionPost)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get transcription file id: %w", err)
-	}
-	transcriptionFileInfo, err := p.pluginAPI.File.GetInfo(transcriptionFileID)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get transcription file info: %w", err)
-	}
-	transcriptionFilePost, err := p.pluginAPI.Post.GetPost(transcriptionFileInfo.PostId)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get transcription file post: %w", err)
-	}
-	if transcriptionFilePost.ChannelId != channel.Id {
-		return nil, errors.New("strange configuration of calls transcription file")
-	}
-	transcriptionFileReader, err := p.pluginAPI.File.Get(transcriptionFileID)
-	if err != nil {
-		return nil, fmt.Errorf("unable to read calls file: %w", err)
-	}
+	go func() (reterr error) {
+		// Update to an error if we return one.
+		defer func() {
+			if reterr != nil {
+				surePost.Message = "Sorry! Somthing went wrong. Check the server logs for details."
+				if err := p.pluginAPI.Post.UpdatePost(surePost); err != nil {
+					p.API.LogError("Failed to update post in error handling newCallTranscriptionSummaryThread", "error", err)
+				}
+				p.API.LogError("Error in call recording post", "error", reterr)
+			}
+		}()
 
-	transcription, err := subtitles.NewSubtitlesFromVTT(transcriptionFileReader)
-	if err != nil {
-		return nil, fmt.Errorf("unable to parse transcription file: %w", err)
-	}
+		transcriptionFileID, err := getCaptionsFileIDFromProps(transcriptionPost)
+		if err != nil {
+			return fmt.Errorf("unable to get transcription file id: %w", err)
+		}
+		transcriptionFileInfo, err := p.pluginAPI.File.GetInfo(transcriptionFileID)
+		if err != nil {
+			return fmt.Errorf("unable to get transcription file info: %w", err)
+		}
+		transcriptionFilePost, err := p.pluginAPI.Post.GetPost(transcriptionFileInfo.PostId)
+		if err != nil {
+			return fmt.Errorf("unable to get transcription file post: %w", err)
+		}
+		if transcriptionFilePost.ChannelId != channel.Id {
+			return errors.New("strange configuration of calls transcription file")
+		}
+		transcriptionFileReader, err := p.pluginAPI.File.Get(transcriptionFileID)
+		if err != nil {
+			return fmt.Errorf("unable to read calls file: %w", err)
+		}
 
-	context := p.MakeConversationContext(requestingUser, channel, nil)
-	summaryStream, err := p.summarizeTranscription(transcription, context)
-	if err != nil {
-		return nil, fmt.Errorf("unable to summarize transcription: %w", err)
-	}
+		transcription, err := subtitles.NewSubtitlesFromVTT(transcriptionFileReader)
+		if err != nil {
+			return fmt.Errorf("unable to parse transcription file: %w", err)
+		}
 
-	summaryPost := &model.Post{
-		RootId:    surePost.Id,
-		ChannelId: surePost.ChannelId,
-		Message:   "",
-	}
-	summaryPost.AddProp(ReferencedTranscriptPostID, transcriptionPost.Id)
-	if err := p.streamResultToNewPost(requestingUser.Id, summaryStream, summaryPost); err != nil {
-		return nil, fmt.Errorf("unable to stream result to post: %w", err)
-	}
+		context := p.MakeConversationContext(requestingUser, channel, nil)
+		summaryStream, err := p.summarizeTranscription(transcription, context)
+		if err != nil {
+			return fmt.Errorf("unable to summarize transcription: %w", err)
+		}
+
+		summaryPost := &model.Post{
+			RootId:    surePost.Id,
+			ChannelId: surePost.ChannelId,
+			Message:   "",
+		}
+		summaryPost.AddProp(ReferencedTranscriptPostID, transcriptionPost.Id)
+		if err := p.streamResultToNewPost(requestingUser.Id, summaryStream, summaryPost); err != nil {
+			return fmt.Errorf("unable to stream result to post: %w", err)
+		}
+
+		return nil
+	}()
 
 	return surePost, nil
 }
@@ -204,19 +220,23 @@ func (p *Plugin) summarizeCallRecording(rootID string, requestingUser *model.Use
 			return fmt.Errorf("unable to upload transcript: %w", err)
 		}
 
-		context := p.MakeConversationContext(requestingUser, channel, nil)
-		summaryStream, err := p.summarizeTranscription(transcription, context)
+		conversationContext := p.MakeConversationContext(requestingUser, channel, nil)
+		summaryStream, err := p.summarizeTranscription(transcription, conversationContext)
 		if err != nil {
 			return fmt.Errorf("unable to summarize transcription: %w", err)
 		}
 
-		if err := p.updatePostWithFile(transcriptPost, transcriptFileInfo); err != nil {
+		if err = p.updatePostWithFile(transcriptPost, transcriptFileInfo); err != nil {
 			return fmt.Errorf("unable to update transcript post: %w", err)
 		}
 
-		if err := p.streamResultToPost(summaryStream, transcriptPost); err != nil {
-			return fmt.Errorf("unable to stream result to post: %w", err)
+		ctx, err := p.getPostStreamingContext(context.Background(), transcriptPost.Id)
+		if err != nil {
+			return fmt.Errorf("unable to get post streaming context: %w", err)
 		}
+		defer p.finishPostStreaming(transcriptPost.Id)
+
+		p.streamResultToPost(ctx, summaryStream, transcriptPost)
 
 		return nil
 	}()

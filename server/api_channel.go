@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"slices"
 
@@ -132,10 +131,7 @@ func (p *Plugin) handleSince(c *gin.Context) {
 		promptTitle = "Find Open Questions"
 	}
 
-	if err := p.saveTitle(post.Id, promptTitle); err != nil {
-		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to save title: %w", err))
-		return
-	}
+	p.saveTitleAsync(post.Id, promptTitle)
 
 	result := struct {
 		PostID    string `json:"postid"`

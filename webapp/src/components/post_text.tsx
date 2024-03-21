@@ -73,7 +73,7 @@ const PostText = (props: Props) => {
     );
 
     if (!text) {
-        return <TextContainer showCursor={true}>{<p/>}</TextContainer>;
+        return <TextContainer showCursor={props.showCursor}>{<p/>}</TextContainer>;
     }
 
     return (
