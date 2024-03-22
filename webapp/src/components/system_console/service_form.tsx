@@ -137,7 +137,7 @@ const ServiceForm = ({service, onChange, onDelete}: Props) => {
                             <input
                                 id='ai-service-api-key'
                                 className='form-control'
-                                type='text'
+                                type='password'
                                 placeholder='API Key'
                                 value={service.apiKey}
                                 onChange={(e) => onChange({...service, apiKey: e.target.value})}
