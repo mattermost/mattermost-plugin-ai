@@ -23,7 +23,7 @@ import {setupRedux} from './redux';
 import UnreadsSumarize from './components/unreads_summarize';
 import IconAI from './components/assets/icon_ai';
 import {doSelectPost} from './hooks';
-import Pill from './components/pill';
+import {Pill} from './components/pill';
 
 type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
 
@@ -143,7 +143,7 @@ export default class Plugin {
                 const state = store.getState();
                 const team = state.entities.teams.teams[state.entities.teams.currentTeamId];
                 window.WebappUtils.browserHistory.push('/' + team.name + '/messages/@' + BotUsername);
-                doSummarize(postId);
+                doSummarize(postId, '');
                 if (rhs) {
                     store.dispatch(rhs.showRHSPlugin);
                 }

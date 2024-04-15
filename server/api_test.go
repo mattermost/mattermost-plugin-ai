@@ -118,6 +118,7 @@ func TestPostRouter(t *testing.T) {
 				e := SetupTestEnvironment(t)
 				defer e.Cleanup(t)
 
+				test.config.DefaultBotName = "botuser"
 				e.plugin.setConfiguration(makeConfig(test.config))
 
 				e.mockAPI.On("GetPost", "postid").Return(&model.Post{
@@ -281,6 +282,7 @@ func TestChannelRouter(t *testing.T) {
 				e := SetupTestEnvironment(t)
 				defer e.Cleanup(t)
 
+				test.config.DefaultBotName = "botuser"
 				e.plugin.setConfiguration(makeConfig(test.config))
 
 				e.mockAPI.On("LogError", mock.Anything).Maybe()

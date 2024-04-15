@@ -8,6 +8,8 @@ import manifest from '@/manifest';
 
 import {getAIThreads, updateRead} from '@/client';
 
+import {useBotlist} from '@/bots';
+
 import ThreadItem from './thread_item';
 import RHSHeader from './rhs_header';
 import RHSNewTab from './rhs_new_tab';
@@ -29,6 +31,7 @@ const RhsContainer = styled.div`
 export interface AIThread {
     ID: string;
     Message: string;
+    ChannelID: string;
     Title: string;
     ReplyCount: number;
     UpdateAt: number;
@@ -39,7 +42,6 @@ const twentyFourHoursInMS = 24 * 60 * 60 * 1000;
 export default function RHS() {
     const dispatch = useDispatch();
     const [currentTab, setCurrentTab] = useState('new');
-    const botChannelId = useSelector((state: any) => state['plugins-' + manifest.id].botChannelId);
     const selectedPostId = useSelector((state: any) => state['plugins-' + manifest.id].selectedPostId);
     const currentUserId = useSelector<GlobalState, string>((state) => state.entities.users.currentUserId);
     const currentTeamId = useSelector<GlobalState, string>((state) => state.entities.teams.currentTeamId);
@@ -68,6 +70,17 @@ export default function RHS() {
         dispatch({type: 'SELECT_AI_POST', postId});
     }, [dispatch]);
 
+    const {bots, activeBot, setActiveBot} = useBotlist();
+
+    // Unconfigured state
+    if (bots && bots.length === 0) {
+        return (
+            <RhsContainer>
+                {'AI Plugin is not configured. Please contact your system administrator to configure the plugin.'}
+            </RhsContainer>
+        );
+    }
+
     let content = null;
     if (selectedPostId) {
         if (currentTab !== 'thread') {
@@ -83,7 +96,7 @@ export default function RHS() {
             />
         );
     } else if (currentTab === 'threads') {
-        if (threads) {
+        if (threads && bots) {
             content = (
                 <ThreadsList
                     data-testid='rhs-threads-list'
@@ -95,6 +108,7 @@ export default function RHS() {
                             postMessage={p.Message}
                             repliesCount={p.ReplyCount}
                             lastActivityDate={p.UpdateAt}
+                            label={bots.find((bot) => bot.dmChannelID === p.ChannelID)?.displayName ?? ''}
                             onClick={() => {
                                 setCurrentTab('thread');
                                 selectPost(p.ID);
@@ -109,7 +123,7 @@ export default function RHS() {
         content = (
             <RHSNewTab
                 data-testid='rhs-new-tab'
-                botChannelId={botChannelId}
+                botChannelId={activeBot?.dmChannelID ?? ''}
                 setCurrentTab={setCurrentTab}
                 selectPost={selectPost}
             />
@@ -121,6 +135,9 @@ export default function RHS() {
                 currentTab={currentTab}
                 setCurrentTab={setCurrentTab}
                 selectPost={selectPost}
+                bots={bots}
+                activeBot={activeBot}
+                setActiveBot={setActiveBot}
             />
             {content}
         </RhsContainer>

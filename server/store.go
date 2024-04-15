@@ -87,23 +87,25 @@ func (p *Plugin) saveTitle(threadID, title string) error {
 type AIThread struct {
 	ID         string
 	Message    string
+	ChannelID  string
 	Title      string
 	ReplyCount int
 	UpdateAt   int64
 }
 
-func (p *Plugin) getAIThreads(dmChannelID string) ([]AIThread, error) {
+func (p *Plugin) getAIThreads(dmChannelIDs []string) ([]AIThread, error) {
 	var posts []AIThread
 	if err := p.doQuery(&posts, p.builder.
 		Select(
 			"p.Id",
 			"p.Message",
+			"p.ChannelID",
 			"COALESCE(t.Title, '') as Title",
 			"(SELECT COUNT(*) FROM Posts WHERE Posts.RootId = p.Id AND DeleteAt = 0) AS ReplyCount",
 			"p.UpdateAt",
 		).
 		From("Posts as p").
-		Where(sq.Eq{"ChannelID": dmChannelID}).
+		Where(sq.Eq{"ChannelID": dmChannelIDs}).
 		Where(sq.Eq{"RootId": ""}).
 		Where(sq.Eq{"DeleteAt": 0}).
 		LeftJoin("LLM_Threads as t ON t.RootPostID = p.Id").

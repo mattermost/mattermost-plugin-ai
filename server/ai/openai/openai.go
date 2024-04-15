@@ -36,7 +36,7 @@ var ErrStreamingTimeout = errors.New("timeout streaming")
 
 func NewCompatible(llmService ai.ServiceConfig) *OpenAI {
 	apiKey := llmService.APIKey
-	endpointURL := strings.TrimSuffix(llmService.URL, "/")
+	endpointURL := strings.TrimSuffix(llmService.APIURL, "/")
 	defaultModel := llmService.DefaultModel
 	config := openaiClient.DefaultConfig(apiKey)
 	config.BaseURL = endpointURL
