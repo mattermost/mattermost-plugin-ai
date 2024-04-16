@@ -6,9 +6,11 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"time"
 
 	"errors"
 
+	"github.com/andygrunwald/go-jira"
 	"github.com/google/go-github/v41/github"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost/server/public/model"
@@ -130,7 +132,7 @@ type GetGithubIssueArgs struct {
 	Number    int    `jsonschema_description:"The issue number to get. Example: '1'"`
 }
 
-func formatIssue(issue *github.Issue) string {
+func formatGithubIssue(issue *github.Issue) string {
 	return fmt.Sprintf("Title: %s\nNumber: %d\nState: %s\nSubmitter: %s\nIs Pull Request: %v\nBody: %s", issue.GetTitle(), issue.GetNumber(), issue.GetState(), issue.User.GetLogin(), issue.IsPullRequest(), issue.GetBody())
 }
 
@@ -180,7 +182,111 @@ func (p *Plugin) toolGetGithubIssue(context ai.ConversationContext, argsGetter a
 		return "internal failure", fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	return formatIssue(&issue), nil
+	return formatGithubIssue(&issue), nil
+}
+
+type GetJiraIssueArgs struct {
+	InstanceURL string `jsonschema_description:"The URL of the Jira instance to get the issue from. Example: 'https://mattermost.atlassian.net'"`
+	IssueKey    string `jsonschema_description:"The issue key of the Jira issue to get. Example: 'MM-1234'"`
+}
+
+var validJiraIssueKey = regexp.MustCompile(`^([[:alnum:]]+)-([[:digit:]]+)$`)
+
+func formatJiraIssue(issue *jira.Issue) string {
+	summary := ""
+	description := ""
+	status := ""
+	assignee := ""
+	created := ""
+	comments := ""
+	if issue.Fields != nil {
+		summary = issue.Fields.Summary
+		description = issue.Fields.Description
+
+		if issue.Fields.Status != nil {
+			status = issue.Fields.Status.Name
+		} else {
+			status = "Unknown"
+		}
+
+		if issue.Fields.Assignee != nil {
+			assignee = issue.Fields.Assignee.DisplayName
+		} else {
+			assignee = "Unassigned"
+		}
+
+		created = time.Time(issue.Fields.Created).Format(time.RFC1123)
+
+		if issue.Fields.Comments != nil {
+			for _, comment := range issue.Fields.Comments.Comments {
+				comments += fmt.Sprintf("Comment from %s at %s: %s\n", comment.Author.DisplayName, comment.Created, comment.Body)
+			}
+		}
+	}
+
+	return fmt.Sprintf("Summary: %s\nDescription: %s\nStatus: %s\nAssignee: %s\nCreated: %s\nComments:%s\n", summary, description, status, assignee, created, comments)
+}
+
+func getPublicJiraIssue(instanceURL string, issueKey string) (*jira.Issue, error) {
+	client, err := jira.NewClient(nil, instanceURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Jira client: %w", err)
+	}
+	issue, _, err := client.Issue.Get(issueKey, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get issue: %w", err)
+	}
+	if issue == nil {
+		return nil, fmt.Errorf("failed to get issue: issue was nil")
+	}
+
+	return issue, nil
+}
+
+func (p *Plugin) getJiraIssueFromPlugin(instanceURL, issueKey, requestingUserID string) (*jira.Issue, error) {
+	req, err := http.NewRequest("GET", fmt.Sprintf("/jira/api/v2/get-issue-by-key?instance_id=%s&issue_key=%s", instanceURL, issueKey), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Mattermost-User-ID", requestingUserID)
+
+	resp := p.pluginAPI.Plugin.HTTP(req)
+	if resp == nil {
+		return nil, errors.New("failed to get issue, response was nil")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		result, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to get issue, status code: %v\n body: %v", resp.Status, string(result))
+	}
+
+	var issue jira.Issue
+	err = json.NewDecoder(resp.Body).Decode(&issue)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &issue, nil
+}
+
+func (p *Plugin) toolGetJiraIssue(context ai.ConversationContext, argsGetter ai.ToolArgumentGetter) (string, error) {
+	var args GetJiraIssueArgs
+	err := argsGetter(&args)
+	if err != nil {
+		return "invalid parameters to function", fmt.Errorf("failed to get arguments for tool GetJiraIssue: %w", err)
+	}
+
+	// Fail for over-length issue key. or doesn't look like an issue key
+	if len(args.IssueKey) > 50 || !validJiraIssueKey.MatchString(args.IssueKey) {
+		return "invalid parameters to function", errors.New("invalid issue key")
+	}
+
+	issue, err := getPublicJiraIssue(args.InstanceURL, args.IssueKey)
+	if err != nil {
+		return "internal failure", err
+	}
+
+	return formatJiraIssue(issue), nil
 }
 
 // getBuiltInTools returns the built-in tools that are available to all users.
@@ -215,6 +321,14 @@ func (p *Plugin) getBuiltInTools(isDM bool) []ai.Tool {
 				Resolver:    p.toolGetGithubIssue,
 			})
 		}
+
+		// Jira plugin tools
+		builtInTools = append(builtInTools, ai.Tool{
+			Name:        "GetJiraIssue",
+			Description: "Retrieve a single Jira issue by issue key.",
+			Schema:      GetJiraIssueArgs{},
+			Resolver:    p.toolGetJiraIssue,
+		})
 	}
 
 	return builtInTools
