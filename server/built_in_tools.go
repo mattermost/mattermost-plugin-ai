@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	"errors"
@@ -25,7 +26,7 @@ func (p *Plugin) toolResolveLookupMattermostUser(context ai.ConversationContext,
 	var args LookupMattermostUserArgs
 	err := argsGetter(&args)
 	if err != nil {
-		return "", fmt.Errorf("failed to get arguments for tool LookupMattermostUser: %w", err)
+		return "invalid parameters to function", fmt.Errorf("failed to get arguments for tool LookupMattermostUser: %w", err)
 	}
 
 	if !model.IsValidUsername(args.Username) {
@@ -34,17 +35,20 @@ func (p *Plugin) toolResolveLookupMattermostUser(context ai.ConversationContext,
 
 	// Fail for guests.
 	if !p.pluginAPI.User.HasPermissionTo(context.RequestingUser.Id, model.PermissionViewMembers) {
-		return "", errors.New("user doesn't have permission to lookup users")
+		return "user doesn't have permissions", errors.New("user doesn't have permission to lookup users")
 	}
 
 	user, err := p.pluginAPI.User.GetByUsername(args.Username)
 	if err != nil {
-		return "", fmt.Errorf("failed to lookup user: %w", err)
+		if errors.Is(err, pluginapi.ErrNotFound) {
+			return "user not found", nil
+		}
+		return "failed to lookup user", fmt.Errorf("failed to lookup user: %w", err)
 	}
 
 	userStatus, err := p.pluginAPI.User.GetStatus(user.Id)
 	if err != nil {
-		return "", fmt.Errorf("failed to get user status: %w", err)
+		return "failed to lookup user", fmt.Errorf("failed to get user status: %w", err)
 	}
 
 	result := fmt.Sprintf("Username: %s", user.Username)
@@ -186,13 +190,14 @@ func (p *Plugin) toolGetGithubIssue(context ai.ConversationContext, argsGetter a
 }
 
 type GetJiraIssueArgs struct {
-	InstanceURL string `jsonschema_description:"The URL of the Jira instance to get the issue from. Example: 'https://mattermost.atlassian.net'"`
-	IssueKey    string `jsonschema_description:"The issue key of the Jira issue to get. Example: 'MM-1234'"`
+	InstanceURL string   `jsonschema_description:"The URL of the Jira instance to get the issue from. Example: 'https://mattermost.atlassian.net'"`
+	IssueKeys   []string `jsonschema_description:"The issue keys of the Jira issues to get. Example: 'MM-1234'"`
 }
 
 var validJiraIssueKey = regexp.MustCompile(`^([[:alnum:]]+)-([[:digit:]]+)$`)
 
 func formatJiraIssue(issue *jira.Issue) string {
+	key := issue.Key
 	summary := ""
 	description := ""
 	status := ""
@@ -224,23 +229,24 @@ func formatJiraIssue(issue *jira.Issue) string {
 		}
 	}
 
-	return fmt.Sprintf("Summary: %s\nDescription: %s\nStatus: %s\nAssignee: %s\nCreated: %s\nComments:%s\n", summary, description, status, assignee, created, comments)
+	return fmt.Sprintf("Issue Key: %s\nSummary: %s\nDescription: %s\nStatus: %s\nAssignee: %s\nCreated: %s\nComments:\n%s\n", key, summary, description, status, assignee, created, comments)
 }
 
-func getPublicJiraIssue(instanceURL string, issueKey string) (*jira.Issue, error) {
+func getPublicJiraIssues(instanceURL string, issueKeys []string) ([]jira.Issue, error) {
 	client, err := jira.NewClient(nil, instanceURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Jira client: %w", err)
 	}
-	issue, _, err := client.Issue.Get(issueKey, nil)
+	jql := fmt.Sprintf("key in (%s)", strings.Join(issueKeys, ","))
+	issues, _, err := client.Issue.Search(jql, &jira.SearchOptions{Fields: []string{"summary", "description", "status", "assignee", "created", "comment"}})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get issue: %w", err)
 	}
-	if issue == nil {
-		return nil, fmt.Errorf("failed to get issue: issue was nil")
+	if issues == nil {
+		return nil, fmt.Errorf("failed to get issue: issue not found")
 	}
 
-	return issue, nil
+	return issues, nil
 }
 
 func (p *Plugin) getJiraIssueFromPlugin(instanceURL, issueKey, requestingUserID string) (*jira.Issue, error) {
@@ -277,16 +283,24 @@ func (p *Plugin) toolGetJiraIssue(context ai.ConversationContext, argsGetter ai.
 	}
 
 	// Fail for over-length issue key. or doesn't look like an issue key
-	if len(args.IssueKey) > 50 || !validJiraIssueKey.MatchString(args.IssueKey) {
-		return "invalid parameters to function", errors.New("invalid issue key")
+	for _, issueKey := range args.IssueKeys {
+		if len(issueKey) > 50 || !validJiraIssueKey.MatchString(issueKey) {
+			return "invalid parameters to function", errors.New("invalid issue key")
+		}
 	}
 
-	issue, err := getPublicJiraIssue(args.InstanceURL, args.IssueKey)
+	issues, err := getPublicJiraIssues(args.InstanceURL, args.IssueKeys)
 	if err != nil {
 		return "internal failure", err
 	}
 
-	return formatJiraIssue(issue), nil
+	result := strings.Builder{}
+	for _, issue := range issues {
+		result.WriteString(formatJiraIssue(&issue))
+		result.WriteString("------\n")
+	}
+
+	return result.String(), nil
 }
 
 // getBuiltInTools returns the built-in tools that are available to all users.
