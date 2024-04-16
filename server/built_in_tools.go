@@ -249,7 +249,7 @@ func getPublicJiraIssues(instanceURL string, issueKeys []string) ([]jira.Issue, 
 	return issues, nil
 }
 
-func (p *Plugin) getJiraIssueFromPlugin(instanceURL, issueKey, requestingUserID string) (*jira.Issue, error) {
+/*func (p *Plugin) getJiraIssueFromPlugin(instanceURL, issueKey, requestingUserID string) (*jira.Issue, error) {
 	req, err := http.NewRequest("GET", fmt.Sprintf("/jira/api/v2/get-issue-by-key?instance_id=%s&issue_key=%s", instanceURL, issueKey), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -273,7 +273,7 @@ func (p *Plugin) getJiraIssueFromPlugin(instanceURL, issueKey, requestingUserID 
 	}
 
 	return &issue, nil
-}
+}*/
 
 func (p *Plugin) toolGetJiraIssue(context ai.ConversationContext, argsGetter ai.ToolArgumentGetter) (string, error) {
 	var args GetJiraIssueArgs
@@ -295,8 +295,8 @@ func (p *Plugin) toolGetJiraIssue(context ai.ConversationContext, argsGetter ai.
 	}
 
 	result := strings.Builder{}
-	for _, issue := range issues {
-		result.WriteString(formatJiraIssue(&issue))
+	for i := range issues {
+		result.WriteString(formatJiraIssue(&issues[i]))
 		result.WriteString("------\n")
 	}
 
