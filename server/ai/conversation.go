@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -100,7 +101,7 @@ type BotConversation struct {
 func (b *BotConversation) AddUserPost(post *model.Post) {
 	b.Posts = append(b.Posts, Post{
 		Role:    PostRoleUser,
-		Message: post.Message,
+		Message: FormatPostBody(post),
 	})
 }
 
@@ -187,9 +188,49 @@ func ThreadToBotConversation(botID string, posts []*model.Post) BotConversation 
 	for _, post := range posts {
 		result.Posts = append(result.Posts, Post{
 			Role:    GetPostRole(botID, post),
-			Message: post.Message,
+			Message: FormatPostBody(post),
 		})
 	}
 
 	return result
+}
+
+func FormatPostBody(post *model.Post) string {
+	attachments := post.Attachments()
+	if len(attachments) > 0 {
+		result := strings.Builder{}
+		result.WriteString(post.Message)
+		for _, attachment := range attachments {
+			result.WriteString("\n")
+			if attachment.Pretext != "" {
+				result.WriteString(attachment.Pretext)
+				result.WriteString("\n")
+			}
+			if attachment.Title != "" {
+				result.WriteString(attachment.Title)
+				result.WriteString("\n")
+			}
+			if attachment.Text != "" {
+				result.WriteString(attachment.Text)
+				result.WriteString("\n")
+			}
+			for _, field := range attachment.Fields {
+				value, err := json.Marshal(field.Value)
+				if err != nil {
+					continue
+				}
+				result.WriteString(field.Title)
+				result.WriteString(": ")
+				result.Write(value)
+				result.WriteString("\n")
+			}
+
+			if attachment.Footer != "" {
+				result.WriteString(attachment.Footer)
+				result.WriteString("\n")
+			}
+		}
+		return result.String()
+	}
+	return post.Message
 }
