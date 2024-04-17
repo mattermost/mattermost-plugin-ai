@@ -229,7 +229,6 @@ func FormatPostBody(post *model.Post) string {
 				result.WriteString(attachment.Footer)
 				result.WriteString("\n")
 			}
-
 		}
 		return result.String()
 	}
