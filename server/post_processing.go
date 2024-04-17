@@ -90,7 +90,7 @@ func (p *Plugin) getMetadataForPosts(posts *model.PostList) (*ThreadData, error)
 func formatThread(data *ThreadData) string {
 	result := ""
 	for _, post := range data.Posts {
-		result += fmt.Sprintf("%s: %s\n\n", data.UsersByID[post.UserId].Username, post.Message)
+		result += fmt.Sprintf("%s: %s\n\n", data.UsersByID[post.UserId].Username, ai.FormatPostBody(post))
 	}
 
 	return result
