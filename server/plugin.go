@@ -214,8 +214,8 @@ func (p *Plugin) handleMessages(post *model.Post) error {
 		return fmt.Errorf("not responding to remote posts: %w", ErrNoResponse)
 	}
 
-	// Don't respond to plugins
-	if post.GetProp("from_plugin") != nil {
+	// Don't respond to plugins unless they ask for it
+	if post.GetProp("from_plugin") != nil && post.GetProp("activate_ai") == nil {
 		return fmt.Errorf("not responding to plugin posts: %w", ErrNoResponse)
 	}
 
@@ -234,8 +234,8 @@ func (p *Plugin) handleMessages(post *model.Post) error {
 		return err
 	}
 
-	// Don't respond to other bots
-	if postingUser.IsBot || post.GetProp("from_bot") != nil {
+	// Don't respond to other bots unless they ask for it
+	if (postingUser.IsBot || post.GetProp("from_bot") != nil) && post.GetProp("activate_ai") == nil {
 		return fmt.Errorf("not responding to other bots: %w", ErrNoResponse)
 	}
 
