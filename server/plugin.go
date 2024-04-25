@@ -202,6 +202,13 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 	}
 }
 
+const (
+	ActivateAIProp  = "activate_ai"
+	FromWebhookProp = "from_webhook"
+	FromBotProp     = "from_bot"
+	FromPluginProp  = "from_plugin"
+)
+
 // handleMessages Handled messages posted. Returns true if a response was posted.
 func (p *Plugin) handleMessages(post *model.Post) error {
 	// Don't respond to ouselves
@@ -214,13 +221,13 @@ func (p *Plugin) handleMessages(post *model.Post) error {
 		return fmt.Errorf("not responding to remote posts: %w", ErrNoResponse)
 	}
 
-	// Don't respond to plugins
-	if post.GetProp("from_plugin") != nil {
+	// Don't respond to plugins unless they ask for it
+	if post.GetProp(FromPluginProp) != nil && post.GetProp(ActivateAIProp) == nil {
 		return fmt.Errorf("not responding to plugin posts: %w", ErrNoResponse)
 	}
 
 	// Don't respond to webhooks
-	if post.GetProp("from_webhook") != nil {
+	if post.GetProp(FromWebhookProp) != nil {
 		return fmt.Errorf("not responding to webhook posts: %w", ErrNoResponse)
 	}
 
@@ -234,8 +241,8 @@ func (p *Plugin) handleMessages(post *model.Post) error {
 		return err
 	}
 
-	// Don't respond to other bots
-	if postingUser.IsBot || post.GetProp("from_bot") != nil {
+	// Don't respond to other bots unless they ask for it
+	if (postingUser.IsBot || post.GetProp(FromBotProp) != nil) && post.GetProp(ActivateAIProp) == nil {
 		return fmt.Errorf("not responding to other bots: %w", ErrNoResponse)
 	}
 
