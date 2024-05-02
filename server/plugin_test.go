@@ -21,7 +21,7 @@ func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 	p.botid = "botid"
 
 	var promptErr error
-	p.prompts, promptErr = ai.NewPrompts(promptsFolder, p.getBuiltInTools)
+	p.prompts, promptErr = ai.NewPrompts(promptsFolder, p.getBuiltInTools, p.getThirdPartyTools)
 	require.NoError(t, promptErr)
 
 	p.ffmpegPath = ""

@@ -108,7 +108,7 @@ func (p *Plugin) OnActivate() error {
 	}
 
 	var err error
-	p.prompts, err = ai.NewPrompts(promptsFolder, p.getBuiltInTools)
+	p.prompts, err = ai.NewPrompts(promptsFolder, p.getBuiltInTools, p.getThirdPartyTools)
 	if err != nil {
 		return err
 	}
