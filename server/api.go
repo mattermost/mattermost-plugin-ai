@@ -106,7 +106,7 @@ func (p *Plugin) handleGetAIThreads(c *gin.Context) {
 }
 
 type AIBotInfo struct {
-	Id             string `json:"id"`
+	ID             string `json:"id"`
 	DisplayName    string `json:"displayName"`
 	Username       string `json:"username"`
 	LastIconUpdate int64  `json:"lastIconUpdate"`
@@ -133,7 +133,7 @@ func (p *Plugin) handleGetAIBots(c *gin.Context) {
 			continue
 		}
 		bots[i] = AIBotInfo{
-			Id:             bot.UserId,
+			ID:             bot.UserId,
 			DisplayName:    bot.DisplayName,
 			Username:       bot.Username,
 			LastIconUpdate: bot.LastIconUpdate,
