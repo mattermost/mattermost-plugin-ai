@@ -19,7 +19,7 @@ func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 	p := Plugin{}
 
 	p.botsByUsername = map[string]*Bot{
-		"ai": &Bot{
+		"ai": {
 			mmBot: &model.Bot{
 				UserId:   "botid",
 				Username: "ai",
@@ -27,7 +27,7 @@ func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 		},
 	}
 	p.botsByID = map[string]*Bot{
-		"botid": &Bot{
+		"botid": {
 			mmBot: &model.Bot{
 				UserId:   "botid",
 				Username: "ai",
