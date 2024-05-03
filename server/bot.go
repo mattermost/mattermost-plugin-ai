@@ -29,7 +29,7 @@ type MigrationConfig struct {
 			Name         string `json:"name"`
 			ServiceName  string `json:"serviceName"`
 			DefaultModel string `json:"defaultModel"`
-			OrgId        string `json:"orgId"`
+			OrgID        string `json:"orgId"`
 			URL          string `json:"url"`
 			APIKey       string `json:"apiKey"`
 			TokenLimit   int    `json:"tokenLimit"`
@@ -61,7 +61,8 @@ func (p *Plugin) MigrateServicesToBots() error {
 	}
 
 	oldConfig := MigrationConfig{}
-	if err := p.API.LoadPluginConfiguration(&oldConfig); err != nil {
+	err = p.API.LoadPluginConfiguration(&oldConfig)
+	if err != nil {
 		return fmt.Errorf("failed to load plugin configuration for migration: %w", err)
 	}
 
@@ -69,11 +70,11 @@ func (p *Plugin) MigrateServicesToBots() error {
 	for _, service := range oldConfig.Config.Services {
 		existingConfig.Bots = append(existingConfig.Bots, ai.BotConfig{
 			DisplayName: service.Name,
-			Id:          service.Name,
+			ID:          service.Name,
 			Service: ai.ServiceConfig{
 				Type:         service.ServiceName,
 				DefaultModel: service.DefaultModel,
-				OrgID:        service.OrgId,
+				OrgID:        service.OrgID,
 				APIURL:       service.URL,
 				APIKey:       service.APIKey,
 				TokenLimit:   service.TokenLimit,

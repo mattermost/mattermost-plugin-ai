@@ -19,10 +19,20 @@ func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 	p := Plugin{}
 
 	p.botsByUsername = map[string]*Bot{
-		"botuser": &Bot{},
+		"ai": &Bot{
+			mmBot: &model.Bot{
+				UserId:   "botid",
+				Username: "ai",
+			},
+		},
 	}
 	p.botsByID = map[string]*Bot{
-		"botid": &Bot{},
+		"botid": &Bot{
+			mmBot: &model.Bot{
+				UserId:   "botid",
+				Username: "ai",
+			},
+		},
 	}
 
 	var promptErr error

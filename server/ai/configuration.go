@@ -14,7 +14,7 @@ type ServiceConfig struct {
 }
 
 type BotConfig struct {
-	Id                 string        `json:"id"`
+	ID                 string        `json:"id"`
 	Name               string        `json:"name"`
 	DisplayName        string        `json:"displayName"`
 	CustomInstructions string        `json:"customInstructions"`
