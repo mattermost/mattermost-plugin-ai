@@ -17,4 +17,4 @@
 1. Access Mattermost and configure the Mattermost AI Copilot Plugin:
 
    1. Log in to Mattermost as an administrator
-   1. Follow the [configuration guide](./docs/configuration-guide.md) to set up the Mattermost AI Copilot Plugin.
+   1. Follow the [Mattermost Product Documentation](https://docs.mattermost.com/configure/enable-ai-copilot.html) to set up the Mattermost AI Copilot Plugin.
