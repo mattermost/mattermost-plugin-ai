@@ -13,9 +13,9 @@
 
 ## Background
 
-The Mattermost AI Copilot Plugin adds functionality for local (self-hosted) and third-party (vendor-hosted) LLMs within Mattermost v9.6 and above. Visit the [Usage](docs/usage.md) page to learn about potential AI workflows with this Mattermost integration.
+The Mattermost AI Copilot Plugin adds functionality for local (self-hosted) and third-party (vendor-hosted) LLMs within Mattermost v9.6 and above. This plugin is currently experimental. 
 
-This plugin is currently experimental. Contributions and suggestions are welcome. See the [Contributing](#contributing) section for more details!
+Contributions and suggestions are welcome. See the [Contributing](#contributing) section for more details!
 
 Join the discussion in the [~AI-Exchange channel](https://community.mattermost.com/core/channels/ai-exchange) and explore the [Discourse forum](https://forum.mattermost.com/c/openops-ai/40). 💬
 
