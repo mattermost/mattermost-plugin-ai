@@ -161,9 +161,19 @@ func (p *Plugin) newCallTranscriptionSummaryThread(requestingUser *model.User, t
 			return fmt.Errorf("unable to read calls file: %w", err)
 		}
 
-		transcription, err := subtitles.NewSubtitlesFromVTT(transcriptionFileReader)
-		if err != nil {
-			return fmt.Errorf("unable to parse transcription file: %w", err)
+		var transcription *subtitles.Subtitles
+		if transcriptionFilePost.Type == "custom_zoom_chat" {
+			var err error
+			transcription, err = subtitles.NewSubtitlesFromChat(transcriptionFileReader)
+			if err != nil {
+				return fmt.Errorf("unable to parse transcription file: %w", err)
+			}
+		} else {
+			var err error
+			transcription, err = subtitles.NewSubtitlesFromVTT(transcriptionFileReader)
+			if err != nil {
+				return fmt.Errorf("unable to parse transcription file: %w", err)
+			}
 		}
 
 		context := p.MakeConversationContext(requestingUser, channel, nil)
