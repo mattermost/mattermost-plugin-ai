@@ -201,6 +201,26 @@ const ServiceForm = ({service, onChange, onDelete}: Props) => {
                         />
                     </div>
                 </div>
+                {(service.serviceName === 'openai' || service.serviceName === 'openaicompatible') && (
+                    <div className='form-group'>
+                        <label
+                            className='control-label col-sm-4'
+                            htmlFor='ai-service-streaming-timeout-seconds'
+                        >
+                            {'Streaming Timeout Seconds'}
+                        </label>
+                        <div className='col-sm-8'>
+                            <input
+                                id='ai-service-streaming-timeout-seconds'
+                                className='form-control'
+                                type='number'
+                                placeholder='Streaming Timeout Seconds'
+                                value={service.streamingTimeoutSeconds}
+                                onChange={(e) => onChange({...service, streamingTimeoutSeconds: Number(e.target.value)})}
+                            />
+                        </div>
+                    </div>
+                )}
                 {service.serviceName === 'asksage' && (
                     <div className='form-group'>
                         <label

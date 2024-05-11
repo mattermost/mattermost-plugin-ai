@@ -155,6 +155,7 @@ const Config = (props: Props) => {
             username: '',
             password: '',
             tokenLimit: 0,
+            streamingTimeoutSeconds: 0,
         };
 
         let counter = 1;
