@@ -215,7 +215,7 @@ const ServiceForm = ({service, onChange, onDelete}: Props) => {
                                 className='form-control'
                                 type='number'
                                 placeholder='Streaming Timeout Seconds'
-                                value={service.streamingTimeoutSeconds}
+                                value={service.streamingTimeoutSeconds ?? 0}
                                 onChange={(e) => onChange({...service, streamingTimeoutSeconds: Number(e.target.value)})}
                             />
                         </div>
