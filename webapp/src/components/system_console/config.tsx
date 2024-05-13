@@ -12,9 +12,12 @@ import Pill from '../pill';
 import {ServiceData} from './service';
 import ServiceForm from './service_form';
 import EnterpriseChip from './enterprise_chip';
+import { ExternalTool } from './external_tool';
+import ExternalToolForm from './tool_form';
 
 type Value = {
     services: ServiceData[],
+    ExternalTools: ExternalTool[],
     llmBackend: string,
     transcriptBackend: string,
     imageGeneratorBackend: string,
@@ -105,6 +108,7 @@ const PanelFooterText = styled(PanelSubtitle)`
 
 const defaultConfig = {
     services: [],
+    ExternalTools: [],
     llmBackend: '',
     transcriptBackend: '',
     imageGeneratorBackend: '',
@@ -138,6 +142,7 @@ const Panel = (props: PanelProps) => {
 const Config = (props: Props) => {
     const value = props.value || defaultConfig;
     const currentServices = value.services;
+    const currentExternalTools = value.ExternalTools;
     const multiLLMLicensed = useIsMultiLLMLicensed();
     const licenceAddDisabled = !multiLLMLicensed && currentServices.length > 0;
 
@@ -177,6 +182,28 @@ const Config = (props: Props) => {
             props.onChange(props.id, {...value, services: [...currentServices, newService]});
         }
     }, [value, currentServices]);
+
+    const addNewTool = useCallback((e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const newTool = {
+        } as ExternalTool;
+
+        if(value.ExternalTools.length === 0) {
+            props.onChange(props.id, {...value, ExternalTools: [newTool]})
+        }
+    }, [value, currentExternalTools])
+
+    const deleteTool = (deletedTool: ExternalTool) => {
+        props.onChange(props.id, {...value, ExternalTools: []})
+        props.setSaveNeeded();
+    }
+
+    const changeTool = (changedTool: ExternalTool) => {
+        props.onChange(props.id, {...value, ExternalTools: [changedTool]})
+        props.setSaveNeeded();
+    }
 
     const deleteService = (deletedService: ServiceData) => {
         const updatedServiceIdx = currentServices.indexOf(deletedService);
@@ -263,6 +290,34 @@ const Config = (props: Props) => {
                 </EnterpriseChipContainer>
                 <PanelFooterText>
                     {'AI services are third party services; Mattermost is not responsible for output.'}
+                </PanelFooterText>
+            </Panel>
+            <Panel
+                title='External Tools'
+                subtitle='Allow the AI Copilot to integrate with external workflow tools like N8N or Zapier'
+            >
+                {currentExternalTools.map((tool) => (
+                    <ExternalToolForm
+                        key={tool.Provider}
+                        externalTool={tool}
+                        onDelete={deleteTool}
+                        onChange={changeTool}
+                    />
+                ))}
+                <EnterpriseChipContainer>
+                <TertiaryButton
+                        onClick={addNewTool}
+                        disabled={currentExternalTools.length >= 1}
+                    >
+                        <PlusAIServiceIcon/>
+                        {'Add AI Tool Service'}
+                    </TertiaryButton>
+                    {licenceAddDisabled && (
+                        <EnterpriseChip subtext={'Multiple AI tools are available on Enterprise plans'}/>
+                    )}
+                </EnterpriseChipContainer>
+                <PanelFooterText>
+                    {'AI tools are third party services; Mattermost is not responsible for output.'}
                 </PanelFooterText>
             </Panel>
             <Panel

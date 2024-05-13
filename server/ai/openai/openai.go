@@ -93,14 +93,19 @@ func toolsToFunctionDefinitions(tools []ai.Tool) []openaiClient.FunctionDefiniti
 		Anonymous:      true,
 		ExpandedStruct: true,
 	}
-
 	for _, tool := range tools {
-		schema := schemaMaker.Reflect(tool.Schema)
-		result = append(result, openaiClient.FunctionDefinition{
+		openAITool := openaiClient.FunctionDefinition{
 			Name:        tool.Name,
 			Description: tool.Description,
-			Parameters:  schema,
-		})
+		}
+		if tool.IsRawMessage {
+			openAITool.Parameters = tool.Schema
+		} else {
+			schema := schemaMaker.Reflect(tool.Schema)
+			openAITool.Parameters = schema
+		}
+		// fmt.Println(fmt.Sprintf("HERE IS THE SCHEMA RIGHT HERE LOOK LOOK LOOK %+v", schema))
+		result = append(result, openAITool)
 	}
 
 	return result
@@ -133,6 +138,7 @@ func createFunctionArrgmentResolver(jsonArgs string) ai.ToolArgumentGetter {
 }
 
 func (s *OpenAI) handleStreamFunctionCall(request openaiClient.ChatCompletionRequest, conversation ai.BotConversation, name, arguments string) (openaiClient.ChatCompletionRequest, error) {
+	fmt.Println("TOOL SELECTED", name, arguments)
 	toolResult, err := conversation.Tools.ResolveTool(name, createFunctionArrgmentResolver(arguments), conversation.Context)
 	if err != nil {
 		fmt.Println("Error resolving function: ", err)

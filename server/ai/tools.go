@@ -5,10 +5,12 @@ import (
 )
 
 type Tool struct {
-	Name        string
-	Description string
-	Schema      any
-	Resolver    func(context ConversationContext, argsGetter ToolArgumentGetter) (string, error)
+	Name         string
+	Description  string
+	Schema       any
+	IsRawMessage bool
+	HTTPMethod   string
+	Resolver     func(name string, context ConversationContext, argsGetter ToolArgumentGetter) (string, error)
 }
 
 type ToolArgumentGetter func(args any) error
@@ -34,7 +36,10 @@ func (s *ToolStore) ResolveTool(name string, argsGetter ToolArgumentGetter, cont
 	if !ok {
 		return "", errors.New("unknown tool " + name)
 	}
-	return tool.Resolver(context, argsGetter)
+	if tool.Resolver == nil {
+		return "", errors.New("Tool resolver IS NIL")
+	}
+	return tool.Resolver(name, context, argsGetter)
 }
 
 func (s *ToolStore) GetTools() []Tool {
