@@ -8,16 +8,14 @@
 ## Table of Contents
 
 - [Background](#background)
-- [Install](#install)
-- [Usage](#usage)
 - [Contributing](#contributing)
 - [License](#license)
 
 ## Background
 
-The Mattermost AI Copilot Plugin adds functionality for local (self-hosted) and third-party (vendor-hosted) LLMs within Mattermost v9.6 and above.
+The Mattermost AI Copilot Plugin adds functionality for local (self-hosted) and third-party (vendor-hosted) LLMs within Mattermost v9.6 and above. This plugin is currently experimental. 
 
-This plugin is currently experimental. Contributions and suggestions are welcome. See the [Contributing](#contributing) section for more details!
+Contributions and suggestions are welcome. See the [Contributing](#contributing) section for more details!
 
 Join the discussion in the [~AI-Exchange channel](https://community.mattermost.com/core/channels/ai-exchange) and explore the [Discourse forum](https://forum.mattermost.com/c/openops-ai/40). 💬
 
@@ -31,21 +29,13 @@ We recommend using Mattermost Server v9.6 or later for the best experience. Comp
 - v9.3.3+
 - v8.1.11+ ([ESR](https://docs.mattermost.com/deploy/mattermost-changelog.html))
 
-These installation instructions assume you already have [Mattermost Server](https://mattermost.com/download/) installed and configured with [PostgreSQL](https://www.postgresql.org/):
+See the [Mattermost Product Documentation](https://docs.mattermost.com/configure/enable-ai-copilot.html) for details on installing, configuring, enabling, and using this Mattermost integration.
 
-1. Download the [latest release](https://github.com/mattermost/mattermost-plugin-ai/releases) of the Mattermost AI Copilot Plugin
-2. Log in to Mattermost as an administrator
-3. Upload the `*.tar.gz` to your server via **System Console** ➡️ **Plugin Management**. See [this documentation](https://developers.mattermost.com/integrate/plugins/using-and-managing-plugins/#custom-plugins) for help.
-4. Enable the Mattermost AI Copilot Plugin via **System Console** ➡️ **Mattermost AI Copilot Plugin**.
-5. Follow the [configuration guide](./docs/configuration-guide.md) to set up the Mattermost AI Copilot Plugin
-
-## Usage
-
-After following the [configuration guide](./docs/configuration-guide.md) to connect your LLM to Mattermost, there many ways to integrate AI into your collaboration workflows. To help you get started, check out the examples in the [Usage](./docs/usage.md) documentation. 🚀
+**Note**: Installation instructions assume you already have [Mattermost Server](https://mattermost.com/download/) installed and configured with [PostgreSQL](https://www.postgresql.org/).
 
 ## Contributing
 
-Interested in contributing to our open source project? Start by reviewing the [contributor guidelines](./.github/CONTRIBUTING.md) for this repository.
+Interested in contributing to our open source project? Start by reviewing the [contributor guidelines](./.github/CONTRIBUTING.md) for this repository. See the [Developer Setup Guide](docs/developer-setup-guide.md) for details on setting up a Mattermost instance for development.
 
 ## License
 
