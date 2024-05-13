@@ -2,7 +2,7 @@ import React from 'react';
 
 import styled from 'styled-components';
 
-import {CheckIcon, ChevronRightIcon} from '@mattermost/compass-icons/components';
+import {CheckIcon, ChevronDownIcon} from '@mattermost/compass-icons/components';
 
 import {LLMBot} from '@/bots';
 
@@ -31,20 +31,17 @@ export const DropdownBotSelector = (props: DropdownBotSelectorProps) => {
                 </SelectMessage>
                 <BotPill>
                     {props.activeBot?.displayName}
+                    <ChevronDownIcon/>
                 </BotPill>
-                <StyledChevronRightIcon/>
             </>
         </BotDropdown>
     );
 };
 
-const StyledChevronRightIcon = styled(ChevronRightIcon)`
-	justify-self: right;
-`;
-
 const BotPill = styled(GrayPill)`
 	font-size: 12px;
 	padding: 2px 6px;
+	gap: 0;
 `;
 
 const BotSelectorContainer = styled.div`
