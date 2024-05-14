@@ -14,9 +14,11 @@ export interface LLMBot {
     dmChannelID: string;
 }
 
+const defaultBotLocalStorageKey = 'defaultBot';
+
 export const useBotlist = () => {
     const [bots, setBots] = useState<LLMBot[] | null>(null);
-    const [activeBot, setActiveBot] = useState<LLMBot | null>(null);
+    const [activeBot, setActiveBotState] = useState<LLMBot | null>(null);
     const currentUserId = useSelector<GlobalState, string>((state) => state.entities.users.currentUserId);
 
     // Load bots
@@ -27,13 +29,26 @@ export const useBotlist = () => {
                 return;
             }
 
-            // The default bot should always be the first one.
-            const newActiveBot = fetchedBots[0];
+            // Set default bot to the one in local storage otherwise default to the first bot (which should be the server default)
+            let newActiveBot = fetchedBots[0];
+            if (fetchedBots.length > 1) {
+                const defaultBotName = localStorage.getItem(defaultBotLocalStorageKey);
+                const defaultBot = fetchedBots.find((bot: LLMBot) => bot.username === defaultBotName);
+                if (defaultBot) {
+                    newActiveBot = defaultBot;
+                }
+            }
+
             setBots(fetchedBots);
-            setActiveBot(newActiveBot);
+            setActiveBotState(newActiveBot);
         };
         fetchBots();
     }, [currentUserId]);
+
+    const setActiveBot = (bot: LLMBot) => {
+        setActiveBotState(bot);
+        localStorage.setItem(defaultBotLocalStorageKey, bot.username);
+    };
 
     return {bots, activeBot, setActiveBot};
 };
