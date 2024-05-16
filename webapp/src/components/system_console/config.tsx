@@ -104,9 +104,6 @@ const BetaMessage = () => (
 
 const Config = (props: Props) => {
     const value = props.value || defaultConfig;
-    const currentServices = value.services;
-    const multiLLMLicensed = useIsMultiLLMLicensed();
-    const licenceAddDisabled = !multiLLMLicensed && currentServices.length > 0;
     const [avatarUpdates, setAvatarUpdates] = useState<{[key: string]: File}>({});
 
     useEffect(() => {

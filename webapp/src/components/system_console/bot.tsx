@@ -50,7 +50,11 @@ function serviceTypeToDisplayName(serviceType: string): string {
 
 const Bot = (props: Props) => {
     const [open, setOpen] = useState(false);
-    const missingInfo = props.bot.name === '';
+    const missingInfo = props.bot.name === '' ||
+		props.bot.displayName === '' ||
+		props.bot.service.type === '' ||
+		(props.bot.service.type !== 'asksage' && props.bot.service.apiKey === '') ||
+		(props.bot.service.type === 'openaicompatible' && props.bot.service.apiURL === '');
     return (
         <BotContainer>
             <HeaderContainer onClick={() => setOpen((o) => !o)}>
@@ -245,6 +249,7 @@ const HeaderContainer = styled.div`
 	gap: 16px;
 	padding: 12px 16px 12px 20px;
 	border-bottom: 1px solid rgba(var(--center-channel-color-rgb), 0.12);
+	cursor: pointer;
 `;
 
 export default Bot;

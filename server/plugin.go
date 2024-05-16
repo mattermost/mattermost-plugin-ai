@@ -86,7 +86,9 @@ func (p *Plugin) OnActivate() error {
 	}
 
 	if err := p.EnsureBots(); err != nil {
-		return err
+		p.pluginAPI.Log.Error("Failed to ensure bots", "error", err)
+		// Don't fail on ensure bots errors as this leaves the plugin in an awkward state
+		// where it can't be configured from the system console.
 	}
 
 	if err := p.SetupDB(); err != nil {

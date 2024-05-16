@@ -128,6 +128,14 @@ func (p *Plugin) EnsureBots() error {
 
 	aiBotConfigsByUsername := make(map[string]ai.BotConfig)
 	for _, bot := range cfgBots {
+		if !bot.IsValid() {
+			p.pluginAPI.Log.Error("Configured bot is not valid", "bot_name", bot.Name, "bot_display_name", bot.DisplayName)
+			continue
+		}
+		if _, ok := aiBotConfigsByUsername[bot.Name]; ok {
+			// Duplicate bot names have to be fatal because they would cause a bot to be modified inappropreately.
+			return fmt.Errorf("duplicate bot name: %s", bot.Name)
+		}
 		aiBotConfigsByUsername[bot.Name] = bot
 	}
 
@@ -149,7 +157,7 @@ func (p *Plugin) EnsureBots() error {
 	// For each bot in the configuration, try to find an existing bot matching the username.
 	// If it exists, update it to match. Otherwise, create a new bot.
 	for _, bot := range cfgBots {
-		if bot.Name == "" {
+		if !bot.IsValid() {
 			continue
 		}
 		description := "Powered by " + bot.Service.Type

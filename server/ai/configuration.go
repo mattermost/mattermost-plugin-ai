@@ -20,3 +20,12 @@ type BotConfig struct {
 	CustomInstructions string        `json:"customInstructions"`
 	Service            ServiceConfig `json:"service"`
 }
+
+func (c *BotConfig) IsValid() bool {
+	isInvalid := c.Name == "" ||
+		c.DisplayName == "" ||
+		c.Service.Type == "" ||
+		(c.Service.Type == "openaicompatable" && c.Service.APIURL == "") ||
+		(c.Service.Type != "asksage" && c.Service.APIKey == "")
+	return !isInvalid
+}
