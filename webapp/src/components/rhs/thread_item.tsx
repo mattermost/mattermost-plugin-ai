@@ -77,6 +77,7 @@ type Props = {
 const DefaultTitle = 'Conversation with AI Copilot';
 
 export default function ThreadItem(props: Props) {
+    const repliesText = props.repliesCount === 1 ? '1 reply' : `${props.repliesCount} replies`;
     return (
         <ThreadItemContainer onClick={props.onClick}>
             <Title>
@@ -93,7 +94,7 @@ export default function ThreadItem(props: Props) {
             <Preview>{props.postMessage}</Preview>
             <Footer>
                 <Label>{props.label}</Label>
-                <RepliesCount>{props.repliesCount}{' replies'}</RepliesCount>
+                <RepliesCount>{repliesText}</RepliesCount>
             </Footer>
         </ThreadItemContainer>
     );
