@@ -10,14 +10,15 @@ const Chip = styled.div`
     align-items: center;
     padding: 3px 8px 3px 22px;
     margin-left: 8px;
-    background: var(--button-bg);
     border-radius: 10px;
     height: 20px;
 
     font-size: 10px;
     font-weight: 600;
     line-height: 15px;
-    color: var(--center-channel-bg);
+
+    color: var(--button-bg);
+    background: rgba(var(--button-bg-rgb), 0.12);
 
     &:before {
         left: 7px;

@@ -36,7 +36,7 @@ const StyledPanelContainer = styled(PanelContainer)`
 	flex-direction: column;
 	align-items: center;
 	gap: 16px;
-	padding-bottom: 32px;
+	padding-bottom: 56px;
 `;
 
 const Title = styled.div`
