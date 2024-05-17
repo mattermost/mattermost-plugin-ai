@@ -90,7 +90,7 @@ export const StyledInput = styled.input<{as?: string}>`
 	border-radius: 2px;
 	border: 1px solid rgba(var(--center-channel-color-rgb), 0.16);
 	box-shadow: 0px 1px 1px rgba(0, 0, 0, 0.075) inset;
-	height: 34px;
+	height: 35px;
 	background: white;
 
 	font-size: 14px;

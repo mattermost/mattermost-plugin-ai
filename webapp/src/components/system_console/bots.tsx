@@ -89,7 +89,10 @@ const Bots = (props: Props) => {
                     {'Add an AI Bot'}
                 </TertiaryButton>
                 {licenceAddDisabled && (
-                    <EnterpriseChip subtext={'Multiple AI services is available on Enterprise plans'}/>
+                    <EnterpriseChip
+                        text={'Use multiple AI bots on Enterprise plans'}
+                        subtext={'Multiple AI services is available on Enterprise plans'}
+                    />
                 )}
             </EnterpriseChipContainer>
         </>

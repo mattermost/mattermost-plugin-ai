@@ -47,6 +47,7 @@ const SubText = styled.div`
 
 type Props = {
     subtext?: string;
+    text?: string;
 };
 
 const EnterpriseChip = (props: Props) => {
@@ -61,7 +62,7 @@ const EnterpriseChip = (props: Props) => {
             }
         >
             <Chip>
-                {'Enterprise'}
+                {props.text || 'Enterprise'}
             </Chip>
         </OverlayTrigger>
     );

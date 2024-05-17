@@ -27,7 +27,7 @@ const AvatarItem = (props: AvatarItemProps) => {
             }
         };
         getUserIcon();
-    }, [props.botusername]);
+    }, []);
 
     const onUploadChange = async (e: ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
