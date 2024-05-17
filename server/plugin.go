@@ -57,9 +57,8 @@ type Plugin struct {
 
 	licenseChecker *enterprise.LicenseChecker
 
-	botsLock       sync.RWMutex
-	botsByUsername map[string]*Bot
-	botsByID       map[string]*Bot
+	botsLock sync.RWMutex
+	bots     []*Bot
 }
 
 func resolveffmpegPath() string {

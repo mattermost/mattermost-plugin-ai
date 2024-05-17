@@ -18,16 +18,11 @@ type TestEnvironment struct {
 func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 	p := Plugin{}
 
-	p.botsByUsername = map[string]*Bot{
-		"ai": {
-			mmBot: &model.Bot{
-				UserId:   "botid",
-				Username: "ai",
+	p.bots = []*Bot{
+		{
+			cfg: ai.BotConfig{
+				Name: "ai",
 			},
-		},
-	}
-	p.botsByID = map[string]*Bot{
-		"botid": {
 			mmBot: &model.Bot{
 				UserId:   "botid",
 				Username: "ai",

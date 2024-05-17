@@ -80,7 +80,7 @@ func (p *Plugin) handleGetAIThreads(c *gin.Context) {
 	p.botsLock.RLock()
 	defer p.botsLock.RUnlock()
 	dmChannelIDs := []string{}
-	for _, bot := range p.botsByID {
+	for _, bot := range p.bots {
 		botDMChannel, err := p.pluginAPI.Channel.GetDirect(userID, bot.mmBot.UserId)
 		if err != nil {
 			c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to get DM with AI bot: %w", err))

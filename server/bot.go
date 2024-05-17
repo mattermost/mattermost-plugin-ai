@@ -203,14 +203,12 @@ func (p *Plugin) UpdateBotsCache() error {
 
 	p.botsLock.Lock()
 	defer p.botsLock.Unlock()
-	p.botsByUsername = make(map[string]*Bot, len(botsConfig))
-	p.botsByID = make(map[string]*Bot, len(botsConfig))
+	p.bots = make([]*Bot, 0, len(botsConfig))
 	for _, botCfg := range botsConfig {
 		for _, bot := range bots {
 			if bot.Username == botCfg.Name {
 				createdBot := NewBot(botCfg, bot)
-				p.botsByUsername[botCfg.Name] = createdBot
-				p.botsByID[bot.UserId] = createdBot
+				p.bots = append(p.bots, createdBot)
 			}
 		}
 	}
@@ -231,8 +229,10 @@ func (p *Plugin) GetBotConfig(botUsername string) (ai.BotConfig, error) {
 func (p *Plugin) GetBotByUsername(botUsername string) *Bot {
 	p.botsLock.RLock()
 	defer p.botsLock.RUnlock()
-	if bot, ok := p.botsByUsername[botUsername]; ok {
-		return bot
+	for _, bot := range p.bots {
+		if bot.cfg.Name == botUsername {
+			return bot
+		}
 	}
 
 	return nil
@@ -242,8 +242,10 @@ func (p *Plugin) GetBotByUsername(botUsername string) *Bot {
 func (p *Plugin) GetBotByID(botID string) *Bot {
 	p.botsLock.RLock()
 	defer p.botsLock.RUnlock()
-	if bot, ok := p.botsByID[botID]; ok {
-		return bot
+	for _, bot := range p.bots {
+		if bot.mmBot.UserId == botID {
+			return bot
+		}
 	}
 
 	return nil
@@ -254,8 +256,8 @@ func (p *Plugin) GetBotForDMChannel(channel *model.Channel) *Bot {
 	p.botsLock.RLock()
 	defer p.botsLock.RUnlock()
 
-	for userID, bot := range p.botsByID {
-		if mmapi.IsDMWith(userID, channel) {
+	for _, bot := range p.bots {
+		if mmapi.IsDMWith(bot.mmBot.UserId, channel) {
 			return bot
 		}
 	}
@@ -266,8 +268,13 @@ func (p *Plugin) GetBotForDMChannel(channel *model.Channel) *Bot {
 func (p *Plugin) IsAnyBot(userID string) bool {
 	p.botsLock.RLock()
 	defer p.botsLock.RUnlock()
-	_, ok := p.botsByID[userID]
-	return ok
+	for _, bot := range p.bots {
+		if bot.mmBot.UserId == userID {
+			return true
+		}
+	}
+
+	return false
 }
 
 // GetBotMentioned returns the bot mentioned in the text, if any.
@@ -275,7 +282,7 @@ func (p *Plugin) GetBotMentioned(text string) *Bot {
 	p.botsLock.RLock()
 	defer p.botsLock.RUnlock()
 
-	for _, bot := range p.botsByUsername {
+	for _, bot := range p.bots {
 		if userIsMentioned(text, bot.mmBot.Username) {
 			return bot
 		}
