@@ -163,13 +163,11 @@ func (p *Plugin) newCallTranscriptionSummaryThread(requestingUser *model.User, t
 
 		var transcription *subtitles.Subtitles
 		if transcriptionFilePost.Type == "custom_zoom_chat" {
-			var err error
 			transcription, err = subtitles.NewSubtitlesFromChat(transcriptionFileReader)
 			if err != nil {
 				return fmt.Errorf("unable to parse transcription file: %w", err)
 			}
 		} else {
-			var err error
 			transcription, err = subtitles.NewSubtitlesFromVTT(transcriptionFileReader)
 			if err != nil {
 				return fmt.Errorf("unable to parse transcription file: %w", err)
