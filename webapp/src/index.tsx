@@ -15,14 +15,12 @@ import IconThreadSummarization from './components/assets/icon_thread_summarizati
 import IconReactForMe from './components/assets/icon_react_for_me';
 import RHS from './components/rhs/rhs';
 import Config from './components/system_console/config';
-import {doReaction, doSummarize, doTranscribe, getAIDirectChannel} from './client';
+import {doReaction, doSummarize, getAIDirectChannel} from './client';
 import {setOpenRHSAction} from './redux_actions';
 import {BotUsername} from './constants';
 import PostEventListener from './websocket';
 import {setupRedux} from './redux';
 import UnreadsSumarize from './components/unreads_summarize';
-import IconAI from './components/assets/icon_ai';
-import {doSelectPost} from './hooks';
 import {Pill} from './components/pill';
 
 type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
@@ -40,10 +38,6 @@ const RHSTitleContainer = styled.span`
 	gap: 8px;
     align-items: center;
 	margin-left: 8px;
-`;
-
-const SummarizeRecordingIconContainer = styled.span`
-	color: rgba(var(--center-channel-color-rgb), 0.56);
 `;
 
 const RHSTitle = () => {
@@ -164,11 +158,6 @@ export default class Plugin {
         if (registry.registerNewMessagesSeparatorActionComponent) {
             registry.registerNewMessagesSeparatorActionComponent(UnreadsSumarize);
         }
-
-        registry.registerFileDropdownMenuAction(isProcessableAudio, <><SummarizeRecordingIconContainer className='icon'><IconAI/></SummarizeRecordingIconContainer>{'Summarize recording'}</>, async (fileInfo: any) => {
-            const result = await doTranscribe(fileInfo.post_id, fileInfo.id);
-            doSelectPost(result.postid, result.channelid, store.dispatch);
-        });
     }
 }
 
