@@ -1,19 +1,13 @@
-import React, {useCallback, useEffect, useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import styled from 'styled-components';
 
 import {PlusIcon} from '@mattermost/compass-icons/components';
-
-import {TertiaryButton} from '../assets/buttons';
-
-import {useIsMultiLLMLicensed} from '@/license';
 
 import {Pill} from '../pill';
 
 import {setUserProfilePictureByUsername} from '@/client';
 
 import {ServiceData} from './service';
-import ServiceForm from './service_form';
-import EnterpriseChip from './enterprise_chip';
 import Panel, {PanelFooterText} from './panel';
 import Bots, {firstNewBot} from './bots';
 import {LLMBotConfig} from './bot';
@@ -59,12 +53,6 @@ const MessageContainer = styled.div`
 	background: white;
 	border-radius: 4px;
 	border: 1px solid rgba(63, 67, 80, 0.08);
-`;
-
-const PlusAIServiceIcon = styled(PlusIcon)`
-	width: 18px;
-	height: 18px;
-	margin-right: 8px;
 `;
 
 const ConfigContainer = styled.div`

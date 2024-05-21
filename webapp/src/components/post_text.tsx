@@ -5,7 +5,6 @@ import styled, {keyframes, css} from 'styled-components';
 import {GlobalState} from '@mattermost/types/store';
 import {Channel} from '@mattermost/types/channels';
 import {Team} from '@mattermost/types/teams';
-import {Post} from '@mattermost/types/posts';
 
 export type ChannelNamesMap = {
     [name: string]: {
