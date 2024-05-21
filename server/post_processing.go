@@ -99,8 +99,8 @@ func formatThread(data *ThreadData) string {
 const LLMRequesterUserID = "llm_requester_user_id"
 const UnsafeLinksPostProp = "unsafe_links"
 
-func (p *Plugin) modifyPostForBot(requesterUserID string, post *model.Post) {
-	post.UserId = p.botid
+func (p *Plugin) modifyPostForBot(botid string, requesterUserID string, post *model.Post) {
+	post.UserId = botid
 	post.Type = "custom_llmbot" // This must be the only place we add this type for security.
 	post.AddProp(LLMRequesterUserID, requesterUserID)
 	// This tags that the post has unsafe links since they could have been generted by a prompt injection.
@@ -108,8 +108,8 @@ func (p *Plugin) modifyPostForBot(requesterUserID string, post *model.Post) {
 	post.AddProp(UnsafeLinksPostProp, "true")
 }
 
-func (p *Plugin) botCreatePost(requesterUserID string, post *model.Post) error {
-	p.modifyPostForBot(requesterUserID, post)
+func (p *Plugin) botCreatePost(botid string, requesterUserID string, post *model.Post) error {
+	p.modifyPostForBot(botid, requesterUserID, post)
 
 	if err := p.pluginAPI.Post.CreatePost(post); err != nil {
 		return err
@@ -118,18 +118,18 @@ func (p *Plugin) botCreatePost(requesterUserID string, post *model.Post) error {
 	return nil
 }
 
-func (p *Plugin) botDM(userID string, post *model.Post) error {
-	p.modifyPostForBot(userID, post)
+func (p *Plugin) botDM(botid string, userID string, post *model.Post) error {
+	p.modifyPostForBot(botid, userID, post)
 
-	if err := p.pluginAPI.Post.DM(p.botid, userID, post); err != nil {
+	if err := p.pluginAPI.Post.DM(botid, userID, post); err != nil {
 		return fmt.Errorf("failed to post DM: %w", err)
 	}
 
 	return nil
 }
 
-func (p *Plugin) streamResultToNewPost(requesterUserID string, stream *ai.TextStreamResult, post *model.Post) error {
-	if err := p.botCreatePost(requesterUserID, post); err != nil {
+func (p *Plugin) streamResultToNewPost(botid string, requesterUserID string, stream *ai.TextStreamResult, post *model.Post) error {
+	if err := p.botCreatePost(botid, requesterUserID, post); err != nil {
 		return fmt.Errorf("unable to create post: %w", err)
 	}
 
@@ -146,8 +146,8 @@ func (p *Plugin) streamResultToNewPost(requesterUserID string, stream *ai.TextSt
 	return nil
 }
 
-func (p *Plugin) streamResultToNewDM(stream *ai.TextStreamResult, userID string, post *model.Post) error {
-	if err := p.botDM(userID, post); err != nil {
+func (p *Plugin) streamResultToNewDM(botid string, stream *ai.TextStreamResult, userID string, post *model.Post) error {
+	if err := p.botDM(botid, userID, post); err != nil {
 		return err
 	}
 
