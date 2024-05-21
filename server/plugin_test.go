@@ -18,7 +18,17 @@ type TestEnvironment struct {
 func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 	p := Plugin{}
 
-	p.botid = "botid"
+	p.bots = []*Bot{
+		{
+			cfg: ai.BotConfig{
+				Name: "ai",
+			},
+			mmBot: &model.Bot{
+				UserId:   "botid",
+				Username: "ai",
+			},
+		},
+	}
 
 	var promptErr error
 	p.prompts, promptErr = ai.NewPrompts(promptsFolder, p.getBuiltInTools)
@@ -62,7 +72,7 @@ func TestHandleMessages(t *testing.T) {
 
 	t.Run("don't respond to ourselves", func(t *testing.T) {
 		err := e.plugin.handleMessages(&model.Post{
-			UserId: e.plugin.botid,
+			UserId: "botid",
 		})
 		require.ErrorIs(t, err, ErrNoResponse)
 	})
@@ -207,7 +217,7 @@ func TestHandleDMs(t *testing.T) {
 		}))
 		e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
 			Type:   model.ChannelTypeDirect,
-			Name:   e.plugin.botid + "__" + "userid",
+			Name:   "botid__userid",
 			TeamId: "teamid",
 		}, nil)
 		e.mockAPI.On("GetUser", "userid").Return(&model.User{
@@ -226,7 +236,7 @@ func TestHandleDMs(t *testing.T) {
 		}))
 		e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
 			Type:   model.ChannelTypeDirect,
-			Name:   e.plugin.botid + "__" + "userid",
+			Name:   "botid__userid",
 			TeamId: "teamid",
 		}, nil)
 		e.mockAPI.On("GetUser", "userid").Return(&model.User{
