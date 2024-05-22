@@ -37,6 +37,7 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	postRouter.POST("/summarize_transcription", p.handleSummarizeTranscription)
 	postRouter.POST("/stop", p.handleStop)
 	postRouter.POST("/regenerate", p.handleRegenerate)
+	postRouter.POST("/postback_summary", p.handlePostbackSummary)
 
 	channelRouter := botRequriedRouter.Group("/channel/:channelid")
 	channelRouter.Use(p.channelAuthorizationRequired)

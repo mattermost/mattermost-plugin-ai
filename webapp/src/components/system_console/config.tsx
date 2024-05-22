@@ -139,7 +139,14 @@ const Config = (props: Props) => {
             >
                 <Bots
                     bots={props.value.bots ?? []}
-                    onChange={(bots: LLMBotConfig[]) => props.onChange(props.id, {...value, bots})}
+                    onChange={(bots: LLMBotConfig[]) => {
+                        if (value.bots.findIndex((bot) => bot.name === value.defaultBotName) === -1) {
+                            props.onChange(props.id, {...value, bots, defaultBotName: bots[0].name});
+                        } else {
+                            props.onChange(props.id, {...value, bots});
+                        }
+                        props.setSaveNeeded();
+                    }}
                     botChangedAvatar={botChangedAvatar}
                 />
                 <PanelFooterText>

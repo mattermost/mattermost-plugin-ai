@@ -22,6 +22,7 @@ import PostEventListener from './websocket';
 import {setupRedux} from './redux';
 import UnreadsSumarize from './components/unreads_summarize';
 import {Pill} from './components/pill';
+import {PostbackPost} from './components/postback_post';
 
 type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
 
@@ -130,6 +131,7 @@ export default class Plugin {
         };
 
         registry.registerPostTypeComponent('custom_llmbot', LLMBotPostWithWebsockets);
+        registry.registerPostTypeComponent('custom_llm_postback', PostbackPost);
         if (registry.registerPostActionComponent) {
             registry.registerPostActionComponent(PostMenu);
         } else {

@@ -373,3 +373,64 @@ func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, ch
 
 	return nil
 }
+
+func (p *Plugin) handlePostbackSummary(c *gin.Context) {
+	userID := c.GetHeader("Mattermost-User-Id")
+	post := c.MustGet(ContextPostKey).(*model.Post)
+
+	bot := p.GetBotByID(post.UserId)
+	if bot == nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to get bot"))
+		return
+	}
+
+	if post.GetProp(LLMRequesterUserID) != userID {
+		c.AbortWithError(http.StatusForbidden, errors.New("only the original requester can post back"))
+		return
+	}
+
+	transcriptThreadRootPost, err := p.pluginAPI.Post.GetPost(post.RootId)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to get transcript thread root post: %w", err))
+		return
+	}
+
+	originalTranscriptPostID, ok := transcriptThreadRootPost.GetProp(ReferencedTranscriptPostID).(string)
+	if !ok || originalTranscriptPostID == "" {
+		c.AbortWithError(http.StatusBadRequest, errors.New("post missing refrence to transcription post ID"))
+		return
+	}
+
+	transcriptionPost, err := p.pluginAPI.Post.GetPost(originalTranscriptPostID)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to get transcription post: %w", err))
+		return
+	}
+
+	if !p.pluginAPI.User.HasPermissionToChannel(userID, transcriptionPost.ChannelId, model.PermissionCreatePost) {
+		c.AbortWithError(http.StatusForbidden, errors.New("user doesn't have permission to create a post in the transcript channel"))
+		return
+	}
+
+	postedSummary := &model.Post{
+		UserId:    bot.mmBot.UserId,
+		ChannelId: transcriptionPost.ChannelId,
+		RootId:    transcriptionPost.RootId,
+		Message:   post.Message,
+		Type:      "custom_llm_postback",
+	}
+	postedSummary.AddProp("userid", userID)
+	if err := p.pluginAPI.Post.CreatePost(postedSummary); err != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to post back summary: %w", err))
+		return
+	}
+
+	data := struct {
+		PostID    string `json:"rootid"`
+		ChannelID string `json:"channelid"`
+	}{
+		PostID:    postedSummary.RootId,
+		ChannelID: postedSummary.ChannelId,
+	}
+	c.Render(http.StatusOK, render.JSON{Data: data})
+}

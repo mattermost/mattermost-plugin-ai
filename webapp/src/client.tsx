@@ -118,6 +118,23 @@ export async function doRegenerate(postid: string) {
     });
 }
 
+export async function doPostbackSummary(postid: string) {
+    const url = `${postRoute(postid)}/postback_summary`;
+    const response = await fetch(url, Client4.getOptions({
+        method: 'POST',
+    }));
+
+    if (response.ok) {
+        return response.json();
+    }
+
+    throw new ClientError(Client4.url, {
+        message: '',
+        status_code: response.status,
+        url,
+    });
+}
+
 export async function summarizeChannelSince(channelID: string, since: number, prompt: string, botUsername: string) {
     const url = `${channelRoute(channelID)}/since?botUsername=${botUsername}`;
     const response = await fetch(url, Client4.getOptions({
