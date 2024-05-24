@@ -26,6 +26,8 @@ data: {"id":"chatcmpl-8t1WLFfcSfmK0sfBcFbj8VEhOqNYd","object":"chat.completion.c
 data: [DONE]
 `
 
+export const responseTestText = "Hello! How can I assist you today?"
+
 export const responseTest2 = `
 data: {"id":"chatcmpl-8t1WLFfcSfmK0sfBcFbj8VEhOqNYd","object":"chat.completion.chunk","created":1708124577,"model":"gpt-3.5-turbo-0613","system_fingerprint":null,"choices":[{"index":0,"delta":{"role":"assistant","content":""},"logprobs":null,"finish_reason":null}]}
 
@@ -47,6 +49,8 @@ data: {"id":"chatcmpl-8t1WLFfcSfmK0sfBcFbj8VEhOqNYd","object":"chat.completion.c
 
 data: [DONE]
 `
+
+export const responseTest2Text = "Hello! This is a second message."
 
 
 export class OpenAIMockContainer {
@@ -79,11 +83,12 @@ export class OpenAIMockContainer {
 		})
 	}
 
-	addCompletionMock = async (response: string) => {
+	addCompletionMock = async (response: string, botPrefix?: string) => {
+		const prefix = botPrefix ? ("/"+botPrefix) : ""
 		return this.addMock({
 			request: {
 				method: "POST",
-				path: "/chat/completions",
+				path: prefix + "/chat/completions",
 			},
 			context: {
 				times: 1,

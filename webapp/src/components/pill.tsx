@@ -1,6 +1,6 @@
 import styled from 'styled-components';
 
-const Pill = styled.div`
+export const Pill = styled.div`
 	background: rgb(var(--semantic-color-info));
 	color: white;
 	border-radius: 4px;
@@ -10,6 +10,14 @@ const Pill = styled.div`
 	padding: 0 4px;
 	display: flex;
 	align-items: center;
+	gap: 6px;
 `;
 
-export default Pill;
+export const DangerPill = styled(Pill)`
+	background: rgb(var(--semantic-color-danger));
+`;
+
+export const GrayPill = styled(Pill)`
+	color: var(--center-channel-color);
+	background: rgba(var(--center-channel-color-rgb), 0.08);
+`;

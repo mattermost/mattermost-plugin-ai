@@ -9,8 +9,8 @@ import (
 
 type Config struct {
 	Services            []ai.ServiceConfig `json:"services"`
-	LLMGenerator        string             `json:"llmBackend"`
-	ImageGenerator      string             `json:"imageGeneratorBackend"`
+	Bots                []ai.BotConfig     `json:"bots"`
+	DefaultBotName      string             `json:"defaultBotName"`
 	TranscriptGenerator string             `json:"transcriptBackend"`
 	EnableLLMTrace      bool               `json:"enableLLMTrace"`
 
@@ -100,7 +100,7 @@ func (p *Plugin) OnConfigurationChange() error {
 	}
 
 	// Extra config change tasks
-	if err := p.EnsureMainBot(); err != nil {
+	if err := p.EnsureBots(); err != nil {
 		return fmt.Errorf("failed on config change: %w", err)
 	}
 

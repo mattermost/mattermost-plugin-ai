@@ -39,6 +39,7 @@ func (p *Plugin) channelAuthorizationRequired(c *gin.Context) {
 func (p *Plugin) handleSince(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
+	bot := c.MustGet(ContextBotKey).(*Bot)
 
 	if !p.licenseChecker.IsBasicsLicensed() {
 		c.AbortWithError(http.StatusForbidden, enterprise.ErrNotLicensed)
@@ -82,7 +83,7 @@ func (p *Plugin) handleSince(c *gin.Context) {
 
 	formattedThread := formatThread(threadData)
 
-	context := p.MakeConversationContext(user, channel, nil)
+	context := p.MakeConversationContext(bot, user, channel, nil)
 	context.PromptParameters = map[string]string{
 		"Posts": formattedThread,
 	}
@@ -108,7 +109,7 @@ func (p *Plugin) handleSince(c *gin.Context) {
 		return
 	}
 
-	resultStream, err := p.getLLM().ChatCompletion(prompt)
+	resultStream, err := p.getLLM(bot.cfg.Service).ChatCompletion(prompt)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
@@ -116,7 +117,7 @@ func (p *Plugin) handleSince(c *gin.Context) {
 
 	post := &model.Post{}
 	post.AddProp(NoRegen, "true")
-	if err := p.streamResultToNewDM(resultStream, user.Id, post); err != nil {
+	if err := p.streamResultToNewDM(bot.mmBot.UserId, resultStream, user.Id, post); err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
