@@ -163,7 +163,7 @@ func (p *Plugin) newCallTranscriptionSummaryThread(bot *Bot, requestingUser *mod
 
 		var transcription *subtitles.Subtitles
 		if transcriptionFilePost.Type == "custom_zoom_chat" {
-			transcription, err = subtitles.NewSubtitlesFromChat(transcriptionFileReader)
+			transcription, err = subtitles.NewSubtitlesFromZoomChat(transcriptionFileReader)
 			if err != nil {
 				return fmt.Errorf("unable to parse transcription file: %w", err)
 			}
