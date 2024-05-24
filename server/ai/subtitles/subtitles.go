@@ -14,7 +14,7 @@ type Subtitles struct {
 	storage *astisub.Subtitles
 }
 
-func readChat(chat io.Reader) (*astisub.Subtitles, error) {
+func readZoomChat(chat io.Reader) (*astisub.Subtitles, error) {
 	storage := astisub.NewSubtitles()
 
 	scanner := bufio.NewScanner(chat)
@@ -38,8 +38,8 @@ func readChat(chat io.Reader) (*astisub.Subtitles, error) {
 	return storage, nil
 }
 
-func NewSubtitlesFromChat(chat io.Reader) (*Subtitles, error) {
-	storage, err := readChat(chat)
+func NewSubtitlesFromZoomChat(chat io.Reader) (*Subtitles, error) {
+	storage, err := readZoomChat(chat)
 	if err != nil {
 		return nil, err
 	}

@@ -194,7 +194,7 @@ func (p *Plugin) handleSummarizeTranscription(c *gin.Context) {
 		return
 	}
 	if !targetPostUser.IsBot || (targetPostUser.Username != CallsBotUsername && targetPostUser.Username != ZoomBotUsername) {
-		c.AbortWithError(http.StatusBadRequest, errors.New("not a calls bot post"))
+		c.AbortWithError(http.StatusBadRequest, errors.New("not a calls or zoom bot post"))
 		return
 	}
 
