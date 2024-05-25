@@ -187,6 +187,13 @@ const ServiceItem = (props: ServiceItemProps) => {
                 value={props.service.tokenLimit.toString()}
                 onChange={(e) => props.onChange({...props.service, tokenLimit: parseInt(e.target.value, 10)})}
             />
+            {isOpenAIType && (
+                <TextItem
+                    label='Streaming Timeout Seconds'
+                    value={props.service.streamingTimeoutSeconds?.toString() || '0'}
+                    onChange={(e) => props.onChange({...props.service, streamingTimeoutSeconds: parseInt(e.target.value, 10)})}
+                />
+            )}
         </>
     );
 };
