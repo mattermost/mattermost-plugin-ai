@@ -12,8 +12,8 @@ const DropdownMenuItemInfo = styled.div`
 	line-height: 16px;
 	color: rgba(var(--center-channel-color-rgb), 0.72);
 
-	max-width: 236px;
-	margin: 8px 16px;
+	max-width: 240px;
+	padding: 8px 16px;
 `;
 
 const LightbulbOutlineIconStyled = styled(LightbulbOutlineIcon)`

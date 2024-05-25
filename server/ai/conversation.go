@@ -26,15 +26,16 @@ type Post struct {
 }
 
 type ConversationContext struct {
-	BotID            string
-	Time             string
-	ServerName       string
-	CompanyName      string
-	RequestingUser   *model.User
-	Channel          *model.Channel
-	Team             *model.Team
-	Post             *model.Post
-	PromptParameters map[string]string
+	BotID              string
+	Time               string
+	ServerName         string
+	CompanyName        string
+	RequestingUser     *model.User
+	Channel            *model.Channel
+	Team               *model.Team
+	Post               *model.Post
+	PromptParameters   map[string]string
+	CustomInstructions string
 }
 
 func NewConversationContext(botID string, requestingUser *model.User, channel *model.Channel, post *model.Post) ConversationContext {

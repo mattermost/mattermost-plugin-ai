@@ -143,6 +143,8 @@ export default class MattermostContainer {
                 "MM_FILESETTINGS_MAXFILESIZE":        "256000000",
                 "MM_LOGSETTINGS_CONSOLELEVEL":        "DEBUG",
                 "MM_LOGSETTINGS_FILELEVEL":           "DEBUG",
+                "MM_SERVICESETTINGS_ENABLEDEVELOPER": "true",
+                "MM_SERVICESETTINGS_ENABLETESTING":   "true",
         };
         this.email = defaultEmail;
         this.username = defaultUsername;

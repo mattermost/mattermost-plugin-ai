@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 
 	"errors"
 
@@ -49,6 +50,7 @@ func (p *Plugin) handleReact(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
+	bot := c.MustGet(ContextBotKey).(*Bot)
 
 	user, err := p.pluginAPI.User.Get(userID)
 	if err != nil {
@@ -56,7 +58,39 @@ func (p *Plugin) handleReact(c *gin.Context) {
 		return
 	}
 
-	if err := p.selectEmoji(post, p.MakeConversationContext(user, channel, nil)); err != nil {
+	context := p.MakeConversationContext(bot, user, channel, post)
+	context.PromptParameters = map[string]string{"Message": post.Message}
+	prompt, err := p.prompts.ChatCompletion(ai.PromptEmojiSelect, context)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	emojiName, err := p.getLLM(bot.cfg.Service).ChatCompletionNoStream(prompt, ai.WithMaxGeneratedTokens(25))
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	// Do some emoji post processing to hopefully make this an actual emoji.
+	emojiName = strings.Trim(strings.TrimSpace(emojiName), ":")
+
+	if _, found := model.GetSystemEmojiId(emojiName); !found {
+		p.pluginAPI.Post.AddReaction(&model.Reaction{
+			EmojiName: "large_red_square",
+			UserId:    bot.mmBot.UserId,
+			PostId:    post.Id,
+		})
+
+		c.AbortWithError(http.StatusInternalServerError, errors.New("LLM returned somthing other than emoji: "+emojiName))
+		return
+	}
+
+	if err := p.pluginAPI.Post.AddReaction(&model.Reaction{
+		EmojiName: emojiName,
+		UserId:    bot.mmBot.UserId,
+		PostId:    post.Id,
+	}); err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
@@ -68,6 +102,7 @@ func (p *Plugin) handleSummarize(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
+	bot := c.MustGet(ContextBotKey).(*Bot)
 
 	if !p.licenseChecker.IsBasicsLicensed() {
 		c.AbortWithError(http.StatusForbidden, enterprise.ErrNotLicensed)
@@ -80,7 +115,7 @@ func (p *Plugin) handleSummarize(c *gin.Context) {
 		return
 	}
 
-	createdPost, err := p.startNewSummaryThread(post.Id, p.MakeConversationContext(user, channel, nil))
+	createdPost, err := p.startNewSummaryThread(bot, post.Id, p.MakeConversationContext(bot, user, channel, nil))
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to produce summary: %w", err))
 		return
@@ -101,6 +136,7 @@ func (p *Plugin) handleTranscribeFile(c *gin.Context) {
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 	fileID := c.Param("fileid")
+	bot := c.MustGet(ContextBotKey).(*Bot)
 
 	user, err := p.pluginAPI.User.Get(userID)
 	if err != nil {
@@ -119,7 +155,7 @@ func (p *Plugin) handleTranscribeFile(c *gin.Context) {
 		return
 	}
 
-	createdPost, err := p.newCallRecordingThread(user, post, channel, fileID)
+	createdPost, err := p.newCallRecordingThread(bot, user, post, channel, fileID)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
@@ -144,6 +180,7 @@ func (p *Plugin) handleSummarizeTranscription(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
+	bot := c.MustGet(ContextBotKey).(*Bot)
 
 	user, err := p.pluginAPI.User.Get(userID)
 	if err != nil {
@@ -161,7 +198,7 @@ func (p *Plugin) handleSummarizeTranscription(c *gin.Context) {
 		return
 	}
 
-	createdPost, err := p.newCallTranscriptionSummaryThread(user, post, channel)
+	createdPost, err := p.newCallTranscriptionSummaryThread(bot, user, post, channel)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to summarize transcription: %w", err))
 		return
@@ -183,7 +220,7 @@ func (p *Plugin) handleStop(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
 
-	if post.UserId != p.botid {
+	if p.GetBotByID(post.UserId) == nil {
 		c.AbortWithError(http.StatusBadRequest, errors.New("not a bot post"))
 		return
 	}
@@ -201,8 +238,9 @@ func (p *Plugin) handleRegenerate(c *gin.Context) {
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 
-	if post.UserId != p.botid {
-		c.AbortWithError(http.StatusBadRequest, errors.New("not a AI bot post"))
+	bot := p.GetBotByID(post.UserId)
+	if bot == nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to get bot"))
 		return
 	}
 
@@ -222,13 +260,13 @@ func (p *Plugin) handleRegenerate(c *gin.Context) {
 		return
 	}
 
-	if err := p.regeneratePost(post, user, channel); err != nil {
+	if err := p.regeneratePost(bot, post, user, channel); err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 }
 
-func (p *Plugin) regeneratePost(post *model.Post, user *model.User, channel *model.Channel) error {
+func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, channel *model.Channel) error {
 	ctx, err := p.getPostStreamingContext(context.Background(), post.Id)
 	if err != nil {
 		return err
@@ -246,7 +284,7 @@ func (p *Plugin) regeneratePost(post *model.Post, user *model.User, channel *mod
 		post.Message = summaryPostMessage(summaryPostID, *siteURL)
 
 		var err error
-		result, err = p.summarizePost(summaryPostID, p.MakeConversationContext(user, channel, nil))
+		result, err = p.summarizePost(bot, summaryPostID, p.MakeConversationContext(bot, user, channel, nil))
 		if err != nil {
 			return fmt.Errorf("could not summarize post on regen: %w", err)
 		}
@@ -277,8 +315,8 @@ func (p *Plugin) regeneratePost(post *model.Post, user *model.User, channel *mod
 			return fmt.Errorf("could not get channel of original recording on regen: %w", err)
 		}
 
-		context := p.MakeConversationContext(user, originalFileChannel, nil)
-		result, err = p.summarizeTranscription(transcription, context)
+		context := p.MakeConversationContext(bot, user, originalFileChannel, nil)
+		result, err = p.summarizeTranscription(bot, transcription, context)
 		if err != nil {
 			return fmt.Errorf("could not summarize transcription on regen: %w", err)
 		}
@@ -304,8 +342,8 @@ func (p *Plugin) regeneratePost(post *model.Post, user *model.User, channel *mod
 			return fmt.Errorf("unable to parse transcription file: %w", err)
 		}
 
-		context := p.MakeConversationContext(user, channel, nil)
-		result, err = p.summarizeTranscription(transcription, context)
+		context := p.MakeConversationContext(bot, user, channel, nil)
+		result, err = p.summarizeTranscription(bot, transcription, context)
 		if err != nil {
 			return fmt.Errorf("unable to summarize transcription: %w", err)
 		}
@@ -324,9 +362,9 @@ func (p *Plugin) regeneratePost(post *model.Post, user *model.User, channel *mod
 			threadData.cutoffAtPostID(respondingToPostID)
 		}
 		postToRegenerate := threadData.latestPost()
-		context := p.MakeConversationContext(user, channel, postToRegenerate)
+		context := p.MakeConversationContext(bot, user, channel, postToRegenerate)
 
-		if result, err = p.continueConversation(threadData, context); err != nil {
+		if result, err = p.continueConversation(bot, threadData, context); err != nil {
 			return fmt.Errorf("could not continue conversation on regen: %w", err)
 		}
 	}
