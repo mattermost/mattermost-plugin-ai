@@ -1,4 +1,4 @@
-import React from 'react';
+import React, {useState} from 'react';
 import styled from 'styled-components';
 
 import {
@@ -6,6 +6,8 @@ import {
     LightbulbOutlineIcon,
     PlaylistCheckIcon,
 } from '@mattermost/compass-icons/components';
+
+import {useDispatch} from 'react-redux';
 
 import RHSImage from '../assets/rhs_image';
 
@@ -106,6 +108,8 @@ const addProsAndCons = () => {
 };
 
 const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
+    const dispatch = useDispatch();
+    const [draft, updateDraft] = useState<any>(null);
     return (
         <NewQuestion>
             <RHSImage/>
@@ -122,12 +126,37 @@ const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
                     data-testid='rhs-new-tab-create-post'
                     channelId={botChannelId}
                     placeholder={'Ask AI Copilot anything...'}
+                    rootId={'ai_copilot'}
                     onSubmit={async (p: any) => {
-                        p.channel_id = botChannelId || '';
-                        p.props = {};
-                        const created = await createPost(p);
+                        const post = {...p};
+                        post.channel_id = botChannelId || '';
+                        post.props = {};
+                        post.uploadsInProgress = [];
+                        post.file_ids = p.fileInfos.map((f: any) => f.id);
+                        const created = await createPost(post);
                         selectPost(created.id);
                         setCurrentTab('thread');
+                        dispatch({
+                            type: 'SET_GLOBAL_ITEM',
+                            data: {
+                                name: 'comment_draft_ai_copilot',
+                                value: {message: '', fileInfos: [], uploadsInProgress: []},
+                            },
+                        });
+                    }}
+                    draft={draft}
+                    onUpdateCommentDraft={(newDraft: any) => {
+                        updateDraft(newDraft);
+                        const timestamp = new Date().getTime();
+                        newDraft.updateAt = timestamp;
+                        newDraft.createAt = newDraft.createAt || timestamp;
+                        dispatch({
+                            type: 'SET_GLOBAL_ITEM',
+                            data: {
+                                name: 'comment_draft_ai_copilot',
+                                value: newDraft,
+                            },
+                        });
                     }}
                 />
             </CreatePostContainer>
