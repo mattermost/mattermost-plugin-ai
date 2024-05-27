@@ -84,7 +84,7 @@ func New(llmService ai.ServiceConfig) *OpenAI {
 
 func modifyCompletionRequestWithConversation(request openaiClient.ChatCompletionRequest, conversation ai.BotConversation) openaiClient.ChatCompletionRequest {
 	request.Messages = postsToChatCompletionMessages(conversation.Posts)
-	request.Functions = toolsToFunctionDefinitions(conversation.Tools.GetTools())
+	request.Functions = toolsToFunctionDefinitions(conversation.Tools.GetTools()) //nolint:all
 	return request
 }
 
