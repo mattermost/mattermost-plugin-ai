@@ -274,7 +274,7 @@ func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, ch
 	defer p.finishPostStreaming(post.Id)
 
 	summaryPostIDProp := post.GetProp(ThreadIDProp)
-	refrencedRecordingFileIDProp := post.GetProp(ReferencedRecordingFileID)
+	referenceRecordingFileIDProp := post.GetProp(ReferencedRecordingFileID)
 	referencedTranscriptPostProp := post.GetProp(ReferencedTranscriptPostID)
 	var result *ai.TextStreamResult
 	switch {
@@ -288,11 +288,11 @@ func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, ch
 		if err != nil {
 			return fmt.Errorf("could not summarize post on regen: %w", err)
 		}
-	case refrencedRecordingFileIDProp != nil:
+	case referenceRecordingFileIDProp != nil:
 		post.Message = ""
-		refrencedRecordingFileID := refrencedRecordingFileIDProp.(string)
+		referencedRecordingFileID := referenceRecordingFileIDProp.(string)
 
-		fileInfo, err := p.pluginAPI.File.GetInfo(refrencedRecordingFileID)
+		fileInfo, err := p.pluginAPI.File.GetInfo(referencedRecordingFileID)
 		if err != nil {
 			return fmt.Errorf("could not get transcription file on regen: %w", err)
 		}
@@ -322,8 +322,8 @@ func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, ch
 		}
 	case referencedTranscriptPostProp != nil:
 		post.Message = ""
-		refrencedTranscriptionPostID := referencedTranscriptPostProp.(string)
-		referencedTranscriptionPost, err := p.pluginAPI.Post.GetPost(refrencedTranscriptionPostID)
+		referencedTranscriptionPostID := referencedTranscriptPostProp.(string)
+		referencedTranscriptionPost, err := p.pluginAPI.Post.GetPost(referencedTranscriptionPostID)
 		if err != nil {
 			return fmt.Errorf("could not get transcription post on regen: %w", err)
 		}
@@ -397,7 +397,7 @@ func (p *Plugin) handlePostbackSummary(c *gin.Context) {
 
 	originalTranscriptPostID, ok := transcriptThreadRootPost.GetProp(ReferencedTranscriptPostID).(string)
 	if !ok || originalTranscriptPostID == "" {
-		c.AbortWithError(http.StatusBadRequest, errors.New("post missing refrence to transcription post ID"))
+		c.AbortWithError(http.StatusBadRequest, errors.New("post missing reference to transcription post ID"))
 		return
 	}
 
