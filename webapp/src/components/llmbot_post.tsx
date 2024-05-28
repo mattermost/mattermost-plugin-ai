@@ -9,7 +9,7 @@ import {SendIcon} from '@mattermost/compass-icons/components';
 
 import {doPostbackSummary, doRegenerate, doStopGenerating} from '@/client';
 
-import {useSelectPost} from '@/hooks';
+import {useSelectNotAIPost, useSelectPost} from '@/hooks';
 
 import PostText from './post_text';
 import IconRegenerate from './assets/icon_regenerate';
@@ -127,7 +127,7 @@ interface Props {
 }
 
 export const LLMBotPost = (props: Props) => {
-    const selectPost = useSelectPost();
+    const selectPost = useSelectNotAIPost();
     const [message, setMessage] = useState(props.post.message);
 
     // Generating is true while we are reciving new content from the websocket

@@ -19,3 +19,11 @@ export const openRHS = () => {
 export const setOpenRHSAction = (action: any) => {
     openRHSAction = action;
 };
+
+export const selectRegularPost = (postid: string, channelid: string) => {
+    return {
+        type: 'SELECT_POST',
+        postId: postid,
+        channelId: channelid,
+    };
+};
