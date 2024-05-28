@@ -29,3 +29,23 @@ export const Button = styled.button`
 		margin-right: 2px;
 	}
 `;
+
+export const RHSTitle = styled.div`
+    font-family: Metropolis;
+    font-weight: 600;
+    font-size: 22px;
+`;
+
+export const RHSText = styled.div`
+    font-weight: 400;
+    font-size: 14px;
+`;
+
+export const RHSPaddingContainer = styled.div`
+	margin: 0 24px;
+	margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+	gap: 8px;
+`;
+
