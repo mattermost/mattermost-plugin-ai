@@ -238,6 +238,22 @@ func (p *Plugin) GetBotByUsername(botUsername string) *Bot {
 	return nil
 }
 
+// GetBotByUsernameOrFirst retrieves the bot associated with the given bot username or the first bot if not found
+func (p *Plugin) GetBotByUsernameOrFirst(botUsername string) *Bot {
+	bot := p.GetBotByUsername(botUsername)
+	if bot != nil {
+		return bot
+	}
+
+	p.botsLock.RLock()
+	defer p.botsLock.RUnlock()
+	if len(p.bots) > 0 {
+		return p.bots[0]
+	}
+
+	return nil
+}
+
 // GetBotByID retrieves the bot associated with the given bot ID
 func (p *Plugin) GetBotByID(botID string) *Bot {
 	p.botsLock.RLock()

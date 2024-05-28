@@ -28,7 +28,20 @@ const blinkKeyframes = keyframes`
 
 const TextContainer = styled.div<{showCursor?: boolean}>`
 	${(props) => props.showCursor && css`
-		>p:last-of-type::after {
+		>ul:last-child>li:last-child>span:not(:has(li))::after,
+		>ol:last-child>li:last-child>span:not(:has(li))::after,
+		>ul:last-child>li:last-child>span>ul>li:last-child>span:not(:has(li))::after,
+		>ol:last-child>li:last-child>span>ul>li:last-child>span:not(:has(li))::after,
+		>ul:last-child>li:last-child>span>ol>li:last-child>span:not(:has(li))::after,
+		>ol:last-child>li:last-child>span>ol>li:last-child>span:not(:has(li))::after,
+		>h1:last-child::after,
+		>h2:last-child::after,
+		>h3:last-child::after,
+		>h4:last-child::after,
+		>h5:last-child::after,
+		>h6:last-child::after,
+		>blockquote:last-child>p::after,
+		>p:last-child::after {
 			content: '';
 			width: 7px;
 			height: 16px;
