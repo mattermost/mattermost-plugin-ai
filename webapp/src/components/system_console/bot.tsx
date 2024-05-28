@@ -8,7 +8,7 @@ import {DangerPill} from '../pill';
 
 import {ButtonIcon} from '../assets/buttons';
 
-import {ItemList, SelectionItem, SelectionItemOption, TextItem} from './item';
+import {BooleanItem, ItemList, SelectionItem, SelectionItemOption, TextItem} from './item';
 import AvatarItem from './avatar';
 
 export type LLMService = {
@@ -29,6 +29,7 @@ export type LLMBotConfig = {
     displayName: string
     service: LLMService
     customInstructions: string
+    enableVision: boolean
 }
 
 type Props = {
@@ -122,7 +123,14 @@ const Bot = (props: Props) => {
                             value={props.bot.customInstructions}
                             onChange={(e) => props.onChange({...props.bot, customInstructions: e.target.value})}
                         />
-
+                        { (props.bot.service.type === 'openai' || props.bot.service.type === 'openaicompatible') && (
+                            <BooleanItem
+                                label='Enable Vision'
+                                value={props.bot.enableVision}
+                                onChange={(to: boolean) => props.onChange({...props.bot, enableVision: to})}
+                                helpText='Enable Vision to allow the bot to process images. Requires a compatible model.'
+                            />
+                        )}
                     </ItemList>
                 </ItemListContainer>
             )}

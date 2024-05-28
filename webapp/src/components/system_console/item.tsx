@@ -108,3 +108,46 @@ export const StyledInput = styled.input<{as?: string}>`
 		outline: 0;
 	}
 `;
+
+type BooleanItemProps = {
+    label: string
+    value: boolean
+    onChange: (to: boolean) => void
+    helpText?: string
+};
+
+export const BooleanItem = (props: BooleanItemProps) => {
+    return (
+        <>
+            <ItemLabel>{props.label}</ItemLabel>
+            <TextFieldContainer>
+                <BooleanItemRow>
+                    <input
+                        type='radio'
+                        value='true'
+                        checked={props.value}
+                        onChange={() => props.onChange(true)}
+                    />
+                    {'true'}
+                    <input
+                        type='radio'
+                        value='false'
+                        checked={!props.value}
+                        onChange={() => props.onChange(false)}
+                    />
+                    {'false'}
+                </BooleanItemRow>
+                {props.helpText &&
+                <HelpText>{props.helpText}</HelpText>
+                }
+            </TextFieldContainer>
+        </>
+    );
+};
+
+const BooleanItemRow = styled.div`
+	display: flex;
+	flex-direction: row;
+	gap: 8px;
+	align-items: center;
+`;
