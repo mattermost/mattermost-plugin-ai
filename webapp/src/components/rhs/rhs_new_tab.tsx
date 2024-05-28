@@ -109,8 +109,8 @@ const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
     return (
         <NewQuestion>
             <RHSImage/>
-            <QuestionTitle>{'Ask AI Copilot anything'}</QuestionTitle>
-            <QuestionDescription>{'The AI Copilot is here to help. Choose from the prompts below or write your own.'}</QuestionDescription>
+            <QuestionTitle>{'Ask Copilot anything'}</QuestionTitle>
+            <QuestionDescription>{'The Copilot is here to help. Choose from the prompts below or write your own.'}</QuestionDescription>
             <QuestionOptions>
                 <OptionButton onClick={addBrainstormingIdeas}><LightbulbOutlineIcon/>{'Brainstorm ideas'}</OptionButton>
                 <OptionButton onClick={addMeetingAgenda}><FormatListNumberedIcon/>{'Meeting agenda'}</OptionButton>
@@ -121,7 +121,7 @@ const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
                 <CreatePost
                     data-testid='rhs-new-tab-create-post'
                     channelId={botChannelId}
-                    placeholder={'Ask AI Copilot anything...'}
+                    placeholder={'Ask Copilot anything...'}
                     onSubmit={async (p: any) => {
                         p.channel_id = botChannelId || '';
                         p.props = {};

@@ -85,7 +85,7 @@ func (p *Plugin) MigrateServicesToBots() error {
 	// If there is one bot then give it the standard name
 	if len(existingConfig.Bots) == 1 {
 		existingConfig.Bots[0].Name = "ai"
-		existingConfig.Bots[0].DisplayName = "AI Copilot"
+		existingConfig.Bots[0].DisplayName = "Copilot"
 	}
 
 	out := map[string]any{}

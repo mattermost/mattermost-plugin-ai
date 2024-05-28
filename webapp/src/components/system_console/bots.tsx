@@ -30,7 +30,7 @@ const defaultNewBot = {
 export const firstNewBot = {
     ...defaultNewBot,
     name: 'ai',
-    displayName: 'AI Copilot',
+    displayName: 'Copilot',
 };
 
 type Props = {
@@ -46,7 +46,7 @@ const Bots = (props: Props) => {
     const addNewBot = () => {
         const id = Math.random().toString(36).substring(2, 22);
         if (props.bots.length === 0) {
-            // Suggest the '@ai' and 'AI Copilot' name for the first bot
+            // Suggest the '@ai' and 'Copilot' name for the first bot
             props.onChange([{
                 ...firstNewBot,
                 id,
