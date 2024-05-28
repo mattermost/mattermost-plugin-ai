@@ -19,6 +19,7 @@ type BotConfig struct {
 	DisplayName        string        `json:"displayName"`
 	CustomInstructions string        `json:"customInstructions"`
 	Service            ServiceConfig `json:"service"`
+	EnableVision       bool          `json:"enableVision"`
 }
 
 func (c *BotConfig) IsValid() bool {

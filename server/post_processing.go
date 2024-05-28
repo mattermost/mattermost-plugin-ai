@@ -340,3 +340,45 @@ type WorkerResult struct {
 
 	return nil
 }*/
+
+func (p *Plugin) PostToAIPost(bot *Bot, post *model.Post) ai.Post {
+	var files []ai.File
+	if bot.cfg.EnableVision {
+		files = make([]ai.File, 0, len(post.FileIds))
+		for _, fileID := range post.FileIds {
+			fileInfo, err := p.pluginAPI.File.GetInfo(fileID)
+			if err != nil {
+				p.API.LogError("Error getting file info", "error", err)
+				continue
+			}
+			file, err := p.pluginAPI.File.Get(fileID)
+			if err != nil {
+				p.API.LogError("Error getting file", "error", err)
+				continue
+			}
+			files = append(files, ai.File{
+				Reader:   file,
+				MimeType: fileInfo.MimeType,
+				Size:     fileInfo.Size,
+			})
+		}
+	}
+
+	return ai.Post{
+		Role:    ai.GetPostRole(bot.mmBot.UserId, post),
+		Message: ai.FormatPostBody(post),
+		Files:   files,
+	}
+}
+
+func (p *Plugin) ThreadToBotConversation(bot *Bot, posts []*model.Post) ai.BotConversation {
+	result := ai.BotConversation{
+		Posts: make([]ai.Post, 0, len(posts)),
+	}
+
+	for _, post := range posts {
+		result.Posts = append(result.Posts, p.PostToAIPost(bot, post))
+	}
+
+	return result
+}

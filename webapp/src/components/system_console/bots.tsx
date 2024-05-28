@@ -24,7 +24,9 @@ const defaultNewBot = {
         username: '',
         password: '',
         tokenLimit: 0,
+        streamingTimeoutSeconds: 0,
     },
+    enableVision: false,
 };
 
 export const firstNewBot = {
@@ -43,7 +45,8 @@ const Bots = (props: Props) => {
     const multiLLMLicensed = useIsMultiLLMLicensed();
     const licenceAddDisabled = !multiLLMLicensed && props.bots.length > 0;
 
-    const addNewBot = () => {
+    const addNewBot = (e: React.MouseEvent<HTMLButtonElement>) => {
+        e.preventDefault();
         const id = Math.random().toString(36).substring(2, 22);
         if (props.bots.length === 0) {
             // Suggest the '@ai' and 'AI Copilot' name for the first bot

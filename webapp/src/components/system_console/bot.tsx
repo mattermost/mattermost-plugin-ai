@@ -8,7 +8,7 @@ import {DangerPill} from '../pill';
 
 import {ButtonIcon} from '../assets/buttons';
 
-import {ItemList, SelectionItem, SelectionItemOption, TextItem} from './item';
+import {BooleanItem, ItemList, SelectionItem, SelectionItemOption, TextItem} from './item';
 import AvatarItem from './avatar';
 
 export type LLMService = {
@@ -20,6 +20,7 @@ export type LLMService = {
     username: string
     password: string
     tokenLimit: number
+    streamingTimeoutSeconds: number
 }
 
 export type LLMBotConfig = {
@@ -28,6 +29,7 @@ export type LLMBotConfig = {
     displayName: string
     service: LLMService
     customInstructions: string
+    enableVision: boolean
 }
 
 type Props = {
@@ -121,7 +123,14 @@ const Bot = (props: Props) => {
                             value={props.bot.customInstructions}
                             onChange={(e) => props.onChange({...props.bot, customInstructions: e.target.value})}
                         />
-
+                        { (props.bot.service.type === 'openai' || props.bot.service.type === 'openaicompatible') && (
+                            <BooleanItem
+                                label='Enable Vision'
+                                value={props.bot.enableVision}
+                                onChange={(to: boolean) => props.onChange({...props.bot, enableVision: to})}
+                                helpText='Enable Vision to allow the bot to process images. Requires a compatible model.'
+                            />
+                        )}
                     </ItemList>
                 </ItemListContainer>
             )}
@@ -186,6 +195,13 @@ const ServiceItem = (props: ServiceItemProps) => {
                 value={props.service.tokenLimit.toString()}
                 onChange={(e) => props.onChange({...props.service, tokenLimit: parseInt(e.target.value, 10)})}
             />
+            {isOpenAIType && (
+                <TextItem
+                    label='Streaming Timeout Seconds'
+                    value={props.service.streamingTimeoutSeconds?.toString() || '0'}
+                    onChange={(e) => props.onChange({...props.service, streamingTimeoutSeconds: parseInt(e.target.value, 10)})}
+                />
+            )}
         </>
     );
 };
