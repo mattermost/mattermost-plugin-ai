@@ -114,6 +114,18 @@ const StopGeneratingButton = styled.button`
 	font-weight: 600;
 `;
 
+const PostSummaryHelpMessage = styled.div`
+	font-size: 14px;
+	font-style: italic;
+	font-weight: 400;
+	line-height: 20px;
+	border-top: 1px solid rgba(var(--center-channel-color-rgb), 0.12);
+
+	padding-top: 8px;
+	padding-bottom: 8px;
+	margin-top: 16px;
+`;
+
 export interface PostUpdateWebsocketMessage {
     next: string
     post_id: string
@@ -236,6 +248,11 @@ export const LLMBotPost = (props: Props) => {
                 {'Stop Generating'}
             </StopGeneratingButton>
             }
+            { showPostbackButton &&
+            <PostSummaryHelpMessage>
+                {'Would you like to post this summary to the original call thread? You can also ask Copilot to make changes.'}
+            </PostSummaryHelpMessage>
+            }
             { showControlsBar &&
             <ControlsBar>
                 {showPostbackButton &&
@@ -244,7 +261,7 @@ export const LLMBotPost = (props: Props) => {
                     onClick={postSummary}
                 >
                     <SendIcon/>
-                    {'Post Summary'}
+                    {'Post summary'}
                 </PostSummaryButton>
                 }
                 { showRegenerate &&
