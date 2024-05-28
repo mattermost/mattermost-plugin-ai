@@ -50,7 +50,7 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 
 func (p *Plugin) aiBotRequired(c *gin.Context) {
 	botUsername := c.DefaultQuery("botUsername", p.getConfiguration().DefaultBotName)
-	bot := p.GetBotByUsername(botUsername)
+	bot := p.GetBotByUsernameOrFirst(botUsername)
 	if bot == nil {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to get bot: %s", botUsername))
 		return
