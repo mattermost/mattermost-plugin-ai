@@ -281,7 +281,7 @@ func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, ch
 	case summaryPostIDProp != nil:
 		summaryPostID := summaryPostIDProp.(string)
 		siteURL := p.API.GetConfig().ServiceSettings.SiteURL
-		post.Message = summaryPostMessage(summaryPostID, *siteURL)
+		post.Message = p.summaryPostMessage(user.Locale, summaryPostID, *siteURL)
 
 		var err error
 		result, err = p.summarizePost(bot, summaryPostID, p.MakeConversationContext(bot, user, channel, nil))

@@ -8,6 +8,7 @@ import (
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost/server/public/model"
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 )
 
 const (
@@ -188,14 +189,15 @@ func (p *Plugin) summarizePost(bot *Bot, postIDToSummarize string, context ai.Co
 	return summaryStream, nil
 }
 
-func summaryPostMessage(postIDToSummarize string, siteURL string) string {
-	return fmt.Sprintf("Sure, I will summarize this thread: %s/_redirect/pl/%s\n", siteURL, postIDToSummarize)
+func (p *Plugin) summaryPostMessage(locale string, postIDToSummarize string, siteURL string) string {
+	localizer := i18n.NewLocalizer(p.i18n, locale)
+	return fmt.Sprintf(localizer.MustLocalize(&i18n.LocalizeConfig{DefaultMessage: &i18n.Message{ID: "ai.summarize_thread", Other: "Sure, I will summarize this thread: %s/_redirect/pl/%s\n"}}), siteURL, postIDToSummarize)
 }
 
-func (p *Plugin) makeSummaryPost(postIDToSummarize string) *model.Post {
+func (p *Plugin) makeSummaryPost(locale string, postIDToSummarize string) *model.Post {
 	siteURL := p.API.GetConfig().ServiceSettings.SiteURL
 	post := &model.Post{
-		Message: summaryPostMessage(postIDToSummarize, *siteURL),
+		Message: p.summaryPostMessage(locale, postIDToSummarize, *siteURL),
 	}
 	post.AddProp(ThreadIDProp, postIDToSummarize)
 
@@ -208,7 +210,7 @@ func (p *Plugin) startNewSummaryThread(bot *Bot, postIDToSummarize string, conte
 		return nil, err
 	}
 
-	post := p.makeSummaryPost(postIDToSummarize)
+	post := p.makeSummaryPost(context.RequestingUser.Locale, postIDToSummarize)
 	if err := p.streamResultToNewDM(bot.mmBot.UserId, summaryStream, context.RequestingUser.Id, post); err != nil {
 		return nil, err
 	}

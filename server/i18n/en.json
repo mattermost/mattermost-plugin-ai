@@ -1,0 +1,14 @@
+[
+    {
+        "id": "ai.summarize_thread",
+        "other": "Sure, I will summarize this thread: %s/_redirect/pl/%s\n"
+    },
+    {
+        "id": "ai.summarize_recording",
+        "other": "Sure, I will summarize this recording: %s/_redirect/pl/%s\n"
+    },
+    {
+        "id": "ai.summarize_transcription",
+        "other": "Sure, I will summarize this transcription: %s/_redirect/pl/%s\n"
+    }
+]
