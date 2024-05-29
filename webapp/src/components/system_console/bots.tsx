@@ -1,6 +1,7 @@
 import React from 'react';
 import styled from 'styled-components';
 import {PlusIcon} from '@mattermost/compass-icons/components';
+import {FormattedMessage, useIntl} from 'react-intl';
 
 import {TertiaryButton} from '../assets/buttons';
 
@@ -44,6 +45,7 @@ type Props = {
 const Bots = (props: Props) => {
     const multiLLMLicensed = useIsMultiLLMLicensed();
     const licenceAddDisabled = !multiLLMLicensed && props.bots.length > 0;
+    const intl = useIntl();
 
     const addNewBot = (e: React.MouseEvent<HTMLButtonElement>) => {
         e.preventDefault();
@@ -89,12 +91,15 @@ const Bots = (props: Props) => {
                     disabled={licenceAddDisabled}
                 >
                     <PlusAIServiceIcon/>
-                    {'Add an AI Bot'}
+                    <FormattedMessage
+                        id={'bots.addAI'}
+                        defaultMessage={'Add an AI Bot'}
+                    />
                 </TertiaryButton>
                 {licenceAddDisabled && (
                     <EnterpriseChip
-                        text={'Use multiple AI bots on Enterprise plans'}
-                        subtext={'Multiple AI services is available on Enterprise plans'}
+                        text={intl.formatMessage({id: 'bots.enterprise_multiple_bots_text', defaultMessage:'Use multiple AI bots on Enterprise plans'})}
+                        subtext={intl.formatMessage({id: 'bots.enterprise_multiple_bots_subtext', defaultMessage:'Multiple AI services is available on Enterprise plans'})}
                     />
                 )}
             </EnterpriseChipContainer>

@@ -1,5 +1,6 @@
 import React, {useState} from 'react';
 import styled from 'styled-components';
+import {useIntl} from 'react-intl';
 
 import {
     FormatListNumberedIcon,
@@ -109,6 +110,7 @@ const addProsAndCons = () => {
 
 const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
     const dispatch = useDispatch();
+    const intl = useIntl();
     const [draft, updateDraft] = useState<any>(null);
     return (
         <NewQuestion>
@@ -125,7 +127,7 @@ const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
                 <CreatePost
                     data-testid='rhs-new-tab-create-post'
                     channelId={botChannelId}
-                    placeholder={'Ask Copilot anything...'}
+                    placeholder={intl.formatMessage({id: 'rhs_new_tab.ask_copilot_anything', defaultMessage: 'Ask Copilot anything...'})}
                     rootId={'ai_copilot'}
                     onSubmit={async (p: any) => {
                         const post = {...p};

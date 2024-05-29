@@ -1,4 +1,5 @@
 import React from 'react';
+import {FormattedMessage, useIntl} from 'react-intl';
 
 import {Post} from '@mattermost/types/posts';
 
@@ -25,6 +26,7 @@ type Props = {
 
 const PostMenu = (props: Props) => {
     const selectPost = useSelectPost();
+    const intl = useIntl();
     const {bots, activeBot, setActiveBot} = useBotlist();
     const post = props.post;
     const isBasicsLicensed = useIsBasicsLicensed();
@@ -46,7 +48,7 @@ const PostMenu = (props: Props) => {
     return (
         <DotMenu
             icon={<IconAI/>}
-            title='AI Actions'
+            title={intl.formatMessage({id: 'dotmenu.ai-actions', defaultMessage: 'AI Actions'})}
             dropdownMenu={StyledDropdownMenu}
         >
             <DropdownBotSelector
@@ -55,8 +57,20 @@ const PostMenu = (props: Props) => {
                 setActiveBot={setActiveBot}
             />
             <Divider/>
-            <DropdownMenuItem onClick={() => summarizePost(post.id)}><span className='icon'><IconThreadSummarization/></span>{'Summarize Thread'}</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => doReaction(post.id)}><span className='icon'><IconReactForMe/></span>{'React for me'}</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => summarizePost(post.id)}>
+                <span className='icon'><IconThreadSummarization/></span>
+                <FormattedMessage
+                    id='post_menu.summarize_thread'
+                    defaultMessage='Summarize Thread'
+                />
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => doReaction(post.id)}>
+                <span className='icon'><IconReactForMe/></span>
+                <FormattedMessage
+                    id='post_menu.react_for_me'
+                    defaultMessage='React for me'
+                />
+            </DropdownMenuItem>
             <Divider/>
             <DropdownInfoOnlyVisibleToYou/>
         </DotMenu>

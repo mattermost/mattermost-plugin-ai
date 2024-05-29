@@ -1,4 +1,5 @@
 import React, {MouseEvent, useEffect, useRef, useState} from 'react';
+import {FormattedMessage} from 'react-intl';
 import {useSelector} from 'react-redux';
 import styled, {css, createGlobalStyle} from 'styled-components';
 
@@ -204,7 +205,10 @@ export const LLMBotPost = (props: Props) => {
                 onClick={stopGenerating}
             >
                 <IconCancel/>
-                {'Stop Generating'}
+                <FormattedMessage
+                    id='llm_bot.stop_generating'
+                    defaultMessage='Stop Generating'
+                />
             </StopGeneratingButton>
             }
             { showRegenerate &&
@@ -214,7 +218,10 @@ export const LLMBotPost = (props: Props) => {
                     onClick={regnerate}
                 >
                     <IconRegenerate/>
-                    {'Regenerate'}
+                    <FormattedMessage
+                        id='llm_bot.regenerate'
+                        defaultMessage='Regenerate'
+                    />
                 </GenerationButton>
             </ControlsBar>
             }

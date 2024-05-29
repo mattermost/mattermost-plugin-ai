@@ -1,4 +1,5 @@
 import React, {useState, useEffect, useCallback} from 'react';
+import {FormattedMessage, useIntl} from 'react-intl';
 import {useDispatch, useSelector} from 'react-redux';
 import styled from 'styled-components';
 
@@ -41,6 +42,7 @@ const twentyFourHoursInMS = 24 * 60 * 60 * 1000;
 
 export default function RHS() {
     const dispatch = useDispatch();
+    const intl = useIntl();
     const [currentTab, setCurrentTab] = useState('new');
     const selectedPostId = useSelector((state: any) => state['plugins-' + manifest.id].selectedPostId);
     const currentUserId = useSelector<GlobalState, string>((state) => state.entities.users.currentUserId);
@@ -76,7 +78,10 @@ export default function RHS() {
     if (bots && bots.length === 0) {
         return (
             <RhsContainer>
-                {'AI Plugin is not configured. Please contact your system administrator to configure the plugin.'}
+                <FormattedMessage
+                    id='ai_plugin.unconfigured'
+                    defaultMessage='AI Plugin is not configured. Please contact your system administrator to configure the plugin.'
+                />
             </RhsContainer>
         );
     }
@@ -89,7 +94,7 @@ export default function RHS() {
         content = (
             <ThreadViewer
                 data-testid='rhs-thread-viewer'
-                inputPlaceholder='Reply...'
+                inputPlaceholder={intl.formatMessage({id: 'rhs.reply', defaultMessage: 'Reply...'})}
                 rootPostId={selectedPostId}
                 useRelativeTimestamp={false}
                 isThreadView={false}
