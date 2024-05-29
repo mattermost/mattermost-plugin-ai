@@ -5,7 +5,11 @@ import styled, {css, createGlobalStyle} from 'styled-components';
 import {WebSocketMessage} from '@mattermost/client';
 import {GlobalState} from '@mattermost/types/store';
 
-import {doRegenerate, doStopGenerating} from '@/client';
+import {SendIcon} from '@mattermost/compass-icons/components';
+
+import {doPostbackSummary, doRegenerate, doStopGenerating} from '@/client';
+
+import {useSelectNotAIPost, useSelectPost} from '@/hooks';
 
 import PostText from './post_text';
 import IconRegenerate from './assets/icon_regenerate';
@@ -41,9 +45,10 @@ const PostBody = styled.div<{disableHover?: boolean}>`
 const ControlsBar = styled.div`
 	display: flex;
 	flex-direction: row;
-	justify-content: space-between;
+	justify-content: left;
 	height: 28px;
 	margin-top: 8px;
+	gap: 4px;
 `;
 
 const GenerationButton = styled.button`
@@ -72,6 +77,20 @@ const GenerationButton = styled.button`
 	}
 `;
 
+const PostSummaryButton = styled(GenerationButton)`
+	background: var(--button-bg);
+    color: var(--button-color);
+
+	:hover {
+		background: rgba(var(--button-bg-rgb), 0.88);
+		color: var(--button-color);
+	}
+
+	:active {
+		background: rgba(var(--button-bg-rgb), 0.92);
+	}
+`;
+
 const StopGeneratingButton = styled.button`
 	display: flex;
 	padding: 5px 12px;
@@ -95,6 +114,18 @@ const StopGeneratingButton = styled.button`
 	font-weight: 600;
 `;
 
+const PostSummaryHelpMessage = styled.div`
+	font-size: 14px;
+	font-style: italic;
+	font-weight: 400;
+	line-height: 20px;
+	border-top: 1px solid rgba(var(--center-channel-color-rgb), 0.12);
+
+	padding-top: 8px;
+	padding-bottom: 8px;
+	margin-top: 16px;
+`;
+
 export interface PostUpdateWebsocketMessage {
     next: string
     post_id: string
@@ -108,6 +139,7 @@ interface Props {
 }
 
 export const LLMBotPost = (props: Props) => {
+    const selectPost = useSelectNotAIPost();
     const [message, setMessage] = useState(props.post.message);
 
     // Generating is true while we are reciving new content from the websocket
@@ -120,6 +152,7 @@ export const LLMBotPost = (props: Props) => {
     stoppedRef.current = stopped;
 
     const currentUserId = useSelector<GlobalState, string>((state) => state.entities.users.currentUserId);
+    const rootPost = useSelector<GlobalState, any>((state) => state.entities.posts.posts[props.post.root_id]);
 
     useEffect(() => {
         props.websocketRegister(props.post.id, (msg: WebSocketMessage<PostUpdateWebsocketMessage>) => {
@@ -159,9 +192,15 @@ export const LLMBotPost = (props: Props) => {
         }
     };
 
+    const postSummary = async () => {
+        const result = await doPostbackSummary(props.post.id);
+        selectPost(result.rootid, result.channelid);
+    };
+
     const requesterIsCurrentUser = (props.post.props?.llm_requester_user_id === currentUserId);
     const isThreadSummaryPost = (props.post.props?.referenced_thread && props.post.props?.referenced_thread !== '');
     const isNoShowRegen = (props.post.props?.no_regen && props.post.props?.no_regen !== '');
+    const isTranscriptionResult = rootPost?.props?.referenced_transcript_post_id && rootPost?.props?.referenced_transcript_post_id !== '';
 
     let permalinkView = null;
     if (PostMessagePreview) { // Ignore permalink if version does not exporrt PostMessagePreview
@@ -177,6 +216,8 @@ export const LLMBotPost = (props: Props) => {
     }
 
     const showRegenerate = !generating && requesterIsCurrentUser && !isNoShowRegen;
+    const showPostbackButton = !generating && requesterIsCurrentUser && isTranscriptionResult;
+    const showControlsBar = (showRegenerate || showPostbackButton) && message !== '';
 
     return (
         <PostBody
@@ -207,8 +248,23 @@ export const LLMBotPost = (props: Props) => {
                 {'Stop Generating'}
             </StopGeneratingButton>
             }
-            { showRegenerate &&
+            { showPostbackButton &&
+            <PostSummaryHelpMessage>
+                {'Would you like to post this summary to the original call thread? You can also ask Copilot to make changes.'}
+            </PostSummaryHelpMessage>
+            }
+            { showControlsBar &&
             <ControlsBar>
+                {showPostbackButton &&
+                <PostSummaryButton
+                    data-testid='llm-bot-post-summary'
+                    onClick={postSummary}
+                >
+                    <SendIcon/>
+                    {'Post summary'}
+                </PostSummaryButton>
+                }
+                { showRegenerate &&
                 <GenerationButton
                     data-testid='regenerate-button'
                     onClick={regnerate}
@@ -216,6 +272,7 @@ export const LLMBotPost = (props: Props) => {
                     <IconRegenerate/>
                     {'Regenerate'}
                 </GenerationButton>
+                }
             </ControlsBar>
             }
         </PostBody>

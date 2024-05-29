@@ -125,6 +125,7 @@ func (p *Plugin) newCallTranscriptionSummaryThread(bot *Bot, requestingUser *mod
 		Message: fmt.Sprintf("Sure, I will summarize this transcription: %s/_redirect/pl/%s\n", *siteURL, transcriptionPost.Id),
 	}
 	surePost.AddProp(NoRegen, "true")
+	surePost.AddProp(ReferencedTranscriptPostID, transcriptionPost.Id)
 	if err := p.botDM(bot.mmBot.UserId, requestingUser.Id, surePost); err != nil {
 		return nil, err
 	}
