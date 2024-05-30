@@ -52,7 +52,6 @@
     "eslint-plugin-react": "7.32.2",
     "eslint-plugin-react-hooks": "4.6.0",
     "identity-obj-proxy": "3.0.0",
-    "json-loader": "0.5.7",
     "webpack": "5.82.1",
     "webpack-cli": "5.1.1"
   },
