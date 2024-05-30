@@ -167,12 +167,12 @@ const Config = (props: Props) => {
                 </PanelFooterText>
             </Panel>
             <Panel
-                title='AI functions'
-                subtitle='Choose which bot you want to be the default for each function.'
+                title={intl.formatMessage({id: 'ai_config.functions', defaultMessage: 'AI Functions'})}
+                subtitle={intl.formatMessage({id: 'ai_config.functions_subtitle', defaultMessage: 'Choose which bot you want to be the default for each function.'})}
             >
                 <ItemList>
                     <SelectionItem
-                        label='Default bot'
+                        label={intl.formatMessage({id: 'ai_config.default_bot', defaultMessage: 'Default bot'})}
                         value={value.defaultBotName}
                         onChange={(e) => {
                             props.onChange(props.id, {...value, defaultBotName: e.target.value});
@@ -192,14 +192,17 @@ const Config = (props: Props) => {
             </Panel>
 
             <Panel
-                title='User restrictions (experimental)'
-                subtitle='Enable restrictions to allow or not users to use AI in this instance.'
+                title={intl.formatMessage({id: 'ai_config.user_restrictions_title', defaultMessage: 'User restrictions (experimental)'})}
+                subtitle={intl.formatMessage({id: 'ai_config.user_restrictions_subtitle', defaultMessage: 'Enable restrictions to allow or not users to use AI in this instance.'})}
             >
                 <div className='form-group'>
                     <label
                         className='control-label col-sm-4'
                     >
-                        {'Enable User Restrictions:'}
+                        <FormattedMessage
+                            id='ai_config.enable_user_restrictions'
+                            defaultMessage='Enable User Restrictions:'
+                        />
                     </label>
                     <div className='col-sm-8'>
                         <label className='radio-inline'>
@@ -209,7 +212,12 @@ const Config = (props: Props) => {
                                 checked={value.enableUserRestrictions}
                                 onChange={() => props.onChange(props.id, {...value, enableUserRestrictions: true})}
                             />
-                            <span>{'true'}</span>
+                            <span>
+                                <FormattedMessage
+                                    id='ai_config.true'
+                                    defaultMessage='true'
+                                />
+                            </span>
                         </label>
                         <label className='radio-inline'>
                             <input
@@ -218,9 +226,21 @@ const Config = (props: Props) => {
                                 checked={!value.enableUserRestrictions}
                                 onChange={() => props.onChange(props.id, {...value, enableUserRestrictions: false})}
                             />
-                            <span>{'false'}</span>
+                            <span>
+                                <FormattedMessage
+                                    id='ai_config.false'
+                                    defaultMessage='false'
+                                />
+                            </span>
                         </label>
-                        <div className='help-text'><span>{'Global flag for all below settings.'}</span></div>
+                        <div className='help-text'>
+                            <span>
+                                <FormattedMessage
+                                    id='ai_config.enable_user_restrictions_help'
+                                    defaultMessage='Global flag for all below settings.'
+                                />
+                            </span>
+                        </div>
                     </div>
                 </div>
                 {value.enableUserRestrictions && (
@@ -229,7 +249,10 @@ const Config = (props: Props) => {
                             <label
                                 className='control-label col-sm-4'
                             >
-                                {'Allow Private Channels:'}
+                                <FormattedMessage
+                                    id='ai_config.allow_private_channels'
+                                    defaultMessage='Allow Private Channels:'
+                                />
                             </label>
                             <div className='col-sm-8'>
                                 <label className='radio-inline'>
@@ -239,7 +262,12 @@ const Config = (props: Props) => {
                                         checked={value.allowPrivateChannels}
                                         onChange={() => props.onChange(props.id, {...value, allowPrivateChannels: true})}
                                     />
-                                    <span>{'true'}</span>
+                                    <span>
+                                        <FormattedMessage
+                                            id='ai_config.true'
+                                            defaultMessage='true'
+                                        />
+                                    </span>
                                 </label>
                                 <label className='radio-inline'>
                                     <input
@@ -248,7 +276,12 @@ const Config = (props: Props) => {
                                         checked={!value.allowPrivateChannels}
                                         onChange={() => props.onChange(props.id, {...value, allowPrivateChannels: false})}
                                     />
-                                    <span>{'false'}</span>
+                                    <span>
+                                        <FormattedMessage
+                                            id='ai_config.false'
+                                            defaultMessage='false'
+                                        />
+                                    </span>
                                 </label>
                             </div>
                         </div>
@@ -257,7 +290,10 @@ const Config = (props: Props) => {
                                 className='control-label col-sm-4'
                                 htmlFor='ai-allow-team-ids'
                             >
-                                {'Allow Team IDs (csv):'}
+                                <FormattedMessage
+                                    id='ai_config.allow_team_ids'
+                                    defaultMessage='Allow Team IDs (csv):'
+                                />
                             </label>
                             <div className='col-sm-8'>
                                 <input
@@ -274,7 +310,10 @@ const Config = (props: Props) => {
                                 className='control-label col-sm-4'
                                 htmlFor='ai-only-users-on-team'
                             >
-                                {'Only Users on Team:'}
+                                <FormattedMessage
+                                    id='ai_config.only_users_on_team'
+                                    defaultMessage='Only Users on Team:'
+                                />
                             </label>
                             <div className='col-sm-8'>
                                 <input
@@ -291,7 +330,7 @@ const Config = (props: Props) => {
             </Panel>
 
             <Panel
-                title='Debug'
+                title={intl.formatMessage({id: 'ai_config.debug', defaultMessage: 'Debug'})}
                 subtitle=''
             >
                 <div className='form-group'>
@@ -299,7 +338,10 @@ const Config = (props: Props) => {
                         className='control-label col-sm-4'
                         htmlFor='ai-service-name'
                     >
-                        {'Enable LLM Trace:'}
+                        <FormattedMessage
+                            id='ai_config.enable_llm_trace'
+                            defaultMessage='Enable LLM Trace:'
+                        />
                     </label>
                     <div className='col-sm-8'>
                         <label className='radio-inline'>
@@ -309,7 +351,12 @@ const Config = (props: Props) => {
                                 checked={value.enableLLMTrace}
                                 onChange={() => props.onChange(props.id, {...value, enableLLMTrace: true})}
                             />
-                            <span>{'true'}</span>
+                            <span>
+                                <FormattedMessage
+                                    id='ai_config.true'
+                                    defaultMessage='true'
+                                />
+                            </span>
                         </label>
                         <label className='radio-inline'>
                             <input
@@ -318,9 +365,21 @@ const Config = (props: Props) => {
                                 checked={!value.enableLLMTrace}
                                 onChange={() => props.onChange(props.id, {...value, enableLLMTrace: false})}
                             />
-                            <span>{'false'}</span>
+                            <span>
+                                <FormattedMessage
+                                    id='ai_config.false'
+                                    defaultMessage='false'
+                                />
+                            </span>
                         </label>
-                        <div className='help-text'><span>{'Enable tracing of LLM requests. Outputs whole conversations to the logs.'}</span></div>
+                        <div className='help-text'>
+                            <span>
+                                <FormattedMessage
+                                    id='ai_config.enable_llm_trace_help'
+                                    defaultMessage='Enable tracing of LLM requests. Outputs whole conversations to the logs.'
+                                />
+                            </span>
+                        </div>
                     </div>
                 </div>
             </Panel>

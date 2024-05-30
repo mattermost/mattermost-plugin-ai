@@ -1,5 +1,6 @@
 import React from 'react';
 import styled from 'styled-components';
+import {FormattedMessage} from 'react-intl';
 
 export const ItemList = styled.div`
 	display: grid;
@@ -128,14 +129,20 @@ export const BooleanItem = (props: BooleanItemProps) => {
                         checked={props.value}
                         onChange={() => props.onChange(true)}
                     />
-                    {'true'}
+                    <FormattedMessage
+                        id='ai_config.true'
+                        defaultMessage='true'
+                    />
                     <input
                         type='radio'
                         value='false'
                         checked={!props.value}
                         onChange={() => props.onChange(false)}
                     />
-                    {'false'}
+                    <FormattedMessage
+                        id='ai_config.false'
+                        defaultMessage='false'
+                    />
                 </BooleanItemRow>
                 {props.helpText &&
                 <HelpText>{props.helpText}</HelpText>
