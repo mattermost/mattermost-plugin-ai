@@ -128,6 +128,7 @@ func (p *Plugin) newCallTranscriptionSummaryThread(bot *Bot, requestingUser *mod
 		Message: fmt.Sprintf(localizer.MustLocalize(&i18n.LocalizeConfig{DefaultMessage: &i18n.Message{ID: "ai.summarize_transcription", Other: "Sure, I will summarize this transcription: %s/_redirect/pl/%s\n"}}), *siteURL, transcriptionPost.Id),
 	}
 	surePost.AddProp(NoRegen, "true")
+	surePost.AddProp(ReferencedTranscriptPostID, transcriptionPost.Id)
 	if err := p.botDM(bot.mmBot.UserId, requestingUser.Id, surePost); err != nil {
 		return nil, err
 	}
