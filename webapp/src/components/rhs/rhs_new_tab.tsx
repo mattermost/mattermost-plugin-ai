@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useState, useCallback} from 'react';
 import styled from 'styled-components';
 import {useIntl, FormattedMessage} from 'react-intl';
 
@@ -92,26 +92,25 @@ const setEditorText = (text: string) => {
     }
 };
 
-const addBrainstormingIdeas = () => {
-    setEditorText('Brainstorm ideas about ');
-};
-
-const addMeetingAgenda = () => {
-    setEditorText('Write a meeting agenda about ');
-};
-
-const addToDoList = () => {
-    setEditorText('Write a todo list about ');
-};
-
-const addProsAndCons = () => {
-    setEditorText('Write a pros and cons list about ');
-};
-
 const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
     const dispatch = useDispatch();
     const intl = useIntl();
     const [draft, updateDraft] = useState<any>(null);
+    const addBrainstormingIdeas = useCallback(() => {
+        setEditorText(intl.formatMessage({id: 'rhs_new_tab.brainstorm_ideas_prompt', defaultMessage: 'Brainstorm ideas about '}));
+    }, []);
+
+    const addMeetingAgenda = useCallback(() => {
+        setEditorText(intl.formatMessage({id: 'rhs_new_tab.meeting_agenda_prompt', defaultMessage: 'Write a meeting agenda about '}));
+    }, []);
+
+    const addToDoList = useCallback(() => {
+        setEditorText(intl.formatMessage({id: 'rhs_new_tab.to_do_list_prompt', defaultMessage: 'Write a todo list about '}));
+    }, []);
+
+    const addProsAndCons = useCallback(() => {
+        setEditorText(intl.formatMessage({id: 'rhs_new_tab.pros_and_cons_prompt', defaultMessage: 'Write a pros and cons list about '}));
+    }, []);
     return (
         <NewQuestion>
             <RHSImage/>
@@ -128,10 +127,30 @@ const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
                 />
             </QuestionDescription>
             <QuestionOptions>
-                <OptionButton onClick={addBrainstormingIdeas}><LightbulbOutlineIcon/>{'Brainstorm ideas'}</OptionButton>
-                <OptionButton onClick={addMeetingAgenda}><FormatListNumberedIcon/>{'Meeting agenda'}</OptionButton>
-                <OptionButton onClick={addProsAndCons}><PlusMinus className='icon'>{'±'}</PlusMinus>{'Pros and Cons'}</OptionButton>
-                <OptionButton onClick={addToDoList}><PlaylistCheckIcon/>{'To-do list'}</OptionButton>
+                <OptionButton onClick={addBrainstormingIdeas}><LightbulbOutlineIcon/>
+                    <FormattedMessage
+                        id='rhs_new_tab.brainstorm_ideas'
+                        defaultMessage='Brainstorm ideas'
+                    />
+                </OptionButton>
+                <OptionButton onClick={addMeetingAgenda}><FormatListNumberedIcon/>
+                    <FormattedMessage
+                        id='rhs_new_tab.meeting_agenda'
+                        defaultMessage='Meeting agenda'
+                    />
+                </OptionButton>
+                <OptionButton onClick={addProsAndCons}><PlusMinus className='icon'>{'±'}</PlusMinus>
+                    <FormattedMessage
+                        id='rhs_new_tab.pros_and_cons'
+                        defaultMessage='Pros and Cons'
+                    />
+                </OptionButton>
+                <OptionButton onClick={addToDoList}><PlaylistCheckIcon/>
+                    <FormattedMessage
+                        id='rhs_new_tab.to_do_list'
+                        defaultMessage='To-do list'
+                    />
+                </OptionButton>
             </QuestionOptions>
             <CreatePostContainer>
                 <CreatePost
