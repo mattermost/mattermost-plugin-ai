@@ -34,11 +34,13 @@ export const RHSTitle = styled.div`
     font-family: Metropolis;
     font-weight: 600;
     font-size: 22px;
+	line-height: 28px;
 `;
 
 export const RHSText = styled.div`
-    font-weight: 400;
+    font-weight: 500;
     font-size: 14px;
+	line-height: 20px;
 `;
 
 export const RHSPaddingContainer = styled.div`

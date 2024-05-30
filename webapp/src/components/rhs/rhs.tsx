@@ -41,6 +41,10 @@ const RHSSubtitle = styled(RHSText)`
 	font-weight: 600;
 `;
 
+const RHSBullet = styled.li`
+	margin-bottom: 8px;
+`;
+
 export interface AIThread {
     ID: string;
     Message: string;
@@ -98,9 +102,9 @@ export default function RHS() {
                     <RHSText>{'Copilot is a plugin that enables you to leverage the power of AI to:'}</RHSText>
                     <RHSText>
                         <ul>
-                            <li>{'Get caught up quickly with instant summarization for channels and threads.'}</li>
-                            <li>{'Create meeting summaries in a flash.'}</li>
-                            <li>{'Ask Copilot anything to get quick answers.'}</li>
+                            <RHSBullet>{'Get caught up quickly with instant summarization for channels and threads.'}</RHSBullet>
+                            <RHSBullet>{'Create meeting summaries in a flash.'}</RHSBullet>
+                            <RHSBullet>{'Ask Copilot anything to get quick answers.'}</RHSBullet>
                         </ul>
                     </RHSText>
 
