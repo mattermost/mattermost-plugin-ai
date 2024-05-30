@@ -234,13 +234,7 @@ endif
 ## Extract strings for translation from the source code.
 .PHONY: i18n-extract
 i18n-extract:
-ifneq ($(HAS_WEBAPP),)
-ifeq ($(HAS_MM_UTILITIES),)
-	@echo "You must clone github.com/mattermost/mattermost-utilities repo in .. to use this command"
-else
-	cd $(MM_UTILITIES_DIR) && npm install && npm run babel && node mmjstool/build/index.js i18n extract-webapp --webapp-dir $(PWD)/webapp
-endif
-endif
+	cd webapp && $(NPM) run i18n-extract -- --out-file src/i18n/en.json --format simple src/components/**/*.{ts,tsx}
 
 ## Install NPM dependencies for e2e tests
 e2e/node_modules: e2e/package.json

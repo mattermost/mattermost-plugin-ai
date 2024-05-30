@@ -67,6 +67,10 @@ const config = {
                 },
             },
             {
+                test: /\.json$/,
+                type: 'json',
+            },
+            {
                 test: /\.(png|eot|tiff|svg|woff2|woff|ttf|gif|mp3|jpg|jpeg)$/,
                 type: 'asset/inline',
             },

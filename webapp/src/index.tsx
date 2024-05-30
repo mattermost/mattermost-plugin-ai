@@ -1,6 +1,7 @@
 import React from 'react';
 import {Store, Action} from 'redux';
 import styled from 'styled-components';
+import {IntlProvider} from 'react-intl';
 
 import {GlobalState} from '@mattermost/types/lib/store';
 
@@ -22,6 +23,8 @@ import PostEventListener from './websocket';
 import {setupRedux} from './redux';
 import UnreadsSumarize from './components/unreads_summarize';
 import {Pill} from './components/pill';
+import localeEn from './i18n/en.json';
+import localeEs from './i18n/es.json';
 
 type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
 
@@ -73,9 +76,34 @@ export default class Plugin {
     public async initialize(registry: any, store: WebappStore) {
         setupRedux(registry, store);
 
+        const state = store.getState();
+        const currentUser = state.entities.users.profiles[state.entities.users.currentUserId] || {};
+        const userLocale = currentUser.locale || 'en';
+
+        const translations: any = {
+            'en': localeEn,
+            'es': localeEs,
+        }
+
+        const withIntl = (Component: any) => {
+            return (props: any) => {
+                return (
+                    <IntlProvider
+                        locale={currentUser.locale || 'en'}
+                        messages={translations[userLocale]}
+                    >
+                        <Component
+                            {...props}
+                        />
+                    </IntlProvider>
+                );
+            };
+        };
+
+
         let rhs: any = null;
         if ((window as any).Components.CreatePost) {
-            rhs = registry.registerRightHandSidebarComponent(RHS, RHSTitle);
+            rhs = registry.registerRightHandSidebarComponent(withIntl(RHS), withIntl(RHSTitle));
             setOpenRHSAction(rhs.showRHSPlugin);
 
             registry.registerReducer((state = {}, action: any) => {
@@ -129,9 +157,9 @@ export default class Plugin {
             ;
         };
 
-        registry.registerPostTypeComponent('custom_llmbot', LLMBotPostWithWebsockets);
+        registry.registerPostTypeComponent('custom_llmbot', withIntl(LLMBotPostWithWebsockets));
         if (registry.registerPostActionComponent) {
-            registry.registerPostActionComponent(PostMenu);
+            registry.registerPostActionComponent(withIntl(PostMenu));
         } else {
             registry.registerPostDropdownMenuAction(<><span className='icon'><IconThreadSummarization/></span>{'Summarize Thread'}</>, (postId: string) => {
                 const state = store.getState();
@@ -145,7 +173,7 @@ export default class Plugin {
             registry.registerPostDropdownMenuAction(<><span className='icon'><IconReactForMe/></span>{'React for me'}</>, doReaction);
         }
 
-        registry.registerAdminConsoleCustomSetting('Config', Config);
+        registry.registerAdminConsoleCustomSetting('Config', withIntl(Config));
         if (rhs) {
             registry.registerChannelHeaderButtonAction(<IconAIContainer src={aiIcon}/>, () => {
                 store.dispatch(rhs.toggleRHSPlugin);

@@ -1,5 +1,6 @@
 import React, {useEffect, useState} from 'react';
 import styled from 'styled-components';
+import {FormattedMessage, useIntl} from 'react-intl';
 
 import {PlusIcon} from '@mattermost/compass-icons/components';
 
@@ -75,17 +76,25 @@ const defaultConfig = {
 const BetaMessage = () => (
     <MessageContainer>
         <Pill>
-            {'BETA'}
+            <FormattedMessage
+                id={'beta_message.beta'}
+                defaultMessage={'BETA'}
+            />
         </Pill>
         <span>
-            {'This plugin is currently in beta. To report a bug or to provide feedback, '}
-            <a
-                target={'_blank'}
-                rel={'noopener noreferrer'}
-                href='http://github.com/mattermost/mattermost-plugin-ai/issues'
-            >
-                {'create a new issue in the plugin repository'}
-            </a>
+            <FormattedMessage
+                id={'beta_message.message'}
+                defaultMessage='This plugin is currently in beta. To report a bug or to provide feedback, <link>create a new issue in the plugin repository</link>.'
+                values={{link: (chunks: any) => (
+                    <a
+                        target={'_blank'}
+                        rel={'noopener noreferrer'}
+                        href='http://github.com/mattermost/mattermost-plugin-ai/issues'
+                    >
+                        {chunks}
+                    </a>
+                )}}
+            />
         </span>
     </MessageContainer>
 );
@@ -93,6 +102,7 @@ const BetaMessage = () => (
 const Config = (props: Props) => {
     const value = props.value || defaultConfig;
     const [avatarUpdates, setAvatarUpdates] = useState<{[key: string]: File}>({});
+    const intl = useIntl();
 
     useEffect(() => {
         const save = async () => {
@@ -134,8 +144,8 @@ const Config = (props: Props) => {
         <ConfigContainer>
             <BetaMessage/>
             <Panel
-                title='AI Bots'
-                subtitle='Multiple AI services can be configured below.'
+                title={intl.formatMessage({id: 'ai_config.bots', defaultMessage: 'AI Bots'})}
+                subtitle={intl.formatMessage({id: 'ai_config.bots_subtitle', defaultMessage: 'Multiple AI services can be configured below.'})}
             >
                 <Bots
                     bots={props.value.bots ?? []}
@@ -150,7 +160,10 @@ const Config = (props: Props) => {
                     botChangedAvatar={botChangedAvatar}
                 />
                 <PanelFooterText>
-                    {'AI services are third party services; Mattermost is not responsible for output.'}
+                    <FormattedMessage
+                        id={'ai_config.bots_footer'}
+                        defaultMessage='AI services are third party services; Mattermost is not responsible for output.'
+                    />
                 </PanelFooterText>
             </Panel>
             <Panel

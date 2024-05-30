@@ -1,6 +1,6 @@
 import React, {useState} from 'react';
 import styled from 'styled-components';
-import {useIntl} from 'react-intl';
+import {useIntl, FormattedMessage} from 'react-intl';
 
 import {
     FormatListNumberedIcon,
@@ -115,8 +115,18 @@ const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
     return (
         <NewQuestion>
             <RHSImage/>
-            <QuestionTitle>{'Ask Copilot anything'}</QuestionTitle>
-            <QuestionDescription>{'The Copilot is here to help. Choose from the prompts below or write your own.'}</QuestionDescription>
+            <QuestionTitle>
+                <FormattedMessage
+                    id='rhs_new_tab.ask_copilot_anything_title'
+                    defaultMessage='Ask Copilot anything'
+                />
+            </QuestionTitle>
+            <QuestionDescription>
+                <FormattedMessage
+                    id='rhs_new_tab.ask_copilot_anything_description'
+                    defaultMessage='The Copilot is here to help. Choose from the prompts below or write your own.'
+                />
+            </QuestionDescription>
             <QuestionOptions>
                 <OptionButton onClick={addBrainstormingIdeas}><LightbulbOutlineIcon/>{'Brainstorm ideas'}</OptionButton>
                 <OptionButton onClick={addMeetingAgenda}><FormatListNumberedIcon/>{'Meeting agenda'}</OptionButton>
