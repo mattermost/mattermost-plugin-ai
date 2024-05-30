@@ -76,14 +76,14 @@ export default class Plugin {
     public async initialize(registry: any, store: WebappStore) {
         setupRedux(registry, store);
 
-        const state = store.getState();
-        const currentUser = state.entities.users.profiles[state.entities.users.currentUserId] || {};
+        const usersState = store.getState().entities.users;
+        const currentUser = usersState.profiles[usersState.currentUserId] || {};
         const userLocale = currentUser.locale || 'en';
 
         const translations: any = {
-            'en': localeEn,
-            'es': localeEs,
-        }
+            en: localeEn,
+            es: localeEs,
+        };
 
         const withIntl = (Component: any) => {
             return (props: any) => {
@@ -99,7 +99,6 @@ export default class Plugin {
                 );
             };
         };
-
 
         let rhs: any = null;
         if ((window as any).Components.CreatePost) {
