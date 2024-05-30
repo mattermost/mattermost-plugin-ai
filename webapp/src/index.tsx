@@ -23,6 +23,7 @@ import PostEventListener from './websocket';
 import {setupRedux} from './redux';
 import UnreadsSumarize from './components/unreads_summarize';
 import {Pill} from './components/pill';
+import {PostbackPost} from './components/postback_post';
 import localeEn from './i18n/en.json';
 import localeEs from './i18n/es.json';
 
@@ -157,6 +158,7 @@ export default class Plugin {
         };
 
         registry.registerPostTypeComponent('custom_llmbot', withIntl(LLMBotPostWithWebsockets));
+        registry.registerPostTypeComponent('custom_llm_postback', withIntl(PostbackPost));
         if (registry.registerPostActionComponent) {
             registry.registerPostActionComponent(withIntl(PostMenu));
         } else {
