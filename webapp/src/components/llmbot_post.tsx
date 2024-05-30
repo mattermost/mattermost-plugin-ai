@@ -254,7 +254,10 @@ export const LLMBotPost = (props: Props) => {
             }
             { showPostbackButton &&
             <PostSummaryHelpMessage>
-                {'Would you like to post this summary to the original call thread? You can also ask Copilot to make changes.'}
+                <FormattedMessage
+                    id='llm_bot.post_summary_help'
+                    defaultMessage='Would you like to post this summary to the original call thread? You can also ask Copilot to make changes.'
+                />
             </PostSummaryHelpMessage>
             }
             { showControlsBar &&
@@ -265,7 +268,10 @@ export const LLMBotPost = (props: Props) => {
                     onClick={postSummary}
                 >
                     <SendIcon/>
-                    {'Post summary'}
+                    <FormattedMessage
+                        id='llm_bot.post_summary'
+                        defaultMessage='Post summary'
+                    />
                 </PostSummaryButton>
                 }
                 { showRegenerate &&
