@@ -28,9 +28,7 @@ export const DropdownBotSelector = (props: DropdownBotSelectorProps) => {
         >
             <>
                 <SelectMessage>
-                    <FormattedMessage
-                        defaultMessage='Generate With:'
-                    />
+                    <FormattedMessage defaultMessage='Generate With:'/>
                 </SelectMessage>
                 <BotPill>
                     {props.activeBot?.displayName}

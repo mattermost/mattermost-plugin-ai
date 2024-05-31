@@ -115,35 +115,23 @@ const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
         <NewQuestion>
             <RHSImage/>
             <QuestionTitle>
-                <FormattedMessage
-                    defaultMessage='Ask Copilot anything'
-                />
+                <FormattedMessage defaultMessage='Ask Copilot anything'/>
             </QuestionTitle>
             <QuestionDescription>
-                <FormattedMessage
-                    defaultMessage='The Copilot is here to help. Choose from the prompts below or write your own.'
-                />
+                <FormattedMessage defaultMessage='The Copilot is here to help. Choose from the prompts below or write your own.'/>
             </QuestionDescription>
             <QuestionOptions>
                 <OptionButton onClick={addBrainstormingIdeas}><LightbulbOutlineIcon/>
-                    <FormattedMessage
-                        defaultMessage='Brainstorm ideas'
-                    />
+                    <FormattedMessage defaultMessage='Brainstorm ideas'/>
                 </OptionButton>
                 <OptionButton onClick={addMeetingAgenda}><FormatListNumberedIcon/>
-                    <FormattedMessage
-                        defaultMessage='Meeting agenda'
-                    />
+                    <FormattedMessage defaultMessage='Meeting agenda'/>
                 </OptionButton>
                 <OptionButton onClick={addProsAndCons}><PlusMinus className='icon'>{'±'}</PlusMinus>
-                    <FormattedMessage
-                        defaultMessage='Pros and Cons'
-                    />
+                    <FormattedMessage defaultMessage='Pros and Cons'/>
                 </OptionButton>
                 <OptionButton onClick={addToDoList}><PlaylistCheckIcon/>
-                    <FormattedMessage
-                        defaultMessage='To-do list'
-                    />
+                    <FormattedMessage defaultMessage='To-do list'/>
                 </OptionButton>
             </QuestionOptions>
             <CreatePostContainer>

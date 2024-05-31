@@ -78,9 +78,7 @@ export default function RHS() {
     if (bots && bots.length === 0) {
         return (
             <RhsContainer>
-                <FormattedMessage
-                    defaultMessage='AI Plugin is not configured. Please contact your system administrator to configure the plugin.'
-                />
+                <FormattedMessage defaultMessage='AI Plugin is not configured. Please contact your system administrator to configure the plugin.'/>
             </RhsContainer>
         );
     }

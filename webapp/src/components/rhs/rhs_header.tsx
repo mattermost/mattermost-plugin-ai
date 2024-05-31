@@ -26,9 +26,7 @@ const RHSHeader = (props: Props) => {
         historyButton = (
             <ButtonDisabled>
                 <i className='icon-clock-outline'/>
-                <FormattedMessage
-                    defaultMessage='Chat history'
-                />
+                <FormattedMessage defaultMessage='Chat history'/>
             </ButtonDisabled>
         );
     } else {
@@ -41,9 +39,7 @@ const RHSHeader = (props: Props) => {
                 }}
             >
                 <i className='icon-clock-outline'/>
-                <FormattedMessage
-                    defaultMessage='View chat history'
-                />
+                <FormattedMessage defaultMessage='View chat history'/>
             </HistoryButton>
         );
     }
@@ -61,9 +57,7 @@ const RHSHeader = (props: Props) => {
                     }}
                 >
                     <i className='icon icon-pencil-outline'/>
-                    <FormattedMessage
-                        defaultMessage='New chat'
-                    />
+                    <FormattedMessage defaultMessage='New chat'/>
                 </NewChatButton>
             )}
             {(props.currentTab === 'new' && props.bots) && (

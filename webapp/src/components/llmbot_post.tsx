@@ -246,16 +246,12 @@ export const LLMBotPost = (props: Props) => {
                 onClick={stopGenerating}
             >
                 <IconCancel/>
-                <FormattedMessage
-                    defaultMessage='Stop Generating'
-                />
+                <FormattedMessage defaultMessage='Stop Generating'/>
             </StopGeneratingButton>
             }
             { showPostbackButton &&
             <PostSummaryHelpMessage>
-                <FormattedMessage
-                    defaultMessage='Would you like to post this summary to the original call thread? You can also ask Copilot to make changes.'
-                />
+                <FormattedMessage defaultMessage='Would you like to post this summary to the original call thread? You can also ask Copilot to make changes.'/>
             </PostSummaryHelpMessage>
             }
             { showControlsBar &&
@@ -266,9 +262,7 @@ export const LLMBotPost = (props: Props) => {
                     onClick={postSummary}
                 >
                     <SendIcon/>
-                    <FormattedMessage
-                        defaultMessage='Post summary'
-                    />
+                    <FormattedMessage defaultMessage='Post summary'/>
                 </PostSummaryButton>
                 }
                 { showRegenerate &&
@@ -277,9 +271,7 @@ export const LLMBotPost = (props: Props) => {
                     onClick={regnerate}
                 >
                     <IconRegenerate/>
-                    <FormattedMessage
-                        defaultMessage='Regenerate'
-                    />
+                    <FormattedMessage defaultMessage='Regenerate'/>
                 </GenerationButton>
                 }
             </ControlsBar>

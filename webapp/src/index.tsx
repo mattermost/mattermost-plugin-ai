@@ -1,7 +1,7 @@
 import React from 'react';
 import {Store, Action} from 'redux';
 import styled from 'styled-components';
-import {IntlProvider} from 'react-intl';
+import {FormattedMessage} from 'react-intl';
 
 import {GlobalState} from '@mattermost/types/lib/store';
 
@@ -77,9 +77,10 @@ export default class Plugin {
 
         registry.registerTranslations((locale: string) => {
             try {
+                // eslint-disable-next-line global-require
                 return require(`./i18n/${locale}.json`);
             } catch (e) {
-                return {}
+                return {};
             }
         });
 
@@ -144,7 +145,7 @@ export default class Plugin {
         if (registry.registerPostActionComponent) {
             registry.registerPostActionComponent(PostMenu);
         } else {
-            registry.registerPostDropdownMenuAction(<><span className='icon'><IconThreadSummarization/></span>{'Summarize Thread'}</>, (postId: string) => {
+            registry.registerPostDropdownMenuAction(<><span className='icon'><IconThreadSummarization/></span><FormattedMessage defaultMessage='Summarize Thread'/></>, (postId: string) => {
                 const state = store.getState();
                 const team = state.entities.teams.teams[state.entities.teams.currentTeamId];
                 window.WebappUtils.browserHistory.push('/' + team.name + '/messages/@' + BotUsername);
@@ -153,7 +154,7 @@ export default class Plugin {
                     store.dispatch(rhs.showRHSPlugin);
                 }
             });
-            registry.registerPostDropdownMenuAction(<><span className='icon'><IconReactForMe/></span>{'React for me'}</>, doReaction);
+            registry.registerPostDropdownMenuAction(<><span className='icon'><IconReactForMe/></span><FormattedMessage defaultMessage='React for me'/></>, doReaction);
         }
 
         registry.registerAdminConsoleCustomSetting('Config', Config);

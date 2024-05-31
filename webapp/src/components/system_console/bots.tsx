@@ -91,9 +91,7 @@ const Bots = (props: Props) => {
                     disabled={licenceAddDisabled}
                 >
                     <PlusAIServiceIcon/>
-                    <FormattedMessage
-                        defaultMessage={'Add an AI Bot'}
-                    />
+                    <FormattedMessage defaultMessage='Add an AI Bot'/>
                 </TertiaryButton>
                 {licenceAddDisabled && (
                     <EnterpriseChip

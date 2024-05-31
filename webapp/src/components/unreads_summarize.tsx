@@ -110,9 +110,7 @@ const UnreadsSumarize = (props: Props) => {
     return (
         <AskAIButton
             icon={<><SmallerIconAI/>
-                <FormattedMessage
-                    defaultMessage=' Ask AI'
-                />
+                <FormattedMessage defaultMessage=' Ask AI'/>
             </>}
             dropdownMenu={StyledDropdownMenu}
         >
@@ -126,25 +124,19 @@ const UnreadsSumarize = (props: Props) => {
                 onClick={summarizeNew}
             >
                 <IconThreadSummarization/>
-                <FormattedMessage
-                    defaultMessage='Summarize new messages'
-                />
+                <FormattedMessage defaultMessage='Summarize new messages'/>
             </DropdownMenuItemStyled>
             <DropdownMenuItemStyled
                 onClick={actionItems}
             >
                 <IconSparkleCheckmarkStyled/>
-                <FormattedMessage
-                    defaultMessage='Find action items'
-                />
+                <FormattedMessage defaultMessage='Find action items'/>
             </DropdownMenuItemStyled>
             <DropdownMenuItemStyled
                 onClick={openQuestions}
             >
                 <IconSparkleQuestionStyled/>
-                <FormattedMessage
-                    defaultMessage='Find open questions'
-                />
+                <FormattedMessage defaultMessage='Find open questions'/>
             </DropdownMenuItemStyled>
             <Divider/>
             <DropdownInfoOnlyVisibleToYou/>

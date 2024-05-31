@@ -76,9 +76,7 @@ const Bot = (props: Props) => {
                 {missingInfo && (
                     <DangerPill>
                         <AlertOutlineIcon/>
-                        <FormattedMessage
-                            defaultMessage='Missing information'
-                        />
+                        <FormattedMessage defaultMessage='Missing information'/>
                     </DangerPill>
                 )}
                 <ButtonIcon

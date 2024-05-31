@@ -49,9 +49,7 @@ const AvatarItem = (props: AvatarItemProps) => {
     return (
         <>
             <ItemLabel>
-                <FormattedMessage
-                    defaultMessage='Bot avatar'
-                />
+                <FormattedMessage defaultMessage='Bot avatar'/>
             </ItemLabel>
             <AvatarSelectorContainer>
                 <Avatar src={icon}/>
@@ -68,9 +66,7 @@ const AvatarItem = (props: AvatarItemProps) => {
                         accept='.jpeg,.jpg,.png,.gif' // From the MM server requirements
                         onChange={onUploadChange}
                     />
-                    <FormattedMessage
-                        defaultMessage='Upload Image'
-                    />
+                    <FormattedMessage defaultMessage='Upload Image'/>
                 </TertiaryButton>
             </AvatarSelectorContainer>
         </>

@@ -234,7 +234,7 @@ endif
 ## Extract strings for translation from the source code.
 .PHONY: i18n-extract
 i18n-extract:
-	cd webapp && $(NPM) run i18n-extract -- --out-file src/i18n/en.json --id-interpolation-pattern '[sha512:contenthash:base64:8]' --format simple src/components/**/*.{ts,tsx}
+	cd webapp && $(NPM) run i18n-extract -- --out-file src/i18n/en.json --id-interpolation-pattern '[sha512:contenthash:base64:8]' --format simple src/index.tsx src/components/**/*.{ts,tsx}
 
 ## Install NPM dependencies for e2e tests
 e2e/node_modules: e2e/package.json

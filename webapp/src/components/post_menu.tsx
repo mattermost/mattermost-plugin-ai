@@ -59,15 +59,11 @@ const PostMenu = (props: Props) => {
             <Divider/>
             <DropdownMenuItem onClick={() => summarizePost(post.id)}>
                 <span className='icon'><IconThreadSummarization/></span>
-                <FormattedMessage
-                    defaultMessage='Summarize Thread'
-                />
+                <FormattedMessage defaultMessage='Summarize Thread'/>
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => doReaction(post.id)}>
                 <span className='icon'><IconReactForMe/></span>
-                <FormattedMessage
-                    defaultMessage='React for me'
-                />
+                <FormattedMessage defaultMessage='React for me'/>
             </DropdownMenuItem>
             <Divider/>
             <DropdownInfoOnlyVisibleToYou/>
