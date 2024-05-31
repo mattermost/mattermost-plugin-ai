@@ -48,7 +48,7 @@ const PostMenu = (props: Props) => {
     return (
         <DotMenu
             icon={<IconAI/>}
-            title={intl.formatMessage({id: 'dotmenu.ai-actions', defaultMessage: 'AI Actions'})}
+            title={intl.formatMessage({defaultMessage: 'AI Actions'})}
             dropdownMenu={StyledDropdownMenu}
         >
             <DropdownBotSelector
@@ -60,14 +60,12 @@ const PostMenu = (props: Props) => {
             <DropdownMenuItem onClick={() => summarizePost(post.id)}>
                 <span className='icon'><IconThreadSummarization/></span>
                 <FormattedMessage
-                    id='post_menu.summarize_thread'
                     defaultMessage='Summarize Thread'
                 />
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => doReaction(post.id)}>
                 <span className='icon'><IconReactForMe/></span>
                 <FormattedMessage
-                    id='post_menu.react_for_me'
                     defaultMessage='React for me'
                 />
             </DropdownMenuItem>

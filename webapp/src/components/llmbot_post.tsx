@@ -247,7 +247,6 @@ export const LLMBotPost = (props: Props) => {
             >
                 <IconCancel/>
                 <FormattedMessage
-                    id='llm_bot.stop_generating'
                     defaultMessage='Stop Generating'
                 />
             </StopGeneratingButton>
@@ -255,7 +254,6 @@ export const LLMBotPost = (props: Props) => {
             { showPostbackButton &&
             <PostSummaryHelpMessage>
                 <FormattedMessage
-                    id='llm_bot.post_summary_help'
                     defaultMessage='Would you like to post this summary to the original call thread? You can also ask Copilot to make changes.'
                 />
             </PostSummaryHelpMessage>
@@ -269,7 +267,6 @@ export const LLMBotPost = (props: Props) => {
                 >
                     <SendIcon/>
                     <FormattedMessage
-                        id='llm_bot.post_summary'
                         defaultMessage='Post summary'
                     />
                 </PostSummaryButton>
@@ -281,7 +278,6 @@ export const LLMBotPost = (props: Props) => {
                 >
                     <IconRegenerate/>
                     <FormattedMessage
-                        id='llm_bot.regenerate'
                         defaultMessage='Regenerate'
                     />
                 </GenerationButton>

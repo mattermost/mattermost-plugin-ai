@@ -23,7 +23,6 @@ export const PostbackPost = (props: Props) => {
             <br/>
             <i>
                 <FormattedMessage
-                    id='postback_post.user_notification_message'
                     defaultMessage='This summary was created by {botUsername} then edited and posted by @{editorUsername}'
                     values={{botUsername, editorUsername}}
                 />

@@ -79,7 +79,6 @@ export default function RHS() {
         return (
             <RhsContainer>
                 <FormattedMessage
-                    id='ai_plugin.unconfigured'
                     defaultMessage='AI Plugin is not configured. Please contact your system administrator to configure the plugin.'
                 />
             </RhsContainer>
@@ -94,7 +93,7 @@ export default function RHS() {
         content = (
             <ThreadViewer
                 data-testid='rhs-thread-viewer'
-                inputPlaceholder={intl.formatMessage({id: 'rhs.reply', defaultMessage: 'Reply...'})}
+                inputPlaceholder={intl.formatMessage({defaultMessage: 'Reply...'})}
                 rootPostId={selectedPostId}
                 useRelativeTimestamp={false}
                 isThreadView={false}

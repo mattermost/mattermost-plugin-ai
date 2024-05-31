@@ -39,7 +39,6 @@ export const DropdownInfoOnlyVisibleToYou = () => {
         <DropdownMenuItemInfo>
             <LightbulbOutlineIconStyled/>
             <FormattedMessage
-                id={'dropdown_info.onlyVisibleToYou'}
                 defaultMessage={'Copilot posts responses in the right panel which will only be visible to you.'}
             />
         </DropdownMenuItemInfo>

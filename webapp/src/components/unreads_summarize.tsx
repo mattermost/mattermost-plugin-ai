@@ -111,7 +111,6 @@ const UnreadsSumarize = (props: Props) => {
         <AskAIButton
             icon={<><SmallerIconAI/>
                 <FormattedMessage
-                    id='unreads_summarize.ask_ai'
                     defaultMessage=' Ask AI'
                 />
             </>}
@@ -128,7 +127,6 @@ const UnreadsSumarize = (props: Props) => {
             >
                 <IconThreadSummarization/>
                 <FormattedMessage
-                    id='unreads_summarize.summarize_new_messages'
                     defaultMessage='Summarize new messages'
                 />
             </DropdownMenuItemStyled>
@@ -137,7 +135,6 @@ const UnreadsSumarize = (props: Props) => {
             >
                 <IconSparkleCheckmarkStyled/>
                 <FormattedMessage
-                    id='unreads_summarize.find_action_items'
                     defaultMessage='Find action items'
                 />
             </DropdownMenuItemStyled>
@@ -146,7 +143,6 @@ const UnreadsSumarize = (props: Props) => {
             >
                 <IconSparkleQuestionStyled/>
                 <FormattedMessage
-                    id='unreads_summarize.find_open_questions'
                     defaultMessage='Find open questions'
                 />
             </DropdownMenuItemStyled>

@@ -50,7 +50,6 @@ const AvatarItem = (props: AvatarItemProps) => {
         <>
             <ItemLabel>
                 <FormattedMessage
-                    id='avatar.bot_avatar'
                     defaultMessage='Bot avatar'
                 />
             </ItemLabel>
@@ -70,7 +69,6 @@ const AvatarItem = (props: AvatarItemProps) => {
                         onChange={onUploadChange}
                     />
                     <FormattedMessage
-                        id='avatar.upload_image'
                         defaultMessage='Upload Image'
                     />
                 </TertiaryButton>

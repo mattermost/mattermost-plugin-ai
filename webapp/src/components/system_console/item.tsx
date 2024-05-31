@@ -129,20 +129,14 @@ export const BooleanItem = (props: BooleanItemProps) => {
                         checked={props.value}
                         onChange={() => props.onChange(true)}
                     />
-                    <FormattedMessage
-                        id='ai_config.true'
-                        defaultMessage='true'
-                    />
+                    <FormattedMessage defaultMessage='true'/>
                     <input
                         type='radio'
                         value='false'
                         checked={!props.value}
                         onChange={() => props.onChange(false)}
                     />
-                    <FormattedMessage
-                        id='ai_config.false'
-                        defaultMessage='false'
-                    />
+                    <FormattedMessage defaultMessage='false'/>
                 </BooleanItemRow>
                 {props.helpText &&
                 <HelpText>{props.helpText}</HelpText>

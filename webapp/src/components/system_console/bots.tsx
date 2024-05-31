@@ -92,14 +92,13 @@ const Bots = (props: Props) => {
                 >
                     <PlusAIServiceIcon/>
                     <FormattedMessage
-                        id={'bots.addAI'}
                         defaultMessage={'Add an AI Bot'}
                     />
                 </TertiaryButton>
                 {licenceAddDisabled && (
                     <EnterpriseChip
-                        text={intl.formatMessage({id: 'bots.enterprise_multiple_bots_text', defaultMessage: 'Use multiple AI bots on Enterprise plans'})}
-                        subtext={intl.formatMessage({id: 'bots.enterprise_multiple_bots_subtext', defaultMessage: 'Multiple AI services is available on Enterprise plans'})}
+                        text={intl.formatMessage({defaultMessage: 'Use multiple AI bots on Enterprise plans'})}
+                        subtext={intl.formatMessage({defaultMessage: 'Multiple AI services is available on Enterprise plans'})}
                     />
                 )}
             </EnterpriseChipContainer>

@@ -29,7 +29,6 @@ export const DropdownBotSelector = (props: DropdownBotSelectorProps) => {
             <>
                 <SelectMessage>
                     <FormattedMessage
-                        id='dropdown_bot_selector.generate_with'
                         defaultMessage='Generate With:'
                     />
                 </SelectMessage>
@@ -76,7 +75,6 @@ export const BotDropdown = (props: BotDropdownProps) => {
         >
             <MenuInfoMessage>
                 <FormattedMessage
-                    id='dropdown_bot_selector.choose_bot'
                     defaultMessage='Choose a Bot'
                 />
             </MenuInfoMessage>

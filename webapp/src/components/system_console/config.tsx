@@ -75,15 +75,9 @@ const defaultConfig = {
 
 const BetaMessage = () => (
     <MessageContainer>
-        <Pill>
-            <FormattedMessage
-                id={'beta_message.beta'}
-                defaultMessage={'BETA'}
-            />
-        </Pill>
+        <Pill><FormattedMessage defaultMessage={'BETA'}/></Pill>
         <span>
             <FormattedMessage
-                id={'beta_message.message'}
                 defaultMessage='This plugin is currently in beta. To report a bug or to provide feedback, <link>create a new issue in the plugin repository</link>.'
                 values={{link: (chunks: any) => (
                     <a
@@ -144,8 +138,8 @@ const Config = (props: Props) => {
         <ConfigContainer>
             <BetaMessage/>
             <Panel
-                title={intl.formatMessage({id: 'ai_config.bots', defaultMessage: 'AI Bots'})}
-                subtitle={intl.formatMessage({id: 'ai_config.bots_subtitle', defaultMessage: 'Multiple AI services can be configured below.'})}
+                title={intl.formatMessage({defaultMessage: 'AI Bots'})}
+                subtitle={intl.formatMessage({defaultMessage: 'Multiple AI services can be configured below.'})}
             >
                 <Bots
                     bots={props.value.bots ?? []}
@@ -160,19 +154,16 @@ const Config = (props: Props) => {
                     botChangedAvatar={botChangedAvatar}
                 />
                 <PanelFooterText>
-                    <FormattedMessage
-                        id={'ai_config.bots_footer'}
-                        defaultMessage='AI services are third party services; Mattermost is not responsible for output.'
-                    />
+                    <FormattedMessage defaultMessage='AI services are third party services; Mattermost is not responsible for output.'/>
                 </PanelFooterText>
             </Panel>
             <Panel
-                title={intl.formatMessage({id: 'ai_config.functions', defaultMessage: 'AI Functions'})}
-                subtitle={intl.formatMessage({id: 'ai_config.functions_subtitle', defaultMessage: 'Choose which bot you want to be the default for each function.'})}
+                title={intl.formatMessage({defaultMessage: 'AI Functions'})}
+                subtitle={intl.formatMessage({defaultMessage: 'Choose which bot you want to be the default for each function.'})}
             >
                 <ItemList>
                     <SelectionItem
-                        label={intl.formatMessage({id: 'ai_config.default_bot', defaultMessage: 'Default bot'})}
+                        label={intl.formatMessage({defaultMessage: 'Default bot'})}
                         value={value.defaultBotName}
                         onChange={(e) => {
                             props.onChange(props.id, {...value, defaultBotName: e.target.value});
@@ -192,17 +183,14 @@ const Config = (props: Props) => {
             </Panel>
 
             <Panel
-                title={intl.formatMessage({id: 'ai_config.user_restrictions_title', defaultMessage: 'User restrictions (experimental)'})}
-                subtitle={intl.formatMessage({id: 'ai_config.user_restrictions_subtitle', defaultMessage: 'Enable restrictions to allow or not users to use AI in this instance.'})}
+                title={intl.formatMessage({defaultMessage: 'User restrictions (experimental)'})}
+                subtitle={intl.formatMessage({defaultMessage: 'Enable restrictions to allow or not users to use AI in this instance.'})}
             >
                 <div className='form-group'>
                     <label
                         className='control-label col-sm-4'
                     >
-                        <FormattedMessage
-                            id='ai_config.enable_user_restrictions'
-                            defaultMessage='Enable User Restrictions:'
-                        />
+                        <FormattedMessage defaultMessage='Enable User Restrictions:'/>
                     </label>
                     <div className='col-sm-8'>
                         <label className='radio-inline'>
@@ -213,10 +201,7 @@ const Config = (props: Props) => {
                                 onChange={() => props.onChange(props.id, {...value, enableUserRestrictions: true})}
                             />
                             <span>
-                                <FormattedMessage
-                                    id='ai_config.true'
-                                    defaultMessage='true'
-                                />
+                                <FormattedMessage defaultMessage='true'/>
                             </span>
                         </label>
                         <label className='radio-inline'>
@@ -227,18 +212,12 @@ const Config = (props: Props) => {
                                 onChange={() => props.onChange(props.id, {...value, enableUserRestrictions: false})}
                             />
                             <span>
-                                <FormattedMessage
-                                    id='ai_config.false'
-                                    defaultMessage='false'
-                                />
+                                <FormattedMessage defaultMessage='false'/>
                             </span>
                         </label>
                         <div className='help-text'>
                             <span>
-                                <FormattedMessage
-                                    id='ai_config.enable_user_restrictions_help'
-                                    defaultMessage='Global flag for all below settings.'
-                                />
+                                <FormattedMessage defaultMessage='Global flag for all below settings.'/>
                             </span>
                         </div>
                     </div>
@@ -249,10 +228,7 @@ const Config = (props: Props) => {
                             <label
                                 className='control-label col-sm-4'
                             >
-                                <FormattedMessage
-                                    id='ai_config.allow_private_channels'
-                                    defaultMessage='Allow Private Channels:'
-                                />
+                                <FormattedMessage defaultMessage='Allow Private Channels:'/>
                             </label>
                             <div className='col-sm-8'>
                                 <label className='radio-inline'>
@@ -262,12 +238,7 @@ const Config = (props: Props) => {
                                         checked={value.allowPrivateChannels}
                                         onChange={() => props.onChange(props.id, {...value, allowPrivateChannels: true})}
                                     />
-                                    <span>
-                                        <FormattedMessage
-                                            id='ai_config.true'
-                                            defaultMessage='true'
-                                        />
-                                    </span>
+                                    <span><FormattedMessage defaultMessage='true'/></span>
                                 </label>
                                 <label className='radio-inline'>
                                     <input
@@ -277,10 +248,7 @@ const Config = (props: Props) => {
                                         onChange={() => props.onChange(props.id, {...value, allowPrivateChannels: false})}
                                     />
                                     <span>
-                                        <FormattedMessage
-                                            id='ai_config.false'
-                                            defaultMessage='false'
-                                        />
+                                        <FormattedMessage defaultMessage='false'/>
                                     </span>
                                 </label>
                             </div>
@@ -290,10 +258,7 @@ const Config = (props: Props) => {
                                 className='control-label col-sm-4'
                                 htmlFor='ai-allow-team-ids'
                             >
-                                <FormattedMessage
-                                    id='ai_config.allow_team_ids'
-                                    defaultMessage='Allow Team IDs (csv):'
-                                />
+                                <FormattedMessage defaultMessage='Allow Team IDs (csv):'/>
                             </label>
                             <div className='col-sm-8'>
                                 <input
@@ -310,10 +275,7 @@ const Config = (props: Props) => {
                                 className='control-label col-sm-4'
                                 htmlFor='ai-only-users-on-team'
                             >
-                                <FormattedMessage
-                                    id='ai_config.only_users_on_team'
-                                    defaultMessage='Only Users on Team:'
-                                />
+                                <FormattedMessage defaultMessage='Only Users on Team:'/>
                             </label>
                             <div className='col-sm-8'>
                                 <input
@@ -330,7 +292,7 @@ const Config = (props: Props) => {
             </Panel>
 
             <Panel
-                title={intl.formatMessage({id: 'ai_config.debug', defaultMessage: 'Debug'})}
+                title={intl.formatMessage({defaultMessage: 'Debug'})}
                 subtitle=''
             >
                 <div className='form-group'>
@@ -338,10 +300,7 @@ const Config = (props: Props) => {
                         className='control-label col-sm-4'
                         htmlFor='ai-service-name'
                     >
-                        <FormattedMessage
-                            id='ai_config.enable_llm_trace'
-                            defaultMessage='Enable LLM Trace:'
-                        />
+                        <FormattedMessage defaultMessage='Enable LLM Trace:'/>
                     </label>
                     <div className='col-sm-8'>
                         <label className='radio-inline'>
@@ -352,10 +311,7 @@ const Config = (props: Props) => {
                                 onChange={() => props.onChange(props.id, {...value, enableLLMTrace: true})}
                             />
                             <span>
-                                <FormattedMessage
-                                    id='ai_config.true'
-                                    defaultMessage='true'
-                                />
+                                <FormattedMessage defaultMessage='true'/>
                             </span>
                         </label>
                         <label className='radio-inline'>
@@ -366,18 +322,12 @@ const Config = (props: Props) => {
                                 onChange={() => props.onChange(props.id, {...value, enableLLMTrace: false})}
                             />
                             <span>
-                                <FormattedMessage
-                                    id='ai_config.false'
-                                    defaultMessage='false'
-                                />
+                                <FormattedMessage defaultMessage='false'/>
                             </span>
                         </label>
                         <div className='help-text'>
                             <span>
-                                <FormattedMessage
-                                    id='ai_config.enable_llm_trace_help'
-                                    defaultMessage='Enable tracing of LLM requests. Outputs whole conversations to the logs.'
-                                />
+                                <FormattedMessage defaultMessage='Enable tracing of LLM requests. Outputs whole conversations to the logs.'/>
                             </span>
                         </div>
                     </div>
