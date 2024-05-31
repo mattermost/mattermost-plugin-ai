@@ -14,7 +14,7 @@ import RHSImage from '../assets/rhs_image';
 
 import {createPost} from '@/client';
 
-import {Button} from './common';
+import {Button, RHSPaddingContainer, RHSText, RHSTitle} from './common';
 
 const CreatePost = (window as any).Components.CreatePost;
 
@@ -41,25 +41,6 @@ const OptionButton = styled(Button)`
 	font-weight: 600;
 	line-height: 16px;
 	font-size: 12px;
-`;
-
-const NewQuestion = styled.div`
-	margin: 0 24px;
-	margin-top: 16px;
-    display: flex;
-    flex-direction: column;
-	gap: 8px;
-`;
-
-const QuestionTitle = styled.div`
-    font-family: Metropolis;
-    font-weight: 600;
-    font-size: 22px;
-`;
-
-const QuestionDescription = styled.div`
-    font-weight: 400;
-    font-size: 14px;
 `;
 
 const QuestionOptions = styled.div`
@@ -112,14 +93,10 @@ const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
         setEditorText(intl.formatMessage({defaultMessage: 'Write a pros and cons list about '}));
     }, []);
     return (
-        <NewQuestion>
+        <RHSPaddingContainer>
             <RHSImage/>
-            <QuestionTitle>
-                <FormattedMessage defaultMessage='Ask Copilot anything'/>
-            </QuestionTitle>
-            <QuestionDescription>
-                <FormattedMessage defaultMessage='The Copilot is here to help. Choose from the prompts below or write your own.'/>
-            </QuestionDescription>
+            <RHSTitle><FormattedMessage defaultMessage='Ask Copilot anything'/></RHSTitle>
+            <RHSText><FormattedMessage defaultMessage='The Copilot is here to help. Choose from the prompts below or write your own.'/></RHSText>
             <QuestionOptions>
                 <OptionButton onClick={addBrainstormingIdeas}>
                     <LightbulbOutlineIcon/>
@@ -177,7 +154,7 @@ const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
                     }}
                 />
             </CreatePostContainer>
-        </NewQuestion>
+        </RHSPaddingContainer>
     );
 };
 
