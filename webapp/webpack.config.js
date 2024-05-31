@@ -82,6 +82,7 @@ const config = {
         redux: 'Redux',
         'react-redux': 'ReactRedux',
         'prop-types': 'PropTypes',
+        'react-intl': 'ReactIntl',
         'react-bootstrap': 'ReactBootstrap',
         'react-router-dom': 'ReactRouterDom',
     },
