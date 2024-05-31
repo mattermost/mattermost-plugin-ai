@@ -18,7 +18,6 @@ import (
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
-	"github.com/nicksnyder/go-i18n/v2/i18n"
 )
 
 const (
@@ -60,8 +59,6 @@ type Plugin struct {
 
 	botsLock sync.RWMutex
 	bots     []*Bot
-
-	i18n *i18n.Bundle
 }
 
 func resolveffmpegPath() string {
@@ -81,8 +78,6 @@ func (p *Plugin) OnActivate() error {
 	p.pluginAPI = pluginapi.NewClient(p.API, p.Driver)
 
 	p.licenseChecker = enterprise.NewLicenseChecker(p.pluginAPI)
-
-	p.i18n = i18nInit()
 
 	if err := p.MigrateServicesToBots(); err != nil {
 		p.pluginAPI.Log.Error("failed to migrate services to bots", "error", err)

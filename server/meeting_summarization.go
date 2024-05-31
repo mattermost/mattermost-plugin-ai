@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	sq "github.com/Masterminds/squirrel"
-	"github.com/nicksnyder/go-i18n/v2/i18n"
 
 	"errors"
 
@@ -101,9 +100,8 @@ func (p *Plugin) createTranscription(recordingFileID string) (*subtitles.Subtitl
 
 func (p *Plugin) newCallRecordingThread(bot *Bot, requestingUser *model.User, recordingPost *model.Post, channel *model.Channel, fileID string) (*model.Post, error) {
 	siteURL := p.API.GetConfig().ServiceSettings.SiteURL
-	localizer := i18n.NewLocalizer(p.i18n, requestingUser.Locale)
 	surePost := &model.Post{
-		Message: fmt.Sprintf(localizer.MustLocalize(&i18n.LocalizeConfig{DefaultMessage: &i18n.Message{ID: "ai.summarize_recording", Other: "Sure, I will summarize this recording: %s/_redirect/pl/%s\n"}}), *siteURL, recordingPost.Id),
+		Message: fmt.Sprintf("Sure, I will summarize this recording: %s/_redirect/pl/%s\n", *siteURL, recordingPost.Id),
 	}
 	surePost.AddProp(NoRegen, "true")
 	if err := p.botDM(bot.mmBot.UserId, requestingUser.Id, surePost); err != nil {
@@ -123,9 +121,8 @@ func (p *Plugin) newCallTranscriptionSummaryThread(bot *Bot, requestingUser *mod
 	}
 
 	siteURL := p.API.GetConfig().ServiceSettings.SiteURL
-	localizer := i18n.NewLocalizer(p.i18n, requestingUser.Locale)
 	surePost := &model.Post{
-		Message: fmt.Sprintf(localizer.MustLocalize(&i18n.LocalizeConfig{DefaultMessage: &i18n.Message{ID: "ai.summarize_transcription", Other: "Sure, I will summarize this transcription: %s/_redirect/pl/%s\n"}}), *siteURL, transcriptionPost.Id),
+		Message: fmt.Sprintf("Sure, I will summarize this transcription: %s/_redirect/pl/%s\n", *siteURL, transcriptionPost.Id),
 	}
 	surePost.AddProp(NoRegen, "true")
 	surePost.AddProp(ReferencedTranscriptPostID, transcriptionPost.Id)

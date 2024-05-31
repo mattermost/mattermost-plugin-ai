@@ -11,11 +11,9 @@ require (
 	github.com/invopop/jsonschema v0.7.0
 	github.com/jmoiron/sqlx v1.3.5
 	github.com/mattermost/mattermost/server/public v0.0.8
-	github.com/nicksnyder/go-i18n/v2 v2.4.0
 	github.com/r3labs/sse/v2 v2.10.0
 	github.com/sashabaranov/go-openai v1.24.0
 	github.com/stretchr/testify v1.8.4
-	golang.org/x/text v0.14.0
 )
 
 require (
@@ -76,6 +74,7 @@ require (
 	golang.org/x/crypto v0.12.0 // indirect
 	golang.org/x/net v0.14.0 // indirect
 	golang.org/x/sys v0.11.0 // indirect
+	golang.org/x/text v0.12.0 // indirect
 	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1 // indirect
 	google.golang.org/grpc v1.56.1 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect
