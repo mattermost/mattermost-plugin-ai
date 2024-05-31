@@ -13,7 +13,7 @@ import RHSImage from '../assets/rhs_image';
 
 import {createPost} from '@/client';
 
-import {Button} from './common';
+import {Button, RHSPaddingContainer, RHSText, RHSTitle} from './common';
 
 const CreatePost = (window as any).Components.CreatePost;
 
@@ -40,25 +40,6 @@ const OptionButton = styled(Button)`
 	font-weight: 600;
 	line-height: 16px;
 	font-size: 12px;
-`;
-
-const NewQuestion = styled.div`
-	margin: 0 24px;
-	margin-top: 16px;
-    display: flex;
-    flex-direction: column;
-	gap: 8px;
-`;
-
-const QuestionTitle = styled.div`
-    font-family: Metropolis;
-    font-weight: 600;
-    font-size: 22px;
-`;
-
-const QuestionDescription = styled.div`
-    font-weight: 400;
-    font-size: 14px;
 `;
 
 const QuestionOptions = styled.div`
@@ -111,10 +92,10 @@ const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
     const dispatch = useDispatch();
     const [draft, updateDraft] = useState<any>(null);
     return (
-        <NewQuestion>
+        <RHSPaddingContainer>
             <RHSImage/>
-            <QuestionTitle>{'Ask Copilot anything'}</QuestionTitle>
-            <QuestionDescription>{'The Copilot is here to help. Choose from the prompts below or write your own.'}</QuestionDescription>
+            <RHSTitle>{'Ask Copilot anything'}</RHSTitle>
+            <RHSText>{'The Copilot is here to help. Choose from the prompts below or write your own.'}</RHSText>
             <QuestionOptions>
                 <OptionButton onClick={addBrainstormingIdeas}><LightbulbOutlineIcon/>{'Brainstorm ideas'}</OptionButton>
                 <OptionButton onClick={addMeetingAgenda}><FormatListNumberedIcon/>{'Meeting agenda'}</OptionButton>
@@ -160,7 +141,7 @@ const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
                     }}
                 />
             </CreatePostContainer>
-        </NewQuestion>
+        </RHSPaddingContainer>
     );
 };
 

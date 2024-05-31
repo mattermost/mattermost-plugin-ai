@@ -10,9 +10,12 @@ import {getAIThreads, updateRead} from '@/client';
 
 import {useBotlist} from '@/bots';
 
+import RHSImage from '../assets/rhs_image';
+
 import ThreadItem from './thread_item';
 import RHSHeader from './rhs_header';
 import RHSNewTab from './rhs_new_tab';
+import {RHSPaddingContainer, RHSText, RHSTitle} from './common';
 
 const ThreadViewer = (window as any).Components.ThreadViewer && styled((window as any).Components.ThreadViewer)`
     height: 100%;
@@ -26,6 +29,20 @@ const RhsContainer = styled.div`
     height: 100%;
     display: flex;
     flex-direction: column;
+`;
+
+const RHSDivider = styled.div`
+	border-bottom: 1px solid rgba(var(--center-channel-color-rgb), 0.12);
+	margin-top: 12px;
+	margin-bottom: 12px;
+`;
+
+const RHSSubtitle = styled(RHSText)`
+	font-weight: 600;
+`;
+
+const RHSBullet = styled.li`
+	margin-bottom: 8px;
 `;
 
 export interface AIThread {
@@ -76,7 +93,22 @@ export default function RHS() {
     if (bots && bots.length === 0) {
         return (
             <RhsContainer>
-                {'AI Plugin is not configured. Please contact your system administrator to configure the plugin.'}
+                <RHSPaddingContainer>
+                    <RHSImage/>
+                    <RHSTitle>{'Copilot is not yet configured for this workspace'}</RHSTitle>
+                    <RHSText>{'A system admin needs to complete the configuration before it can be used.'}</RHSText>
+                    <RHSDivider/>
+                    <RHSSubtitle>{'What is Copilot?'}</RHSSubtitle>
+                    <RHSText>{'Copilot is a plugin that enables you to leverage the power of AI to:'}</RHSText>
+                    <RHSText>
+                        <ul>
+                            <RHSBullet>{'Get caught up quickly with instant summarization for channels and threads.'}</RHSBullet>
+                            <RHSBullet>{'Create meeting summaries in a flash.'}</RHSBullet>
+                            <RHSBullet>{'Ask Copilot anything to get quick answers.'}</RHSBullet>
+                        </ul>
+                    </RHSText>
+
+                </RHSPaddingContainer>
             </RhsContainer>
         );
     }
