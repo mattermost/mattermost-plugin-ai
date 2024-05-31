@@ -48,9 +48,7 @@ const AvatarItem = (props: AvatarItemProps) => {
 
     return (
         <>
-            <ItemLabel>
-                <FormattedMessage defaultMessage='Bot avatar'/>
-            </ItemLabel>
+            <ItemLabel><FormattedMessage defaultMessage='Bot avatar'/></ItemLabel>
             <AvatarSelectorContainer>
                 <Avatar src={icon}/>
                 <TertiaryButton

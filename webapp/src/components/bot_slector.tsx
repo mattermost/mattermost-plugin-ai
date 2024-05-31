@@ -72,9 +72,7 @@ export const BotDropdown = (props: BotDropdownProps) => {
             dropdownMenu={StyledDropdownMenu}
         >
             <MenuInfoMessage>
-                <FormattedMessage
-                    defaultMessage='Choose a Bot'
-                />
+                <FormattedMessage defaultMessage='Choose a Bot'/>
             </MenuInfoMessage>
             {props.bots.map((bot) => {
                 const botProfileURL = getProfilePictureUrl(bot.id, bot.lastIconUpdate);

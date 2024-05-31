@@ -200,9 +200,7 @@ const Config = (props: Props) => {
                                 checked={value.enableUserRestrictions}
                                 onChange={() => props.onChange(props.id, {...value, enableUserRestrictions: true})}
                             />
-                            <span>
-                                <FormattedMessage defaultMessage='true'/>
-                            </span>
+                            <span><FormattedMessage defaultMessage='true'/></span>
                         </label>
                         <label className='radio-inline'>
                             <input
@@ -211,9 +209,7 @@ const Config = (props: Props) => {
                                 checked={!value.enableUserRestrictions}
                                 onChange={() => props.onChange(props.id, {...value, enableUserRestrictions: false})}
                             />
-                            <span>
-                                <FormattedMessage defaultMessage='false'/>
-                            </span>
+                            <span><FormattedMessage defaultMessage='false'/></span>
                         </label>
                         <div className='help-text'>
                             <span>
@@ -310,9 +306,7 @@ const Config = (props: Props) => {
                                 checked={value.enableLLMTrace}
                                 onChange={() => props.onChange(props.id, {...value, enableLLMTrace: true})}
                             />
-                            <span>
-                                <FormattedMessage defaultMessage='true'/>
-                            </span>
+                            <span><FormattedMessage defaultMessage='true'/></span>
                         </label>
                         <label className='radio-inline'>
                             <input
@@ -321,9 +315,7 @@ const Config = (props: Props) => {
                                 checked={!value.enableLLMTrace}
                                 onChange={() => props.onChange(props.id, {...value, enableLLMTrace: false})}
                             />
-                            <span>
-                                <FormattedMessage defaultMessage='false'/>
-                            </span>
+                            <span><FormattedMessage defaultMessage='false'/></span>
                         </label>
                         <div className='help-text'>
                             <span>

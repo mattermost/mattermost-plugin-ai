@@ -121,16 +121,20 @@ const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
                 <FormattedMessage defaultMessage='The Copilot is here to help. Choose from the prompts below or write your own.'/>
             </QuestionDescription>
             <QuestionOptions>
-                <OptionButton onClick={addBrainstormingIdeas}><LightbulbOutlineIcon/>
+                <OptionButton onClick={addBrainstormingIdeas}>
+                    <LightbulbOutlineIcon/>
                     <FormattedMessage defaultMessage='Brainstorm ideas'/>
                 </OptionButton>
-                <OptionButton onClick={addMeetingAgenda}><FormatListNumberedIcon/>
+                <OptionButton onClick={addMeetingAgenda}>
+                    <FormatListNumberedIcon/>
                     <FormattedMessage defaultMessage='Meeting agenda'/>
                 </OptionButton>
-                <OptionButton onClick={addProsAndCons}><PlusMinus className='icon'>{'±'}</PlusMinus>
+                <OptionButton onClick={addProsAndCons}>
+                    <PlusMinus className='icon'>{'±'}</PlusMinus>
                     <FormattedMessage defaultMessage='Pros and Cons'/>
                 </OptionButton>
-                <OptionButton onClick={addToDoList}><PlaylistCheckIcon/>
+                <OptionButton onClick={addToDoList}>
+                    <PlaylistCheckIcon/>
                     <FormattedMessage defaultMessage='To-do list'/>
                 </OptionButton>
             </QuestionOptions>
