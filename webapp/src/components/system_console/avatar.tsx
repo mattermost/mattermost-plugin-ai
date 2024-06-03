@@ -1,5 +1,6 @@
 import React, {ChangeEvent, useEffect, useRef, useState} from 'react';
 import styled from 'styled-components';
+import {FormattedMessage} from 'react-intl';
 
 //@ts-ignore it exists
 import aiIcon from 'src/../../assets/bot_icon.png';
@@ -47,7 +48,7 @@ const AvatarItem = (props: AvatarItemProps) => {
 
     return (
         <>
-            <ItemLabel>{'Bot avatar'}</ItemLabel>
+            <ItemLabel><FormattedMessage defaultMessage='Bot avatar'/></ItemLabel>
             <AvatarSelectorContainer>
                 <Avatar src={icon}/>
                 <TertiaryButton
@@ -63,7 +64,7 @@ const AvatarItem = (props: AvatarItemProps) => {
                         accept='.jpeg,.jpg,.png,.gif' // From the MM server requirements
                         onChange={onUploadChange}
                     />
-                    {'Upload Image'}
+                    <FormattedMessage defaultMessage='Upload Image'/>
                 </TertiaryButton>
             </AvatarSelectorContainer>
         </>

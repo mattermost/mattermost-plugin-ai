@@ -1,4 +1,5 @@
 import React, {MouseEvent, useEffect, useRef, useState} from 'react';
+import {FormattedMessage} from 'react-intl';
 import {useSelector} from 'react-redux';
 import styled, {css, createGlobalStyle} from 'styled-components';
 
@@ -245,12 +246,12 @@ export const LLMBotPost = (props: Props) => {
                 onClick={stopGenerating}
             >
                 <IconCancel/>
-                {'Stop Generating'}
+                <FormattedMessage defaultMessage='Stop Generating'/>
             </StopGeneratingButton>
             }
             { showPostbackButton &&
             <PostSummaryHelpMessage>
-                {'Would you like to post this summary to the original call thread? You can also ask Copilot to make changes.'}
+                <FormattedMessage defaultMessage='Would you like to post this summary to the original call thread? You can also ask Copilot to make changes.'/>
             </PostSummaryHelpMessage>
             }
             { showControlsBar &&
@@ -261,7 +262,7 @@ export const LLMBotPost = (props: Props) => {
                     onClick={postSummary}
                 >
                     <SendIcon/>
-                    {'Post summary'}
+                    <FormattedMessage defaultMessage='Post summary'/>
                 </PostSummaryButton>
                 }
                 { showRegenerate &&
@@ -270,7 +271,7 @@ export const LLMBotPost = (props: Props) => {
                     onClick={regnerate}
                 >
                     <IconRegenerate/>
-                    {'Regenerate'}
+                    <FormattedMessage defaultMessage='Regenerate'/>
                 </GenerationButton>
                 }
             </ControlsBar>

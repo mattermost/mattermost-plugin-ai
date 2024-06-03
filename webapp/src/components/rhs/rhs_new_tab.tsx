@@ -1,5 +1,6 @@
-import React, {useState} from 'react';
+import React, {useState, useCallback} from 'react';
 import styled from 'styled-components';
+import {useIntl, FormattedMessage} from 'react-intl';
 
 import {
     FormatListNumberedIcon,
@@ -72,41 +73,53 @@ const setEditorText = (text: string) => {
     }
 };
 
-const addBrainstormingIdeas = () => {
-    setEditorText('Brainstorm ideas about ');
-};
-
-const addMeetingAgenda = () => {
-    setEditorText('Write a meeting agenda about ');
-};
-
-const addToDoList = () => {
-    setEditorText('Write a todo list about ');
-};
-
-const addProsAndCons = () => {
-    setEditorText('Write a pros and cons list about ');
-};
-
 const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
     const dispatch = useDispatch();
+    const intl = useIntl();
     const [draft, updateDraft] = useState<any>(null);
+    const addBrainstormingIdeas = useCallback(() => {
+        setEditorText(intl.formatMessage({defaultMessage: 'Brainstorm ideas about '}));
+    }, []);
+
+    const addMeetingAgenda = useCallback(() => {
+        setEditorText(intl.formatMessage({defaultMessage: 'Write a meeting agenda about '}));
+    }, []);
+
+    const addToDoList = useCallback(() => {
+        setEditorText(intl.formatMessage({defaultMessage: 'Write a todo list about '}));
+    }, []);
+
+    const addProsAndCons = useCallback(() => {
+        setEditorText(intl.formatMessage({defaultMessage: 'Write a pros and cons list about '}));
+    }, []);
     return (
         <RHSPaddingContainer>
             <RHSImage/>
-            <RHSTitle>{'Ask Copilot anything'}</RHSTitle>
-            <RHSText>{'The Copilot is here to help. Choose from the prompts below or write your own.'}</RHSText>
+            <RHSTitle><FormattedMessage defaultMessage='Ask Copilot anything'/></RHSTitle>
+            <RHSText><FormattedMessage defaultMessage='The Copilot is here to help. Choose from the prompts below or write your own.'/></RHSText>
             <QuestionOptions>
-                <OptionButton onClick={addBrainstormingIdeas}><LightbulbOutlineIcon/>{'Brainstorm ideas'}</OptionButton>
-                <OptionButton onClick={addMeetingAgenda}><FormatListNumberedIcon/>{'Meeting agenda'}</OptionButton>
-                <OptionButton onClick={addProsAndCons}><PlusMinus className='icon'>{'±'}</PlusMinus>{'Pros and Cons'}</OptionButton>
-                <OptionButton onClick={addToDoList}><PlaylistCheckIcon/>{'To-do list'}</OptionButton>
+                <OptionButton onClick={addBrainstormingIdeas}>
+                    <LightbulbOutlineIcon/>
+                    <FormattedMessage defaultMessage='Brainstorm ideas'/>
+                </OptionButton>
+                <OptionButton onClick={addMeetingAgenda}>
+                    <FormatListNumberedIcon/>
+                    <FormattedMessage defaultMessage='Meeting agenda'/>
+                </OptionButton>
+                <OptionButton onClick={addProsAndCons}>
+                    <PlusMinus className='icon'>{'±'}</PlusMinus>
+                    <FormattedMessage defaultMessage='Pros and Cons'/>
+                </OptionButton>
+                <OptionButton onClick={addToDoList}>
+                    <PlaylistCheckIcon/>
+                    <FormattedMessage defaultMessage='To-do list'/>
+                </OptionButton>
             </QuestionOptions>
             <CreatePostContainer>
                 <CreatePost
                     data-testid='rhs-new-tab-create-post'
                     channelId={botChannelId}
-                    placeholder={'Ask Copilot anything...'}
+                    placeholder={intl.formatMessage({defaultMessage: 'Ask Copilot anything...'})}
                     rootId={'ai_copilot'}
                     onSubmit={async (p: any) => {
                         const post = {...p};

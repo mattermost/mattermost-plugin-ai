@@ -1,6 +1,7 @@
 import React from 'react';
 import {Store, Action} from 'redux';
 import styled from 'styled-components';
+import {FormattedMessage} from 'react-intl';
 
 import {GlobalState} from '@mattermost/types/lib/store';
 
@@ -74,6 +75,15 @@ export default class Plugin {
     public async initialize(registry: any, store: WebappStore) {
         setupRedux(registry, store);
 
+        registry.registerTranslations((locale: string) => {
+            try {
+                // eslint-disable-next-line global-require
+                return require(`./i18n/${locale}.json`);
+            } catch (e) {
+                return {};
+            }
+        });
+
         let rhs: any = null;
         if ((window as any).Components.CreatePost) {
             rhs = registry.registerRightHandSidebarComponent(RHS, RHSTitle);
@@ -135,7 +145,7 @@ export default class Plugin {
         if (registry.registerPostActionComponent) {
             registry.registerPostActionComponent(PostMenu);
         } else {
-            registry.registerPostDropdownMenuAction(<><span className='icon'><IconThreadSummarization/></span>{'Summarize Thread'}</>, (postId: string) => {
+            registry.registerPostDropdownMenuAction(<><span className='icon'><IconThreadSummarization/></span><FormattedMessage defaultMessage='Summarize Thread'/></>, (postId: string) => {
                 const state = store.getState();
                 const team = state.entities.teams.teams[state.entities.teams.currentTeamId];
                 window.WebappUtils.browserHistory.push('/' + team.name + '/messages/@' + BotUsername);
@@ -144,7 +154,7 @@ export default class Plugin {
                     store.dispatch(rhs.showRHSPlugin);
                 }
             });
-            registry.registerPostDropdownMenuAction(<><span className='icon'><IconReactForMe/></span>{'React for me'}</>, doReaction);
+            registry.registerPostDropdownMenuAction(<><span className='icon'><IconReactForMe/></span><FormattedMessage defaultMessage='React for me'/></>, doReaction);
         }
 
         registry.registerAdminConsoleCustomSetting('Config', Config);

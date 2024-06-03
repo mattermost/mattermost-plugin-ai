@@ -1,5 +1,6 @@
 import React from 'react';
 import {useSelector} from 'react-redux';
+import {FormattedMessage} from 'react-intl';
 
 import {GlobalState} from '@mattermost/types/store';
 
@@ -12,7 +13,6 @@ interface Props {
 export const PostbackPost = (props: Props) => {
     const editorUsername = useSelector<GlobalState, string>((state) => state.entities.users.profiles[props.post.props.userid]?.username);
     const botUsername = useSelector<GlobalState, string>((state) => state.entities.users.profiles[props.post.user_id]?.username);
-    const userMotificationMessage = 'This summary was created by ' + botUsername + ' then edited and posted by @' + editorUsername;
     return (
         <>
             <PostText
@@ -21,7 +21,12 @@ export const PostbackPost = (props: Props) => {
                 postID={props.post.id}
             />
             <br/>
-            <i>{userMotificationMessage}</i>
+            <i>
+                <FormattedMessage
+                    defaultMessage='This summary was created by {botUsername} then edited and posted by @{editorUsername}'
+                    values={{botUsername, editorUsername}}
+                />
+            </i>
         </>
     );
 };

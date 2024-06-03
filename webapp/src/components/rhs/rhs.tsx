@@ -1,4 +1,5 @@
 import React, {useState, useEffect, useCallback} from 'react';
+import {FormattedMessage, useIntl} from 'react-intl';
 import {useDispatch, useSelector} from 'react-redux';
 import styled from 'styled-components';
 
@@ -58,6 +59,7 @@ const twentyFourHoursInMS = 24 * 60 * 60 * 1000;
 
 export default function RHS() {
     const dispatch = useDispatch();
+    const intl = useIntl();
     const [currentTab, setCurrentTab] = useState('new');
     const selectedPostId = useSelector((state: any) => state['plugins-' + manifest.id].selectedPostId);
     const currentUserId = useSelector<GlobalState, string>((state) => state.entities.users.currentUserId);
@@ -95,16 +97,16 @@ export default function RHS() {
             <RhsContainer>
                 <RHSPaddingContainer>
                     <RHSImage/>
-                    <RHSTitle>{'Copilot is not yet configured for this workspace'}</RHSTitle>
-                    <RHSText>{'A system admin needs to complete the configuration before it can be used.'}</RHSText>
+                    <RHSTitle><FormattedMessage defaultMessage='Copilot is not yet configured for this workspace'/></RHSTitle>
+                    <RHSText><FormattedMessage defaultMessage='A system admin needs to complete the configuration before it can be used.'/></RHSText>
                     <RHSDivider/>
-                    <RHSSubtitle>{'What is Copilot?'}</RHSSubtitle>
-                    <RHSText>{'Copilot is a plugin that enables you to leverage the power of AI to:'}</RHSText>
+                    <RHSSubtitle><FormattedMessage defaultMessage='What is Copilot?'/></RHSSubtitle>
+                    <RHSText><FormattedMessage defaultMessage='Copilot is a plugin that enables you to leverage the power of AI to:'/></RHSText>
                     <RHSText>
                         <ul>
-                            <RHSBullet>{'Get caught up quickly with instant summarization for channels and threads.'}</RHSBullet>
-                            <RHSBullet>{'Create meeting summaries in a flash.'}</RHSBullet>
-                            <RHSBullet>{'Ask Copilot anything to get quick answers.'}</RHSBullet>
+                            <RHSBullet><FormattedMessage defaultMessage='Get caught up quickly with instant summarization for channels and threads.'/></RHSBullet>
+                            <RHSBullet><FormattedMessage defaultMessage='Create meeting summaries in a flash.'/></RHSBullet>
+                            <RHSBullet><FormattedMessage defaultMessage='Ask Copilot anything to get quick answers.'/></RHSBullet>
                         </ul>
                     </RHSText>
 
@@ -121,7 +123,7 @@ export default function RHS() {
         content = (
             <ThreadViewer
                 data-testid='rhs-thread-viewer'
-                inputPlaceholder='Reply...'
+                inputPlaceholder={intl.formatMessage({defaultMessage: 'Reply...'})}
                 rootPostId={selectedPostId}
                 useRelativeTimestamp={false}
                 isThreadView={false}

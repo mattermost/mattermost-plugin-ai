@@ -1,4 +1,5 @@
 import React from 'react';
+import {FormattedMessage} from 'react-intl';
 
 import styled from 'styled-components';
 
@@ -27,7 +28,7 @@ export const DropdownBotSelector = (props: DropdownBotSelectorProps) => {
         >
             <>
                 <SelectMessage>
-                    {'Generate With:'}
+                    <FormattedMessage defaultMessage='Generate With:'/>
                 </SelectMessage>
                 <BotPill>
                     {props.activeBot?.displayName}
@@ -71,7 +72,7 @@ export const BotDropdown = (props: BotDropdownProps) => {
             dropdownMenu={StyledDropdownMenu}
         >
             <MenuInfoMessage>
-                {'Choose a Bot'}
+                <FormattedMessage defaultMessage='Choose a Bot'/>
             </MenuInfoMessage>
             {props.bots.map((bot) => {
                 const botProfileURL = getProfilePictureUrl(bot.id, bot.lastIconUpdate);
