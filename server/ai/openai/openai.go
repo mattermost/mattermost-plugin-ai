@@ -460,6 +460,18 @@ func (s *OpenAI) CountTokens(text string) int {
 	return int((charCount + wordCount) / 2.0)
 }
 
+func (s *OpenAI) Embed(text string) ([]float32, error) {
+	resp, err := s.client.CreateEmbeddings(context.Background(), openaiClient.EmbeddingRequest{
+		Input: []string{text},
+		Model: openaiClient.SmallEmbedding3,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return resp.Data[0].Embedding, nil
+}
+
 func (s *OpenAI) TokenLimit() int {
 	if s.tokenLimit > 0 {
 		return s.tokenLimit

@@ -46,6 +46,7 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 
 	adminRouter := router.Group("/admin")
 	adminRouter.Use(p.mattermostAdminAuthorizationRequired)
+	adminRouter.POST("/reindex", p.handleReindex)
 
 	router.ServeHTTP(w, r)
 }

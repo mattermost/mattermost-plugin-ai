@@ -6,7 +6,9 @@ import {PlusIcon} from '@mattermost/compass-icons/components';
 
 import {Pill} from '../pill';
 
-import {setUserProfilePictureByUsername} from '@/client';
+import {doReindexEmbeddings, setUserProfilePictureByUsername} from '@/client';
+
+import {PrimaryButton, TertiaryButton} from '../assets/buttons';
 
 import {ServiceData} from './service';
 import Panel, {PanelFooterText} from './panel';
@@ -16,7 +18,6 @@ import {ItemList, SelectionItem, SelectionItemOption} from './item';
 import NoBotsPage from './no_bots_page';
 
 type Config = {
-    services: ServiceData[],
     bots: LLMBotConfig[],
     defaultBotName: string,
     transcriptBackend: string,
@@ -284,6 +285,18 @@ const Config = (props: Props) => {
                         </div>
                     </>
                 )}
+            </Panel>
+
+            <Panel
+                title={intl.formatMessage({defaultMessage: 'Embeddings (experimental)'})}
+                subtitle={''}
+            >
+                <PrimaryButton
+                    onClick={doReindexEmbeddings}
+                >
+                    {'Run Embeddings Indexing'}
+                </PrimaryButton>
+
             </Panel>
 
             <Panel

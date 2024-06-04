@@ -44,6 +44,7 @@ type ConversationContext struct {
 	Post               *model.Post
 	PromptParameters   map[string]string
 	CustomInstructions string
+	SearchResults      string
 }
 
 func NewConversationContext(botID string, requestingUser *model.User, channel *model.Channel, post *model.Post) ConversationContext {

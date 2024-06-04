@@ -15,6 +15,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/anthropic"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/asksage"
+	"github.com/mattermost/mattermost-plugin-ai/server/ai/ollama"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/openai"
 	"github.com/mattermost/mattermost-plugin-ai/server/enterprise"
 	"github.com/mattermost/mattermost-plugin-ai/server/metrics"
@@ -171,6 +172,27 @@ func (p *Plugin) getTranscribe() ai.Transcriber {
 	return nil
 }
 
+func (p *Plugin) getEmbeddingsModel() ai.EmbeddingModel {
+	embeddingConfig := p.getConfiguration().EmbeddingService
+	switch embeddingConfig.Type {
+	case "openai":
+		return openai.New(ai.ServiceConfig{
+			Type:   embeddingConfig.Type,
+			APIKey: embeddingConfig.APIKey,
+		}, p.metricsService.GetMetricsForAIService(""))
+	case "openaicompatible":
+		return openai.NewCompatible(ai.ServiceConfig{
+			Type:   embeddingConfig.Type,
+			APIURL: embeddingConfig.APIURL,
+			APIKey: embeddingConfig.APIKey,
+		}, p.metricsService.GetMetricsForAIService(""))
+	case "ollama":
+		return ollama.New(embeddingConfig.APIURL, &http.Client{})
+	}
+
+	return nil
+}
+
 var (
 	// ErrNoResponse is returned when no response is posted under a normal condition.
 	ErrNoResponse = errors.New("no response")
@@ -184,6 +206,26 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 			p.pluginAPI.Log.Error(err.Error())
 		}
 	}
+
+	if p.getConfiguration().EnableAutomaticEmbeddings {
+		if err := p.handleEmbeddings(post); err != nil {
+			p.pluginAPI.Log.Error(err.Error())
+		}
+	}
+}
+
+func (p *Plugin) handleEmbeddings(post *model.Post) error {
+	embeddingModel := p.getEmbeddingsModel()
+	embedding, err := embeddingModel.Embed(post.Message)
+	if err != nil {
+		return fmt.Errorf("failed to embed message: %w", err)
+	}
+
+	if err := p.saveEmbedding(post.Id, embedding); err != nil {
+		return fmt.Errorf("failed to store embedding: %w", err)
+	}
+
+	return nil
 }
 
 const (

@@ -8,11 +8,13 @@ import (
 )
 
 type Config struct {
-	Services            []ai.ServiceConfig `json:"services"`
-	Bots                []ai.BotConfig     `json:"bots"`
-	DefaultBotName      string             `json:"defaultBotName"`
-	TranscriptGenerator string             `json:"transcriptBackend"`
-	EnableLLMTrace      bool               `json:"enableLLMTrace"`
+	Bots                []ai.BotConfig `json:"bots"`
+	DefaultBotName      string         `json:"defaultBotName"`
+	TranscriptGenerator string         `json:"transcriptBackend"`
+	EnableLLMTrace      bool           `json:"enableLLMTrace"`
+
+	EmbeddingService          ai.EmbeddingServiceConfig `json:"embeddingService"`
+	EnableAutomaticEmbeddings bool                      `json:"enableAutomaticEmbeddings"`
 
 	EnableUseRestrictions bool   `json:"enableUserRestrictions"`
 	AllowPrivateChannels  bool   `json:"allowPrivateChannels"`

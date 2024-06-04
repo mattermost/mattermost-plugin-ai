@@ -16,6 +16,10 @@ function channelRoute(channelid: string): string {
     return `${baseRoute()}/channel/${channelid}`;
 }
 
+function adminRoute(): string {
+    return `${baseRoute()}/admin`;
+}
+
 export async function doReaction(postid: string) {
     const url = `${postRoute(postid)}/react`;
     const response = await fetch(url, Client4.getOptions({
@@ -147,6 +151,23 @@ export async function summarizeChannelSince(channelID: string, since: number, pr
 
     if (response.ok) {
         return response.json();
+    }
+
+    throw new ClientError(Client4.url, {
+        message: '',
+        status_code: response.status,
+        url,
+    });
+}
+
+export async function doReindexEmbeddings() {
+    const url = `${adminRoute()}/reindex`;
+    const response = await fetch(url, Client4.getOptions({
+        method: 'POST',
+    }));
+
+    if (response.ok) {
+        return;
     }
 
     throw new ClientError(Client4.url, {

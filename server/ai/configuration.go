@@ -30,3 +30,12 @@ func (c *BotConfig) IsValid() bool {
 		(c.Service.Type != "asksage" && c.Service.APIKey == "")
 	return !isInvalid
 }
+
+type EmbeddingServiceConfig struct {
+	Type           string `json:"type"`
+	APIKey         string `json:"apiKey"`
+	OrgID          string `json:"orgId"`
+	Model          string `json:"model"`
+	APIURL         string `json:"apiURL"`
+	TimeoutSeconds int    `json:"timeoutSeconds"`
+}

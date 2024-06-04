@@ -3,6 +3,8 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"errors"
 
@@ -30,7 +32,15 @@ func (p *Plugin) SetupDB() error {
 	builder = builder.PlaceholderFormat(sq.Dollar)
 	p.builder = builder
 
-	return p.SetupTables()
+	if err := p.SetupTables(); err != nil {
+		return fmt.Errorf("failed to setup tables: %w", err)
+	}
+
+	if err := p.setupEmbeddingStorage(768); err != nil {
+		return fmt.Errorf("failed to setup embedding storage: %w", err)
+	}
+
+	return nil
 }
 
 func (p *Plugin) doQuery(dest interface{}, b builder) error {
@@ -53,6 +63,24 @@ func (p *Plugin) execBuilder(b builder) (sql.Result, error) {
 	sqlString = p.db.Rebind(sqlString)
 
 	return p.db.Exec(sqlString, args...)
+}
+
+func (p *Plugin) setupEmbeddingStorage(embeddingLength int) error {
+	if _, err := p.db.Exec(`CREATE EXTENSION IF NOT EXISTS vector`); err != nil {
+		return fmt.Errorf("needs postgres vector extensions: %w", err)
+	}
+
+	//TODO: FIX THE REFRENCE TO ADD THE CASCADE
+	if _, err := p.db.Exec(fmt.Sprintf(`
+		CREATE TABLE IF NOT EXISTS LLM_Post_Embeddings (
+			PostID TEXT NOT NULL REFERENCES Posts(ID) PRIMARY KEY,
+			Embedding vector(%d)
+		);
+	`, embeddingLength)); err != nil {
+		return fmt.Errorf("failed to create table for post embeddings: %w", err)
+	}
+
+	return nil
 }
 
 func (p *Plugin) SetupTables() error {
@@ -123,4 +151,31 @@ func (p *Plugin) getAIThreads(dmChannelIDs []string) ([]AIThread, error) {
 	}
 
 	return posts, nil
+}
+
+func postgresEmbeddingFormat(embedding []float32) string {
+	result := strings.Builder{}
+
+	result.WriteString("[")
+	for i, element := range embedding {
+		if i > 0 {
+			result.WriteString(",")
+		}
+		result.WriteString(strconv.FormatFloat(float64(element), 'f', -1, 32))
+	}
+	result.WriteString("]")
+
+	return result.String()
+}
+
+func (p *Plugin) saveEmbedding(postID string, embedding []float32) error {
+	_, err := p.execBuilder(p.builder.
+		Insert("LLM_Post_Embeddings").
+		SetMap(map[string]interface{}{
+			"PostID":    postID,
+			"Embedding": postgresEmbeddingFormat(embedding),
+		}).
+		Suffix("ON CONFLICT (PostID) DO UPDATE SET Embedding = EXCLUDED.Embedding"),
+	)
+	return err
 }
