@@ -111,10 +111,11 @@ func (p *Plugin) continueConversation(bot *Bot, threadData *ThreadData, context 
 
 		if !p.pluginAPI.User.HasPermissionToChannel(context.Post.UserId, threadChannel.Id, model.PermissionReadChannel) ||
 			p.checkUsageRestrictions(context.Post.UserId, threadChannel) != nil {
+			T := i18nLocalizerFunc(p.i18n, context.RequestingUser.Locale)
 			responsePost := &model.Post{
 				ChannelId: context.Channel.Id,
 				RootId:    context.Post.RootId,
-				Message:   "Sorry, you no longer have access to the original thread.",
+				Message:   T("copilot.no_longer_access_error", "Sorry, you no longer have access to the original thread."),
 			}
 			if err = p.botCreatePost(bot.mmBot.UserId, context.RequestingUser.Id, responsePost); err != nil {
 				return nil, err
@@ -188,14 +189,15 @@ func (p *Plugin) summarizePost(bot *Bot, postIDToSummarize string, context ai.Co
 	return summaryStream, nil
 }
 
-func summaryPostMessage(postIDToSummarize string, siteURL string) string {
-	return fmt.Sprintf("Sure, I will summarize this thread: %s/_redirect/pl/%s\n", siteURL, postIDToSummarize)
+func (p *Plugin) summaryPostMessage(locale string, postIDToSummarize string, siteURL string) string {
+	T := i18nLocalizerFunc(p.i18n, locale)
+	return T("copilot.summarize_thread", "Sure, I will summarize this thread: %s/_redirect/pl/%s\n", siteURL, postIDToSummarize)
 }
 
-func (p *Plugin) makeSummaryPost(postIDToSummarize string) *model.Post {
+func (p *Plugin) makeSummaryPost(locale string, postIDToSummarize string) *model.Post {
 	siteURL := p.API.GetConfig().ServiceSettings.SiteURL
 	post := &model.Post{
-		Message: summaryPostMessage(postIDToSummarize, *siteURL),
+		Message: p.summaryPostMessage(locale, postIDToSummarize, *siteURL),
 	}
 	post.AddProp(ThreadIDProp, postIDToSummarize)
 
@@ -208,7 +210,7 @@ func (p *Plugin) startNewSummaryThread(bot *Bot, postIDToSummarize string, conte
 		return nil, err
 	}
 
-	post := p.makeSummaryPost(postIDToSummarize)
+	post := p.makeSummaryPost(context.RequestingUser.Locale, postIDToSummarize)
 	if err := p.streamResultToNewDM(bot.mmBot.UserId, summaryStream, context.RequestingUser.Id, post); err != nil {
 		return nil, err
 	}
