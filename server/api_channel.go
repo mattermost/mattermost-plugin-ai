@@ -109,7 +109,7 @@ func (p *Plugin) handleSince(c *gin.Context) {
 		return
 	}
 
-	resultStream, err := p.getLLM(bot.cfg.Service).ChatCompletion(prompt)
+	resultStream, err := p.getLLM(bot.cfg).ChatCompletion(prompt)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
@@ -117,7 +117,7 @@ func (p *Plugin) handleSince(c *gin.Context) {
 
 	post := &model.Post{}
 	post.AddProp(NoRegen, "true")
-	if err := p.streamResultToNewDM(bot.mmBot.UserId, resultStream, user.Id, post); err != nil {
+	if err := p.streamResultToNewDM(bot.mmBot.UserId, resultStream, user.Id, post, bot.cfg.Name); err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}

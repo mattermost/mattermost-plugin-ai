@@ -4,23 +4,28 @@ import (
 	"fmt"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
+	"github.com/mattermost/mattermost-plugin-ai/server/metrics"
 )
 
 const DefaultMaxTokens = 4096
 
 type Anthropic struct {
-	client       *Client
-	defaultModel string
-	tokenLimit   int
+	client         *Client
+	defaultModel   string
+	tokenLimit     int
+	metricsService metrics.Metrics
+	name           string
 }
 
-func New(llmService ai.ServiceConfig) *Anthropic {
-	client := NewClient(llmService.APIKey)
+func New(botConfig ai.BotConfig, metricsService metrics.Metrics) *Anthropic {
+	client := NewClient(botConfig.Service.APIKey)
 
 	return &Anthropic{
-		client:       client,
-		defaultModel: llmService.DefaultModel,
-		tokenLimit:   llmService.TokenLimit,
+		client:         client,
+		defaultModel:   botConfig.Service.DefaultModel,
+		tokenLimit:     botConfig.Service.TokenLimit,
+		metricsService: metricsService,
+		name:           botConfig.Name,
 	}
 }
 
@@ -79,6 +84,10 @@ func (a *Anthropic) createCompletionRequest(conversation ai.BotConversation, opt
 }
 
 func (a *Anthropic) ChatCompletion(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (*ai.TextStreamResult, error) {
+	a.metricsService.ObserveLLMRequest(a.name)
+	a.metricsService.ObserveLLMTokensSent(a.name, int64(a.CountTokens(conversation.String())))
+	a.metricsService.ObserveLLMBytesSent(a.name, int64(len(conversation.String())))
+
 	request := a.createCompletionRequest(conversation, opts)
 	request.Stream = true
 	result, err := a.client.MessageCompletion(request)
@@ -90,6 +99,10 @@ func (a *Anthropic) ChatCompletion(conversation ai.BotConversation, opts ...ai.L
 }
 
 func (a *Anthropic) ChatCompletionNoStream(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (string, error) {
+	a.metricsService.ObserveLLMRequest(a.name)
+	a.metricsService.ObserveLLMTokensSent(a.name, int64(a.CountTokens(conversation.String())))
+	a.metricsService.ObserveLLMBytesSent(a.name, int64(len(conversation.String())))
+
 	request := a.createCompletionRequest(conversation, opts)
 	request.Stream = false
 	result, err := a.client.MessageCompletionNoStream(request)
@@ -97,6 +110,8 @@ func (a *Anthropic) ChatCompletionNoStream(conversation ai.BotConversation, opts
 		return "", fmt.Errorf("failed to send query to anthropic: %w", err)
 	}
 
+	a.metricsService.ObserveLLMTokensReceived(a.name, int64(a.CountTokens(result)))
+	a.metricsService.ObserveLLMBytesReceived(a.name, int64(len(result)))
 	return result, nil
 }
 

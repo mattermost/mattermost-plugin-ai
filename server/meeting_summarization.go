@@ -179,7 +179,7 @@ func (p *Plugin) newCallTranscriptionSummaryThread(bot *Bot, requestingUser *mod
 			Message:   "",
 		}
 		summaryPost.AddProp(ReferencedTranscriptPostID, transcriptionPost.Id)
-		if err := p.streamResultToNewPost(bot.mmBot.UserId, requestingUser.Id, summaryStream, summaryPost); err != nil {
+		if err := p.streamResultToNewPost(bot.mmBot.UserId, requestingUser.Id, summaryStream, summaryPost, bot.cfg.Name); err != nil {
 			return fmt.Errorf("unable to stream result to post: %w", err)
 		}
 
@@ -237,7 +237,7 @@ func (p *Plugin) summarizeCallRecording(bot *Bot, rootID string, requestingUser 
 		}
 		defer p.finishPostStreaming(transcriptPost.Id)
 
-		p.streamResultToPost(ctx, summaryStream, transcriptPost)
+		p.streamResultToPost(ctx, summaryStream, transcriptPost, bot.cfg.Name)
 
 		return nil
 	}()
@@ -247,8 +247,8 @@ func (p *Plugin) summarizeCallRecording(bot *Bot, rootID string, requestingUser 
 
 func (p *Plugin) summarizeTranscription(bot *Bot, transcription *subtitles.Subtitles, context ai.ConversationContext) (*ai.TextStreamResult, error) {
 	llmFormattedTranscription := transcription.FormatForLLM()
-	tokens := p.getLLM(bot.cfg.Service).CountTokens(llmFormattedTranscription)
-	tokenLimitWithMargin := int(float64(p.getLLM(bot.cfg.Service).TokenLimit())*0.75) - ContextTokenMargin
+	tokens := p.getLLM(bot.cfg).CountTokens(llmFormattedTranscription)
+	tokenLimitWithMargin := int(float64(p.getLLM(bot.cfg).TokenLimit())*0.75) - ContextTokenMargin
 	if tokenLimitWithMargin < 0 {
 		tokenLimitWithMargin = ContextTokenMargin / 2
 	}
@@ -265,7 +265,7 @@ func (p *Plugin) summarizeTranscription(bot *Bot, transcription *subtitles.Subti
 				return nil, fmt.Errorf("unable to get summarize chunk prompt: %w", err)
 			}
 
-			summarizedChunk, err := p.getLLM(bot.cfg.Service).ChatCompletionNoStream(summarizeChunkPrompt)
+			summarizedChunk, err := p.getLLM(bot.cfg).ChatCompletionNoStream(summarizeChunkPrompt)
 			if err != nil {
 				return nil, fmt.Errorf("unable to get summarized chunk: %w", err)
 			}
@@ -275,7 +275,7 @@ func (p *Plugin) summarizeTranscription(bot *Bot, transcription *subtitles.Subti
 
 		llmFormattedTranscription = strings.Join(summarizedChunks, "\n\n")
 		isChunked = true
-		p.pluginAPI.Log.Debug("Completed chunk summarization", "chunks", len(summarizedChunks), "tokens", p.getLLM(bot.cfg.Service).CountTokens(llmFormattedTranscription))
+		p.pluginAPI.Log.Debug("Completed chunk summarization", "chunks", len(summarizedChunks), "tokens", p.getLLM(bot.cfg).CountTokens(llmFormattedTranscription))
 	}
 
 	context.PromptParameters = map[string]string{"Transcription": llmFormattedTranscription, "IsChunked": fmt.Sprintf("%t", isChunked)}
@@ -284,7 +284,7 @@ func (p *Plugin) summarizeTranscription(bot *Bot, transcription *subtitles.Subti
 		return nil, fmt.Errorf("unable to get meeting summary prompt: %w", err)
 	}
 
-	summaryStream, err := p.getLLM(bot.cfg.Service).ChatCompletion(summaryPrompt)
+	summaryStream, err := p.getLLM(bot.cfg).ChatCompletion(summaryPrompt)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get meeting summary: %w", err)
 	}
