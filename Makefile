@@ -231,10 +231,19 @@ ifneq ($(HAS_SERVER),)
 	$(GO) tool cover -html=server/coverage.txt
 endif
 
-## Extract strings for translation from the source code.
 .PHONY: i18n-extract
-i18n-extract:
+i18n-extract: i18n-extract-webapp i18n-extract-server
+
+## Extract strings for translation from the source code.
+.PHONY: i18n-extract-webapp
+i18n-extract-webapp:
 	cd webapp && $(NPM) run i18n-extract -- --out-file src/i18n/en.json --id-interpolation-pattern '[sha512:contenthash:base64:8]' --format simple src/index.tsx src/components/**/*.{ts,tsx}
+
+.PHONY: i18n-extract-server
+i18n-extract-server:
+	$(GO) install -modfile=go.tools.mod github.com/mattermost/mattermost-utilities/mmgotool
+	cd server && $(GOBIN)/mmgotool i18n extract --portal-dir="" --skip-dynamic
+
 
 ## Install NPM dependencies for e2e tests
 e2e/node_modules: e2e/package.json
