@@ -128,7 +128,7 @@ func (p *Plugin) botDM(botid string, userID string, post *model.Post) error {
 	return nil
 }
 
-func (p *Plugin) streamResultToNewPost(botid string, requesterUserID string, stream *ai.TextStreamResult, post *model.Post, llmBotName string) error {
+func (p *Plugin) streamResultToNewPost(botid string, requesterUserID string, stream *ai.TextStreamResult, post *model.Post) error {
 	if err := p.botCreatePost(botid, requesterUserID, post); err != nil {
 		return fmt.Errorf("unable to create post: %w", err)
 	}
@@ -140,13 +140,13 @@ func (p *Plugin) streamResultToNewPost(botid string, requesterUserID string, str
 
 	go func() {
 		defer p.finishPostStreaming(post.Id)
-		p.streamResultToPost(ctx, stream, post, llmBotName)
+		p.streamResultToPost(ctx, stream, post)
 	}()
 
 	return nil
 }
 
-func (p *Plugin) streamResultToNewDM(botid string, stream *ai.TextStreamResult, userID string, post *model.Post, llmBotName string) error {
+func (p *Plugin) streamResultToNewDM(botid string, stream *ai.TextStreamResult, userID string, post *model.Post) error {
 	if err := p.botDM(botid, userID, post); err != nil {
 		return err
 	}
@@ -158,7 +158,7 @@ func (p *Plugin) streamResultToNewDM(botid string, stream *ai.TextStreamResult, 
 
 	go func() {
 		defer p.finishPostStreaming(post.Id)
-		p.streamResultToPost(ctx, stream, post, llmBotName)
+		p.streamResultToPost(ctx, stream, post)
 	}()
 
 	return nil
@@ -226,7 +226,7 @@ func (p *Plugin) finishPostStreaming(postID string) {
 
 // streamResultToPost streams the result of a TextStreamResult to a post.
 // it will internally handle logging needs and updating the post.
-func (p *Plugin) streamResultToPost(ctx context.Context, stream *ai.TextStreamResult, post *model.Post, llmBotName string) {
+func (p *Plugin) streamResultToPost(ctx context.Context, stream *ai.TextStreamResult, post *model.Post) {
 	p.sendPostStreamingControlEvent(post, PostStreamingControlStart)
 	defer func() {
 		p.sendPostStreamingControlEvent(post, PostStreamingControlEnd)
@@ -235,8 +235,6 @@ func (p *Plugin) streamResultToPost(ctx context.Context, stream *ai.TextStreamRe
 	for {
 		select {
 		case next := <-stream.Stream:
-			p.metricsService.ObserveLLMTokensReceived(llmBotName, 1)
-			p.metricsService.ObserveLLMBytesReceived(llmBotName, int64(len(next)))
 			post.Message += next
 			p.sendPostStreamingUpdateEvent(post, post.Message)
 		case err, ok := <-stream.Err:

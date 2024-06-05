@@ -4,29 +4,24 @@ import (
 	"strings"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
-	"github.com/mattermost/mattermost-plugin-ai/server/metrics"
 )
 
 type AskSage struct {
-	client         *Client
-	defaultModel   string
-	maxTokens      int
-	metricsService metrics.Metrics
-	name           string
+	client       *Client
+	defaultModel string
+	maxTokens    int
 }
 
-func New(botConfig ai.BotConfig, metricsService metrics.Metrics) *AskSage {
+func New(llmService ai.ServiceConfig) *AskSage {
 	client := NewClient("")
 	client.Login(GetTokenParams{
-		Email:    botConfig.Service.Username,
-		Password: botConfig.Service.Password,
+		Email:    llmService.Username,
+		Password: llmService.Password,
 	})
 	return &AskSage{
-		client:         client,
-		defaultModel:   botConfig.Service.DefaultModel,
-		maxTokens:      botConfig.Service.TokenLimit,
-		metricsService: metricsService,
-		name:           botConfig.Name,
+		client:       client,
+		defaultModel: llmService.DefaultModel,
+		maxTokens:    llmService.TokenLimit,
 	}
 }
 
@@ -72,18 +67,14 @@ func (s *AskSage) queryParamsFromConfig(cfg ai.LLMConfig) QueryParams {
 
 func (s *AskSage) ChatCompletion(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (*ai.TextStreamResult, error) {
 	// Ask Sage does not support streaming.
-	result, err := s.ChatCompletionBase(conversation, opts...)
+	result, err := s.ChatCompletionNoStream(conversation, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return ai.NewStreamFromString(result), nil
 }
 
-func (s *AskSage) ChatCompletionBase(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (string, error) {
-	s.metricsService.ObserveLLMRequest(s.name)
-	s.metricsService.ObserveLLMTokensSent(s.name, int64(s.CountTokens(conversation.String())))
-	s.metricsService.ObserveLLMBytesSent(s.name, int64(len(conversation.String())))
-
+func (s *AskSage) ChatCompletionNoStream(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (string, error) {
 	params := s.queryParamsFromConfig(s.createConfig(opts))
 	params.Message = conversationToMessagesList(conversation)
 	params.SystemPrompt = conversation.ExtractSystemMessage()
@@ -94,16 +85,6 @@ func (s *AskSage) ChatCompletionBase(conversation ai.BotConversation, opts ...ai
 		return "", err
 	}
 	return response.Message, nil
-}
-
-func (s *AskSage) ChatCompletionNoStream(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (string, error) {
-	response, err := s.ChatCompletionBase(conversation, opts...)
-	if err != nil {
-		return "", err
-	}
-	s.metricsService.ObserveLLMTokensReceived(s.name, int64(s.CountTokens(response)))
-	s.metricsService.ObserveLLMBytesReceived(s.name, int64(len(response)))
-	return response, nil
 }
 
 // TODO: Implement actual token counting. For now just estimated based off OpenAI estimations

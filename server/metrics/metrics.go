@@ -38,12 +38,6 @@ type Metrics interface {
 
 	IncrementHTTPRequests()
 	IncrementHTTPErrors()
-
-	ObserveLLMRequest(llmID string)
-	ObserveLLMTokensSent(llmID string, count int64)
-	ObserveLLMTokensReceived(llmID string, count int64)
-	ObserveLLMBytesSent(llmID string, count int64)
-	ObserveLLMBytesReceived(llmID string, count int64)
 }
 
 type InstanceInfo struct {
@@ -63,12 +57,6 @@ type metrics struct {
 
 	httpRequestsTotal prometheus.Counter
 	httpErrorsTotal   prometheus.Counter
-
-	llmRequestsTotal  *prometheus.CounterVec
-	llmTokensSent     *prometheus.CounterVec
-	llmTokensReceived *prometheus.CounterVec
-	llmBytesSent      *prometheus.CounterVec
-	llmBytesReceived  *prometheus.CounterVec
 }
 
 // NewMetrics Factory method to create a new metrics collector.
@@ -140,51 +128,6 @@ func NewMetrics(info InstanceInfo) Metrics {
 	})
 	m.registry.MustRegister(m.httpErrorsTotal)
 
-	m.llmRequestsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace:   MetricsNamespace,
-		Subsystem:   MetricsSubsystemLLM,
-		Name:        "requests_total",
-		Help:        "The total number of LLM requets made.",
-		ConstLabels: additionalLabels,
-	}, []string{"llm_name"})
-	m.registry.MustRegister(m.llmRequestsTotal)
-
-	m.llmTokensSent = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace:   MetricsNamespace,
-		Subsystem:   MetricsSubsystemLLM,
-		Name:        "tokens_sent_total",
-		Help:        "The total number of tokens sent.",
-		ConstLabels: additionalLabels,
-	}, []string{"llm_name"})
-	m.registry.MustRegister(m.llmTokensSent)
-
-	m.llmTokensReceived = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace:   MetricsNamespace,
-		Subsystem:   MetricsSubsystemLLM,
-		Name:        "tokens_received_total",
-		Help:        "The total number of tokens received.",
-		ConstLabels: additionalLabels,
-	}, []string{"llm_name"})
-	m.registry.MustRegister(m.llmTokensReceived)
-
-	m.llmBytesSent = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace:   MetricsNamespace,
-		Subsystem:   MetricsSubsystemLLM,
-		Name:        "bytes_sent_total",
-		Help:        "The total number of bytes sent.",
-		ConstLabels: additionalLabels,
-	}, []string{"llm_name"})
-	m.registry.MustRegister(m.llmBytesSent)
-
-	m.llmBytesReceived = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace:   MetricsNamespace,
-		Subsystem:   MetricsSubsystemLLM,
-		Name:        "bytes_received_total",
-		Help:        "The total number of bytes received.",
-		ConstLabels: additionalLabels,
-	}, []string{"llm_name"})
-	m.registry.MustRegister(m.llmBytesReceived)
-
 	return m
 }
 
@@ -195,36 +138,6 @@ func (m *metrics) GetRegistry() *prometheus.Registry {
 func (m *metrics) ObserveAPIEndpointDuration(handler, method, statusCode string, elapsed float64) {
 	if m != nil {
 		m.apiTime.With(prometheus.Labels{"handler": handler, "method": method, "status_code": statusCode}).Observe(elapsed)
-	}
-}
-
-func (m *metrics) ObserveLLMRequest(llmID string) {
-	if m != nil {
-		m.llmRequestsTotal.With(prometheus.Labels{"llm_name": llmID}).Inc()
-	}
-}
-
-func (m *metrics) ObserveLLMTokensSent(llmID string, count int64) {
-	if m != nil {
-		m.llmTokensSent.With(prometheus.Labels{"llm_name": llmID}).Add(float64(count))
-	}
-}
-
-func (m *metrics) ObserveLLMTokensReceived(llmID string, count int64) {
-	if m != nil {
-		m.llmTokensReceived.With(prometheus.Labels{"llm_name": llmID}).Add(float64(count))
-	}
-}
-
-func (m *metrics) ObserveLLMBytesSent(llmID string, count int64) {
-	if m != nil {
-		m.llmBytesSent.With(prometheus.Labels{"llm_name": llmID}).Add(float64(count))
-	}
-}
-
-func (m *metrics) ObserveLLMBytesReceived(llmID string, count int64) {
-	if m != nil {
-		m.llmBytesReceived.With(prometheus.Labels{"llm_name": llmID}).Add(float64(count))
 	}
 }
 

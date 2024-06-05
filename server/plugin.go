@@ -121,17 +121,17 @@ func (p *Plugin) OnActivate() error {
 	return nil
 }
 
-func (p *Plugin) getLLM(llmBotConfig ai.BotConfig) ai.LanguageModel {
+func (p *Plugin) getLLM(llmServiceConfig ai.ServiceConfig) ai.LanguageModel {
 	var llm ai.LanguageModel
-	switch llmBotConfig.Service.Type {
+	switch llmServiceConfig.Type {
 	case "openai":
-		llm = openai.New(llmBotConfig, p.metricsService)
+		llm = openai.New(llmServiceConfig)
 	case "openaicompatible":
-		llm = openai.NewCompatible(llmBotConfig, p.metricsService)
+		llm = openai.NewCompatible(llmServiceConfig)
 	case "anthropic":
-		llm = anthropic.New(llmBotConfig, p.metricsService)
+		llm = anthropic.New(llmServiceConfig)
 	case "asksage":
-		llm = asksage.New(llmBotConfig, p.metricsService)
+		llm = asksage.New(llmServiceConfig)
 	}
 
 	cfg := p.getConfiguration()
@@ -146,18 +146,18 @@ func (p *Plugin) getLLM(llmBotConfig ai.BotConfig) ai.LanguageModel {
 
 func (p *Plugin) getTranscribe() ai.Transcriber {
 	cfg := p.getConfiguration()
-	var botConfig ai.BotConfig
+	var transcriptionService ai.ServiceConfig
 	for _, bot := range cfg.Bots {
 		if bot.Name == cfg.TranscriptGenerator {
-			botConfig = bot
+			transcriptionService = bot.Service
 			break
 		}
 	}
-	switch botConfig.Service.Type {
+	switch transcriptionService.Type {
 	case "openai":
-		return openai.New(botConfig, p.metricsService)
+		return openai.New(transcriptionService)
 	case "openaicompatible":
-		return openai.NewCompatible(botConfig, p.metricsService)
+		return openai.NewCompatible(transcriptionService)
 	}
 	return nil
 }
