@@ -9,26 +9,11 @@ import (
 const (
 	MetricsNamespace       = "copilot"
 	MetricsSubsystemSystem = "system"
-	MetricsSubsystemApp    = "app"
 	MetricsSubsystemHTTP   = "http"
 	MetricsSubsystemAPI    = "api"
-	MetricsSubsystemEvents = "events"
-	MetricsSubsystemDB     = "db"
-	MetricsSubsystemLLM    = "llm"
 
 	MetricsCloudInstallationLabel = "installationId"
 	MetricsVersionLabel           = "version"
-
-	ActionSourceMSTeams     = "msteams"
-	ActionSourceMattermost  = "mattermost"
-	ActionCreated           = "created"
-	ActionUpdated           = "updated"
-	ActionDeleted           = "deleted"
-	ReactionSetAction       = "set"
-	ReactionUnsetAction     = "unset"
-	SubscriptionRefreshed   = "refreshed"
-	SubscriptionConnected   = "connected"
-	SubscriptionReconnected = "reconnected"
 )
 
 type Metrics interface {
