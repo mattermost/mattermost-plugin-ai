@@ -11,6 +11,7 @@ const (
 	MetricsSubsystemSystem = "system"
 	MetricsSubsystemHTTP   = "http"
 	MetricsSubsystemAPI    = "api"
+	MetricsSubsystemLLM    = "llm"
 
 	MetricsCloudInstallationLabel = "installationId"
 	MetricsVersionLabel           = "version"
@@ -23,6 +24,8 @@ type Metrics interface {
 
 	IncrementHTTPRequests()
 	IncrementHTTPErrors()
+
+	IncrementLLMRequests(llmName string)
 }
 
 type InstanceInfo struct {
@@ -42,6 +45,8 @@ type metrics struct {
 
 	httpRequestsTotal prometheus.Counter
 	httpErrorsTotal   prometheus.Counter
+
+	llmRequestsTotal *prometheus.CounterVec
 }
 
 // NewMetrics Factory method to create a new metrics collector.
@@ -113,6 +118,15 @@ func NewMetrics(info InstanceInfo) Metrics {
 	})
 	m.registry.MustRegister(m.httpErrorsTotal)
 
+	m.llmRequestsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace:   MetricsNamespace,
+		Subsystem:   MetricsSubsystemLLM,
+		Name:        "requests_total",
+		Help:        "The total number of LLM requests.",
+		ConstLabels: additionalLabels,
+	}, []string{"llm_name"})
+	m.registry.MustRegister(m.llmRequestsTotal)
+
 	return m
 }
 
@@ -135,5 +149,11 @@ func (m *metrics) IncrementHTTPRequests() {
 func (m *metrics) IncrementHTTPErrors() {
 	if m != nil {
 		m.httpErrorsTotal.Inc()
+	}
+}
+
+func (m *metrics) IncrementLLMRequests(llmName string) {
+	if m != nil {
+		m.llmRequestsTotal.With(prometheus.Labels{"llm_name": llmName}).Inc()
 	}
 }

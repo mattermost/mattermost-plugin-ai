@@ -66,7 +66,7 @@ func (p *Plugin) handleReact(c *gin.Context) {
 		return
 	}
 
-	emojiName, err := p.getLLM(bot.cfg.Service).ChatCompletionNoStream(prompt, ai.WithMaxGeneratedTokens(25))
+	emojiName, err := p.getLLM(bot.cfg).ChatCompletionNoStream(prompt, ai.WithMaxGeneratedTokens(25))
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
