@@ -22,7 +22,6 @@ import {BotUsername} from './constants';
 import PostEventListener from './websocket';
 import {setupRedux} from './redux';
 import UnreadsSumarize from './components/unreads_summarize';
-import {Pill} from './components/pill';
 import {PostbackPost} from './components/postback_post';
 
 type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
@@ -47,9 +46,6 @@ const RHSTitle = () => {
         <RHSTitleContainer>
             <IconAIContainer src={aiIcon}/>
             {'Copilot'}
-            <Pill>
-                {'BETA'}
-            </Pill>
         </RHSTitleContainer>
     );
 };

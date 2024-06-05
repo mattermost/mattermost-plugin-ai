@@ -111,7 +111,7 @@ export const StyledInput = styled.input<{as?: string}>`
 `;
 
 type BooleanItemProps = {
-    label: string
+    label: React.ReactNode
     value: boolean
     onChange: (to: boolean) => void
     helpText?: string
