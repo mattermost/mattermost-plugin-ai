@@ -1,0 +1,38 @@
+[
+  {
+    "id": "copilot.no_longer_access_error",
+    "translation": "Lo siento, ya no tiene acceso al hilo original."
+  },
+  {
+    "id": "copilot.stream_to_post_access_llm_error",
+    "translation": "Lo siento, ha ocurrido un error mientras se accedía al LLM. Vea los logs del servidor para más detalles."
+  },
+  {
+    "id": "copilot.stream_to_post_llm_not_return",
+    "translation": "Lo siento, el LLM no devolvió resultados."
+  },
+  {
+    "id": "copilot.summairize_subscription_error",
+    "translation": "Lo siento, algo fue mal. Vea los logs del servidor para más detalles."
+  },
+  {
+    "id": "copilot.summarize_call_recording_processing",
+    "translation": "Procesando transcripción de audio. Esto llevará algo de tiempo..."
+  },
+  {
+    "id": "copilot.summarize_call_recording_processing_error",
+    "translation": "Lo siento, algo fue mal, Vea los logs del servidor para más detalles."
+  },
+  {
+    "id": "copilot.summarize_recording",
+    "translation": "Claro, resumiré esta grabación: %s/_redirect/pl/%s\n"
+  },
+  {
+    "id": "copilot.summarize_thread",
+    "translation": "Claro, resumiré este hilo: %s/_redirect/pl/%s\n"
+  },
+  {
+    "id": "copilot.summarize_transcription",
+    "translation": "Claro, resumiré esta transcripción: %s/_redirect/pl/%s\n"
+  }
+]
