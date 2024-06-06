@@ -22,6 +22,7 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	router := gin.Default()
 	router.Use(p.ginlogger)
 	router.Use(p.MattermostAuthorizationRequired)
+	router.Use(p.metricsMiddleware)
 
 	router.GET("/ai_threads", p.handleGetAIThreads)
 	router.GET("/ai_bots", p.handleGetAIBots)
