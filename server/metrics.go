@@ -19,6 +19,11 @@ func (p *Plugin) GetMetrics() metrics.Metrics {
 }
 
 func (p *Plugin) metricsMiddleware(c *gin.Context) {
+	metrics := p.GetMetrics()
+	if metrics == nil {
+		c.Next()
+		return
+	}
 	p.GetMetrics().IncrementHTTPRequests()
 	now := time.Now()
 
