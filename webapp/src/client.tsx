@@ -1,7 +1,5 @@
 import {Client4 as Client4Class, ClientError} from '@mattermost/client';
 
-import * as Telemetry from './types/telemetry';
-
 import manifest from './manifest';
 
 const Client4 = new Client4Class();
@@ -207,7 +205,7 @@ export async function getAIBots() {
     });
 }
 
-export async function trackEvent(event: Telemetry.Event, source: Telemetry.Source, props?: Record<string, string>) {
+export async function trackEvent(event: string, source: string, props?: Record<string, string>) {
     const url = `${baseRoute()}/telemetry/track`;
     const userAgent = window.navigator.userAgent;
     const clientType = (userAgent.indexOf('Mattermost') === -1 || userAgent.indexOf('Electron') === -1) ? 'web' : 'desktop';
