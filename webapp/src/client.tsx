@@ -1,5 +1,7 @@
 import {Client4 as Client4Class, ClientError} from '@mattermost/client';
 
+import * as Telemetry from './types/telemetry';
+
 import manifest from './manifest';
 
 const Client4 = new Client4Class();
@@ -192,6 +194,31 @@ export async function getAIBots() {
     const url = `${baseRoute()}/ai_bots`;
     const response = await fetch(url, Client4.getOptions({
         method: 'GET',
+    }));
+
+    if (response.ok) {
+        return response.json();
+    }
+
+    throw new ClientError(Client4.url, {
+        message: '',
+        status_code: response.status,
+        url,
+    });
+}
+
+export async function trackEvent(event: Telemetry.Event, source: Telemetry.Source, props?: Record<string, string>) {
+    const url = `${baseRoute()}/telemetry/track`;
+    const userAgent = window.navigator.userAgent;
+    const clientType = (userAgent.indexOf('Mattermost') === -1 || userAgent.indexOf('Electron') === -1) ? 'web' : 'desktop';
+    const response = await fetch(url, Client4.getOptions({
+        method: 'POST',
+        body: JSON.stringify({
+            event,
+            source,
+            clientType,
+            props: props || {},
+        }),
     }));
 
     if (response.ok) {

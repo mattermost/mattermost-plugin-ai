@@ -103,6 +103,17 @@ func (p *Plugin) handleSince(c *gin.Context) {
 		return
 	}
 
+	p.track(evSummarizeUnreadMessages, map[string]interface{}{
+		"channel_id": channel.Id,
+		"user_id":    user.Id,
+		"since":      data.Since,
+		"type":       promptPreset,
+		"feature": map[string]string{
+			"name": "AI",
+			"skus": "enterprise",
+		},
+	})
+
 	prompt, err := p.prompts.ChatCompletion(promptPreset, context)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)

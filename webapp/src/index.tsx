@@ -25,6 +25,9 @@ import UnreadsSumarize from './components/unreads_summarize';
 import {Pill} from './components/pill';
 import {PostbackPost} from './components/postback_post';
 
+import {trackEvent} from './client';
+import * as Telemetry from './types/telemetry';
+
 type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
 
 const StreamingPostWebsocketEvent = 'custom_mattermost-ai_postupdate';
@@ -160,6 +163,9 @@ export default class Plugin {
         registry.registerAdminConsoleCustomSetting('Config', Config);
         if (rhs) {
             registry.registerChannelHeaderButtonAction(<IconAIContainer src={aiIcon}/>, () => {
+                trackEvent(Telemetry.Event.CopilotAppsBarClicked, Telemetry.Source.Widget, {
+                    user_id: store.getState().entities.users.currentUserId,
+                });
                 store.dispatch(rhs.toggleRHSPlugin);
             },
             'Copilot',

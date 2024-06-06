@@ -115,6 +115,16 @@ func (p *Plugin) handleSummarize(c *gin.Context) {
 		return
 	}
 
+	p.track(evSummarizeThread, map[string]interface{}{
+		"channel_id": channel.Id,
+		"post_id":    post.Id,
+		"user_id":    user.Id,
+		"feature": map[string]string{
+			"name": "AI",
+			"skus": "enterprise",
+		},
+	})
+
 	createdPost, err := p.startNewSummaryThread(bot, post.Id, p.MakeConversationContext(bot, user, channel, nil))
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to produce summary: %w", err))
@@ -197,6 +207,16 @@ func (p *Plugin) handleSummarizeTranscription(c *gin.Context) {
 		c.AbortWithError(http.StatusBadRequest, errors.New("not a calls bot post"))
 		return
 	}
+
+	p.track(evSummarizeTranscription, map[string]interface{}{
+		"channel_id": channel.Id,
+		"post_id":    post.Id,
+		"user_id":    user.Id,
+		"feature": map[string]string{
+			"name": "AI",
+			"skus": "enterprise",
+		},
+	})
 
 	createdPost, err := p.newCallTranscriptionSummaryThread(bot, user, post, channel)
 	if err != nil {
