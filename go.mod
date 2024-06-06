@@ -10,7 +10,7 @@ require (
 	github.com/google/go-github/v41 v41.0.0
 	github.com/invopop/jsonschema v0.7.0
 	github.com/jmoiron/sqlx v1.3.5
-	github.com/mattermost/mattermost/server/public v0.1.3
+	github.com/mattermost/mattermost/server/public v0.1.4
 	github.com/nicksnyder/go-i18n/v2 v2.4.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.19.1
