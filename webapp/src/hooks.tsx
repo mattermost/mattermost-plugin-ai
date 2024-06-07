@@ -1,6 +1,6 @@
 import {useDispatch} from 'react-redux';
 
-import {selectPost, openRHS} from 'src/redux_actions';
+import {selectPost, openRHS, selectRegularPost} from 'src/redux_actions';
 
 import {viewMyChannel} from 'src/client';
 
@@ -32,3 +32,15 @@ export const useSelectPost = () => {
     };
 };
 
+export const doSelectNotAIPost = (postid: string, channelid: string, dispatch: any) => {
+    dispatch(selectRegularPost(postid, channelid));
+    viewMyChannel(channelid);
+};
+
+export const useSelectNotAIPost = () => {
+    const dispatch = useDispatch();
+
+    return (postid: string, channelid: string) => {
+        doSelectNotAIPost(postid, channelid, dispatch);
+    };
+};

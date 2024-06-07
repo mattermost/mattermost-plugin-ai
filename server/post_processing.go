@@ -140,7 +140,26 @@ func (p *Plugin) streamResultToNewPost(botid string, requesterUserID string, str
 
 	go func() {
 		defer p.finishPostStreaming(post.Id)
-		p.streamResultToPost(ctx, stream, post)
+		user, err := p.pluginAPI.User.Get(requesterUserID)
+		locale := *p.API.GetConfig().LocalizationSettings.DefaultServerLocale
+		if err != nil {
+			p.streamResultToPost(ctx, stream, post, locale)
+			return
+		}
+
+		channel, err := p.pluginAPI.Channel.Get(post.ChannelId)
+		if err != nil {
+			p.streamResultToPost(ctx, stream, post, locale)
+			return
+		}
+
+		if channel.Type == model.ChannelTypeDirect {
+			if channel.Name == botid+"__"+user.Id || channel.Name == user.Id+"__"+botid {
+				p.streamResultToPost(ctx, stream, post, user.Locale)
+				return
+			}
+		}
+		p.streamResultToPost(ctx, stream, post, locale)
 	}()
 
 	return nil
@@ -158,7 +177,26 @@ func (p *Plugin) streamResultToNewDM(botid string, stream *ai.TextStreamResult, 
 
 	go func() {
 		defer p.finishPostStreaming(post.Id)
-		p.streamResultToPost(ctx, stream, post)
+		user, err := p.pluginAPI.User.Get(userID)
+		locale := *p.API.GetConfig().LocalizationSettings.DefaultServerLocale
+		if err != nil {
+			p.streamResultToPost(ctx, stream, post, locale)
+			return
+		}
+
+		channel, err := p.pluginAPI.Channel.Get(post.ChannelId)
+		if err != nil {
+			p.streamResultToPost(ctx, stream, post, locale)
+			return
+		}
+
+		if channel.Type == model.ChannelTypeDirect {
+			if channel.Name == botid+"__"+user.Id || channel.Name == user.Id+"__"+botid {
+				p.streamResultToPost(ctx, stream, post, user.Locale)
+				return
+			}
+		}
+		p.streamResultToPost(ctx, stream, post, locale)
 	}()
 
 	return nil
@@ -226,7 +264,8 @@ func (p *Plugin) finishPostStreaming(postID string) {
 
 // streamResultToPost streams the result of a TextStreamResult to a post.
 // it will internally handle logging needs and updating the post.
-func (p *Plugin) streamResultToPost(ctx context.Context, stream *ai.TextStreamResult, post *model.Post) {
+func (p *Plugin) streamResultToPost(ctx context.Context, stream *ai.TextStreamResult, post *model.Post, userLocale string) {
+	T := i18nLocalizerFunc(p.i18n, userLocale)
 	p.sendPostStreamingControlEvent(post, PostStreamingControlStart)
 	defer func() {
 		p.sendPostStreamingControlEvent(post, PostStreamingControlEnd)
@@ -242,7 +281,7 @@ func (p *Plugin) streamResultToPost(ctx context.Context, stream *ai.TextStreamRe
 			if !ok {
 				if strings.TrimSpace(post.Message) == "" {
 					p.API.LogError("LLM closed stream with no result")
-					post.Message = "Sorry! The LLM did not return a result."
+					post.Message = T("copilot.stream_to_post_llm_not_return", "Sorry! The LLM did not return a result.")
 					p.sendPostStreamingUpdateEvent(post, post.Message)
 				}
 				if err = p.pluginAPI.Post.UpdatePost(post); err != nil {
@@ -253,12 +292,13 @@ func (p *Plugin) streamResultToPost(ctx context.Context, stream *ai.TextStreamRe
 			}
 			// Handle partial results
 			if strings.TrimSpace(post.Message) == "" {
-				p.API.LogError("Streaming result to post failed", "error", err)
-				post.Message = "Sorry! An error occurred while accessing the LLM. See server logs for details."
+				post.Message = ""
 			} else {
-				p.API.LogError("Streaming result to post failed partway", "error", err)
-				post.Message += "\n\nSorry! An error occurred while streaming from the LLM. See server logs for details."
+				post.Message += "\n\n"
 			}
+			p.API.LogError("Streaming result to post failed partway", "error", err)
+			post.Message = T("copilot.stream_to_post_access_llm_error", "Sorry! An error occurred while accessing the LLM. See server logs for details.")
+
 			if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
 				p.API.LogError("Error recovering from streaming error", "error", err)
 				return
@@ -340,3 +380,45 @@ type WorkerResult struct {
 
 	return nil
 }*/
+
+func (p *Plugin) PostToAIPost(bot *Bot, post *model.Post) ai.Post {
+	var files []ai.File
+	if bot.cfg.EnableVision {
+		files = make([]ai.File, 0, len(post.FileIds))
+		for _, fileID := range post.FileIds {
+			fileInfo, err := p.pluginAPI.File.GetInfo(fileID)
+			if err != nil {
+				p.API.LogError("Error getting file info", "error", err)
+				continue
+			}
+			file, err := p.pluginAPI.File.Get(fileID)
+			if err != nil {
+				p.API.LogError("Error getting file", "error", err)
+				continue
+			}
+			files = append(files, ai.File{
+				Reader:   file,
+				MimeType: fileInfo.MimeType,
+				Size:     fileInfo.Size,
+			})
+		}
+	}
+
+	return ai.Post{
+		Role:    ai.GetPostRole(bot.mmBot.UserId, post),
+		Message: ai.FormatPostBody(post),
+		Files:   files,
+	}
+}
+
+func (p *Plugin) ThreadToBotConversation(bot *Bot, posts []*model.Post) ai.BotConversation {
+	result := ai.BotConversation{
+		Posts: make([]ai.Post, 0, len(posts)),
+	}
+
+	for _, post := range posts {
+		result.Posts = append(result.Posts, p.PostToAIPost(bot, post))
+	}
+
+	return result
+}

@@ -1,5 +1,6 @@
 import React from 'react';
 import styled from 'styled-components';
+import {FormattedMessage} from 'react-intl';
 
 import {useSelectPost} from '@/hooks';
 
@@ -108,7 +109,9 @@ const UnreadsSumarize = (props: Props) => {
 
     return (
         <AskAIButton
-            icon={<><SmallerIconAI/>{' Ask AI'}</>}
+            icon={<><SmallerIconAI/>
+                <FormattedMessage defaultMessage=' Ask AI'/>
+            </>}
             dropdownMenu={StyledDropdownMenu}
         >
             <DropdownBotSelector
@@ -121,19 +124,19 @@ const UnreadsSumarize = (props: Props) => {
                 onClick={summarizeNew}
             >
                 <IconThreadSummarization/>
-                {'Summarize new messages'}
+                <FormattedMessage defaultMessage='Summarize new messages'/>
             </DropdownMenuItemStyled>
             <DropdownMenuItemStyled
                 onClick={actionItems}
             >
                 <IconSparkleCheckmarkStyled/>
-                {'Find action items'}
+                <FormattedMessage defaultMessage='Find action items'/>
             </DropdownMenuItemStyled>
             <DropdownMenuItemStyled
                 onClick={openQuestions}
             >
                 <IconSparkleQuestionStyled/>
-                {'Find open questions'}
+                <FormattedMessage defaultMessage='Find open questions'/>
             </DropdownMenuItemStyled>
             <Divider/>
             <DropdownInfoOnlyVisibleToYou/>

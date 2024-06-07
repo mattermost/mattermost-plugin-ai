@@ -1,6 +1,7 @@
 import React from 'react';
 import {Store, Action} from 'redux';
 import styled from 'styled-components';
+import {FormattedMessage} from 'react-intl';
 
 import {GlobalState} from '@mattermost/types/lib/store';
 
@@ -22,6 +23,7 @@ import PostEventListener from './websocket';
 import {setupRedux} from './redux';
 import UnreadsSumarize from './components/unreads_summarize';
 import {Pill} from './components/pill';
+import {PostbackPost} from './components/postback_post';
 
 type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
 
@@ -44,7 +46,7 @@ const RHSTitle = () => {
     return (
         <RHSTitleContainer>
             <IconAIContainer src={aiIcon}/>
-            {'AI Copilot'}
+            {'Copilot'}
             <Pill>
                 {'BETA'}
             </Pill>
@@ -72,6 +74,15 @@ export default class Plugin {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-function
     public async initialize(registry: any, store: WebappStore) {
         setupRedux(registry, store);
+
+        registry.registerTranslations((locale: string) => {
+            try {
+                // eslint-disable-next-line global-require
+                return require(`./i18n/${locale}.json`);
+            } catch (e) {
+                return {};
+            }
+        });
 
         let rhs: any = null;
         if ((window as any).Components.CreatePost) {
@@ -130,10 +141,11 @@ export default class Plugin {
         };
 
         registry.registerPostTypeComponent('custom_llmbot', LLMBotPostWithWebsockets);
+        registry.registerPostTypeComponent('custom_llm_postback', PostbackPost);
         if (registry.registerPostActionComponent) {
             registry.registerPostActionComponent(PostMenu);
         } else {
-            registry.registerPostDropdownMenuAction(<><span className='icon'><IconThreadSummarization/></span>{'Summarize Thread'}</>, (postId: string) => {
+            registry.registerPostDropdownMenuAction(<><span className='icon'><IconThreadSummarization/></span><FormattedMessage defaultMessage='Summarize Thread'/></>, (postId: string) => {
                 const state = store.getState();
                 const team = state.entities.teams.teams[state.entities.teams.currentTeamId];
                 window.WebappUtils.browserHistory.push('/' + team.name + '/messages/@' + BotUsername);
@@ -142,7 +154,7 @@ export default class Plugin {
                     store.dispatch(rhs.showRHSPlugin);
                 }
             });
-            registry.registerPostDropdownMenuAction(<><span className='icon'><IconReactForMe/></span>{'React for me'}</>, doReaction);
+            registry.registerPostDropdownMenuAction(<><span className='icon'><IconReactForMe/></span><FormattedMessage defaultMessage='React for me'/></>, doReaction);
         }
 
         registry.registerAdminConsoleCustomSetting('Config', Config);
@@ -150,8 +162,8 @@ export default class Plugin {
             registry.registerChannelHeaderButtonAction(<IconAIContainer src={aiIcon}/>, () => {
                 store.dispatch(rhs.toggleRHSPlugin);
             },
-            'AI Copilot',
-            'AI Copilot',
+            'Copilot',
+            'Copilot',
             );
         }
 

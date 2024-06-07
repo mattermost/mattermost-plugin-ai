@@ -10,6 +10,7 @@ import (
 type LLMConfig struct {
 	Model              string
 	MaxGeneratedTokens int
+	EnableVision       bool
 }
 
 type LanguageModelOption func(*LLMConfig)

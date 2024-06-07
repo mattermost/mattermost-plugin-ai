@@ -1,6 +1,6 @@
 {
   "id": "mattermost-ai",
-  "name": "AI Copilot",
+  "name": "Copilot",
   "description": "",
   "homepage_url": "https://github.com/mattermost/mattermost-plugin-ai",
   "support_url": "https://github.com/mattermost/mattermost-plugin-ai/issues",

@@ -1,6 +1,7 @@
 import React from 'react';
 import styled from 'styled-components';
 import {PlusIcon} from '@mattermost/compass-icons/components';
+import {FormattedMessage, useIntl} from 'react-intl';
 
 import {TertiaryButton} from '../assets/buttons';
 
@@ -24,13 +25,15 @@ const defaultNewBot = {
         username: '',
         password: '',
         tokenLimit: 0,
+        streamingTimeoutSeconds: 0,
     },
+    enableVision: false,
 };
 
 export const firstNewBot = {
     ...defaultNewBot,
     name: 'ai',
-    displayName: 'AI Copilot',
+    displayName: 'Copilot',
 };
 
 type Props = {
@@ -42,11 +45,13 @@ type Props = {
 const Bots = (props: Props) => {
     const multiLLMLicensed = useIsMultiLLMLicensed();
     const licenceAddDisabled = !multiLLMLicensed && props.bots.length > 0;
+    const intl = useIntl();
 
-    const addNewBot = () => {
+    const addNewBot = (e: React.MouseEvent<HTMLButtonElement>) => {
+        e.preventDefault();
         const id = Math.random().toString(36).substring(2, 22);
         if (props.bots.length === 0) {
-            // Suggest the '@ai' and 'AI Copilot' name for the first bot
+            // Suggest the '@ai' and 'Copilot' name for the first bot
             props.onChange([{
                 ...firstNewBot,
                 id,
@@ -86,12 +91,12 @@ const Bots = (props: Props) => {
                     disabled={licenceAddDisabled}
                 >
                     <PlusAIServiceIcon/>
-                    {'Add an AI Bot'}
+                    <FormattedMessage defaultMessage='Add an AI Bot'/>
                 </TertiaryButton>
                 {licenceAddDisabled && (
                     <EnterpriseChip
-                        text={'Use multiple AI bots on Enterprise plans'}
-                        subtext={'Multiple AI services is available on Enterprise plans'}
+                        text={intl.formatMessage({defaultMessage: 'Use multiple AI bots on Enterprise plans'})}
+                        subtext={intl.formatMessage({defaultMessage: 'Multiple AI services is available on Enterprise plans'})}
                     />
                 )}
             </EnterpriseChipContainer>

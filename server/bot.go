@@ -85,7 +85,7 @@ func (p *Plugin) MigrateServicesToBots() error {
 	// If there is one bot then give it the standard name
 	if len(existingConfig.Bots) == 1 {
 		existingConfig.Bots[0].Name = "ai"
-		existingConfig.Bots[0].DisplayName = "AI Copilot"
+		existingConfig.Bots[0].DisplayName = "Copilot"
 	}
 
 	out := map[string]any{}
@@ -233,6 +233,22 @@ func (p *Plugin) GetBotByUsername(botUsername string) *Bot {
 		if bot.cfg.Name == botUsername {
 			return bot
 		}
+	}
+
+	return nil
+}
+
+// GetBotByUsernameOrFirst retrieves the bot associated with the given bot username or the first bot if not found
+func (p *Plugin) GetBotByUsernameOrFirst(botUsername string) *Bot {
+	bot := p.GetBotByUsername(botUsername)
+	if bot != nil {
+		return bot
+	}
+
+	p.botsLock.RLock()
+	defer p.botsLock.RUnlock()
+	if len(p.bots) > 0 {
+		return p.bots[0]
 	}
 
 	return nil

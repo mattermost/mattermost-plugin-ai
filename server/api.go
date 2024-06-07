@@ -22,6 +22,7 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	router := gin.Default()
 	router.Use(p.ginlogger)
 	router.Use(p.MattermostAuthorizationRequired)
+	router.Use(p.metricsMiddleware)
 
 	router.GET("/ai_threads", p.handleGetAIThreads)
 	router.GET("/ai_bots", p.handleGetAIBots)
@@ -37,6 +38,7 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	postRouter.POST("/summarize_transcription", p.handleSummarizeTranscription)
 	postRouter.POST("/stop", p.handleStop)
 	postRouter.POST("/regenerate", p.handleRegenerate)
+	postRouter.POST("/postback_summary", p.handlePostbackSummary)
 
 	channelRouter := botRequriedRouter.Group("/channel/:channelid")
 	channelRouter.Use(p.channelAuthorizationRequired)
@@ -50,7 +52,7 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 
 func (p *Plugin) aiBotRequired(c *gin.Context) {
 	botUsername := c.DefaultQuery("botUsername", p.getConfiguration().DefaultBotName)
-	bot := p.GetBotByUsername(botUsername)
+	bot := p.GetBotByUsernameOrFirst(botUsername)
 	if bot == nil {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to get bot: %s", botUsername))
 		return

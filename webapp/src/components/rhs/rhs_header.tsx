@@ -1,6 +1,7 @@
 import {ChevronDownIcon} from '@mattermost/compass-icons/components';
 import React from 'react';
 import styled from 'styled-components';
+import {FormattedMessage} from 'react-intl';
 
 import {DotMenuButton} from '../dot_menu';
 
@@ -24,7 +25,8 @@ const RHSHeader = (props: Props) => {
     if (props.currentTab === 'threads') {
         historyButton = (
             <ButtonDisabled>
-                <i className='icon-clock-outline'/> {'Chat history'}
+                <i className='icon-clock-outline'/>
+                <FormattedMessage defaultMessage='Chat history'/>
             </ButtonDisabled>
         );
     } else {
@@ -36,7 +38,8 @@ const RHSHeader = (props: Props) => {
                     props.selectPost('');
                 }}
             >
-                <i className='icon-clock-outline'/> {'View chat history'}
+                <i className='icon-clock-outline'/>
+                <FormattedMessage defaultMessage='View chat history'/>
             </HistoryButton>
         );
     }
@@ -53,7 +56,8 @@ const RHSHeader = (props: Props) => {
                         props.selectPost('');
                     }}
                 >
-                    <i className='icon icon-pencil-outline'/> {'New chat'}
+                    <i className='icon icon-pencil-outline'/>
+                    <FormattedMessage defaultMessage='New chat'/>
                 </NewChatButton>
             )}
             {(props.currentTab === 'new' && props.bots) && (

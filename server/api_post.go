@@ -274,25 +274,25 @@ func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, ch
 	defer p.finishPostStreaming(post.Id)
 
 	summaryPostIDProp := post.GetProp(ThreadIDProp)
-	refrencedRecordingFileIDProp := post.GetProp(ReferencedRecordingFileID)
+	referenceRecordingFileIDProp := post.GetProp(ReferencedRecordingFileID)
 	referencedTranscriptPostProp := post.GetProp(ReferencedTranscriptPostID)
 	var result *ai.TextStreamResult
 	switch {
 	case summaryPostIDProp != nil:
 		summaryPostID := summaryPostIDProp.(string)
 		siteURL := p.API.GetConfig().ServiceSettings.SiteURL
-		post.Message = summaryPostMessage(summaryPostID, *siteURL)
+		post.Message = p.summaryPostMessage(user.Locale, summaryPostID, *siteURL)
 
 		var err error
 		result, err = p.summarizePost(bot, summaryPostID, p.MakeConversationContext(bot, user, channel, nil))
 		if err != nil {
 			return fmt.Errorf("could not summarize post on regen: %w", err)
 		}
-	case refrencedRecordingFileIDProp != nil:
+	case referenceRecordingFileIDProp != nil:
 		post.Message = ""
-		refrencedRecordingFileID := refrencedRecordingFileIDProp.(string)
+		referencedRecordingFileID := referenceRecordingFileIDProp.(string)
 
-		fileInfo, err := p.pluginAPI.File.GetInfo(refrencedRecordingFileID)
+		fileInfo, err := p.pluginAPI.File.GetInfo(referencedRecordingFileID)
 		if err != nil {
 			return fmt.Errorf("could not get transcription file on regen: %w", err)
 		}
@@ -322,8 +322,8 @@ func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, ch
 		}
 	case referencedTranscriptPostProp != nil:
 		post.Message = ""
-		refrencedTranscriptionPostID := referencedTranscriptPostProp.(string)
-		referencedTranscriptionPost, err := p.pluginAPI.Post.GetPost(refrencedTranscriptionPostID)
+		referencedTranscriptionPostID := referencedTranscriptPostProp.(string)
+		referencedTranscriptionPost, err := p.pluginAPI.Post.GetPost(referencedTranscriptionPostID)
 		if err != nil {
 			return fmt.Errorf("could not get transcription post on regen: %w", err)
 		}
@@ -369,7 +369,75 @@ func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, ch
 		}
 	}
 
-	p.streamResultToPost(ctx, result, post)
+	if channel.Type == model.ChannelTypeDirect {
+		if channel.Name == bot.mmBot.UserId+"__"+user.Id || channel.Name == user.Id+"__"+bot.mmBot.UserId {
+			p.streamResultToPost(ctx, result, post, user.Locale)
+			return nil
+		}
+	}
+
+	p.streamResultToPost(ctx, result, post, *p.API.GetConfig().LocalizationSettings.DefaultServerLocale)
 
 	return nil
+}
+
+func (p *Plugin) handlePostbackSummary(c *gin.Context) {
+	userID := c.GetHeader("Mattermost-User-Id")
+	post := c.MustGet(ContextPostKey).(*model.Post)
+
+	bot := p.GetBotByID(post.UserId)
+	if bot == nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to get bot"))
+		return
+	}
+
+	if post.GetProp(LLMRequesterUserID) != userID {
+		c.AbortWithError(http.StatusForbidden, errors.New("only the original requester can post back"))
+		return
+	}
+
+	transcriptThreadRootPost, err := p.pluginAPI.Post.GetPost(post.RootId)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to get transcript thread root post: %w", err))
+		return
+	}
+
+	originalTranscriptPostID, ok := transcriptThreadRootPost.GetProp(ReferencedTranscriptPostID).(string)
+	if !ok || originalTranscriptPostID == "" {
+		c.AbortWithError(http.StatusBadRequest, errors.New("post missing reference to transcription post ID"))
+		return
+	}
+
+	transcriptionPost, err := p.pluginAPI.Post.GetPost(originalTranscriptPostID)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to get transcription post: %w", err))
+		return
+	}
+
+	if !p.pluginAPI.User.HasPermissionToChannel(userID, transcriptionPost.ChannelId, model.PermissionCreatePost) {
+		c.AbortWithError(http.StatusForbidden, errors.New("user doesn't have permission to create a post in the transcript channel"))
+		return
+	}
+
+	postedSummary := &model.Post{
+		UserId:    bot.mmBot.UserId,
+		ChannelId: transcriptionPost.ChannelId,
+		RootId:    transcriptionPost.RootId,
+		Message:   post.Message,
+		Type:      "custom_llm_postback",
+	}
+	postedSummary.AddProp("userid", userID)
+	if err := p.pluginAPI.Post.CreatePost(postedSummary); err != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to post back summary: %w", err))
+		return
+	}
+
+	data := struct {
+		PostID    string `json:"rootid"`
+		ChannelID string `json:"channelid"`
+	}{
+		PostID:    postedSummary.RootId,
+		ChannelID: postedSummary.ChannelId,
+	}
+	c.Render(http.StatusOK, render.JSON{Data: data})
 }
