@@ -205,6 +205,31 @@ export async function getAIBots() {
     });
 }
 
+export async function trackEvent(event: string, source: string, props?: Record<string, string>) {
+    const url = `${baseRoute()}/telemetry/track`;
+    const userAgent = window.navigator.userAgent;
+    const clientType = (userAgent.indexOf('Mattermost') === -1 || userAgent.indexOf('Electron') === -1) ? 'web' : 'desktop';
+    const response = await fetch(url, Client4.getOptions({
+        method: 'POST',
+        body: JSON.stringify({
+            event,
+            source,
+            clientType,
+            props: props || {},
+        }),
+    }));
+
+    if (response.ok) {
+        return response.json();
+    }
+
+    throw new ClientError(Client4.url, {
+        message: '',
+        status_code: response.status,
+        url,
+    });
+}
+
 export async function createPost(post: any) {
     const created = await Client4.createPost(post);
     return created;

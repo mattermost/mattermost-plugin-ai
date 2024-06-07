@@ -85,6 +85,15 @@ func (p *Plugin) setConfiguration(configuration *configuration) {
 
 // OnConfigurationChange is invoked when configuration changes may have been made.
 func (p *Plugin) OnConfigurationChange() error {
+	serverConfig := p.API.GetConfig()
+	if serverConfig != nil {
+		if err := p.initTelemetry(serverConfig.LogSettings.EnableDiagnostics); err != nil {
+			p.API.LogError(err.Error())
+		}
+	} else {
+		p.API.LogError("OnConfigurationChange: failed to get server config")
+	}
+
 	var configuration = new(configuration)
 
 	// Load the public configuration fields from the Mattermost server configuration.
