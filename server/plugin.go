@@ -3,6 +3,8 @@ package main
 import (
 	"embed"
 	"fmt"
+	"net/http"
+	"os"
 	"os/exec"
 	"sync"
 
@@ -15,6 +17,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/asksage"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/openai"
 	"github.com/mattermost/mattermost-plugin-ai/server/enterprise"
+	"github.com/mattermost/mattermost-plugin-ai/server/metrics"
 	"github.com/mattermost/mattermost-plugin-ai/server/telemetry"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
@@ -61,6 +64,8 @@ type Plugin struct {
 	streamingContextsMutex sync.Mutex
 
 	licenseChecker *enterprise.LicenseChecker
+	metricsService metrics.Metrics
+	metricsHandler http.Handler
 
 	botsLock sync.RWMutex
 	bots     []*Bot
@@ -85,6 +90,12 @@ func (p *Plugin) OnActivate() error {
 	p.pluginAPI = pluginapi.NewClient(p.API, p.Driver)
 
 	p.licenseChecker = enterprise.NewLicenseChecker(p.pluginAPI)
+
+	p.metricsService = metrics.NewMetrics(metrics.InstanceInfo{
+		InstallationID: os.Getenv("MM_CLOUD_INSTALLATION_ID"),
+		PluginVersion:  manifest.Version,
+	})
+	p.metricsHandler = metrics.NewMetricsHandler(p.GetMetrics())
 
 	p.i18n = i18nInit()
 
