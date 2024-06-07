@@ -53,7 +53,7 @@ func (p *Plugin) newConversation(bot *Bot, context ai.ConversationContext) error
 	}
 	conversation.AddPost(p.PostToAIPost(bot, context.Post))
 
-	result, err := p.getLLM(bot.cfg.Service).ChatCompletion(conversation)
+	result, err := p.getLLM(bot.cfg).ChatCompletion(conversation)
 	if err != nil {
 		return err
 	}
@@ -81,7 +81,7 @@ func (p *Plugin) generateTitle(bot *Bot, request string, threadRootID string) er
 	titleRequest := ai.BotConversation{
 		Posts: []ai.Post{{Role: ai.PostRoleUser, Message: request}},
 	}
-	conversationTitle, err := p.getLLM(bot.cfg.Service).ChatCompletionNoStream(titleRequest, ai.WithMaxGeneratedTokens(25))
+	conversationTitle, err := p.getLLM(bot.cfg).ChatCompletionNoStream(titleRequest, ai.WithMaxGeneratedTokens(25))
 	if err != nil {
 		return fmt.Errorf("failed to get title: %w", err)
 	}
@@ -134,7 +134,7 @@ func (p *Plugin) continueConversation(bot *Bot, threadData *ThreadData, context 
 		}
 		prompt.AppendConversation(p.ThreadToBotConversation(bot, threadData.Posts))
 
-		result, err = p.getLLM(bot.cfg.Service).ChatCompletion(prompt)
+		result, err = p.getLLM(bot.cfg).ChatCompletion(prompt)
 		if err != nil {
 			return nil, err
 		}
@@ -157,7 +157,7 @@ func (p *Plugin) continueThreadConversation(bot *Bot, questionThreadData *Thread
 	}
 	prompt.AppendConversation(p.ThreadToBotConversation(bot, questionThreadData.Posts))
 
-	result, err := p.getLLM(bot.cfg.Service).ChatCompletion(prompt)
+	result, err := p.getLLM(bot.cfg).ChatCompletion(prompt)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +181,7 @@ func (p *Plugin) summarizePost(bot *Bot, postIDToSummarize string, context ai.Co
 	if err != nil {
 		return nil, err
 	}
-	summaryStream, err := p.getLLM(bot.cfg.Service).ChatCompletion(prompt)
+	summaryStream, err := p.getLLM(bot.cfg).ChatCompletion(prompt)
 	if err != nil {
 		return nil, err
 	}

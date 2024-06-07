@@ -109,7 +109,7 @@ func (p *Plugin) handleSince(c *gin.Context) {
 		return
 	}
 
-	resultStream, err := p.getLLM(bot.cfg.Service).ChatCompletion(prompt)
+	resultStream, err := p.getLLM(bot.cfg).ChatCompletion(prompt)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
