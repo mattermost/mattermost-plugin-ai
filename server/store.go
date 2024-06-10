@@ -62,7 +62,23 @@ func (p *Plugin) SetupTables() error {
 			Title TEXT NOT NULL
 		);
 	`); err != nil {
-		return fmt.Errorf("can't create feeback table: %w", err)
+		return fmt.Errorf("can't create llm titles table: %w", err)
+	}
+
+	// Fix existing tables to add on delete cascade to llm_threads_rootpostid_fkey and call it llm_threads_rootpostid_fkey_cascade
+	// This fixes data retention issues when a post is deleted
+	if _, err := p.db.Exec(`
+		DO
+		$$
+		BEGIN
+		IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'llm_threads_rootpostid_fkey_cascade') THEN
+			ALTER TABLE LLM_Threads DROP CONSTRAINT IF EXISTS llm_threads_rootpostid_fkey;
+			ALTER TABLE LLM_Threads ADD CONSTRAINT llm_threads_rootpostid_fkey_cascade FOREIGN KEY (RootPostID) REFERENCES Posts(ID) ON DELETE CASCADE;
+		END IF;
+		END
+		$$;
+	`); err != nil {
+		return fmt.Errorf("failed to migrate constraint: %w", err)
 	}
 
 	return nil
