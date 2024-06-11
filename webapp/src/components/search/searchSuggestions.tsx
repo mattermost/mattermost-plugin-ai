@@ -32,27 +32,32 @@ const SuggestionsHeader = styled.div`
     text-transform: uppercase;
 `;
 
-const SearchSuggestions = () => (
+
+type Props = {
+    onRunSearch?: (searchTerms: string) => void;
+}
+
+const SearchSuggestions = ({onRunSearch}: Props) => (
     <SearchSuggestionsContainer>
         <SuggestionsHeader>{'Recent'}</SuggestionsHeader>
-        <SearchSuggestion>
+        <SearchSuggestion onClick={() => onRunSearch && onRunSearch('When is the next launch window?')}>
             <i className='icon icon-clock-outline'/> {'When is the next launch window?'}
         </SearchSuggestion>
-        <SearchSuggestion>
+        <SearchSuggestion onClick={() => onRunSearch && onRunSearch('Who is the launch director on call today?')}>
             <i className='icon icon-clock-outline'/> {'Who is the launch director on call today?'}
         </SearchSuggestion>
 
         <SuggestionsHeader>{'Suggestions'}</SuggestionsHeader>
-        <SearchSuggestion>
+        <SearchSuggestion onClick={() => onRunSearch && onRunSearch('What problems have the most recent launches had?')}>
             <IconAI/> {'What problems have the most recent launches had?'}
         </SearchSuggestion>
-        <SearchSuggestion>
+        <SearchSuggestion onClick={() => onRunSearch && onRunSearch('What messages are pending my feedback?')}>
             <IconAI/> {'What messages are pending my feedback?'}
         </SearchSuggestion>
-        <SearchSuggestion>
+        <SearchSuggestion onClick={() => onRunSearch && onRunSearch('What is currently my most active channel?')}>
             <IconAI/> {'What is currently my most active channel?'}
         </SearchSuggestion>
-        <SearchSuggestion>
+        <SearchSuggestion onClick={() => onRunSearch && onRunSearch('What is the current weather in Jacksonville?')}>
             <IconAI/> {'What is the current weather in Jacksonville?'}
         </SearchSuggestion>
     </SearchSuggestionsContainer>
