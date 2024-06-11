@@ -5,7 +5,7 @@ import {FormattedMessage, useIntl} from 'react-intl';
 import {TrashCanOutlineIcon, ChevronDownIcon, AlertOutlineIcon, ChevronUpIcon} from '@mattermost/compass-icons/components';
 
 import IconAI from '../assets/icon_ai';
-import {DangerPill} from '../pill';
+import {DangerPill, Pill} from '../pill';
 
 import {ButtonIcon} from '../assets/buttons';
 
@@ -112,7 +112,7 @@ const Bot = (props: Props) => {
                             <SelectionItemOption value='openai'>{'OpenAI'}</SelectionItemOption>
                             <SelectionItemOption value='openaicompatible'>{'OpenAI Compatible'}</SelectionItemOption>
                             <SelectionItemOption value='anthropic'>{'Anthropic'}</SelectionItemOption>
-                            <SelectionItemOption value='asksage'>{'Ask Sage'}</SelectionItemOption>
+                            <SelectionItemOption value='asksage'>{'Ask Sage (Experimental)'}</SelectionItemOption>
                         </SelectionItem>
                         <ServiceItem
                             service={props.bot.service}
@@ -127,7 +127,12 @@ const Bot = (props: Props) => {
                         />
                         { (props.bot.service.type === 'openai' || props.bot.service.type === 'openaicompatible') && (
                             <BooleanItem
-                                label={intl.formatMessage({defaultMessage: 'Enable Vision'})}
+                                label={
+                                    <Horizontal>
+                                        <FormattedMessage defaultMessage='Enable Vision'/>
+                                        <Pill><FormattedMessage defaultMessage='BETA'/></Pill>
+                                    </Horizontal>
+                                }
                                 value={props.bot.enableVision}
                                 onChange={(to: boolean) => props.onChange({...props.bot, enableVision: to})}
                                 helpText={intl.formatMessage({defaultMessage: 'Enable Vision to allow the bot to process images. Requires a compatible model.'})}
@@ -139,6 +144,13 @@ const Bot = (props: Props) => {
         </BotContainer>
     );
 };
+
+const Horizontal = styled.div`
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 8px;
+`;
 
 type ServiceItemProps = {
     service: LLMService
