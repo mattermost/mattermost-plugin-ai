@@ -1,5 +1,6 @@
 import React from 'react';
 import styled from 'styled-components';
+import {FormattedMessage} from 'react-intl';
 
 import IconAI from '../assets/icon_ai';
 
@@ -7,6 +8,8 @@ const SearchSuggestionsContainer = styled.span`
     display: flex;
     flex-direction: column;
     justify-content: center;
+    border-bottom: 1px solid rgba(var(--center-channel-color-rgb), 0.08);
+    padding-bottom: 16px;
 `;
 
 const SearchSuggestion = styled.div`
@@ -39,7 +42,12 @@ type Props = {
 
 const SearchSuggestions = ({onRunSearch}: Props) => (
     <SearchSuggestionsContainer>
-        <SuggestionsHeader>{'Recent'}</SuggestionsHeader>
+        <SuggestionsHeader>
+            <FormattedMessage
+                id="copilot.search.recent"
+                defaultMessage="Recent"
+            />
+        </SuggestionsHeader>
         <SearchSuggestion onClick={() => onRunSearch && onRunSearch('When is the next launch window?')}>
             <i className='icon icon-clock-outline'/> {'When is the next launch window?'}
         </SearchSuggestion>
@@ -47,7 +55,12 @@ const SearchSuggestions = ({onRunSearch}: Props) => (
             <i className='icon icon-clock-outline'/> {'Who is the launch director on call today?'}
         </SearchSuggestion>
 
-        <SuggestionsHeader>{'Suggestions'}</SuggestionsHeader>
+        <SuggestionsHeader>
+            <FormattedMessage
+                id="copilot.search.suggestions"
+                defaultMessage="Suggestions"
+            />
+        </SuggestionsHeader>
         <SearchSuggestion onClick={() => onRunSearch && onRunSearch('What problems have the most recent launches had?')}>
             <IconAI/> {'What problems have the most recent launches had?'}
         </SearchSuggestion>

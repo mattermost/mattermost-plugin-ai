@@ -188,7 +188,7 @@ func (p *Plugin) handleSearch(c *gin.Context) {
 		Message:   searchRequest.SearchTerms,
 	}
 
-	createdPost, err := p.newConversationWithPost(bot, p.MakeConversationContext(bot, user, channel, post))
+	createdPost, err := p.newConversationForSearch(bot, p.MakeConversationContext(bot, user, channel, post))
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to produce summary: %w", err))
 		return
