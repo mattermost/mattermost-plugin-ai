@@ -47,15 +47,20 @@ func (p *Plugin) processUserRequestToBot(bot *Bot, context ai.ConversationContex
 }
 
 func (p *Plugin) newConversation(bot *Bot, context ai.ConversationContext) error {
+	_, err := p.newConversationWithPost(bot, context)
+	return err
+}
+
+func (p *Plugin) newConversationWithPost(bot *Bot, context ai.ConversationContext) (*model.Post, error) {
 	conversation, err := p.prompts.ChatCompletion(ai.PromptDirectMessageQuestion, context)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	conversation.AddPost(p.PostToAIPost(bot, context.Post))
 
 	result, err := p.getLLM(bot.cfg).ChatCompletion(conversation)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	responsePost := &model.Post{
@@ -63,7 +68,7 @@ func (p *Plugin) newConversation(bot *Bot, context ai.ConversationContext) error
 		RootId:    context.Post.Id,
 	}
 	if err := p.streamResultToNewPost(bot.mmBot.UserId, context.RequestingUser.Id, result, responsePost); err != nil {
-		return err
+		return nil, err
 	}
 
 	go func() {
@@ -74,7 +79,7 @@ func (p *Plugin) newConversation(bot *Bot, context ai.ConversationContext) error
 		}
 	}()
 
-	return nil
+	return responsePost, nil
 }
 
 func (p *Plugin) generateTitle(bot *Bot, request string, threadRootID string) error {
