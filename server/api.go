@@ -7,6 +7,8 @@ import (
 	"errors"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/render"
+	"github.com/mattermost/mattermost-plugin-ai/server/enterprise"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
@@ -27,10 +29,11 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	router.GET("/ai_threads", p.handleGetAIThreads)
 	router.GET("/ai_bots", p.handleGetAIBots)
 
-	botRequriedRouter := router.Group("")
-	botRequriedRouter.Use(p.aiBotRequired)
+	botRequiredRouter := router.Group("")
+	botRequiredRouter.Use(p.aiBotRequired)
+	botRequiredRouter.POST("/search", p.handleSearch)
 
-	postRouter := botRequriedRouter.Group("/post/:postid")
+	postRouter := botRequiredRouter.Group("/post/:postid")
 	postRouter.Use(p.postAuthorizationRequired)
 	postRouter.POST("/react", p.handleReact)
 	postRouter.POST("/summarize", p.handleSummarize)
@@ -40,7 +43,7 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	postRouter.POST("/regenerate", p.handleRegenerate)
 	postRouter.POST("/postback_summary", p.handlePostbackSummary)
 
-	channelRouter := botRequriedRouter.Group("/channel/:channelid")
+	channelRouter := botRequiredRouter.Group("/channel/:channelid")
 	channelRouter.Use(p.channelAuthorizationRequired)
 	channelRouter.POST("/since", p.handleSince)
 
@@ -148,4 +151,56 @@ func (p *Plugin) handleGetAIBots(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, bots)
+}
+
+func (p *Plugin) handleSearch(c *gin.Context) {
+	userID := c.GetHeader("Mattermost-User-Id")
+	bot := c.MustGet(ContextBotKey).(*Bot)
+
+	var searchRequest = struct {
+		SearchTerms string `json:"search_terms"`
+	}{}
+
+	if err := c.BindJSON(&searchRequest); err != nil {
+		c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	if !p.licenseChecker.IsBasicsLicensed() {
+		c.AbortWithError(http.StatusForbidden, enterprise.ErrNotLicensed)
+		return
+	}
+
+	channel, err := p.pluginAPI.Channel.GetDirect(userID, bot.mmBot.UserId)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	user, err := p.pluginAPI.User.Get(userID)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	post := &model.Post{
+		UserId:    bot.mmBot.UserId,
+		ChannelId: channel.Id,
+		Message:   searchRequest.SearchTerms,
+	}
+
+	createdPost, err := p.newConversationForSearch(bot, p.MakeConversationContext(bot, user, channel, post))
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to produce summary: %w", err))
+		return
+	}
+
+	data := struct {
+		PostID    string `json:"postid"`
+		ChannelID string `json:"channelid"`
+	}{
+		PostID:    createdPost.Id,
+		ChannelID: createdPost.ChannelId,
+	}
+	c.Render(http.StatusOK, render.JSON{Data: data})
 }
