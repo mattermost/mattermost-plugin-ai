@@ -52,7 +52,6 @@ export async function doSummarize(postid: string, botUsername: string) {
 
 export async function doSearch(searchTerms: string, botUsername: string) {
     const url = `${baseRoute()}/search?botUsername=${botUsername}`;
-    console.log(url);
     const response = await fetch(url, Client4.getOptions({
         method: 'POST',
         body: JSON.stringify({

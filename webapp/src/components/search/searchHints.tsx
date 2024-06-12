@@ -1,5 +1,5 @@
 import React from 'react';
-import { FormattedMessage } from 'react-intl';
+import {FormattedMessage} from 'react-intl';
 import styled from 'styled-components';
 
 const SearchHintsContainer = styled.span`
@@ -15,7 +15,7 @@ const SearchHintsContainer = styled.span`
 const SearchHints = () => (
     <SearchHintsContainer>
         <i className='icon icon-lightbulb-outline'/>
-        <FormattedMessage defaultMessage="Copilot searches all channels and messages you have access to"/>
+        <FormattedMessage defaultMessage='Copilot searches all channels and messages you have access to'/>
     </SearchHintsContainer>
 );
 

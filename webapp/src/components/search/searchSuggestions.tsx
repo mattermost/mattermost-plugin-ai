@@ -35,7 +35,6 @@ const SuggestionsHeader = styled.div`
     text-transform: uppercase;
 `;
 
-
 type Props = {
     onRunSearch?: (searchTerms: string) => void;
 }
@@ -43,7 +42,7 @@ type Props = {
 const SearchSuggestions = ({onRunSearch}: Props) => (
     <SearchSuggestionsContainer>
         <SuggestionsHeader>
-            <FormattedMessage defaultMessage="Recent"/>
+            <FormattedMessage defaultMessage='Recent'/>
         </SuggestionsHeader>
         <SearchSuggestion onClick={() => onRunSearch && onRunSearch('When is the next launch window?')}>
             <i className='icon icon-clock-outline'/> {'When is the next launch window?'}
@@ -53,7 +52,7 @@ const SearchSuggestions = ({onRunSearch}: Props) => (
         </SearchSuggestion>
 
         <SuggestionsHeader>
-            <FormattedMessage defaultMessage="Suggestions"/>
+            <FormattedMessage defaultMessage='Suggestions'/>
         </SuggestionsHeader>
         <SearchSuggestion onClick={() => onRunSearch && onRunSearch('What problems have the most recent launches had?')}>
             <IconAI/> {'What problems have the most recent launches had?'}

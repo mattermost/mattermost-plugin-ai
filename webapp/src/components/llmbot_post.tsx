@@ -223,7 +223,7 @@ export const LLMBotPost = (props: Props) => {
         selectPost(result.rootid, result.channelid);
     };
 
-    const isSearchResult = !!props.post.props?.search_query;
+    const isSearchResult = Boolean(props.post.props?.search_query);
     const requesterIsCurrentUser = (props.post.props?.llm_requester_user_id === currentUserId);
     const isThreadSummaryPost = (props.post.props?.referenced_thread && props.post.props?.referenced_thread !== '');
     const isNoShowRegen = (props.post.props?.no_regen && props.post.props?.no_regen !== '');
