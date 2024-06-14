@@ -8,25 +8,23 @@ import (
 )
 
 type AskSage struct {
-	client         *Client
-	defaultModel   string
-	maxTokens      int
-	metricsService metrics.Metrics
-	name           string
+	client       *Client
+	defaultModel string
+	maxTokens    int
+	metric       metrics.LLMetrics
 }
 
-func New(botConfig ai.BotConfig, metricsService metrics.Metrics) *AskSage {
+func New(llmService ai.ServiceConfig, metric metrics.LLMetrics) *AskSage {
 	client := NewClient("")
 	client.Login(GetTokenParams{
-		Email:    botConfig.Service.Username,
-		Password: botConfig.Service.Password,
+		Email:    llmService.Username,
+		Password: llmService.Password,
 	})
 	return &AskSage{
-		client:         client,
-		defaultModel:   botConfig.Service.DefaultModel,
-		maxTokens:      botConfig.Service.TokenLimit,
-		metricsService: metricsService,
-		name:           botConfig.Name,
+		client:       client,
+		defaultModel: llmService.DefaultModel,
+		maxTokens:    llmService.TokenLimit,
+		metric:       metric,
 	}
 }
 
@@ -80,7 +78,7 @@ func (s *AskSage) ChatCompletion(conversation ai.BotConversation, opts ...ai.Lan
 }
 
 func (s *AskSage) ChatCompletionNoStream(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (string, error) {
-	s.metricsService.IncrementLLMRequests(s.name)
+	s.metric.IncrementLLMRequests()
 
 	params := s.queryParamsFromConfig(s.createConfig(opts))
 	params.Message = conversationToMessagesList(conversation)

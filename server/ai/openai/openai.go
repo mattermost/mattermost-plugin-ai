@@ -27,8 +27,7 @@ type OpenAI struct {
 	defaultModel     string
 	tokenLimit       int
 	streamingTimeout time.Duration
-	metricsService   metrics.Metrics
-	name             string
+	metricsService   metrics.LLMetrics
 }
 
 const StreamingTimeoutDefault = 10 * time.Second
@@ -39,10 +38,10 @@ const OpenAIMaxImageSize = 20 * 1024 * 1024 // 20 MB
 
 var ErrStreamingTimeout = errors.New("timeout streaming")
 
-func NewCompatible(botConfig ai.BotConfig, metricsService metrics.Metrics) *OpenAI {
-	apiKey := botConfig.Service.APIKey
-	endpointURL := strings.TrimSuffix(botConfig.Service.APIURL, "/")
-	defaultModel := botConfig.Service.DefaultModel
+func NewCompatible(llmService ai.ServiceConfig, metricsService metrics.LLMetrics) *OpenAI {
+	apiKey := llmService.APIKey
+	endpointURL := strings.TrimSuffix(llmService.APIURL, "/")
+	defaultModel := llmService.DefaultModel
 	config := openaiClient.DefaultConfig(apiKey)
 	config.BaseURL = endpointURL
 
@@ -53,39 +52,37 @@ func NewCompatible(botConfig ai.BotConfig, metricsService metrics.Metrics) *Open
 	}
 
 	streamingTimeout := StreamingTimeoutDefault
-	if botConfig.Service.StreamingTimeoutSeconds > 0 {
-		streamingTimeout = time.Duration(botConfig.Service.StreamingTimeoutSeconds) * time.Second
+	if llmService.StreamingTimeoutSeconds > 0 {
+		streamingTimeout = time.Duration(llmService.StreamingTimeoutSeconds) * time.Second
 	}
 	return &OpenAI{
 		client:           openaiClient.NewClientWithConfig(config),
 		defaultModel:     defaultModel,
-		tokenLimit:       botConfig.Service.TokenLimit,
+		tokenLimit:       llmService.TokenLimit,
 		streamingTimeout: streamingTimeout,
 		metricsService:   metricsService,
-		name:             botConfig.Name,
 	}
 }
 
-func New(botConfig ai.BotConfig, metricsService metrics.Metrics) *OpenAI {
-	defaultModel := botConfig.Service.DefaultModel
+func New(llmService ai.ServiceConfig, metricsService metrics.LLMetrics) *OpenAI {
+	defaultModel := llmService.DefaultModel
 	if defaultModel == "" {
 		defaultModel = openaiClient.GPT3Dot5Turbo
 	}
-	config := openaiClient.DefaultConfig(botConfig.Service.APIKey)
-	config.OrgID = botConfig.Service.OrgID
+	config := openaiClient.DefaultConfig(llmService.APIKey)
+	config.OrgID = llmService.OrgID
 
 	streamingTimeout := StreamingTimeoutDefault
-	if botConfig.Service.StreamingTimeoutSeconds > 0 {
-		streamingTimeout = time.Duration(botConfig.Service.StreamingTimeoutSeconds) * time.Second
+	if llmService.StreamingTimeoutSeconds > 0 {
+		streamingTimeout = time.Duration(llmService.StreamingTimeoutSeconds) * time.Second
 	}
 
 	return &OpenAI{
 		client:           openaiClient.NewClientWithConfig(config),
 		defaultModel:     defaultModel,
-		tokenLimit:       botConfig.Service.TokenLimit,
+		tokenLimit:       llmService.TokenLimit,
 		streamingTimeout: streamingTimeout,
 		metricsService:   metricsService,
-		name:             botConfig.Name,
 	}
 }
 
@@ -351,7 +348,7 @@ func (s *OpenAI) completionRequestFromConfig(cfg ai.LLMConfig) openaiClient.Chat
 }
 
 func (s *OpenAI) ChatCompletion(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (*ai.TextStreamResult, error) {
-	s.metricsService.IncrementLLMRequests(s.name)
+	s.metricsService.IncrementLLMRequests()
 
 	request := s.completionRequestFromConfig(s.createConfig(opts))
 	request = modifyCompletionRequestWithConversation(request, conversation)

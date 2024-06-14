@@ -128,16 +128,18 @@ func (p *Plugin) OnActivate() error {
 }
 
 func (p *Plugin) getLLM(llmBotConfig ai.BotConfig) ai.LanguageModel {
+	metrics := p.metricsService.GetMetricsForAIService(llmBotConfig.Name)
+
 	var llm ai.LanguageModel
 	switch llmBotConfig.Service.Type {
 	case "openai":
-		llm = openai.New(llmBotConfig, p.metricsService)
+		llm = openai.New(llmBotConfig.Service, metrics)
 	case "openaicompatible":
-		llm = openai.NewCompatible(llmBotConfig, p.metricsService)
+		llm = openai.NewCompatible(llmBotConfig.Service, metrics)
 	case "anthropic":
-		llm = anthropic.New(llmBotConfig, p.metricsService)
+		llm = anthropic.New(llmBotConfig.Service, metrics)
 	case "asksage":
-		llm = asksage.New(llmBotConfig, p.metricsService)
+		llm = asksage.New(llmBotConfig.Service, metrics)
 	}
 
 	cfg := p.getConfiguration()
@@ -159,11 +161,12 @@ func (p *Plugin) getTranscribe() ai.Transcriber {
 			break
 		}
 	}
+	metrics := p.metricsService.GetMetricsForAIService(botConfig.Name)
 	switch botConfig.Service.Type {
 	case "openai":
-		return openai.New(botConfig, p.metricsService)
+		return openai.New(botConfig.Service, metrics)
 	case "openaicompatible":
-		return openai.NewCompatible(botConfig, p.metricsService)
+		return openai.NewCompatible(botConfig.Service, metrics)
 	}
 	return nil
 }

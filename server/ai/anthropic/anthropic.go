@@ -13,19 +13,17 @@ type Anthropic struct {
 	client         *Client
 	defaultModel   string
 	tokenLimit     int
-	metricsService metrics.Metrics
-	name           string
+	metricsService metrics.LLMetrics
 }
 
-func New(botConfig ai.BotConfig, metricsService metrics.Metrics) *Anthropic {
-	client := NewClient(botConfig.Service.APIKey)
+func New(llmService ai.ServiceConfig, metricsService metrics.LLMetrics) *Anthropic {
+	client := NewClient(llmService.APIKey)
 
 	return &Anthropic{
 		client:         client,
-		defaultModel:   botConfig.Service.DefaultModel,
-		tokenLimit:     botConfig.Service.TokenLimit,
+		defaultModel:   llmService.DefaultModel,
+		tokenLimit:     llmService.TokenLimit,
 		metricsService: metricsService,
-		name:           botConfig.Name,
 	}
 }
 
@@ -84,7 +82,7 @@ func (a *Anthropic) createCompletionRequest(conversation ai.BotConversation, opt
 }
 
 func (a *Anthropic) ChatCompletion(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (*ai.TextStreamResult, error) {
-	a.metricsService.IncrementLLMRequests(a.name)
+	a.metricsService.IncrementLLMRequests()
 
 	request := a.createCompletionRequest(conversation, opts)
 	request.Stream = true
@@ -97,7 +95,7 @@ func (a *Anthropic) ChatCompletion(conversation ai.BotConversation, opts ...ai.L
 }
 
 func (a *Anthropic) ChatCompletionNoStream(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (string, error) {
-	a.metricsService.IncrementLLMRequests(a.name)
+	a.metricsService.IncrementLLMRequests()
 
 	request := a.createCompletionRequest(conversation, opts)
 	request.Stream = false
