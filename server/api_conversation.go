@@ -12,6 +12,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+type ConversationRequest struct {
+	// The name of the bot that should handle the request.
+	BotName string `json:"bot_name"`
+	// Optional past conversation to be used as context.
+	Thread []*model.Post `json:"thread"`
+	// The post to be processed in this request.
+	Request *model.Post `json:"request"`
+}
+
 func (p *Plugin) handlePostConversation(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 
@@ -24,19 +33,36 @@ func (p *Plugin) handlePostConversation(c *gin.Context) {
 		return
 	}
 
-	var conv []*model.Post
-	if err := json.NewDecoder(c.Request.Body).Decode(&conv); err != nil {
+	var reqData ConversationRequest
+	if err := json.NewDecoder(c.Request.Body).Decode(&reqData); err != nil {
 		c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 	defer c.Request.Body.Close()
-	if len(conv) == 0 {
-		c.AbortWithError(http.StatusBadRequest, errors.New("invalid empty conversation"))
+
+	// Validation
+	if reqData.BotName == "" {
+		c.AbortWithError(http.StatusBadRequest, errors.New("invalid empty bot"))
 		return
 	}
 
-	// The last post is expected to contain the current request, everything else is used as context.
-	post := conv[len(conv)-1]
+	bot := p.GetBotByUsername(reqData.BotName)
+	if bot == nil {
+		c.AbortWithError(http.StatusBadRequest, errors.New("invalid bot name"))
+		return
+	}
+
+	post := reqData.Request
+
+	if post == nil {
+		c.AbortWithError(http.StatusBadRequest, errors.New("invalid request"))
+		return
+	}
+
+	if post.Message == "" {
+		c.AbortWithError(http.StatusBadRequest, errors.New("invalid empty message"))
+		return
+	}
 
 	if post.ChannelId == "" {
 		c.AbortWithError(http.StatusBadRequest, errors.New("invalid empty channel id"))
@@ -72,19 +98,15 @@ func (p *Plugin) handlePostConversation(c *gin.Context) {
 		return
 	}
 
-	bot := p.GetBotMentioned(post.Message)
-	if bot == nil {
-		c.AbortWithError(http.StatusBadRequest, errors.New("missing bot mention"))
-		return
-	}
-
 	list := &model.PostList{
-		Order: make([]string, 0, len(conv)),
-		Posts: make(map[string]*model.Post, len(conv)),
+		Order: make([]string, 0, len(reqData.Thread)+1),
+		Posts: make(map[string]*model.Post, len(reqData.Thread)+1),
 	}
-	for i, post := range conv {
+	list.Order = append(list.Order, post.Id)
+	list.Posts[post.Id] = post
+	for i, post := range reqData.Thread {
 		list.Order = append(list.Order, post.Id)
-		list.Posts[post.Id] = conv[i]
+		list.Posts[post.Id] = reqData.Thread[i]
 	}
 
 	threadData, err := p.getMetadataForPosts(list)

@@ -309,8 +309,8 @@ func TestPostConversation(t *testing.T) {
 
 	url := "/conversation"
 
-	newPayloadReader := func(conv []*model.Post) io.Reader {
-		data, err := json.Marshal(conv)
+	newPayloadReader := func(req *ConversationRequest) io.Reader {
+		data, err := json.Marshal(req)
 		require.NoError(t, err)
 		return bytes.NewReader(data)
 	}
@@ -343,7 +343,7 @@ func TestPostConversation(t *testing.T) {
 				e.mockAPI.On("LogError", mock.Anything).Once()
 			},
 		},
-		"empty conv": {
+		"empty request": {
 			request:        httptest.NewRequest("POST", url, nil),
 			expectedStatus: http.StatusBadRequest,
 			config: Config{
@@ -365,10 +365,66 @@ func TestPostConversation(t *testing.T) {
 				e.mockAPI.On("LogError", mock.Anything).Once()
 			},
 		},
+		"missing bot name": {
+			request:        httptest.NewRequest("POST", url, newPayloadReader(&ConversationRequest{})),
+			expectedStatus: http.StatusBadRequest,
+			config: Config{
+				EnableUseRestrictions: false,
+			},
+			envSetup: func(e *TestEnvironment) {
+				e.mockAPI.On("GetBot", "userid", false).Return(&model.Bot{UserId: "userid"}, nil)
+				e.mockAPI.On("LogError", mock.Anything).Once()
+			},
+		},
+		"invalid bot": {
+			request: httptest.NewRequest("POST", url, newPayloadReader(&ConversationRequest{
+				BotName: "invalid",
+			})),
+			expectedStatus: http.StatusBadRequest,
+			config: Config{
+				EnableUseRestrictions: false,
+			},
+			envSetup: func(e *TestEnvironment) {
+				e.mockAPI.On("GetBot", "userid", false).Return(&model.Bot{UserId: "userid"}, nil)
+				e.mockAPI.On("LogError", mock.Anything).Once()
+			},
+		},
+		"missing post": {
+			request: httptest.NewRequest("POST", url, newPayloadReader(&ConversationRequest{
+				BotName: "ai",
+			})),
+			expectedStatus: http.StatusBadRequest,
+			config: Config{
+				EnableUseRestrictions: false,
+			},
+			envSetup: func(e *TestEnvironment) {
+				e.mockAPI.On("GetBot", "userid", false).Return(&model.Bot{UserId: "userid"}, nil)
+				e.mockAPI.On("LogError", mock.Anything).Once()
+			},
+		},
+		"empty message": {
+			request: httptest.NewRequest("POST", url, newPayloadReader(&ConversationRequest{
+				BotName: "ai",
+				Request: &model.Post{
+					Id: "postid",
+				},
+			})),
+			expectedStatus: http.StatusBadRequest,
+			config: Config{
+				EnableUseRestrictions: false,
+			},
+			envSetup: func(e *TestEnvironment) {
+				e.mockAPI.On("GetBot", "userid", false).Return(&model.Bot{UserId: "userid"}, nil)
+				e.mockAPI.On("LogError", mock.Anything).Once()
+			},
+		},
 		"channel not found": {
-			request: httptest.NewRequest("POST", url, newPayloadReader([]*model.Post{
-				{
+			request: httptest.NewRequest("POST", url, newPayloadReader(&ConversationRequest{
+				BotName: "ai",
+				Request: &model.Post{
+					Id:        "postid",
 					ChannelId: "channelid",
+					Message:   "request",
 				},
 			})),
 			expectedStatus: http.StatusBadRequest,
@@ -382,9 +438,12 @@ func TestPostConversation(t *testing.T) {
 			},
 		},
 		"failure to get channel": {
-			request: httptest.NewRequest("POST", url, newPayloadReader([]*model.Post{
-				{
+			request: httptest.NewRequest("POST", url, newPayloadReader(&ConversationRequest{
+				BotName: "ai",
+				Request: &model.Post{
+					Id:        "postid",
 					ChannelId: "channelid",
+					Message:   "request",
 				},
 			})),
 			expectedStatus: http.StatusInternalServerError,
@@ -398,9 +457,12 @@ func TestPostConversation(t *testing.T) {
 			},
 		},
 		"missing poster id": {
-			request: httptest.NewRequest("POST", url, newPayloadReader([]*model.Post{
-				{
+			request: httptest.NewRequest("POST", url, newPayloadReader(&ConversationRequest{
+				BotName: "ai",
+				Request: &model.Post{
+					Id:        "postid",
 					ChannelId: "channelid",
+					Message:   "request",
 				},
 			})),
 			expectedStatus: http.StatusBadRequest,
@@ -414,9 +476,12 @@ func TestPostConversation(t *testing.T) {
 			},
 		},
 		"poster not found": {
-			request: httptest.NewRequest("POST", url, newPayloadReader([]*model.Post{
-				{
+			request: httptest.NewRequest("POST", url, newPayloadReader(&ConversationRequest{
+				BotName: "ai",
+				Request: &model.Post{
+					Id:        "postid",
 					ChannelId: "channelid",
+					Message:   "request",
 					UserId:    "posterid",
 				},
 			})),
@@ -432,9 +497,12 @@ func TestPostConversation(t *testing.T) {
 			},
 		},
 		"failure to get poster": {
-			request: httptest.NewRequest("POST", url, newPayloadReader([]*model.Post{
-				{
+			request: httptest.NewRequest("POST", url, newPayloadReader(&ConversationRequest{
+				BotName: "ai",
+				Request: &model.Post{
+					Id:        "postid",
 					ChannelId: "channelid",
+					Message:   "request",
 					UserId:    "posterid",
 				},
 			})),
@@ -450,11 +518,13 @@ func TestPostConversation(t *testing.T) {
 			},
 		},
 		"not responding to ourselves": {
-			request: httptest.NewRequest("POST", url, newPayloadReader([]*model.Post{
-				{
+			request: httptest.NewRequest("POST", url, newPayloadReader(&ConversationRequest{
+				BotName: "ai",
+				Request: &model.Post{
+					Id:        "postid",
 					ChannelId: "channelid",
+					Message:   "request",
 					UserId:    "botid",
-					Message:   "@ai what time is it?",
 				},
 			})),
 			expectedStatus: http.StatusBadRequest,
@@ -465,24 +535,6 @@ func TestPostConversation(t *testing.T) {
 				e.mockAPI.On("GetBot", "userid", false).Return(&model.Bot{UserId: "userid"}, nil)
 				e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{Id: "channelid"}, nil)
 				e.mockAPI.On("GetUser", "botid").Return(&model.User{Id: "botid"}, nil)
-				e.mockAPI.On("LogError", mock.Anything).Once()
-			},
-		},
-		"missing bot mention": {
-			request: httptest.NewRequest("POST", url, newPayloadReader([]*model.Post{
-				{
-					ChannelId: "channelid",
-					UserId:    "posterid",
-				},
-			})),
-			expectedStatus: http.StatusBadRequest,
-			config: Config{
-				EnableUseRestrictions: false,
-			},
-			envSetup: func(e *TestEnvironment) {
-				e.mockAPI.On("GetBot", "userid", false).Return(&model.Bot{UserId: "userid"}, nil)
-				e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{Id: "channelid"}, nil)
-				e.mockAPI.On("GetUser", "posterid").Return(&model.User{Id: "posterid"}, nil)
 				e.mockAPI.On("LogError", mock.Anything).Once()
 			},
 		},
