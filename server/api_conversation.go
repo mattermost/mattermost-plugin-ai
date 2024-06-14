@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/mattermost/mattermost-plugin-ai/server/ai"
+
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 
@@ -19,6 +21,8 @@ type ConversationRequest struct {
 	Thread []*model.Post `json:"thread"`
 	// The post to be processed in this request.
 	Request *model.Post `json:"request"`
+	// Whether to use the system role to generate the prompt.
+	UseSystemRole bool `json:"use_system_role"`
 }
 
 func (p *Plugin) handlePostConversation(c *gin.Context) {
@@ -115,9 +119,23 @@ func (p *Plugin) handlePostConversation(c *gin.Context) {
 		return
 	}
 
-	result, err := p.continueConversation(bot, threadData, p.MakeConversationContext(bot, postingUser, channel, post))
+	prompt, err := p.prompts.ChatCompletion(ai.PromptDirectMessageQuestion, p.MakeConversationContext(bot, postingUser, channel, post))
 	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to continue conversation: %w", err))
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to generate prompt: %w", err))
+		return
+	}
+	prompt.AppendConversation(p.ThreadToBotConversation(bot, threadData.Posts))
+
+	// Overriding post role if requested.
+	if reqData.UseSystemRole {
+		for i := range prompt.Posts {
+			prompt.Posts[i].Role = ai.PostRoleSystem
+		}
+	}
+
+	result, err := p.getLLM(bot.cfg).ChatCompletion(prompt)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to process request: %w", err))
 		return
 	}
 
