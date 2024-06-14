@@ -1,14 +1,15 @@
 import React, {useState} from 'react';
 import styled from 'styled-components';
+import {FormattedMessage, useIntl} from 'react-intl';
 
 import {TrashCanOutlineIcon, ChevronDownIcon, AlertOutlineIcon, ChevronUpIcon} from '@mattermost/compass-icons/components';
 
 import IconAI from '../assets/icon_ai';
-import {DangerPill} from '../pill';
+import {DangerPill, Pill} from '../pill';
 
 import {ButtonIcon} from '../assets/buttons';
 
-import {ItemList, SelectionItem, SelectionItemOption, TextItem} from './item';
+import {BooleanItem, ItemList, SelectionItem, SelectionItemOption, TextItem} from './item';
 import AvatarItem from './avatar';
 
 export type LLMService = {
@@ -20,6 +21,7 @@ export type LLMService = {
     username: string
     password: string
     tokenLimit: number
+    streamingTimeoutSeconds: number
 }
 
 export type LLMBotConfig = {
@@ -28,6 +30,7 @@ export type LLMBotConfig = {
     displayName: string
     service: LLMService
     customInstructions: string
+    enableVision: boolean
 }
 
 type Props = {
@@ -50,6 +53,7 @@ function serviceTypeToDisplayName(serviceType: string): string {
 
 const Bot = (props: Props) => {
     const [open, setOpen] = useState(false);
+    const intl = useIntl();
     const missingInfo = props.bot.name === '' ||
 		props.bot.displayName === '' ||
 		props.bot.service.type === '' ||
@@ -72,7 +76,7 @@ const Bot = (props: Props) => {
                 {missingInfo && (
                     <DangerPill>
                         <AlertOutlineIcon/>
-                        {'Missing information'}
+                        <FormattedMessage defaultMessage='Missing information'/>
                     </DangerPill>
                 )}
                 <ButtonIcon
@@ -86,13 +90,13 @@ const Bot = (props: Props) => {
                 <ItemListContainer>
                     <ItemList>
                         <TextItem
-                            label='Display name'
+                            label={intl.formatMessage({defaultMessage: 'Display name'})}
                             value={props.bot.displayName}
                             onChange={(e) => props.onChange({...props.bot, displayName: e.target.value})}
                         />
                         <TextItem
-                            label='Bot username'
-                            helptext='Team mebers can mention this bot with this username'
+                            label={intl.formatMessage({defaultMessage: 'Bot Username'})}
+                            helptext={intl.formatMessage({defaultMessage: 'Team members can mention this bot with this username'})}
                             value={props.bot.name}
                             onChange={(e) => props.onChange({...props.bot, name: e.target.value})}
                         />
@@ -101,33 +105,52 @@ const Bot = (props: Props) => {
                             changedAvatar={props.changedAvatar}
                         />
                         <SelectionItem
-                            label='Service'
+                            label={intl.formatMessage({defaultMessage: 'Service'})}
                             value={props.bot.service.type}
                             onChange={(e) => props.onChange({...props.bot, service: {...props.bot.service, type: e.target.value}})}
                         >
                             <SelectionItemOption value='openai'>{'OpenAI'}</SelectionItemOption>
                             <SelectionItemOption value='openaicompatible'>{'OpenAI Compatible'}</SelectionItemOption>
                             <SelectionItemOption value='anthropic'>{'Anthropic'}</SelectionItemOption>
-                            <SelectionItemOption value='asksage'>{'Ask Sage'}</SelectionItemOption>
+                            <SelectionItemOption value='asksage'>{'Ask Sage (Experimental)'}</SelectionItemOption>
                         </SelectionItem>
                         <ServiceItem
                             service={props.bot.service}
                             onChange={(service) => props.onChange({...props.bot, service})}
                         />
                         <TextItem
-                            label='Custom instructions'
-                            placeholder='How would you like the AI to respond?'
+                            label={intl.formatMessage({defaultMessage: 'Custom instructions'})}
+                            placeholder={intl.formatMessage({defaultMessage: 'How would you like the AI to respond?'})}
                             multiline={true}
                             value={props.bot.customInstructions}
                             onChange={(e) => props.onChange({...props.bot, customInstructions: e.target.value})}
                         />
-
+                        { (props.bot.service.type === 'openai' || props.bot.service.type === 'openaicompatible') && (
+                            <BooleanItem
+                                label={
+                                    <Horizontal>
+                                        <FormattedMessage defaultMessage='Enable Vision'/>
+                                        <Pill><FormattedMessage defaultMessage='BETA'/></Pill>
+                                    </Horizontal>
+                                }
+                                value={props.bot.enableVision}
+                                onChange={(to: boolean) => props.onChange({...props.bot, enableVision: to})}
+                                helpText={intl.formatMessage({defaultMessage: 'Enable Vision to allow the bot to process images. Requires a compatible model.'})}
+                            />
+                        )}
                     </ItemList>
                 </ItemListContainer>
             )}
         </BotContainer>
     );
 };
+
+const Horizontal = styled.div`
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 8px;
+`;
 
 type ServiceItemProps = {
     service: LLMService
@@ -136,20 +159,21 @@ type ServiceItemProps = {
 
 const ServiceItem = (props: ServiceItemProps) => {
     const type = props.service.type;
+    const intl = useIntl();
     const hasAPIKey = type !== 'asksage';
     const isOpenAIType = type === 'openai' || type === 'openaicompatible';
     return (
         <>
             {type === 'openaicompatible' && (
                 <TextItem
-                    label='API URL'
+                    label={intl.formatMessage({defaultMessage: 'API URL'})}
                     value={props.service.apiURL}
                     onChange={(e) => props.onChange({...props.service, apiURL: e.target.value})}
                 />
             )}
             {hasAPIKey && (
                 <TextItem
-                    label='API Key'
+                    label={intl.formatMessage({defaultMessage: 'API Key'})}
                     type='password'
                     value={props.service.apiKey}
                     onChange={(e) => props.onChange({...props.service, apiKey: e.target.value})}
@@ -157,7 +181,7 @@ const ServiceItem = (props: ServiceItemProps) => {
             )}
             {isOpenAIType && (
                 <TextItem
-                    label='Organization ID'
+                    label={intl.formatMessage({defaultMessage: 'Organization ID'})}
                     value={props.service.orgId}
                     onChange={(e) => props.onChange({...props.service, orgId: e.target.value})}
                 />
@@ -165,27 +189,34 @@ const ServiceItem = (props: ServiceItemProps) => {
             {type === 'asksage' && (
                 <>
                     <TextItem
-                        label='Username'
+                        label={intl.formatMessage({defaultMessage: 'Username'})}
                         value={props.service.username}
                         onChange={(e) => props.onChange({...props.service, username: e.target.value})}
                     />
                     <TextItem
-                        label='Password'
+                        label={intl.formatMessage({defaultMessage: 'Password'})}
                         value={props.service.password}
                         onChange={(e) => props.onChange({...props.service, password: e.target.value})}
                     />
                 </>
             )}
             <TextItem
-                label='Default model'
+                label={intl.formatMessage({defaultMessage: 'Default model'})}
                 value={props.service.defaultModel}
                 onChange={(e) => props.onChange({...props.service, defaultModel: e.target.value})}
             />
             <TextItem
-                label='Token limit'
+                label={intl.formatMessage({defaultMessage: 'Token limit'})}
                 value={props.service.tokenLimit.toString()}
                 onChange={(e) => props.onChange({...props.service, tokenLimit: parseInt(e.target.value, 10)})}
             />
+            {isOpenAIType && (
+                <TextItem
+                    label={intl.formatMessage({defaultMessage: 'Streaming Timeout Seconds'})}
+                    value={props.service.streamingTimeoutSeconds?.toString() || '0'}
+                    onChange={(e) => props.onChange({...props.service, streamingTimeoutSeconds: parseInt(e.target.value, 10)})}
+                />
+            )}
         </>
     );
 };

@@ -1,5 +1,6 @@
 import React from 'react';
 import styled from 'styled-components';
+import {FormattedMessage} from 'react-intl';
 
 export const ItemList = styled.div`
 	display: grid;
@@ -107,4 +108,47 @@ export const StyledInput = styled.input<{as?: string}>`
 		box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075), 0 0 8px rgba(102, 175, 233, 0.75);
 		outline: 0;
 	}
+`;
+
+type BooleanItemProps = {
+    label: React.ReactNode
+    value: boolean
+    onChange: (to: boolean) => void
+    helpText?: string
+};
+
+export const BooleanItem = (props: BooleanItemProps) => {
+    return (
+        <>
+            <ItemLabel>{props.label}</ItemLabel>
+            <TextFieldContainer>
+                <BooleanItemRow>
+                    <input
+                        type='radio'
+                        value='true'
+                        checked={props.value}
+                        onChange={() => props.onChange(true)}
+                    />
+                    <FormattedMessage defaultMessage='true'/>
+                    <input
+                        type='radio'
+                        value='false'
+                        checked={!props.value}
+                        onChange={() => props.onChange(false)}
+                    />
+                    <FormattedMessage defaultMessage='false'/>
+                </BooleanItemRow>
+                {props.helpText &&
+                <HelpText>{props.helpText}</HelpText>
+                }
+            </TextFieldContainer>
+        </>
+    );
+};
+
+const BooleanItemRow = styled.div`
+	display: flex;
+	flex-direction: row;
+	gap: 8px;
+	align-items: center;
 `;

@@ -3,6 +3,8 @@ package main
 import (
 	"embed"
 	"fmt"
+	"net/http"
+	"os"
 	"os/exec"
 	"sync"
 
@@ -15,9 +17,11 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/asksage"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/openai"
 	"github.com/mattermost/mattermost-plugin-ai/server/enterprise"
+	"github.com/mattermost/mattermost-plugin-ai/server/metrics"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 )
 
 const (
@@ -25,6 +29,7 @@ const (
 
 	CallsRecordingPostType = "custom_calls_recording"
 	CallsBotUsername       = "calls"
+	ZoomBotUsername        = "zoom"
 
 	ffmpegPluginPath = "./plugins/mattermost-ai/server/dist/ffmpeg"
 )
@@ -56,9 +61,13 @@ type Plugin struct {
 	streamingContextsMutex sync.Mutex
 
 	licenseChecker *enterprise.LicenseChecker
+	metricsService metrics.Metrics
+	metricsHandler http.Handler
 
 	botsLock sync.RWMutex
 	bots     []*Bot
+
+	i18n *i18n.Bundle
 }
 
 func resolveffmpegPath() string {
@@ -78,6 +87,14 @@ func (p *Plugin) OnActivate() error {
 	p.pluginAPI = pluginapi.NewClient(p.API, p.Driver)
 
 	p.licenseChecker = enterprise.NewLicenseChecker(p.pluginAPI)
+
+	p.metricsService = metrics.NewMetrics(metrics.InstanceInfo{
+		InstallationID: os.Getenv("MM_CLOUD_INSTALLATION_ID"),
+		PluginVersion:  manifest.Version,
+	})
+	p.metricsHandler = metrics.NewMetricsHandler(p.GetMetrics())
+
+	p.i18n = i18nInit()
 
 	if err := p.MigrateServicesToBots(); err != nil {
 		p.pluginAPI.Log.Error("failed to migrate services to bots", "error", err)
@@ -110,17 +127,17 @@ func (p *Plugin) OnActivate() error {
 	return nil
 }
 
-func (p *Plugin) getLLM(llmServiceConfig ai.ServiceConfig) ai.LanguageModel {
+func (p *Plugin) getLLM(llmBotConfig ai.BotConfig) ai.LanguageModel {
 	var llm ai.LanguageModel
-	switch llmServiceConfig.Type {
+	switch llmBotConfig.Service.Type {
 	case "openai":
-		llm = openai.New(llmServiceConfig)
+		llm = openai.New(llmBotConfig, p.metricsService)
 	case "openaicompatible":
-		llm = openai.NewCompatible(llmServiceConfig)
+		llm = openai.NewCompatible(llmBotConfig, p.metricsService)
 	case "anthropic":
-		llm = anthropic.New(llmServiceConfig)
+		llm = anthropic.New(llmBotConfig, p.metricsService)
 	case "asksage":
-		llm = asksage.New(llmServiceConfig)
+		llm = asksage.New(llmBotConfig, p.metricsService)
 	}
 
 	cfg := p.getConfiguration()
@@ -135,18 +152,18 @@ func (p *Plugin) getLLM(llmServiceConfig ai.ServiceConfig) ai.LanguageModel {
 
 func (p *Plugin) getTranscribe() ai.Transcriber {
 	cfg := p.getConfiguration()
-	var transcriptionService ai.ServiceConfig
+	var botConfig ai.BotConfig
 	for _, bot := range cfg.Bots {
 		if bot.Name == cfg.TranscriptGenerator {
-			transcriptionService = bot.Service
+			botConfig = bot
 			break
 		}
 	}
-	switch transcriptionService.Type {
+	switch botConfig.Service.Type {
 	case "openai":
-		return openai.New(transcriptionService)
+		return openai.New(botConfig, p.metricsService)
 	case "openaicompatible":
-		return openai.NewCompatible(transcriptionService)
+		return openai.NewCompatible(botConfig, p.metricsService)
 	}
 	return nil
 }

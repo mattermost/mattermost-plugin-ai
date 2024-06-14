@@ -1,6 +1,7 @@
 package subtitles
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"strings"
@@ -11,6 +12,38 @@ import (
 
 type Subtitles struct {
 	storage *astisub.Subtitles
+}
+
+func readZoomChat(chat io.Reader) (*astisub.Subtitles, error) {
+	storage := astisub.NewSubtitles()
+
+	scanner := bufio.NewScanner(chat)
+	for scanner.Scan() {
+		line := scanner.Text()
+		text := line[9:]
+		item := &astisub.Item{}
+		startAt, err := time.Parse("15:04:05", line[:8])
+		if err != nil {
+			return nil, err
+		}
+		zeroTime, err := time.Parse("15:04:05", "00:00:00")
+		if err != nil {
+			return nil, err
+		}
+		item.StartAt = startAt.Sub(zeroTime)
+		item.EndAt = startAt.Add(5 * time.Second).Sub(zeroTime)
+		item.Lines = append(item.Lines, astisub.Line{Items: []astisub.LineItem{{Text: text}}})
+		storage.Items = append(storage.Items, item)
+	}
+	return storage, nil
+}
+
+func NewSubtitlesFromZoomChat(chat io.Reader) (*Subtitles, error) {
+	storage, err := readZoomChat(chat)
+	if err != nil {
+		return nil, err
+	}
+	return &Subtitles{storage: storage}, nil
 }
 
 func NewSubtitlesFromVTT(webvtt io.Reader) (*Subtitles, error) {

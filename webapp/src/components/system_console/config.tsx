@@ -1,5 +1,6 @@
 import React, {useEffect, useState} from 'react';
 import styled from 'styled-components';
+import {FormattedMessage, useIntl} from 'react-intl';
 
 import {PlusIcon} from '@mattermost/compass-icons/components';
 
@@ -74,18 +75,19 @@ const defaultConfig = {
 
 const BetaMessage = () => (
     <MessageContainer>
-        <Pill>
-            {'BETA'}
-        </Pill>
         <span>
-            {'This plugin is currently in beta. To report a bug or to provide feedback, '}
-            <a
-                target={'_blank'}
-                rel={'noopener noreferrer'}
-                href='http://github.com/mattermost/mattermost-plugin-ai/issues'
-            >
-                {'create a new issue in the plugin repository'}
-            </a>
+            <FormattedMessage
+                defaultMessage='To report a bug or to provide feedback, <link>create a new issue in the plugin repository</link>.'
+                values={{link: (chunks: any) => (
+                    <a
+                        target={'_blank'}
+                        rel={'noopener noreferrer'}
+                        href='http://github.com/mattermost/mattermost-plugin-ai/issues'
+                    >
+                        {chunks}
+                    </a>
+                )}}
+            />
         </span>
     </MessageContainer>
 );
@@ -93,6 +95,7 @@ const BetaMessage = () => (
 const Config = (props: Props) => {
     const value = props.value || defaultConfig;
     const [avatarUpdates, setAvatarUpdates] = useState<{[key: string]: File}>({});
+    const intl = useIntl();
 
     useEffect(() => {
         const save = async () => {
@@ -134,25 +137,32 @@ const Config = (props: Props) => {
         <ConfigContainer>
             <BetaMessage/>
             <Panel
-                title='AI Bots'
-                subtitle='Multiple AI services can be configured below.'
+                title={intl.formatMessage({defaultMessage: 'AI Bots'})}
+                subtitle={intl.formatMessage({defaultMessage: 'Multiple AI services can be configured below.'})}
             >
                 <Bots
                     bots={props.value.bots ?? []}
-                    onChange={(bots: LLMBotConfig[]) => props.onChange(props.id, {...value, bots})}
+                    onChange={(bots: LLMBotConfig[]) => {
+                        if (value.bots.findIndex((bot) => bot.name === value.defaultBotName) === -1) {
+                            props.onChange(props.id, {...value, bots, defaultBotName: bots[0].name});
+                        } else {
+                            props.onChange(props.id, {...value, bots});
+                        }
+                        props.setSaveNeeded();
+                    }}
                     botChangedAvatar={botChangedAvatar}
                 />
                 <PanelFooterText>
-                    {'AI services are third party services; Mattermost is not responsible for output.'}
+                    <FormattedMessage defaultMessage='AI services are third party services; Mattermost is not responsible for output.'/>
                 </PanelFooterText>
             </Panel>
             <Panel
-                title='AI functions'
-                subtitle='Choose which bot you want to be the default for each function.'
+                title={intl.formatMessage({defaultMessage: 'AI Functions'})}
+                subtitle={intl.formatMessage({defaultMessage: 'Choose which bot you want to be the default for each function.'})}
             >
                 <ItemList>
                     <SelectionItem
-                        label='Default bot'
+                        label={intl.formatMessage({defaultMessage: 'Default bot'})}
                         value={value.defaultBotName}
                         onChange={(e) => {
                             props.onChange(props.id, {...value, defaultBotName: e.target.value});
@@ -172,14 +182,14 @@ const Config = (props: Props) => {
             </Panel>
 
             <Panel
-                title='User restrictions (experimental)'
-                subtitle='Enable restrictions to allow or not users to use AI in this instance.'
+                title={intl.formatMessage({defaultMessage: 'User restrictions (experimental)'})}
+                subtitle={intl.formatMessage({defaultMessage: 'Enable restrictions to allow or not users to use AI in this instance.'})}
             >
                 <div className='form-group'>
                     <label
                         className='control-label col-sm-4'
                     >
-                        {'Enable User Restrictions:'}
+                        <FormattedMessage defaultMessage='Enable User Restrictions:'/>
                     </label>
                     <div className='col-sm-8'>
                         <label className='radio-inline'>
@@ -189,7 +199,7 @@ const Config = (props: Props) => {
                                 checked={value.enableUserRestrictions}
                                 onChange={() => props.onChange(props.id, {...value, enableUserRestrictions: true})}
                             />
-                            <span>{'true'}</span>
+                            <span><FormattedMessage defaultMessage='true'/></span>
                         </label>
                         <label className='radio-inline'>
                             <input
@@ -198,9 +208,13 @@ const Config = (props: Props) => {
                                 checked={!value.enableUserRestrictions}
                                 onChange={() => props.onChange(props.id, {...value, enableUserRestrictions: false})}
                             />
-                            <span>{'false'}</span>
+                            <span><FormattedMessage defaultMessage='false'/></span>
                         </label>
-                        <div className='help-text'><span>{'Global flag for all below settings.'}</span></div>
+                        <div className='help-text'>
+                            <span>
+                                <FormattedMessage defaultMessage='Global flag for all below settings.'/>
+                            </span>
+                        </div>
                     </div>
                 </div>
                 {value.enableUserRestrictions && (
@@ -209,7 +223,7 @@ const Config = (props: Props) => {
                             <label
                                 className='control-label col-sm-4'
                             >
-                                {'Allow Private Channels:'}
+                                <FormattedMessage defaultMessage='Allow Private Channels:'/>
                             </label>
                             <div className='col-sm-8'>
                                 <label className='radio-inline'>
@@ -219,7 +233,7 @@ const Config = (props: Props) => {
                                         checked={value.allowPrivateChannels}
                                         onChange={() => props.onChange(props.id, {...value, allowPrivateChannels: true})}
                                     />
-                                    <span>{'true'}</span>
+                                    <span><FormattedMessage defaultMessage='true'/></span>
                                 </label>
                                 <label className='radio-inline'>
                                     <input
@@ -228,7 +242,9 @@ const Config = (props: Props) => {
                                         checked={!value.allowPrivateChannels}
                                         onChange={() => props.onChange(props.id, {...value, allowPrivateChannels: false})}
                                     />
-                                    <span>{'false'}</span>
+                                    <span>
+                                        <FormattedMessage defaultMessage='false'/>
+                                    </span>
                                 </label>
                             </div>
                         </div>
@@ -237,7 +253,7 @@ const Config = (props: Props) => {
                                 className='control-label col-sm-4'
                                 htmlFor='ai-allow-team-ids'
                             >
-                                {'Allow Team IDs (csv):'}
+                                <FormattedMessage defaultMessage='Allow Team IDs (csv):'/>
                             </label>
                             <div className='col-sm-8'>
                                 <input
@@ -254,7 +270,7 @@ const Config = (props: Props) => {
                                 className='control-label col-sm-4'
                                 htmlFor='ai-only-users-on-team'
                             >
-                                {'Only Users on Team:'}
+                                <FormattedMessage defaultMessage='Only Users on Team:'/>
                             </label>
                             <div className='col-sm-8'>
                                 <input
@@ -271,7 +287,7 @@ const Config = (props: Props) => {
             </Panel>
 
             <Panel
-                title='Debug'
+                title={intl.formatMessage({defaultMessage: 'Debug'})}
                 subtitle=''
             >
                 <div className='form-group'>
@@ -279,7 +295,7 @@ const Config = (props: Props) => {
                         className='control-label col-sm-4'
                         htmlFor='ai-service-name'
                     >
-                        {'Enable LLM Trace:'}
+                        <FormattedMessage defaultMessage='Enable LLM Trace:'/>
                     </label>
                     <div className='col-sm-8'>
                         <label className='radio-inline'>
@@ -289,7 +305,7 @@ const Config = (props: Props) => {
                                 checked={value.enableLLMTrace}
                                 onChange={() => props.onChange(props.id, {...value, enableLLMTrace: true})}
                             />
-                            <span>{'true'}</span>
+                            <span><FormattedMessage defaultMessage='true'/></span>
                         </label>
                         <label className='radio-inline'>
                             <input
@@ -298,9 +314,13 @@ const Config = (props: Props) => {
                                 checked={!value.enableLLMTrace}
                                 onChange={() => props.onChange(props.id, {...value, enableLLMTrace: false})}
                             />
-                            <span>{'false'}</span>
+                            <span><FormattedMessage defaultMessage='false'/></span>
                         </label>
-                        <div className='help-text'><span>{'Enable tracing of LLM requests. Outputs whole conversations to the logs.'}</span></div>
+                        <div className='help-text'>
+                            <span>
+                                <FormattedMessage defaultMessage='Enable tracing of LLM requests. Outputs whole conversations to the logs.'/>
+                            </span>
+                        </div>
                     </div>
                 </div>
             </Panel>

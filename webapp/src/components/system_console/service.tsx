@@ -9,4 +9,5 @@ export type ServiceData = {
     username: string
     password: string
     tokenLimit: number
+    streamingTimeoutSeconds: number
 }
