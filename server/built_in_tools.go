@@ -431,3 +431,9 @@ func (p *Plugin) getBuiltInTools(isDM bool) []ai.Tool {
 
 	return builtInTools
 }
+
+func (p *Plugin) getDefaultToolsStore(isDM bool) ai.ToolStore {
+	store := ai.NewToolStore(&p.pluginAPI.Log, p.getConfiguration().EnableLLMTrace)
+	store.AddTools(p.getBuiltInTools(isDM))
+	return store
+}
