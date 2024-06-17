@@ -88,12 +88,12 @@ func New(llmService ai.ServiceConfig, metricsService metrics.LLMetrics) *OpenAI 
 
 func modifyCompletionRequestWithConversation(request openaiClient.ChatCompletionRequest, conversation ai.BotConversation) openaiClient.ChatCompletionRequest {
 	request.Messages = postsToChatCompletionMessages(conversation.Posts)
-	request.Functions = toolsToFunctionDefinitions(conversation.Tools.GetTools()) //nolint:all
+	request.Tools = toolsToOpenAITools(conversation.Tools.GetTools())
 	return request
 }
 
-func toolsToFunctionDefinitions(tools []ai.Tool) []openaiClient.FunctionDefinition {
-	result := make([]openaiClient.FunctionDefinition, 0, len(tools))
+func toolsToOpenAITools(tools []ai.Tool) []openaiClient.Tool {
+	result := make([]openaiClient.Tool, 0, len(tools))
 
 	schemaMaker := jsonschema.Reflector{
 		Anonymous:      true,
@@ -102,10 +102,13 @@ func toolsToFunctionDefinitions(tools []ai.Tool) []openaiClient.FunctionDefiniti
 
 	for _, tool := range tools {
 		schema := schemaMaker.Reflect(tool.Schema)
-		result = append(result, openaiClient.FunctionDefinition{
-			Name:        tool.Name,
-			Description: tool.Description,
-			Parameters:  schema,
+		result = append(result, openaiClient.Tool{
+			Type: openaiClient.ToolTypeFunction,
+			Function: &openaiClient.FunctionDefinition{
+				Name:        tool.Name,
+				Description: tool.Description,
+				Parameters:  schema,
+			},
 		})
 	}
 
@@ -183,18 +186,10 @@ func createFunctionArrgmentResolver(jsonArgs string) ai.ToolArgumentGetter {
 	}
 }
 
-func (s *OpenAI) handleStreamFunctionCall(request openaiClient.ChatCompletionRequest, conversation ai.BotConversation, name, arguments string) (openaiClient.ChatCompletionRequest, error) {
-	toolResult, err := conversation.Tools.ResolveTool(name, createFunctionArrgmentResolver(arguments), conversation.Context)
-	if err != nil {
-		fmt.Println("Error resolving function: ", err)
-	}
-	request.Messages = append(request.Messages, openaiClient.ChatCompletionMessage{
-		Role:    openaiClient.ChatMessageRoleFunction,
-		Name:    name,
-		Content: toolResult,
-	})
-
-	return request, nil
+type ToolBufferElement struct {
+	id   strings.Builder
+	name strings.Builder
+	args strings.Builder
 }
 
 func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionRequest, conversation ai.BotConversation, output chan<- string, errChan chan<- error) {
@@ -236,9 +231,8 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 
 	defer stream.Close()
 
-	// Buffering in the case of a function call.
-	functionName := strings.Builder{}
-	functionArguments := strings.Builder{}
+	// Buffering in the case of tool use
+	var toolsBuffer map[int]*ToolBufferElement
 	for {
 		response, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
@@ -266,11 +260,11 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 			// Not done yet, keep going
 		case openaiClient.FinishReasonStop:
 			return
-		case openaiClient.FinishReasonFunctionCall:
+		case openaiClient.FinishReasonToolCalls:
 			// Verify OpenAI functions are not recursing too deep.
 			numFunctionCalls := 0
 			for i := len(request.Messages) - 1; i >= 0; i-- {
-				if request.Messages[i].Role == openaiClient.ChatMessageRoleFunction {
+				if request.Messages[i].Role == openaiClient.ChatMessageRoleTool {
 					numFunctionCalls++
 				} else {
 					break
@@ -281,26 +275,69 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 				return
 			}
 
-			// Call ourselves again with the result of the function call
-			recursiveRequest, err := s.handleStreamFunctionCall(request, conversation, functionName.String(), functionArguments.String())
-			if err != nil {
-				errChan <- err
-				return
+			tools := []openaiClient.ToolCall{}
+			for i, tool := range toolsBuffer {
+				name := tool.name.String()
+				arguments := tool.args.String()
+				toolID := tool.id.String()
+				num := i
+				tools = append(tools, openaiClient.ToolCall{
+					Function: openaiClient.FunctionCall{
+						Name:      name,
+						Arguments: arguments,
+					},
+					ID:    toolID,
+					Index: &num,
+					Type:  openaiClient.ToolTypeFunction,
+				})
 			}
-			s.streamResultToChannels(recursiveRequest, conversation, output, errChan)
+
+			request.Messages = append(request.Messages, openaiClient.ChatCompletionMessage{
+				Role:      openaiClient.ChatMessageRoleAssistant,
+				ToolCalls: tools,
+			})
+
+			for _, tool := range toolsBuffer {
+				name := tool.name.String()
+				arguments := tool.args.String()
+				toolID := tool.id.String()
+				toolResult, err := conversation.Tools.ResolveTool(name, createFunctionArrgmentResolver(arguments), conversation.Context)
+				if err != nil {
+					fmt.Printf("Error resolving function %s: %s", name, err)
+				}
+				request.Messages = append(request.Messages, openaiClient.ChatCompletionMessage{
+					Role:       openaiClient.ChatMessageRoleTool,
+					Name:       name,
+					Content:    toolResult,
+					ToolCallID: toolID,
+				})
+			}
+
+			// Call ourselves again with the result of the function call
+			s.streamResultToChannels(request, conversation, output, errChan)
 			return
 		default:
 			fmt.Printf("Unknown finish reason: %s", response.Choices[0].FinishReason)
 			return
 		}
 
-		// Keep track of any function call received
-		if response.Choices[0].Delta.FunctionCall != nil {
-			if response.Choices[0].Delta.FunctionCall.Name != "" {
-				functionName.WriteString(response.Choices[0].Delta.FunctionCall.Name)
+		delta := response.Choices[0].Delta
+		numTools := len(delta.ToolCalls)
+		if numTools != 0 {
+			if toolsBuffer == nil {
+				toolsBuffer = make(map[int]*ToolBufferElement)
 			}
-			if response.Choices[0].Delta.FunctionCall.Arguments != "" {
-				functionArguments.WriteString(response.Choices[0].Delta.FunctionCall.Arguments)
+			for _, toolCall := range delta.ToolCalls {
+				if toolCall.Index == nil {
+					continue
+				}
+				toolIndex := *toolCall.Index
+				if toolsBuffer[toolIndex] == nil {
+					toolsBuffer[toolIndex] = &ToolBufferElement{}
+				}
+				toolsBuffer[toolIndex].name.WriteString(toolCall.Function.Name)
+				toolsBuffer[toolIndex].args.WriteString(toolCall.Function.Arguments)
+				toolsBuffer[toolIndex].id.WriteString(toolCall.ID)
 			}
 		}
 
