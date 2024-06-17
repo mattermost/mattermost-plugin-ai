@@ -1,4 +1,5 @@
 import React, {useState, useEffect, useCallback} from 'react';
+import {FormattedMessage, useIntl} from 'react-intl';
 import {useDispatch, useSelector} from 'react-redux';
 import styled from 'styled-components';
 
@@ -8,9 +9,14 @@ import manifest from '@/manifest';
 
 import {getAIThreads, updateRead} from '@/client';
 
+import {useBotlist} from '@/bots';
+
+import RHSImage from '../assets/rhs_image';
+
 import ThreadItem from './thread_item';
 import RHSHeader from './rhs_header';
 import RHSNewTab from './rhs_new_tab';
+import {RHSPaddingContainer, RHSText, RHSTitle} from './common';
 
 const ThreadViewer = (window as any).Components.ThreadViewer && styled((window as any).Components.ThreadViewer)`
     height: 100%;
@@ -26,9 +32,24 @@ const RhsContainer = styled.div`
     flex-direction: column;
 `;
 
+const RHSDivider = styled.div`
+	border-bottom: 1px solid rgba(var(--center-channel-color-rgb), 0.12);
+	margin-top: 12px;
+	margin-bottom: 12px;
+`;
+
+const RHSSubtitle = styled(RHSText)`
+	font-weight: 600;
+`;
+
+const RHSBullet = styled.li`
+	margin-bottom: 8px;
+`;
+
 export interface AIThread {
     ID: string;
     Message: string;
+    ChannelID: string;
     Title: string;
     ReplyCount: number;
     UpdateAt: number;
@@ -38,8 +59,8 @@ const twentyFourHoursInMS = 24 * 60 * 60 * 1000;
 
 export default function RHS() {
     const dispatch = useDispatch();
+    const intl = useIntl();
     const [currentTab, setCurrentTab] = useState('new');
-    const botChannelId = useSelector((state: any) => state['plugins-' + manifest.id].botChannelId);
     const selectedPostId = useSelector((state: any) => state['plugins-' + manifest.id].selectedPostId);
     const currentUserId = useSelector<GlobalState, string>((state) => state.entities.users.currentUserId);
     const currentTeamId = useSelector<GlobalState, string>((state) => state.entities.teams.currentTeamId);
@@ -68,6 +89,32 @@ export default function RHS() {
         dispatch({type: 'SELECT_AI_POST', postId});
     }, [dispatch]);
 
+    const {bots, activeBot, setActiveBot} = useBotlist();
+
+    // Unconfigured state
+    if (bots && bots.length === 0) {
+        return (
+            <RhsContainer>
+                <RHSPaddingContainer>
+                    <RHSImage/>
+                    <RHSTitle><FormattedMessage defaultMessage='Copilot is not yet configured for this workspace'/></RHSTitle>
+                    <RHSText><FormattedMessage defaultMessage='A system admin needs to complete the configuration before it can be used.'/></RHSText>
+                    <RHSDivider/>
+                    <RHSSubtitle><FormattedMessage defaultMessage='What is Copilot?'/></RHSSubtitle>
+                    <RHSText><FormattedMessage defaultMessage='Copilot is a plugin that enables you to leverage the power of AI to:'/></RHSText>
+                    <RHSText>
+                        <ul>
+                            <RHSBullet><FormattedMessage defaultMessage='Get caught up quickly with instant summarization for channels and threads.'/></RHSBullet>
+                            <RHSBullet><FormattedMessage defaultMessage='Create meeting summaries in a flash.'/></RHSBullet>
+                            <RHSBullet><FormattedMessage defaultMessage='Ask Copilot anything to get quick answers.'/></RHSBullet>
+                        </ul>
+                    </RHSText>
+
+                </RHSPaddingContainer>
+            </RhsContainer>
+        );
+    }
+
     let content = null;
     if (selectedPostId) {
         if (currentTab !== 'thread') {
@@ -76,14 +123,14 @@ export default function RHS() {
         content = (
             <ThreadViewer
                 data-testid='rhs-thread-viewer'
-                inputPlaceholder='Reply...'
+                inputPlaceholder={intl.formatMessage({defaultMessage: 'Reply...'})}
                 rootPostId={selectedPostId}
                 useRelativeTimestamp={false}
                 isThreadView={false}
             />
         );
     } else if (currentTab === 'threads') {
-        if (threads) {
+        if (threads && bots) {
             content = (
                 <ThreadsList
                     data-testid='rhs-threads-list'
@@ -95,6 +142,7 @@ export default function RHS() {
                             postMessage={p.Message}
                             repliesCount={p.ReplyCount}
                             lastActivityDate={p.UpdateAt}
+                            label={bots.find((bot) => bot.dmChannelID === p.ChannelID)?.displayName ?? ''}
                             onClick={() => {
                                 setCurrentTab('thread');
                                 selectPost(p.ID);
@@ -109,7 +157,7 @@ export default function RHS() {
         content = (
             <RHSNewTab
                 data-testid='rhs-new-tab'
-                botChannelId={botChannelId}
+                botChannelId={activeBot?.dmChannelID ?? ''}
                 setCurrentTab={setCurrentTab}
                 selectPost={selectPost}
             />
@@ -121,6 +169,9 @@ export default function RHS() {
                 currentTab={currentTab}
                 setCurrentTab={setCurrentTab}
                 selectPost={selectPost}
+                bots={bots}
+                activeBot={activeBot}
+                setActiveBot={setActiveBot}
             />
             {content}
         </RhsContainer>

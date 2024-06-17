@@ -18,6 +18,7 @@ import (
 	"github.com/invopop/jsonschema"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/subtitles"
+	"github.com/mattermost/mattermost-plugin-ai/server/metrics"
 	openaiClient "github.com/sashabaranov/go-openai"
 )
 
@@ -26,17 +27,20 @@ type OpenAI struct {
 	defaultModel     string
 	tokenLimit       int
 	streamingTimeout time.Duration
+	metricsService   metrics.LLMetrics
 }
 
 const StreamingTimeoutDefault = 10 * time.Second
 
 const MaxFunctionCalls = 10
 
+const OpenAIMaxImageSize = 20 * 1024 * 1024 // 20 MB
+
 var ErrStreamingTimeout = errors.New("timeout streaming")
 
-func NewCompatible(llmService ai.ServiceConfig) *OpenAI {
+func NewCompatible(llmService ai.ServiceConfig, metricsService metrics.LLMetrics) *OpenAI {
 	apiKey := llmService.APIKey
-	endpointURL := strings.TrimSuffix(llmService.URL, "/")
+	endpointURL := strings.TrimSuffix(llmService.APIURL, "/")
 	defaultModel := llmService.DefaultModel
 	config := openaiClient.DefaultConfig(apiKey)
 	config.BaseURL = endpointURL
@@ -56,10 +60,11 @@ func NewCompatible(llmService ai.ServiceConfig) *OpenAI {
 		defaultModel:     defaultModel,
 		tokenLimit:       llmService.TokenLimit,
 		streamingTimeout: streamingTimeout,
+		metricsService:   metricsService,
 	}
 }
 
-func New(llmService ai.ServiceConfig) *OpenAI {
+func New(llmService ai.ServiceConfig, metricsService metrics.LLMetrics) *OpenAI {
 	defaultModel := llmService.DefaultModel
 	if defaultModel == "" {
 		defaultModel = openaiClient.GPT3Dot5Turbo
@@ -77,12 +82,13 @@ func New(llmService ai.ServiceConfig) *OpenAI {
 		defaultModel:     defaultModel,
 		tokenLimit:       llmService.TokenLimit,
 		streamingTimeout: streamingTimeout,
+		metricsService:   metricsService,
 	}
 }
 
 func modifyCompletionRequestWithConversation(request openaiClient.ChatCompletionRequest, conversation ai.BotConversation) openaiClient.ChatCompletionRequest {
 	request.Messages = postsToChatCompletionMessages(conversation.Posts)
-	request.Functions = toolsToFunctionDefinitions(conversation.Tools.GetTools())
+	request.Functions = toolsToFunctionDefinitions(conversation.Tools.GetTools()) //nolint:all
 	return request
 }
 
@@ -121,10 +127,55 @@ func postsToChatCompletionMessages(posts []ai.Post) []openaiClient.ChatCompletio
 		} else if post.Role == ai.PostRoleSystem {
 			role = openaiClient.ChatMessageRoleSystem
 		}
-		result = append(result, openaiClient.ChatCompletionMessage{
-			Role:    role,
-			Content: post.Message,
-		})
+		completionMessage := openaiClient.ChatCompletionMessage{
+			Role: role,
+		}
+
+		if len(post.Files) > 0 {
+			completionMessage.MultiContent = make([]openaiClient.ChatMessagePart, 0, len(post.Files)+1)
+			if post.Message != "" {
+				completionMessage.MultiContent = append(completionMessage.MultiContent, openaiClient.ChatMessagePart{
+					Type: openaiClient.ChatMessagePartTypeText,
+					Text: post.Message,
+				})
+			}
+			for _, file := range post.Files {
+				if file.MimeType != "image/png" &&
+					file.MimeType != "image/jpeg" &&
+					file.MimeType != "image/gif" &&
+					file.MimeType != "image/webp" {
+					completionMessage.MultiContent = append(completionMessage.MultiContent, openaiClient.ChatMessagePart{
+						Type: openaiClient.ChatMessagePartTypeText,
+						Text: "User submitted image was not a supported format. Tell the user this.",
+					})
+					continue
+				}
+				if file.Size > OpenAIMaxImageSize {
+					completionMessage.MultiContent = append(completionMessage.MultiContent, openaiClient.ChatMessagePart{
+						Type: openaiClient.ChatMessagePartTypeText,
+						Text: "User submitted a image larger than 20MB. Tell the user this.",
+					})
+					continue
+				}
+				fileBytes, err := io.ReadAll(file.Reader)
+				if err != nil {
+					continue
+				}
+				imageEncoded := base64.StdEncoding.EncodeToString(fileBytes)
+				encodedString := fmt.Sprintf("data:"+file.MimeType+";base64,%s", imageEncoded)
+				completionMessage.MultiContent = append(completionMessage.MultiContent, openaiClient.ChatMessagePart{
+					Type: openaiClient.ChatMessagePartTypeImageURL,
+					ImageURL: &openaiClient.ChatMessageImageURL{
+						URL:    encodedString,
+						Detail: openaiClient.ImageURLDetailAuto,
+					},
+				})
+			}
+		} else {
+			completionMessage.Content = post.Message
+		}
+
+		result = append(result, completionMessage)
 	}
 
 	return result
@@ -287,6 +338,7 @@ func (s *OpenAI) createConfig(opts []ai.LanguageModelOption) ai.LLMConfig {
 	for _, opt := range opts {
 		opt(&cfg)
 	}
+
 	return cfg
 }
 
@@ -302,6 +354,8 @@ func (s *OpenAI) completionRequestFromConfig(cfg ai.LLMConfig) openaiClient.Chat
 }
 
 func (s *OpenAI) ChatCompletion(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (*ai.TextStreamResult, error) {
+	s.metricsService.IncrementLLMRequests()
+
 	request := s.completionRequestFromConfig(s.createConfig(opts))
 	request = modifyCompletionRequestWithConversation(request, conversation)
 	request.Stream = true

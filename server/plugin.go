@@ -3,6 +3,8 @@ package main
 import (
 	"embed"
 	"fmt"
+	"net/http"
+	"os"
 	"os/exec"
 	"sync"
 
@@ -15,10 +17,11 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/asksage"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/openai"
 	"github.com/mattermost/mattermost-plugin-ai/server/enterprise"
-	"github.com/mattermost/mattermost-plugin-ai/server/mmapi"
+	"github.com/mattermost/mattermost-plugin-ai/server/metrics"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 )
 
 const (
@@ -26,6 +29,7 @@ const (
 
 	CallsRecordingPostType = "custom_calls_recording"
 	CallsBotUsername       = "calls"
+	ZoomBotUsername        = "zoom"
 
 	ffmpegPluginPath = "./plugins/mattermost-ai/server/dist/ffmpeg"
 )
@@ -46,8 +50,6 @@ type Plugin struct {
 
 	pluginAPI *pluginapi.Client
 
-	botid string
-
 	ffmpegPath string
 
 	db      *sqlx.DB
@@ -59,6 +61,13 @@ type Plugin struct {
 	streamingContextsMutex sync.Mutex
 
 	licenseChecker *enterprise.LicenseChecker
+	metricsService metrics.Metrics
+	metricsHandler http.Handler
+
+	botsLock sync.RWMutex
+	bots     []*Bot
+
+	i18n *i18n.Bundle
 }
 
 func resolveffmpegPath() string {
@@ -74,33 +83,28 @@ func resolveffmpegPath() string {
 	return "ffmpeg"
 }
 
-func (p *Plugin) EnsureMainBot() error {
-	serviceName := "a third party AI Service"
-	if llmConfig, err := p.getActiveLLMConfig(); err == nil {
-		serviceName = llmConfig.Name
-	}
-	botID, err := p.pluginAPI.Bot.EnsureBot(&model.Bot{
-		Username:    BotUsername,
-		DisplayName: "AI Copilot",
-		Description: "Powered by " + serviceName,
-	},
-		pluginapi.ProfileImagePath("assets/bot_icon.png"),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to ensure bot: %w", err)
-	}
-	p.botid = botID
-
-	return nil
-}
-
 func (p *Plugin) OnActivate() error {
 	p.pluginAPI = pluginapi.NewClient(p.API, p.Driver)
 
 	p.licenseChecker = enterprise.NewLicenseChecker(p.pluginAPI)
 
-	if err := p.EnsureMainBot(); err != nil {
-		return err
+	p.metricsService = metrics.NewMetrics(metrics.InstanceInfo{
+		InstallationID: os.Getenv("MM_CLOUD_INSTALLATION_ID"),
+		PluginVersion:  manifest.Version,
+	})
+	p.metricsHandler = metrics.NewMetricsHandler(p.GetMetrics())
+
+	p.i18n = i18nInit()
+
+	if err := p.MigrateServicesToBots(); err != nil {
+		p.pluginAPI.Log.Error("failed to migrate services to bots", "error", err)
+		// Don't fail on migration errors
+	}
+
+	if err := p.EnsureBots(); err != nil {
+		p.pluginAPI.Log.Error("Failed to ensure bots", "error", err)
+		// Don't fail on ensure bots errors as this leaves the plugin in an awkward state
+		// where it can't be configured from the system console.
 	}
 
 	if err := p.SetupDB(); err != nil {
@@ -123,40 +127,19 @@ func (p *Plugin) OnActivate() error {
 	return nil
 }
 
-func (p *Plugin) getActiveLLMConfig() (ai.ServiceConfig, error) {
-	cfg := p.getConfiguration()
-	if cfg == nil || cfg.Services == nil || len(cfg.Services) == 0 {
-		return ai.ServiceConfig{}, errors.New("no LLM services configured. Please configure a service in the plugin settings")
-	}
-
-	if p.licenseChecker.IsMultiLLMLicensed() {
-		for _, service := range cfg.Services {
-			if service.Name == cfg.LLMGenerator {
-				return service, nil
-			}
-		}
-	}
-
-	return cfg.Services[0], nil
-}
-
-func (p *Plugin) getLLM() ai.LanguageModel {
-	llmServiceConfig, err := p.getActiveLLMConfig()
-	if err != nil {
-		p.pluginAPI.Log.Error(err.Error())
-		return nil
-	}
+func (p *Plugin) getLLM(llmBotConfig ai.BotConfig) ai.LanguageModel {
+	metrics := p.metricsService.GetMetricsForAIService(llmBotConfig.Name)
 
 	var llm ai.LanguageModel
-	switch llmServiceConfig.ServiceName {
+	switch llmBotConfig.Service.Type {
 	case "openai":
-		llm = openai.New(llmServiceConfig)
+		llm = openai.New(llmBotConfig.Service, metrics)
 	case "openaicompatible":
-		llm = openai.NewCompatible(llmServiceConfig)
+		llm = openai.NewCompatible(llmBotConfig.Service, metrics)
 	case "anthropic":
-		llm = anthropic.New(llmServiceConfig)
+		llm = anthropic.New(llmBotConfig.Service, metrics)
 	case "asksage":
-		llm = asksage.New(llmServiceConfig)
+		llm = asksage.New(llmBotConfig.Service, metrics)
 	}
 
 	cfg := p.getConfiguration()
@@ -171,18 +154,19 @@ func (p *Plugin) getLLM() ai.LanguageModel {
 
 func (p *Plugin) getTranscribe() ai.Transcriber {
 	cfg := p.getConfiguration()
-	var transcriptionService ai.ServiceConfig
-	for _, service := range cfg.Services {
-		if service.Name == cfg.TranscriptGenerator {
-			transcriptionService = service
+	var botConfig ai.BotConfig
+	for _, bot := range cfg.Bots {
+		if bot.Name == cfg.TranscriptGenerator {
+			botConfig = bot
 			break
 		}
 	}
-	switch transcriptionService.ServiceName {
+	metrics := p.metricsService.GetMetricsForAIService(botConfig.Name)
+	switch botConfig.Service.Type {
 	case "openai":
-		return openai.New(transcriptionService)
+		return openai.New(botConfig.Service, metrics)
 	case "openaicompatible":
-		return openai.NewCompatible(transcriptionService)
+		return openai.NewCompatible(botConfig.Service, metrics)
 	}
 	return nil
 }
@@ -212,7 +196,7 @@ const (
 // handleMessages Handled messages posted. Returns true if a response was posted.
 func (p *Plugin) handleMessages(post *model.Post) error {
 	// Don't respond to ouselves
-	if post.UserId == p.botid {
+	if p.IsAnyBot(post.UserId) {
 		return fmt.Errorf("not responding to ourselves: %w", ErrNoResponse)
 	}
 
@@ -246,37 +230,37 @@ func (p *Plugin) handleMessages(post *model.Post) error {
 		return fmt.Errorf("not responding to other bots: %w", ErrNoResponse)
 	}
 
-	switch {
 	// Check we are mentioned like @ai
-	case userIsMentionedMarkdown(post.Message, BotUsername):
-		return p.handleMentions(post, postingUser, channel)
+	if bot := p.GetBotMentioned(post.Message); bot != nil {
+		return p.handleMentions(bot, post, postingUser, channel)
+	}
 
-		// Check if this is post in the DM channel with the bot
-	case mmapi.IsDMWith(p.botid, channel):
-		return p.handleDMs(channel, postingUser, post)
+	// Check if this is post in the DM channel with any bot
+	if bot := p.GetBotForDMChannel(channel); bot != nil {
+		return p.handleDMs(bot, channel, postingUser, post)
 	}
 
 	return nil
 }
 
-func (p *Plugin) handleMentions(post *model.Post, postingUser *model.User, channel *model.Channel) error {
+func (p *Plugin) handleMentions(bot *Bot, post *model.Post, postingUser *model.User, channel *model.Channel) error {
 	if err := p.checkUsageRestrictions(postingUser.Id, channel); err != nil {
 		return err
 	}
 
-	if err := p.processUserRequestToBot(p.MakeConversationContext(postingUser, channel, post)); err != nil {
+	if err := p.processUserRequestToBot(bot, p.MakeConversationContext(bot, postingUser, channel, post)); err != nil {
 		return fmt.Errorf("unable to process bot mention: %w", err)
 	}
 
 	return nil
 }
 
-func (p *Plugin) handleDMs(channel *model.Channel, postingUser *model.User, post *model.Post) error {
+func (p *Plugin) handleDMs(bot *Bot, channel *model.Channel, postingUser *model.User, post *model.Post) error {
 	if err := p.checkUsageRestrictionsForUser(postingUser.Id); err != nil {
 		return err
 	}
 
-	if err := p.processUserRequestToBot(p.MakeConversationContext(postingUser, channel, post)); err != nil {
+	if err := p.processUserRequestToBot(bot, p.MakeConversationContext(bot, postingUser, channel, post)); err != nil {
 		return fmt.Errorf("unable to process bot DM: %w", err)
 	}
 

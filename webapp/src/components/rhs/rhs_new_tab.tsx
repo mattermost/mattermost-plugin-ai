@@ -1,5 +1,6 @@
-import React from 'react';
+import React, {useState, useCallback} from 'react';
 import styled from 'styled-components';
+import {useIntl, FormattedMessage} from 'react-intl';
 
 import {
     FormatListNumberedIcon,
@@ -7,11 +8,13 @@ import {
     PlaylistCheckIcon,
 } from '@mattermost/compass-icons/components';
 
+import {useDispatch} from 'react-redux';
+
 import RHSImage from '../assets/rhs_image';
 
 import {createPost} from '@/client';
 
-import {Button} from './common';
+import {Button, RHSPaddingContainer, RHSText, RHSTitle} from './common';
 
 const CreatePost = (window as any).Components.CreatePost;
 
@@ -38,25 +41,6 @@ const OptionButton = styled(Button)`
 	font-weight: 600;
 	line-height: 16px;
 	font-size: 12px;
-`;
-
-const NewQuestion = styled.div`
-	margin: 0 24px;
-	margin-top: 16px;
-    display: flex;
-    flex-direction: column;
-	gap: 8px;
-`;
-
-const QuestionTitle = styled.div`
-    font-family: Metropolis;
-    font-weight: 600;
-    font-size: 22px;
-`;
-
-const QuestionDescription = styled.div`
-    font-weight: 400;
-    font-size: 14px;
 `;
 
 const QuestionOptions = styled.div`
@@ -89,49 +73,88 @@ const setEditorText = (text: string) => {
     }
 };
 
-const addBrainstormingIdeas = () => {
-    setEditorText('Brainstorm ideas about ');
-};
-
-const addMeetingAgenda = () => {
-    setEditorText('Write a meeting agenda about ');
-};
-
-const addToDoList = () => {
-    setEditorText('Write a todo list about ');
-};
-
-const addProsAndCons = () => {
-    setEditorText('Write a pros and cons list about ');
-};
-
 const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
+    const dispatch = useDispatch();
+    const intl = useIntl();
+    const [draft, updateDraft] = useState<any>(null);
+    const addBrainstormingIdeas = useCallback(() => {
+        setEditorText(intl.formatMessage({defaultMessage: 'Brainstorm ideas about '}));
+    }, []);
+
+    const addMeetingAgenda = useCallback(() => {
+        setEditorText(intl.formatMessage({defaultMessage: 'Write a meeting agenda about '}));
+    }, []);
+
+    const addToDoList = useCallback(() => {
+        setEditorText(intl.formatMessage({defaultMessage: 'Write a todo list about '}));
+    }, []);
+
+    const addProsAndCons = useCallback(() => {
+        setEditorText(intl.formatMessage({defaultMessage: 'Write a pros and cons list about '}));
+    }, []);
     return (
-        <NewQuestion>
+        <RHSPaddingContainer>
             <RHSImage/>
-            <QuestionTitle>{'Ask AI Copilot anything'}</QuestionTitle>
-            <QuestionDescription>{'The AI Copilot is here to help. Choose from the prompts below or write your own.'}</QuestionDescription>
+            <RHSTitle><FormattedMessage defaultMessage='Ask Copilot anything'/></RHSTitle>
+            <RHSText><FormattedMessage defaultMessage='The Copilot is here to help. Choose from the prompts below or write your own.'/></RHSText>
             <QuestionOptions>
-                <OptionButton onClick={addBrainstormingIdeas}><LightbulbOutlineIcon/>{'Brainstorm ideas'}</OptionButton>
-                <OptionButton onClick={addMeetingAgenda}><FormatListNumberedIcon/>{'Meeting agenda'}</OptionButton>
-                <OptionButton onClick={addProsAndCons}><PlusMinus className='icon'>{'±'}</PlusMinus>{'Pros and Cons'}</OptionButton>
-                <OptionButton onClick={addToDoList}><PlaylistCheckIcon/>{'To-do list'}</OptionButton>
+                <OptionButton onClick={addBrainstormingIdeas}>
+                    <LightbulbOutlineIcon/>
+                    <FormattedMessage defaultMessage='Brainstorm ideas'/>
+                </OptionButton>
+                <OptionButton onClick={addMeetingAgenda}>
+                    <FormatListNumberedIcon/>
+                    <FormattedMessage defaultMessage='Meeting agenda'/>
+                </OptionButton>
+                <OptionButton onClick={addProsAndCons}>
+                    <PlusMinus className='icon'>{'±'}</PlusMinus>
+                    <FormattedMessage defaultMessage='Pros and Cons'/>
+                </OptionButton>
+                <OptionButton onClick={addToDoList}>
+                    <PlaylistCheckIcon/>
+                    <FormattedMessage defaultMessage='To-do list'/>
+                </OptionButton>
             </QuestionOptions>
             <CreatePostContainer>
                 <CreatePost
                     data-testid='rhs-new-tab-create-post'
                     channelId={botChannelId}
-                    placeholder={'Ask AI Copilot anything...'}
+                    placeholder={intl.formatMessage({defaultMessage: 'Ask Copilot anything...'})}
+                    rootId={'ai_copilot'}
                     onSubmit={async (p: any) => {
-                        p.channel_id = botChannelId || '';
-                        p.props = {};
-                        const created = await createPost(p);
+                        const post = {...p};
+                        post.channel_id = botChannelId || '';
+                        post.props = {};
+                        post.uploadsInProgress = [];
+                        post.file_ids = p.fileInfos.map((f: any) => f.id);
+                        const created = await createPost(post);
                         selectPost(created.id);
                         setCurrentTab('thread');
+                        dispatch({
+                            type: 'SET_GLOBAL_ITEM',
+                            data: {
+                                name: 'comment_draft_ai_copilot',
+                                value: {message: '', fileInfos: [], uploadsInProgress: []},
+                            },
+                        });
+                    }}
+                    draft={draft}
+                    onUpdateCommentDraft={(newDraft: any) => {
+                        updateDraft(newDraft);
+                        const timestamp = new Date().getTime();
+                        newDraft.updateAt = timestamp;
+                        newDraft.createAt = newDraft.createAt || timestamp;
+                        dispatch({
+                            type: 'SET_GLOBAL_ITEM',
+                            data: {
+                                name: 'comment_draft_ai_copilot',
+                                value: newDraft,
+                            },
+                        });
                     }}
                 />
             </CreatePostContainer>
-        </NewQuestion>
+        </RHSPaddingContainer>
     );
 };
 

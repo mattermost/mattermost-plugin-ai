@@ -99,8 +99,8 @@ func formatThread(data *ThreadData) string {
 const LLMRequesterUserID = "llm_requester_user_id"
 const UnsafeLinksPostProp = "unsafe_links"
 
-func (p *Plugin) modifyPostForBot(requesterUserID string, post *model.Post) {
-	post.UserId = p.botid
+func (p *Plugin) modifyPostForBot(botid string, requesterUserID string, post *model.Post) {
+	post.UserId = botid
 	post.Type = "custom_llmbot" // This must be the only place we add this type for security.
 	post.AddProp(LLMRequesterUserID, requesterUserID)
 	// This tags that the post has unsafe links since they could have been generted by a prompt injection.
@@ -108,8 +108,8 @@ func (p *Plugin) modifyPostForBot(requesterUserID string, post *model.Post) {
 	post.AddProp(UnsafeLinksPostProp, "true")
 }
 
-func (p *Plugin) botCreatePost(requesterUserID string, post *model.Post) error {
-	p.modifyPostForBot(requesterUserID, post)
+func (p *Plugin) botCreatePost(botid string, requesterUserID string, post *model.Post) error {
+	p.modifyPostForBot(botid, requesterUserID, post)
 
 	if err := p.pluginAPI.Post.CreatePost(post); err != nil {
 		return err
@@ -118,18 +118,18 @@ func (p *Plugin) botCreatePost(requesterUserID string, post *model.Post) error {
 	return nil
 }
 
-func (p *Plugin) botDM(userID string, post *model.Post) error {
-	p.modifyPostForBot(userID, post)
+func (p *Plugin) botDM(botid string, userID string, post *model.Post) error {
+	p.modifyPostForBot(botid, userID, post)
 
-	if err := p.pluginAPI.Post.DM(p.botid, userID, post); err != nil {
+	if err := p.pluginAPI.Post.DM(botid, userID, post); err != nil {
 		return fmt.Errorf("failed to post DM: %w", err)
 	}
 
 	return nil
 }
 
-func (p *Plugin) streamResultToNewPost(requesterUserID string, stream *ai.TextStreamResult, post *model.Post) error {
-	if err := p.botCreatePost(requesterUserID, post); err != nil {
+func (p *Plugin) streamResultToNewPost(botid string, requesterUserID string, stream *ai.TextStreamResult, post *model.Post) error {
+	if err := p.botCreatePost(botid, requesterUserID, post); err != nil {
 		return fmt.Errorf("unable to create post: %w", err)
 	}
 
@@ -140,14 +140,33 @@ func (p *Plugin) streamResultToNewPost(requesterUserID string, stream *ai.TextSt
 
 	go func() {
 		defer p.finishPostStreaming(post.Id)
-		p.streamResultToPost(ctx, stream, post)
+		user, err := p.pluginAPI.User.Get(requesterUserID)
+		locale := *p.API.GetConfig().LocalizationSettings.DefaultServerLocale
+		if err != nil {
+			p.streamResultToPost(ctx, stream, post, locale)
+			return
+		}
+
+		channel, err := p.pluginAPI.Channel.Get(post.ChannelId)
+		if err != nil {
+			p.streamResultToPost(ctx, stream, post, locale)
+			return
+		}
+
+		if channel.Type == model.ChannelTypeDirect {
+			if channel.Name == botid+"__"+user.Id || channel.Name == user.Id+"__"+botid {
+				p.streamResultToPost(ctx, stream, post, user.Locale)
+				return
+			}
+		}
+		p.streamResultToPost(ctx, stream, post, locale)
 	}()
 
 	return nil
 }
 
-func (p *Plugin) streamResultToNewDM(stream *ai.TextStreamResult, userID string, post *model.Post) error {
-	if err := p.botDM(userID, post); err != nil {
+func (p *Plugin) streamResultToNewDM(botid string, stream *ai.TextStreamResult, userID string, post *model.Post) error {
+	if err := p.botDM(botid, userID, post); err != nil {
 		return err
 	}
 
@@ -158,7 +177,26 @@ func (p *Plugin) streamResultToNewDM(stream *ai.TextStreamResult, userID string,
 
 	go func() {
 		defer p.finishPostStreaming(post.Id)
-		p.streamResultToPost(ctx, stream, post)
+		user, err := p.pluginAPI.User.Get(userID)
+		locale := *p.API.GetConfig().LocalizationSettings.DefaultServerLocale
+		if err != nil {
+			p.streamResultToPost(ctx, stream, post, locale)
+			return
+		}
+
+		channel, err := p.pluginAPI.Channel.Get(post.ChannelId)
+		if err != nil {
+			p.streamResultToPost(ctx, stream, post, locale)
+			return
+		}
+
+		if channel.Type == model.ChannelTypeDirect {
+			if channel.Name == botid+"__"+user.Id || channel.Name == user.Id+"__"+botid {
+				p.streamResultToPost(ctx, stream, post, user.Locale)
+				return
+			}
+		}
+		p.streamResultToPost(ctx, stream, post, locale)
 	}()
 
 	return nil
@@ -226,7 +264,8 @@ func (p *Plugin) finishPostStreaming(postID string) {
 
 // streamResultToPost streams the result of a TextStreamResult to a post.
 // it will internally handle logging needs and updating the post.
-func (p *Plugin) streamResultToPost(ctx context.Context, stream *ai.TextStreamResult, post *model.Post) {
+func (p *Plugin) streamResultToPost(ctx context.Context, stream *ai.TextStreamResult, post *model.Post, userLocale string) {
+	T := i18nLocalizerFunc(p.i18n, userLocale)
 	p.sendPostStreamingControlEvent(post, PostStreamingControlStart)
 	defer func() {
 		p.sendPostStreamingControlEvent(post, PostStreamingControlEnd)
@@ -242,7 +281,7 @@ func (p *Plugin) streamResultToPost(ctx context.Context, stream *ai.TextStreamRe
 			if !ok {
 				if strings.TrimSpace(post.Message) == "" {
 					p.API.LogError("LLM closed stream with no result")
-					post.Message = "Sorry! The LLM did not return a result."
+					post.Message = T("copilot.stream_to_post_llm_not_return", "Sorry! The LLM did not return a result.")
 					p.sendPostStreamingUpdateEvent(post, post.Message)
 				}
 				if err = p.pluginAPI.Post.UpdatePost(post); err != nil {
@@ -253,12 +292,13 @@ func (p *Plugin) streamResultToPost(ctx context.Context, stream *ai.TextStreamRe
 			}
 			// Handle partial results
 			if strings.TrimSpace(post.Message) == "" {
-				p.API.LogError("Streaming result to post failed", "error", err)
-				post.Message = "Sorry! An error occurred while accessing the LLM. See server logs for details."
+				post.Message = ""
 			} else {
-				p.API.LogError("Streaming result to post failed partway", "error", err)
-				post.Message += "\n\nSorry! An error occurred while streaming from the LLM. See server logs for details."
+				post.Message += "\n\n"
 			}
+			p.API.LogError("Streaming result to post failed partway", "error", err)
+			post.Message = T("copilot.stream_to_post_access_llm_error", "Sorry! An error occurred while accessing the LLM. See server logs for details.")
+
 			if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
 				p.API.LogError("Error recovering from streaming error", "error", err)
 				return
@@ -340,3 +380,45 @@ type WorkerResult struct {
 
 	return nil
 }*/
+
+func (p *Plugin) PostToAIPost(bot *Bot, post *model.Post) ai.Post {
+	var files []ai.File
+	if bot.cfg.EnableVision {
+		files = make([]ai.File, 0, len(post.FileIds))
+		for _, fileID := range post.FileIds {
+			fileInfo, err := p.pluginAPI.File.GetInfo(fileID)
+			if err != nil {
+				p.API.LogError("Error getting file info", "error", err)
+				continue
+			}
+			file, err := p.pluginAPI.File.Get(fileID)
+			if err != nil {
+				p.API.LogError("Error getting file", "error", err)
+				continue
+			}
+			files = append(files, ai.File{
+				Reader:   file,
+				MimeType: fileInfo.MimeType,
+				Size:     fileInfo.Size,
+			})
+		}
+	}
+
+	return ai.Post{
+		Role:    ai.GetPostRole(bot.mmBot.UserId, post),
+		Message: ai.FormatPostBody(post),
+		Files:   files,
+	}
+}
+
+func (p *Plugin) ThreadToBotConversation(bot *Bot, posts []*model.Post) ai.BotConversation {
+	result := ai.BotConversation{
+		Posts: make([]ai.Post, 0, len(posts)),
+	}
+
+	for _, post := range posts {
+		result.Posts = append(result.Posts, p.PostToAIPost(bot, post))
+	}
+
+	return result
+}

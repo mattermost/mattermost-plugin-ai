@@ -16,6 +16,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
+	"github.com/mattermost/mattermost/server/public/shared/httpservice"
 )
 
 type LookupMattermostUserArgs struct {
@@ -314,8 +315,9 @@ var fetchedFields = []string{
 	"comment",
 }
 
-func getPublicJiraIssues(instanceURL string, issueKeys []string) ([]jira.Issue, error) {
-	client, err := jira.NewClient(nil, instanceURL)
+func (p *Plugin) getPublicJiraIssues(instanceURL string, issueKeys []string) ([]jira.Issue, error) {
+	httpClient := httpservice.MakeHTTPServicePlugin(p.API).MakeClient(false)
+	client, err := jira.NewClient(httpClient, instanceURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Jira client: %w", err)
 	}
@@ -371,7 +373,7 @@ func (p *Plugin) toolGetJiraIssue(_ string, context ai.ConversationContext, args
 		}
 	}
 
-	issues, err := getPublicJiraIssues(args.InstanceURL, args.IssueKeys)
+	issues, err := p.getPublicJiraIssues(args.InstanceURL, args.IssueKeys)
 	if err != nil {
 		return "internal failure", err
 	}

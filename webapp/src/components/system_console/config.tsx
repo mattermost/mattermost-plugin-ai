@@ -1,26 +1,31 @@
-import React, {useCallback} from 'react';
+import React, {useEffect, useState} from 'react';
 import styled from 'styled-components';
+import {FormattedMessage, useIntl} from 'react-intl';
 
 import {PlusIcon} from '@mattermost/compass-icons/components';
 
-import {TertiaryButton} from '../assets/buttons';
+import {Pill} from '../pill';
 
-import {useIsMultiLLMLicensed} from '@/license';
-
-import Pill from '../pill';
+import {setUserProfilePictureByUsername} from '@/client';
 
 import {ServiceData} from './service';
 import ServiceForm from './service_form';
 import EnterpriseChip from './enterprise_chip';
 import { ExternalTool } from './external_tool';
 import ExternalToolForm from './tool_form';
+import Panel, {PanelFooterText} from './panel';
+import Bots, {firstNewBot} from './bots';
+import {LLMBotConfig} from './bot';
+import {ItemList, SelectionItem, SelectionItemOption} from './item';
+import NoBotsPage from './no_bots_page';
 
-type Value = {
+type Config = {
     services: ServiceData[],
     ExternalTools: ExternalTool[],
     llmBackend: string,
+    bots: LLMBotConfig[],
+    defaultBotName: string,
     transcriptBackend: string,
-    imageGeneratorBackend: string,
     enableLLMTrace: boolean,
     enableCallSummary: boolean,
 
@@ -34,7 +39,7 @@ type Props = {
     id: string
     label: string
     helpText: React.ReactNode
-    value: Value
+    value: Config
     disabled: boolean
     config: any
     currentState: any
@@ -42,6 +47,8 @@ type Props = {
     setByEnv: boolean
     onChange: (id: string, value: any) => void
     setSaveNeeded: () => void
+    registerSaveAction: (action: () => Promise<{error?: {message?: string}}>) => void
+    unRegisterSaveAction: (action: () => Promise<{error?: {message?: string}}>) => void
 }
 
 const MessageContainer = styled.div`
@@ -55,55 +62,10 @@ const MessageContainer = styled.div`
 	border: 1px solid rgba(63, 67, 80, 0.08);
 `;
 
-const PanelContainer = styled.div`
-	display: flex;
-	flex-direction: column;
-	padding: 32px;
-	gap: 32px;
-	border: 1px solid #ccc;
-	background: white;
-	border-radius: 4px;
-	box-shadow: 0px 2px 3px 0px rgba(0, 0, 0, 0.08);
-`;
-
-const PanelHeader = styled.div`
-	display: flex;
-	flex-direction: column;
-	gap: 4px;
-`;
-
-const PanelTitle = styled.div`
-	font-size: 16px;
-	font-weight: 600;
-`;
-
-const PanelSubtitle = styled.div`
-	color: rgba(63, 67, 80, 0.72);
-	font-size: 14px;
-	font-weight: 400;
-`;
-
-const PlusAIServiceIcon = styled(PlusIcon)`
-	width: 18px;
-	height: 18px;
-	margin-right: 8px;
-`;
-
 const ConfigContainer = styled.div`
 	display: flex;
 	flex-direction: column;
 	gap: 20px;
-`;
-
-const EnterpriseChipContainer = styled.div`
-	display: flex;
-	flex-direction: row;
-	align-items: center;
-	gap: 8px;
-`;
-
-const PanelFooterText = styled(PanelSubtitle)`
-	margin-top: 20px;
 `;
 
 const defaultConfig = {
@@ -111,7 +73,6 @@ const defaultConfig = {
     ExternalTools: [],
     llmBackend: '',
     transcriptBackend: '',
-    imageGeneratorBackend: '',
     enableLLMTrace: false,
     enableUserRestrictions: false,
     allowPrivateChannels: false,
@@ -119,25 +80,24 @@ const defaultConfig = {
     onlyUsersOnTeam: '',
 };
 
-type PanelProps = {
-    title: string
-    subtitle: string
-    children: React.ReactNode
-}
-
-const Panel = (props: PanelProps) => {
-    return (
-        <PanelContainer>
-            <PanelHeader>
-                <PanelTitle>{props.title}</PanelTitle>
-                <PanelSubtitle>{props.subtitle}</PanelSubtitle>
-            </PanelHeader>
-            <div>
-                {props.children}
-            </div>
-        </PanelContainer>
-    );
-};
+const BetaMessage = () => (
+    <MessageContainer>
+        <span>
+            <FormattedMessage
+                defaultMessage='To report a bug or to provide feedback, <link>create a new issue in the plugin repository</link>.'
+                values={{link: (chunks: any) => (
+                    <a
+                        target={'_blank'}
+                        rel={'noopener noreferrer'}
+                        href='http://github.com/mattermost/mattermost-plugin-ai/issues'
+                    >
+                        {chunks}
+                    </a>
+                )}}
+            />
+        </span>
+    </MessageContainer>
+);
 
 const Config = (props: Props) => {
     const value = props.value || defaultConfig;
@@ -145,22 +105,19 @@ const Config = (props: Props) => {
     const currentExternalTools = value.ExternalTools;
     const multiLLMLicensed = useIsMultiLLMLicensed();
     const licenceAddDisabled = !multiLLMLicensed && currentServices.length > 0;
+    const [avatarUpdates, setAvatarUpdates] = useState<{[key: string]: File}>({});
+    const intl = useIntl();
 
-    const addNewService = useCallback((e: React.MouseEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const newService = {
-            id: Math.random().toString(36).substring(2, 22),
-            name: 'AI Engine',
-            serviceName: 'openai',
-            defaultModel: '',
-            url: '',
-            apiKey: '',
-            orgId: '',
-            username: '',
-            password: '',
-            tokenLimit: 0,
+    useEffect(() => {
+        const save = async () => {
+            Object.keys(avatarUpdates).map((username: string) => setUserProfilePictureByUsername(username, avatarUpdates[username]));
+            return {};
         };
+        props.registerSaveAction(save);
+        return () => {
+            props.unRegisterSaveAction(save);
+        };
+    }, [avatarUpdates]);
 
         let counter = 1;
         for (;;) {
@@ -225,71 +182,52 @@ const Config = (props: Props) => {
             newValue = {...newValue, llmBackend: '', transcriptBackend: '', imageGeneratorBackend: ''};
         }
         props.onChange(props.id, {...newValue, services: [...currentServices.slice(0, updatedServiceIdx), ...currentServices.slice(updatedServiceIdx + 1)]});
+    const botChangedAvatar = (bot: LLMBotConfig, image: File) => {
+        setAvatarUpdates((prev: {[key: string]: File}) => ({...prev, [bot.name]: image}));
         props.setSaveNeeded();
     };
 
-    const changeService = (changedService: ServiceData) => {
-        const updatedServiceIdx = currentServices.findIndex((s) => changedService.id === s.id);
-        if (updatedServiceIdx === -1) {
-            throw new Error('Service not found');
-        }
-        let newValue = value;
-        if (value.llmBackend === currentServices[updatedServiceIdx].name) {
-            newValue = {...newValue, llmBackend: changedService.name};
-        }
-        if (value.imageGeneratorBackend === currentServices[updatedServiceIdx].name) {
-            newValue = {...newValue, imageGeneratorBackend: changedService.name};
-        }
-        if (value.transcriptBackend === currentServices[updatedServiceIdx].name) {
-            newValue = {...newValue, transcriptBackend: changedService.name};
-        }
-        props.onChange(props.id, {...newValue, services: [...currentServices.slice(0, updatedServiceIdx), changedService, ...currentServices.slice(updatedServiceIdx + 1)]});
-        props.setSaveNeeded();
+    const addFirstBot = () => {
+        const id = Math.random().toString(36).substring(2, 22);
+        props.onChange(props.id, {
+            ...value,
+            bots: [{
+                ...firstNewBot,
+                id,
+            }],
+        });
     };
+
+    if (!props.value?.bots || props.value.bots.length === 0) {
+        return (
+            <ConfigContainer>
+                <BetaMessage/>
+                <NoBotsPage onAddBotPressed={addFirstBot}/>
+            </ConfigContainer>
+        );
+    }
 
     return (
         <ConfigContainer>
-            <MessageContainer>
-                <Pill>
-                    {'BETA'}
-                </Pill>
-                <span>
-                    {'This plugin is currently in beta. To report a bug or to provide feedback, '}
-                    <a
-                        target={'_blank'}
-                        rel={'noopener noreferrer'}
-                        href='http://github.com/mattermost/mattermost-plugin-ai/issues'
-                    >
-                        {'create a new issue in the plugin repository'}
-                    </a>
-                </span>
-            </MessageContainer>
+            <BetaMessage/>
             <Panel
-                title='AI Services'
-                subtitle='Multiple AI services can be configured with the AI plugin.'
+                title={intl.formatMessage({defaultMessage: 'AI Bots'})}
+                subtitle={intl.formatMessage({defaultMessage: 'Multiple AI services can be configured below.'})}
             >
-                {currentServices.map((service) => (
-                    <ServiceForm
-                        key={service.id}
-                        service={service}
-                        onDelete={deleteService}
-                        onChange={changeService}
-                    />
-                ))}
-                <EnterpriseChipContainer>
-                    <TertiaryButton
-                        onClick={addNewService}
-                        disabled={licenceAddDisabled}
-                    >
-                        <PlusAIServiceIcon/>
-                        {'Add AI Service'}
-                    </TertiaryButton>
-                    {licenceAddDisabled && (
-                        <EnterpriseChip subtext={'Multiple AI services is available on Enterprise plans'}/>
-                    )}
-                </EnterpriseChipContainer>
+                <Bots
+                    bots={props.value.bots ?? []}
+                    onChange={(bots: LLMBotConfig[]) => {
+                        if (value.bots.findIndex((bot) => bot.name === value.defaultBotName) === -1) {
+                            props.onChange(props.id, {...value, bots, defaultBotName: bots[0].name});
+                        } else {
+                            props.onChange(props.id, {...value, bots});
+                        }
+                        props.setSaveNeeded();
+                    }}
+                    botChangedAvatar={botChangedAvatar}
+                />
                 <PanelFooterText>
-                    {'AI services are third party services; Mattermost is not responsible for output.'}
+                    <FormattedMessage defaultMessage='AI services are third party services; Mattermost is not responsible for output.'/>
                 </PanelFooterText>
             </Panel>
             <Panel
@@ -321,88 +259,39 @@ const Config = (props: Props) => {
                 </PanelFooterText>
             </Panel>
             <Panel
-                title='AI functions'
-                subtitle='If you have more than one AI server you can choose which service to use for each function.'
+                title={intl.formatMessage({defaultMessage: 'AI Functions'})}
+                subtitle={intl.formatMessage({defaultMessage: 'Choose which bot you want to be the default for each function.'})}
             >
-                <div className='form-group'>
-                    <label
-                        className='control-label col-sm-4'
-                        htmlFor='ai-llm-backend'
+                <ItemList>
+                    <SelectionItem
+                        label={intl.formatMessage({defaultMessage: 'Default bot'})}
+                        value={value.defaultBotName}
+                        onChange={(e) => {
+                            props.onChange(props.id, {...value, defaultBotName: e.target.value});
+                            props.setSaveNeeded();
+                        }}
                     >
-                        {'AI Large Language Model service'}
-                    </label>
-                    <div className='col-sm-8'>
-                        <select
-                            id='ai-llm-backend'
-                            className={currentServices.length === 0 ? 'form-control disabled' : 'form-control'}
-                            onChange={(e) => {
-                                props.onChange(props.id, {...value, llmBackend: e.target.value});
-                                props.setSaveNeeded();
-                            }}
-                            value={value.llmBackend}
-                            disabled={currentServices.length === 0}
-                        >
-                            {currentServices.map((service) => (
-                                <option
-                                    key={service.id}
-                                    value={service.name}
-                                >
-                                    {service.name}
-                                </option>
-                            ))}
-                        </select>
-                        {currentServices.length === 0 && (
-                            <div className='help-text'>
-                                <span>{'You need at least one AI services use this setting.'}</span>
-                            </div>
-                        )}
-                    </div>
-                </div>
-                <div className='form-group'>
-                    <label
-                        className='control-label col-sm-4'
-                        htmlFor='ai-transcript-backend'
-                    >
-                        {'AI Audio/Video transcript service'}
-                    </label>
-                    <div className='col-sm-8'>
-                        <select
-                            id='ai-transcript-backend'
-                            className={currentServices.length === 0 ? 'form-control disabled' : 'form-control'}
-                            onChange={(e) => {
-                                props.onChange(props.id, {...value, transcriptBackend: e.target.value});
-                                props.setSaveNeeded();
-                            }}
-                            value={value.transcriptBackend}
-                            disabled={currentServices.length === 0}
-                        >
-                            {currentServices.map((service) => (
-                                <option
-                                    key={service.id}
-                                    value={service.name}
-                                >
-                                    {service.name}
-                                </option>
-                            ))}
-                        </select>
-                        {currentServices.length === 0 && (
-                            <div className='help-text'>
-                                <span>{'You need at least one AI services use this setting.'}</span>
-                            </div>
-                        )}
-                    </div>
-                </div>
+                        {props.value.bots.map((bot: LLMBotConfig) => (
+                            <SelectionItemOption
+                                key={bot.name}
+                                value={bot.name}
+                            >
+                                {bot.displayName}
+                            </SelectionItemOption>
+                        ))}
+                    </SelectionItem>
+                </ItemList>
             </Panel>
 
             <Panel
-                title='User restrictions (experimental)'
-                subtitle='Enable restrictions to allow or not users to use AI in this instance.'
+                title={intl.formatMessage({defaultMessage: 'User restrictions (experimental)'})}
+                subtitle={intl.formatMessage({defaultMessage: 'Enable restrictions to allow or not users to use AI in this instance.'})}
             >
                 <div className='form-group'>
                     <label
                         className='control-label col-sm-4'
                     >
-                        {'Enable User Restrictions:'}
+                        <FormattedMessage defaultMessage='Enable User Restrictions:'/>
                     </label>
                     <div className='col-sm-8'>
                         <label className='radio-inline'>
@@ -412,7 +301,7 @@ const Config = (props: Props) => {
                                 checked={value.enableUserRestrictions}
                                 onChange={() => props.onChange(props.id, {...value, enableUserRestrictions: true})}
                             />
-                            <span>{'true'}</span>
+                            <span><FormattedMessage defaultMessage='true'/></span>
                         </label>
                         <label className='radio-inline'>
                             <input
@@ -421,9 +310,13 @@ const Config = (props: Props) => {
                                 checked={!value.enableUserRestrictions}
                                 onChange={() => props.onChange(props.id, {...value, enableUserRestrictions: false})}
                             />
-                            <span>{'false'}</span>
+                            <span><FormattedMessage defaultMessage='false'/></span>
                         </label>
-                        <div className='help-text'><span>{'Global flag for all below settings.'}</span></div>
+                        <div className='help-text'>
+                            <span>
+                                <FormattedMessage defaultMessage='Global flag for all below settings.'/>
+                            </span>
+                        </div>
                     </div>
                 </div>
                 {value.enableUserRestrictions && (
@@ -432,7 +325,7 @@ const Config = (props: Props) => {
                             <label
                                 className='control-label col-sm-4'
                             >
-                                {'Allow Private Channels:'}
+                                <FormattedMessage defaultMessage='Allow Private Channels:'/>
                             </label>
                             <div className='col-sm-8'>
                                 <label className='radio-inline'>
@@ -442,7 +335,7 @@ const Config = (props: Props) => {
                                         checked={value.allowPrivateChannels}
                                         onChange={() => props.onChange(props.id, {...value, allowPrivateChannels: true})}
                                     />
-                                    <span>{'true'}</span>
+                                    <span><FormattedMessage defaultMessage='true'/></span>
                                 </label>
                                 <label className='radio-inline'>
                                     <input
@@ -451,7 +344,9 @@ const Config = (props: Props) => {
                                         checked={!value.allowPrivateChannels}
                                         onChange={() => props.onChange(props.id, {...value, allowPrivateChannels: false})}
                                     />
-                                    <span>{'false'}</span>
+                                    <span>
+                                        <FormattedMessage defaultMessage='false'/>
+                                    </span>
                                 </label>
                             </div>
                         </div>
@@ -460,7 +355,7 @@ const Config = (props: Props) => {
                                 className='control-label col-sm-4'
                                 htmlFor='ai-allow-team-ids'
                             >
-                                {'Allow Team IDs (csv):'}
+                                <FormattedMessage defaultMessage='Allow Team IDs (csv):'/>
                             </label>
                             <div className='col-sm-8'>
                                 <input
@@ -477,7 +372,7 @@ const Config = (props: Props) => {
                                 className='control-label col-sm-4'
                                 htmlFor='ai-only-users-on-team'
                             >
-                                {'Only Users on Team:'}
+                                <FormattedMessage defaultMessage='Only Users on Team:'/>
                             </label>
                             <div className='col-sm-8'>
                                 <input
@@ -494,7 +389,7 @@ const Config = (props: Props) => {
             </Panel>
 
             <Panel
-                title='Debug'
+                title={intl.formatMessage({defaultMessage: 'Debug'})}
                 subtitle=''
             >
                 <div className='form-group'>
@@ -502,7 +397,7 @@ const Config = (props: Props) => {
                         className='control-label col-sm-4'
                         htmlFor='ai-service-name'
                     >
-                        {'Enable LLM Trace:'}
+                        <FormattedMessage defaultMessage='Enable LLM Trace:'/>
                     </label>
                     <div className='col-sm-8'>
                         <label className='radio-inline'>
@@ -512,7 +407,7 @@ const Config = (props: Props) => {
                                 checked={value.enableLLMTrace}
                                 onChange={() => props.onChange(props.id, {...value, enableLLMTrace: true})}
                             />
-                            <span>{'true'}</span>
+                            <span><FormattedMessage defaultMessage='true'/></span>
                         </label>
                         <label className='radio-inline'>
                             <input
@@ -521,9 +416,13 @@ const Config = (props: Props) => {
                                 checked={!value.enableLLMTrace}
                                 onChange={() => props.onChange(props.id, {...value, enableLLMTrace: false})}
                             />
-                            <span>{'false'}</span>
+                            <span><FormattedMessage defaultMessage='false'/></span>
                         </label>
-                        <div className='help-text'><span>{'Enable tracing of LLM requests. Outputs whole conversations to the logs.'}</span></div>
+                        <div className='help-text'>
+                            <span>
+                                <FormattedMessage defaultMessage='Enable tracing of LLM requests. Outputs whole conversations to the logs.'/>
+                            </span>
+                        </div>
                     </div>
                 </div>
             </Panel>
