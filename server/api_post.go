@@ -60,7 +60,7 @@ func (p *Plugin) handleReact(c *gin.Context) {
 
 	context := p.MakeConversationContext(bot, user, channel, post)
 	context.PromptParameters = map[string]string{"Message": post.Message}
-	prompt, err := p.prompts.ChatCompletion(ai.PromptEmojiSelect, context)
+	prompt, err := p.prompts.ChatCompletion(ai.PromptEmojiSelect, context, ai.NewNoTools())
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
