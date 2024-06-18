@@ -275,6 +275,7 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 				return
 			}
 
+			// Transfer the buffered tools into tool calls
 			tools := []openaiClient.ToolCall{}
 			for i, tool := range toolsBuffer {
 				name := tool.name.String()
@@ -292,15 +293,17 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 				})
 			}
 
+			// Add the tool calls to the request
 			request.Messages = append(request.Messages, openaiClient.ChatCompletionMessage{
 				Role:      openaiClient.ChatMessageRoleAssistant,
 				ToolCalls: tools,
 			})
 
-			for _, tool := range toolsBuffer {
-				name := tool.name.String()
-				arguments := tool.args.String()
-				toolID := tool.id.String()
+			// Resolve the tools and create messages for each
+			for _, tool := range tools {
+				name := tool.Function.Name
+				arguments := tool.Function.Arguments
+				toolID := tool.ID
 				toolResult, err := conversation.Tools.ResolveTool(name, createFunctionArrgmentResolver(arguments), conversation.Context)
 				if err != nil {
 					fmt.Printf("Error resolving function %s: %s", name, err)
