@@ -29,7 +29,7 @@ We recommend using Mattermost Server v9.6 or later for the best experience. Comp
 - v9.3.3+
 - v8.1.11+ ([ESR](https://docs.mattermost.com/deploy/mattermost-changelog.html))
 
-See the [Mattermost Product Documentation](https://docs.mattermost.com/configure/enable-ai-copilot.html) for details on installing, configuring, enabling, and using this Mattermost integration.
+See the [Mattermost Product Documentation](https://docs.mattermost.com/configure/enable-copilot.html) for details on installing, configuring, enabling, and using this Mattermost integration.
 
 **Note**: Installation instructions assume you already have [Mattermost Server](https://mattermost.com/download/) installed and configured with [PostgreSQL](https://www.postgresql.org/).
 
