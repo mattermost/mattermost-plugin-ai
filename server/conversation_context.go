@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"slices"
-	"strings"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost/server/public/model"
@@ -37,7 +35,7 @@ func (p *Plugin) MakeConversationContext(bot *Bot, user *model.User, channel *mo
 	return context
 }
 
-func (p *Plugin) AddSearchForConversationContext(context *ai.ConversationContext) error {
+/*func (p *Plugin) AddSearchForConversationContext(context *ai.ConversationContext) error {
 	terms := context.Post.Message
 	page := 0
 	perPage := 10
@@ -63,7 +61,7 @@ func (p *Plugin) AddSearchForConversationContext(context *ai.ConversationContext
 	context.SearchResults = formatThread(postsList)
 
 	return nil
-}
+}*/
 
 func (p *Plugin) AddVectorSearchForConversationContext(context *ai.ConversationContext) error {
 	// Embed the message
@@ -74,14 +72,10 @@ func (p *Plugin) AddVectorSearchForConversationContext(context *ai.ConversationC
 	pgEmbedding := postgresEmbeddingFormat(messageEmbedding)
 
 	// Get similar posts
-	var similarPosts []struct {
-		Id         string
-		Message    string
-		Similarity float64
-	}
+	var searchResults []ai.SearchResult
 	embeddingExpr := fmt.Sprintf("e.Embedding <=> '%s'", pgEmbedding)
-	if err := p.doQuery(&similarPosts, p.builder.
-		Select("p.id, p.message, 1-("+embeddingExpr+") AS Similarity").
+	if err := p.doQuery(&searchResults, p.builder.
+		Select("p.id as PostID, p.message, 1-("+embeddingExpr+") AS Similarity").
 		From("LLM_Post_Embeddings as e").
 		Where("p.DeleteAt = 0").
 		Where("p.id != ?", context.Post.Id).
@@ -93,15 +87,7 @@ func (p *Plugin) AddVectorSearchForConversationContext(context *ai.ConversationC
 		return fmt.Errorf("failed to query similar posts: %w", err)
 	}
 
-	result := strings.Builder{}
-	for _, post := range similarPosts {
-		result.WriteString(post.Id)
-		result.WriteString(" : ")
-		result.WriteString(post.Message)
-		result.WriteString("\n")
-	}
-
-	context.SearchResults = result.String()
+	context.SearchResults = searchResults
 
 	return nil
 

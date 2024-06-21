@@ -393,12 +393,12 @@ func (p *Plugin) getBuiltInTools(isDM bool) []ai.Tool {
 	builtInTools := []ai.Tool{}
 
 	if isDM {
-		builtInTools = append(builtInTools, ai.Tool{
+		/*builtInTools = append(builtInTools, ai.Tool{
 			Name:        "GetChannelPosts",
 			Description: "Get the most recent posts from a Mattermost channel. Returns posts in the format 'username: message'",
 			Schema:      GetChannelPosts{},
 			Resolver:    p.toolResolveGetChannelPosts,
-		})
+		})*/
 
 		builtInTools = append(builtInTools, ai.Tool{
 			Name:        "LookupMattermostUser",

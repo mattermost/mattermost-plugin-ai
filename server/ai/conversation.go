@@ -33,6 +33,12 @@ type Post struct {
 	Files   []File
 }
 
+type SearchResult struct {
+	PostID     string
+	Message    string
+	Similarity float64
+}
+
 type ConversationContext struct {
 	BotID              string
 	Time               string
@@ -44,7 +50,7 @@ type ConversationContext struct {
 	Post               *model.Post
 	PromptParameters   map[string]string
 	CustomInstructions string
-	SearchResults      string
+	SearchResults      []SearchResult
 }
 
 func NewConversationContext(botID string, requestingUser *model.User, channel *model.Channel, post *model.Post) ConversationContext {
@@ -70,6 +76,18 @@ func NewConversationContext(botID string, requestingUser *model.User, channel *m
 
 func (c *ConversationContext) IsDMWithBot() bool {
 	return mmapi.IsDMWith(c.BotID, c.Channel)
+}
+
+func (c *ConversationContext) SearchResultsString() string {
+	result := strings.Builder{}
+	for _, searchResult := range c.SearchResults {
+		result.WriteString(searchResult.PostID)
+		result.WriteString(" : ")
+		result.WriteString(searchResult.Message)
+		result.WriteString("\n")
+	}
+
+	return result.String()
 }
 
 func (c ConversationContext) String() string {

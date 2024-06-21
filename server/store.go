@@ -73,7 +73,7 @@ func (p *Plugin) setupEmbeddingStorage(embeddingLength int) error {
 	//TODO: FIX THE REFRENCE TO ADD THE CASCADE
 	if _, err := p.db.Exec(fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS LLM_Post_Embeddings (
-			PostID TEXT NOT NULL REFERENCES Posts(ID) PRIMARY KEY,
+			PostID TEXT NOT NULL REFERENCES Posts(ID) ON DELETE CASCADE PRIMARY KEY,
 			Embedding vector(%d)
 		);
 	`, embeddingLength)); err != nil {

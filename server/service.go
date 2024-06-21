@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -98,7 +99,9 @@ func (p *Plugin) newConversationForSearch(bot *Bot, context ai.ConversationConte
 		ChannelId: context.Channel.Id,
 		RootId:    context.Post.Id,
 	}
+	searchResults, _ := json.Marshal(context.SearchResults)
 	responsePost.AddProp("search_query", context.Post.Message)
+	responsePost.AddProp("search_results", string(searchResults))
 	if err := p.streamResultToNewPost(bot.mmBot.UserId, context.RequestingUser.Id, result, responsePost); err != nil {
 		return nil, err
 	}

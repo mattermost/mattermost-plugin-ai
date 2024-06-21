@@ -246,6 +246,13 @@ export const LLMBotPost = (props: Props) => {
     const showPostbackButton = !generating && requesterIsCurrentUser && isTranscriptionResult;
     const showControlsBar = (showRegenerate || showPostbackButton) && message !== '';
 
+    const searchResults = JSON.parse(props.post.props?.search_results);
+    searchResults?.map((result: any) => {
+        const {PostID, Message} = result;
+        console.log(PostID, Message);
+        return null;
+    });
+
     return (
         <PostBody
             data-testid='llm-bot-post'

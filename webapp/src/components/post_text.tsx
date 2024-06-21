@@ -67,7 +67,7 @@ const PostText = (props: Props) => {
         mentionHighlight: true,
         atMentions: true,
         team,
-        unsafeLinks: true,
+        unsafeLinks: false,
         minimumHashtagLength: 1000000000,
         siteURL,
     };
@@ -92,6 +92,20 @@ const PostText = (props: Props) => {
         <TextContainer
             data-testid='posttext'
             showCursor={props.showCursor}
+            onClick={(e: React.MouseEvent) => {
+                const target = e.target as HTMLElement;
+                const closest = target.closest('a');
+                let postID = closest?.getAttribute('href') ?? '';
+                const linkPrefix = 'http://#';
+                if (postID.startsWith(linkPrefix)) {
+                    postID = postID.slice(linkPrefix.length);
+                }
+                if (!postID) {
+                    return;
+                }
+                e.preventDefault();
+                console.log(postID);
+            }}
         >
             {text}
         </TextContainer>

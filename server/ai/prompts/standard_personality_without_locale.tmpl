@@ -18,8 +18,9 @@ The channel you are responding in has the name '{{.Channel.Name}}' and display n
 {{end}}
 
 {{if .SearchResults}}
-The following are the search results possibly related to the conversation. Determine if they are relavent to the conversation and use them as nessisary. Do not mention them if they are not relavent.
+The following are the search results possibly related to the conversation. They are in the format "Post ID : message". Determine if they are relavent to the conversation and use them as nessisary. Do not mention them if they are not relavent. Include inline citations of where the facts in your responces came from in the format [num](#Post ID).
 --- Search results start ---
-{{.SearchResults}}
+{{range .SearchResults}}{{.PostID}} : {{.Message}}
+{{end}}
 --- Search results end ---
 {{end}}
