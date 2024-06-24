@@ -20,7 +20,7 @@ import {doReaction, doSummarize, getAIDirectChannel} from './client';
 import {setOpenRHSAction} from './redux_actions';
 import {BotUsername} from './constants';
 import PostEventListener from './websocket';
-import {setupRedux} from './redux';
+import {BotsHandler, setupRedux} from './redux';
 import UnreadsSumarize from './components/unreads_summarize';
 import {PostbackPost} from './components/postback_post';
 
@@ -84,23 +84,6 @@ export default class Plugin {
         if ((window as any).Components.CreatePost) {
             rhs = registry.registerRightHandSidebarComponent(RHS, RHSTitle);
             setOpenRHSAction(rhs.showRHSPlugin);
-
-            registry.registerReducer((state = {}, action: any) => {
-                switch (action.type) {
-                case 'SET_AI_BOT_CHANNEL':
-                    return {
-                        ...state,
-                        botChannelId: action.botChannelId,
-                    };
-                case 'SELECT_AI_POST':
-                    return {
-                        ...state,
-                        selectedPostId: action.postId,
-                    };
-                default:
-                    return state;
-                }
-            });
         }
 
         let currentUserId = store.getState().entities.users.currentUserId;
@@ -135,6 +118,13 @@ export default class Plugin {
             )
             ;
         };
+
+        registry.registerWebSocketEventHandler('config_changed', (message: any) => {
+            store.dispatch({
+                type: BotsHandler,
+                bots: null,
+            } as any);
+        });
 
         registry.registerPostTypeComponent('custom_llmbot', LLMBotPostWithWebsockets);
         registry.registerPostTypeComponent('custom_llm_postback', PostbackPost);
