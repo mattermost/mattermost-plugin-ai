@@ -58,18 +58,11 @@ func withPromptExtension(filename string) string {
 	return filename + "." + PromptExtension
 }
 
-func (p *Prompts) getDefaultTools(isDMWithBot bool) ToolStore {
-	tools := NewToolStore()
-	tools.AddTools(p.getBuiltInTools(isDMWithBot))
-	tools.AddTools(p.getThirdPartyTools(isDMWithBot))
-	return tools
-}
-
-func (p *Prompts) ChatCompletion(templateName string, context ConversationContext) (BotConversation, error) {
+func (p *Prompts) ChatCompletion(templateName string, context ConversationContext, tools ToolStore) (BotConversation, error) {
 	conversation := BotConversation{
 		Posts:   []Post{},
 		Context: context,
-		Tools:   p.getDefaultTools(context.IsDMWithBot()),
+		Tools:   tools,
 	}
 
 	template := p.templates.Lookup(withPromptExtension(templateName))

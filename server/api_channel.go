@@ -103,7 +103,7 @@ func (p *Plugin) handleSince(c *gin.Context) {
 		return
 	}
 
-	prompt, err := p.prompts.ChatCompletion(promptPreset, context)
+	prompt, err := p.prompts.ChatCompletion(promptPreset, context, p.getDefaultToolsStore(context.IsDMWithBot()))
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
