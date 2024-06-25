@@ -21,9 +21,7 @@ const defaultBotLocalStorageKey = 'defaultBot';
 
 export const useBotlist = () => {
     const bots = useSelector<GlobalState, LLMBot[] | null>((state: any) => state['plugins-' + manifest.id].bots);
-    const defaultActiveBotName = localStorage.getItem(defaultBotLocalStorageKey);
-    const defaultActiveBot = bots?.find((bot: LLMBot) => bot.username === defaultActiveBotName) || null;
-    const [activeBot, setActiveBotState] = useState<LLMBot | null>(defaultActiveBot);
+    const [activeBot, setActiveBot] = useState<LLMBot | null>(null);
     const currentUserId = useSelector<GlobalState, string>((state) => state.entities.users.currentUserId);
     const dispatch = useDispatch();
 
@@ -45,10 +43,17 @@ export const useBotlist = () => {
         }
     }, [currentUserId, bots, dispatch]);
 
-    const setActiveBot = (bot: LLMBot) => {
-        setActiveBotState(bot);
-        localStorage.setItem(defaultBotLocalStorageKey, bot.username);
-    };
+    useEffect(() => {
+        const defaultActiveBotName = localStorage.getItem(defaultBotLocalStorageKey);
+        setActiveBot(bots?.find((bot: LLMBot) => bot.username === defaultActiveBotName) || bots?.[0] || null);
+    }, [bots]);
+
+    useEffect(() => {
+        if (!activeBot) {
+            return;
+        }
+        localStorage.setItem(defaultBotLocalStorageKey, activeBot.username);
+    }, [activeBot]);
 
     return {bots, activeBot, setActiveBot};
 };
