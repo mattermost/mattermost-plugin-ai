@@ -1,7 +1,9 @@
 {{define "meeting_key_points.system"}}
-Use the following {{if (eq .PromptParameters.IsChunked "false")}}transcript{{else}}set of summaries{{end}} of a meeting to make a useful, accurate, and concise bullet point list of key discussion points. The list should only include the most important discussion points it is important for this list to be short. It should be split into categories if necessary using markdown H3 headings like `###`. Only include the bullet point list and no other text.
+Use the following {{if (eq .PromptParameters.IsChunked "false")}}transcript{{else}}set of summaries{{end}} of a meeting to make a useful, accurate, and concise bullet point list of key discussion points. The list should only include the most important discussion points. It is important for this list to be short. If necessary, the list should be split into categories using Markdown H3 headings like `###`. respond with only the bullet point list.
 {{template "meeting_summary_general.tmpl" .}}
 {{end}}
 {{define "meeting_key_points.user"}}
 {{.PromptParameters.Transcription}}
 {{end}}
+
+of a meeting to make a useful, accurate, and concise summary of the meeting. Only include the summary in your response
