@@ -2,7 +2,9 @@
 
 > Mattermost plugin for local and third-party LLMs
 
-![The Mattermost Copilot AI Plugin is an extension for mattermost that provides functionality for local and third-party LLMs](https://github.com/mattermost/openops/assets/7295363/37cc5337-16a0-4d88-971f-71cd0cdc52e9)
+![The Mattermost Copilot AI Plugin is an extension for mattermost that provides functionality for local and third-party LLMs](https://github.com/mattermost/mattermost-plugin-ai/assets/2040554/6a787ff6-013d-4492-90ce-54aa7a292a4a)
+
+
 
 <!-- omit from toc -->
 ## Table of Contents
