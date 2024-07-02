@@ -99,7 +99,6 @@ func toolsToOpenAITools(tools []ai.Tool) []openaiClient.Tool {
 		Anonymous:      true,
 		ExpandedStruct: true,
 	}
-
 	for _, tool := range tools {
 		schema := schemaMaker.Reflect(tool.Schema)
 		result = append(result, openaiClient.Tool{
@@ -184,6 +183,21 @@ func createFunctionArrgmentResolver(jsonArgs string) ai.ToolArgumentGetter {
 	return func(args any) error {
 		return json.Unmarshal([]byte(jsonArgs), args)
 	}
+}
+
+func (s *OpenAI) handleStreamFunctionCall(request openaiClient.ChatCompletionRequest, conversation ai.BotConversation, name, arguments string) (openaiClient.ChatCompletionRequest, error) {
+	fmt.Println("TOOL SELECTED", name, arguments)
+	toolResult, err := conversation.Tools.ResolveTool(name, createFunctionArrgmentResolver(arguments), conversation.Context)
+	if err != nil {
+		fmt.Println("Error resolving function: ", err)
+	}
+	request.Messages = append(request.Messages, openaiClient.ChatCompletionMessage{
+		Role:    openaiClient.ChatMessageRoleFunction,
+		Name:    name,
+		Content: toolResult,
+	})
+
+	return request, nil
 }
 
 type ToolBufferElement struct {

@@ -6,10 +6,12 @@ import (
 )
 
 type Tool struct {
-	Name        string
-	Description string
-	Schema      any
-	Resolver    func(context ConversationContext, argsGetter ToolArgumentGetter) (string, error)
+	Name         string
+	Description  string
+	Schema       any
+	IsRawMessage bool
+	HTTPMethod   string
+	Resolver     func(name string, context ConversationContext, argsGetter ToolArgumentGetter) (string, error)
 }
 
 type ToolArgumentGetter func(args any) error
@@ -52,8 +54,11 @@ func (s *ToolStore) ResolveTool(name string, argsGetter ToolArgumentGetter, cont
 		s.TraceUnknown(name, argsGetter)
 		return "", errors.New("unknown tool " + name)
 	}
-	results, err := tool.Resolver(context, argsGetter)
-	s.TraceResolved(name, argsGetter, results)
+	if tool.Resolver == nil {
+		return "", errors.New("Tool resolver IS NIL")
+	}
+  results, err := tool.Resolver(name, context, argsGetter)
+  s.TraceResolved(name, argsGetter, results)
 	return results, err
 }
 

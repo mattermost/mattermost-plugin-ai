@@ -23,7 +23,7 @@ type LookupMattermostUserArgs struct {
 	Username string `jsonschema_description:"The username of the user to lookup without a leading '@'. Example: 'firstname.lastname'"`
 }
 
-func (p *Plugin) toolResolveLookupMattermostUser(context ai.ConversationContext, argsGetter ai.ToolArgumentGetter) (string, error) {
+func (p *Plugin) toolResolveLookupMattermostUser(_ string, context ai.ConversationContext, argsGetter ai.ToolArgumentGetter) (string, error) {
 	var args LookupMattermostUserArgs
 	err := argsGetter(&args)
 	if err != nil {
@@ -85,7 +85,7 @@ type GetChannelPosts struct {
 	NumberPosts int    `jsonschema_description:"The number of most recent posts to get. Example: '30'"`
 }
 
-func (p *Plugin) toolResolveGetChannelPosts(context ai.ConversationContext, argsGetter ai.ToolArgumentGetter) (string, error) {
+func (p *Plugin) toolResolveGetChannelPosts(_ string, context ai.ConversationContext, argsGetter ai.ToolArgumentGetter) (string, error) {
 	var args GetChannelPosts
 	err := argsGetter(&args)
 	if err != nil {
@@ -143,7 +143,7 @@ func formatGithubIssue(issue *github.Issue) string {
 
 var validGithubRepoName = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
 
-func (p *Plugin) toolGetGithubIssue(context ai.ConversationContext, argsGetter ai.ToolArgumentGetter) (string, error) {
+func (p *Plugin) toolGetGithubIssue(_ string, context ai.ConversationContext, argsGetter ai.ToolArgumentGetter) (string, error) {
 	var args GetGithubIssueArgs
 	err := argsGetter(&args)
 	if err != nil {
@@ -359,7 +359,7 @@ func (p *Plugin) getPublicJiraIssues(instanceURL string, issueKeys []string) ([]
 	return &issue, nil
 }*/
 
-func (p *Plugin) toolGetJiraIssue(context ai.ConversationContext, argsGetter ai.ToolArgumentGetter) (string, error) {
+func (p *Plugin) toolGetJiraIssue(_ string, context ai.ConversationContext, argsGetter ai.ToolArgumentGetter) (string, error) {
 	var args GetJiraIssueArgs
 	err := argsGetter(&args)
 	if err != nil {

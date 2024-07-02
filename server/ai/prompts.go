@@ -9,8 +9,12 @@ import (
 	"errors"
 )
 
+type BuiltInToolsFunc func(isDM bool) []Tool
+
 type Prompts struct {
-	templates *template.Template
+	templates          *template.Template
+	getBuiltInTools    BuiltInToolsFunc
+	getThirdPartyTools BuiltInToolsFunc
 }
 
 const PromptExtension = "tmpl"
@@ -37,14 +41,16 @@ const (
 	PromptFindOpenQuestionsSince  = "find_open_questions_since"
 )
 
-func NewPrompts(input fs.FS) (*Prompts, error) {
+func NewPrompts(input fs.FS, getBuiltInTools, getThirdPartyTools BuiltInToolsFunc) (*Prompts, error) {
 	templates, err := template.ParseFS(input, "ai/prompts/*")
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse prompt templates: %w", err)
 	}
 
 	return &Prompts{
-		templates: templates,
+		templates:          templates,
+		getBuiltInTools:    getBuiltInTools,
+		getThirdPartyTools: getThirdPartyTools,
 	}, nil
 }
 
