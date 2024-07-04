@@ -259,7 +259,7 @@ func (p *Plugin) handleMentions(bot *Bot, post *model.Post, postingUser *model.U
 		return err
 	}
 
-	p.track(evAIBotMention, map[string]interface{}{
+	p.track(evAIBotMention, map[string]any{
 		"actual_user_id":   postingUser.Id,
 		"bot_id":           bot.mmBot.UserId,
 		"bot_service_type": bot.cfg.Service.Type,
@@ -278,13 +278,13 @@ func (p *Plugin) handleDMs(bot *Bot, channel *model.Channel, postingUser *model.
 	}
 
 	if post.RootId == "" {
-		p.track(evUserStartedConversation, map[string]interface{}{
+		p.track(evUserStartedConversation, map[string]any{
 			"user_actual_id":   postingUser.Id,
 			"bot_id":           bot.mmBot.UserId,
 			"bot_service_type": bot.cfg.Service.Type,
 		})
 	} else {
-		p.track(evContextualInterrogation, map[string]interface{}{
+		p.track(evContextualInterrogation, map[string]any{
 			"user_actual_id":   postingUser.Id,
 			"bot_id":           bot.mmBot.UserId,
 			"bot_service_type": bot.cfg.Service.Type,

@@ -48,7 +48,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) Track(event string, props map[string]interface{}, ctx *analytics.Context) error {
+func (c *Client) Track(event string, props map[string]any, ctx *analytics.Context) error {
 	if props == nil {
 		props = map[string]any{}
 	}

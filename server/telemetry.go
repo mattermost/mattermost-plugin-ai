@@ -67,7 +67,7 @@ type eventFeature struct {
 	Skus []string `json:"skus"`
 }
 
-func (p *Plugin) track(ev string, props map[string]interface{}) {
+func (p *Plugin) track(ev string, props map[string]any) {
 	p.telemetryMut.RLock()
 	defer p.telemetryMut.RUnlock()
 	if p.telemetry == nil {
@@ -107,7 +107,7 @@ func (p *Plugin) initTelemetry(enableDiagnostics *bool) error {
 			WriteKey:     rudderWriteKey,
 			DataplaneURL: rudderDataplaneURL,
 			DiagnosticID: p.API.GetDiagnosticId(),
-			DefaultProps: map[string]interface{}{
+			DefaultProps: map[string]any{
 				"ServerVersion": p.API.GetServerVersion(),
 				"PluginVersion": manifest.Version,
 				"PluginBuild":   buildHash,
@@ -151,7 +151,7 @@ func (p *Plugin) handleTrackEvent(c *gin.Context) {
 	}
 
 	if data.Props == nil {
-		data.Props = map[string]interface{}{}
+		data.Props = map[string]any{}
 	}
 
 	if data.Source != "" {
