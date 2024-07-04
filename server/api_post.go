@@ -119,11 +119,6 @@ func (p *Plugin) handleSummarize(c *gin.Context) {
 		"channel_id":     channel.Id,
 		"post_id":        post.Id,
 		"user_actual_id": user.Id,
-		"feature": map[string]any{
-			"name":    "AI",
-			"is_free": false,
-			"skus":    []string{"enterprise"},
-		},
 	})
 
 	createdPost, err := p.startNewSummaryThread(bot, post.Id, p.MakeConversationContext(bot, user, channel, nil))
@@ -213,11 +208,6 @@ func (p *Plugin) handleSummarizeTranscription(c *gin.Context) {
 		"channel_id":     channel.Id,
 		"post_id":        post.Id,
 		"user_actual_id": user.Id,
-		"feature": map[string]any{
-			"name":    "AI",
-			"is_free": false,
-			"skus":    []string{"enterprise"},
-		},
 	})
 
 	createdPost, err := p.newCallTranscriptionSummaryThread(bot, user, post, channel)

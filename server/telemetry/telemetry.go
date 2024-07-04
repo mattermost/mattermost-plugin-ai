@@ -13,7 +13,7 @@ type ClientConfig struct {
 	WriteKey     string
 	DataplaneURL string
 	DiagnosticID string
-	DefaultProps map[string]interface{}
+	DefaultProps map[string]any
 }
 
 func (c *ClientConfig) isValid() error {
@@ -48,9 +48,9 @@ func NewClient(config ClientConfig) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) Track(event string, props map[string]interface{}) error {
+func (c *Client) Track(event string, props map[string]interface{}, ctx *analytics.Context) error {
 	if props == nil {
-		props = map[string]interface{}{}
+		props = map[string]any{}
 	}
 
 	for k, v := range c.config.DefaultProps {
@@ -61,6 +61,7 @@ func (c *Client) Track(event string, props map[string]interface{}) error {
 		Event:      event,
 		UserId:     c.config.DiagnosticID,
 		Properties: props,
+		Context:    ctx,
 	}); err != nil {
 		return fmt.Errorf("telemetry: failed to track event: %w", err)
 	}

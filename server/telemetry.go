@@ -9,6 +9,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/mattermost/mattermost-plugin-ai/server/telemetry"
+	"github.com/mattermost/mattermost/server/public/model"
+	"github.com/rudderlabs/analytics-go"
 )
 
 const (
@@ -28,6 +30,20 @@ var (
 	}
 	telemetryClientTypesMap  map[string]struct{}
 	telemetryClientEventsMap map[string]struct{}
+
+	enterpriseSKUs = []string{model.LicenseShortSkuEnterprise}
+	// currently unused
+	// professionalSKUs = []string{model.LicenseShortSkuProfessional, model.LicenseShortSkuEnterprise}
+
+	// We only need to map events that require a SKU (i.e., licensed features). Anything available on unlicensed
+	// servers will map to null as expected.
+	eventToSkusMap = map[string][]string{
+		evUserStartedConversation: enterpriseSKUs,
+		evContextualInterrogation: enterpriseSKUs,
+		evSummarizeUnreadMessages: enterpriseSKUs,
+		evSummarizeThread:         enterpriseSKUs,
+		evSummarizeTranscription:  enterpriseSKUs,
+	}
 )
 
 func init() {
@@ -42,10 +58,15 @@ func init() {
 }
 
 type trackEventRequest struct {
-	Event      string                 `json:"event"`
-	ClientType string                 `json:"clientType"`
-	Source     string                 `json:"source"`
-	Props      map[string]interface{} `json:"props"`
+	Event      string         `json:"event"`
+	ClientType string         `json:"clientType"`
+	Source     string         `json:"source"`
+	Props      map[string]any `json:"props"`
+}
+
+type eventFeature struct {
+	Name string   `json:"name"`
+	Skus []string `json:"skus"`
 }
 
 func (p *Plugin) track(ev string, props map[string]interface{}) {
@@ -54,7 +75,17 @@ func (p *Plugin) track(ev string, props map[string]interface{}) {
 	if p.telemetry == nil {
 		return
 	}
-	if err := p.telemetry.Track(ev, props); err != nil {
+
+	ctx := &analytics.Context{
+		Extra: map[string]any{
+			"feature": eventFeature{
+				Name: "Copilot",
+				Skus: eventToSkusMap[ev],
+			},
+		},
+	}
+
+	if err := p.telemetry.Track(ev, props, ctx); err != nil {
 		p.API.LogError(err.Error())
 	}
 }

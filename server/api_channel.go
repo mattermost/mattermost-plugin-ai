@@ -108,11 +108,6 @@ func (p *Plugin) handleSince(c *gin.Context) {
 		"user_actual_id": user.Id,
 		"since":          data.Since,
 		"type":           promptPreset,
-		"feature": map[string]any{
-			"name":    "AI",
-			"is_free": false,
-			"skus":    []string{"enterprise"},
-		},
 	})
 
 	prompt, err := p.prompts.ChatCompletion(promptPreset, context, p.getDefaultToolsStore(context.IsDMWithBot()))
