@@ -38,8 +38,6 @@ var (
 	// We only need to map events that require a SKU (i.e., licensed features). Anything available on unlicensed
 	// servers will map to null as expected.
 	eventToSkusMap = map[string][]string{
-		evUserStartedConversation: enterpriseSKUs,
-		evContextualInterrogation: enterpriseSKUs,
 		evSummarizeUnreadMessages: enterpriseSKUs,
 		evSummarizeThread:         enterpriseSKUs,
 		evSummarizeTranscription:  enterpriseSKUs,

@@ -260,12 +260,9 @@ func (p *Plugin) handleMentions(bot *Bot, post *model.Post, postingUser *model.U
 	}
 
 	p.track(evAIBotMention, map[string]interface{}{
-		"user_id":          postingUser.Id,
+		"actual_user_id":   postingUser.Id,
 		"bot_id":           bot.mmBot.UserId,
 		"bot_service_type": bot.cfg.Service.Type,
-		"feature": map[string]string{
-			"name": "AI",
-		},
 	})
 
 	if err := p.processUserRequestToBot(bot, p.MakeConversationContext(bot, postingUser, channel, post)); err != nil {
@@ -282,21 +279,15 @@ func (p *Plugin) handleDMs(bot *Bot, channel *model.Channel, postingUser *model.
 
 	if post.RootId == "" {
 		p.track(evUserStartedConversation, map[string]interface{}{
-			"user_id":          postingUser.Id,
+			"user_actual_id":   postingUser.Id,
 			"bot_id":           bot.mmBot.UserId,
 			"bot_service_type": bot.cfg.Service.Type,
-			"feature": map[string]string{
-				"name": "AI",
-			},
 		})
 	} else {
 		p.track(evContextualInterrogation, map[string]interface{}{
-			"user_id":          postingUser.Id,
+			"user_actual_id":   postingUser.Id,
 			"bot_id":           bot.mmBot.UserId,
 			"bot_service_type": bot.cfg.Service.Type,
-			"feature": map[string]string{
-				"name": "AI",
-			},
 		})
 	}
 
