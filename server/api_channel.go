@@ -103,14 +103,15 @@ func (p *Plugin) handleSince(c *gin.Context) {
 		return
 	}
 
-	p.track(evSummarizeUnreadMessages, map[string]interface{}{
-		"channel_id": channel.Id,
-		"user_id":    user.Id,
-		"since":      data.Since,
-		"type":       promptPreset,
-		"feature": map[string]string{
-			"name": "AI",
-			"skus": "enterprise",
+	p.track(evSummarizeUnreadMessages, map[string]any{
+		"channel_id":     channel.Id,
+		"user_actual_id": user.Id,
+		"since":          data.Since,
+		"type":           promptPreset,
+		"feature": map[string]any{
+			"name":    "AI",
+			"is_free": false,
+			"skus":    []string{"enterprise"},
 		},
 	})
 

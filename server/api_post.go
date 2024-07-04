@@ -115,13 +115,14 @@ func (p *Plugin) handleSummarize(c *gin.Context) {
 		return
 	}
 
-	p.track(evSummarizeThread, map[string]interface{}{
-		"channel_id": channel.Id,
-		"post_id":    post.Id,
-		"user_id":    user.Id,
-		"feature": map[string]string{
-			"name": "AI",
-			"skus": "enterprise",
+	p.track(evSummarizeThread, map[string]any{
+		"channel_id":     channel.Id,
+		"post_id":        post.Id,
+		"user_actual_id": user.Id,
+		"feature": map[string]any{
+			"name":    "AI",
+			"is_free": false,
+			"skus":    []string{"enterprise"},
 		},
 	})
 
@@ -208,13 +209,14 @@ func (p *Plugin) handleSummarizeTranscription(c *gin.Context) {
 		return
 	}
 
-	p.track(evSummarizeTranscription, map[string]interface{}{
-		"channel_id": channel.Id,
-		"post_id":    post.Id,
-		"user_id":    user.Id,
-		"feature": map[string]string{
-			"name": "AI",
-			"skus": "enterprise",
+	p.track(evSummarizeTranscription, map[string]any{
+		"channel_id":     channel.Id,
+		"post_id":        post.Id,
+		"user_actual_id": user.Id,
+		"feature": map[string]any{
+			"name":    "AI",
+			"is_free": false,
+			"skus":    []string{"enterprise"},
 		},
 	})
 
