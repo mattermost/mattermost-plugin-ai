@@ -75,10 +75,9 @@ const defaultConfig = {
 
 const BetaMessage = () => (
     <MessageContainer>
-        <Pill><FormattedMessage defaultMessage='BETA'/></Pill>
         <span>
             <FormattedMessage
-                defaultMessage='This plugin is currently in beta. To report a bug or to provide feedback, <link>create a new issue in the plugin repository</link>.'
+                defaultMessage='To report a bug or to provide feedback, <link>create a new issue in the plugin repository</link>.'
                 values={{link: (chunks: any) => (
                     <a
                         target={'_blank'}

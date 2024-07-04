@@ -60,13 +60,13 @@ func (p *Plugin) handleReact(c *gin.Context) {
 
 	context := p.MakeConversationContext(bot, user, channel, post)
 	context.PromptParameters = map[string]string{"Message": post.Message}
-	prompt, err := p.prompts.ChatCompletion(ai.PromptEmojiSelect, context)
+	prompt, err := p.prompts.ChatCompletion(ai.PromptEmojiSelect, context, ai.NewNoTools())
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 
-	emojiName, err := p.getLLM(bot.cfg.Service).ChatCompletionNoStream(prompt, ai.WithMaxGeneratedTokens(25))
+	emojiName, err := p.getLLM(bot.cfg).ChatCompletionNoStream(prompt, ai.WithMaxGeneratedTokens(25))
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
@@ -203,8 +203,8 @@ func (p *Plugin) handleSummarizeTranscription(c *gin.Context) {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to get calls user: %w", err))
 		return
 	}
-	if !targetPostUser.IsBot || targetPostUser.Username != CallsBotUsername {
-		c.AbortWithError(http.StatusBadRequest, errors.New("not a calls bot post"))
+	if !targetPostUser.IsBot || (targetPostUser.Username != CallsBotUsername && targetPostUser.Username != ZoomBotUsername) {
+		c.AbortWithError(http.StatusBadRequest, errors.New("not a calls or zoom bot post"))
 		return
 	}
 
