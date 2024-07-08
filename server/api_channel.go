@@ -103,7 +103,7 @@ func (p *Plugin) handleSince(c *gin.Context) {
 		return
 	}
 
-	p.track(evSummarizeUnreadMessages, map[string]any{
+	p.track(evUnreadMessages, map[string]any{
 		"channel_id":     channel.Id,
 		"user_actual_id": user.Id,
 		"since":          data.Since,

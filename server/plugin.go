@@ -284,7 +284,7 @@ func (p *Plugin) handleDMs(bot *Bot, channel *model.Channel, postingUser *model.
 			"bot_service_type": bot.cfg.Service.Type,
 		})
 	} else {
-		p.track(evContextualInterrogation, map[string]any{
+		p.track(evContinueConversation, map[string]any{
 			"user_actual_id":   postingUser.Id,
 			"bot_id":           bot.mmBot.UserId,
 			"bot_service_type": bot.cfg.Service.Type,

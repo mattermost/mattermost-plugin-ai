@@ -16,9 +16,9 @@ import (
 const (
 	// server-side events
 	evUserStartedConversation = "user_started_conversation"
-	evContextualInterrogation = "contextual_interrogation"
+	evContinueConversation    = "continue_conversation"
 	evAIBotMention            = "ai_bot_mention"
-	evSummarizeUnreadMessages = "summarize_unread_messages"
+	evUnreadMessages          = "unread_messages"
 	evSummarizeThread         = "summarize_thread"
 	evSummarizeTranscription  = "summarize_transcription"
 )
@@ -38,9 +38,9 @@ var (
 	// We only need to map events that require a SKU (i.e., licensed features). Anything available on unlicensed
 	// servers will map to null as expected.
 	eventToSkusMap = map[string][]string{
-		evSummarizeUnreadMessages: enterpriseSKUs,
-		evSummarizeThread:         enterpriseSKUs,
-		evSummarizeTranscription:  enterpriseSKUs,
+		evUnreadMessages:         enterpriseSKUs,
+		evSummarizeThread:        enterpriseSKUs,
+		evSummarizeTranscription: enterpriseSKUs,
 	}
 )
 
