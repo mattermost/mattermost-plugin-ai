@@ -10,6 +10,12 @@ DLV_DEBUG_PORT := 2346
 DEFAULT_GOOS := $(shell go env GOOS)
 DEFAULT_GOARCH := $(shell go env GOARCH)
 INCLUDE_FFMPEG ?=
+BUILD_HASH = $(shell git rev-parse HEAD)
+LDFLAGS += -X "main.buildHash=$(BUILD_HASH)"
+LDFLAGS += -X "main.isDebug=$(MM_DEBUG)"
+LDFLAGS += -X "main.rudderWriteKey=$(MM_RUDDER_COPILOT_PROD)"
+LDFLAGS += -X "main.rudderDataplaneURL=$(MM_RUDDER_DATAPLANE_URL)"
+GO_BUILD_FLAGS += -ldflags '$(LDFLAGS)'
 
 export GO111MODULE=on
 

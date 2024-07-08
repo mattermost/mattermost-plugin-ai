@@ -16,9 +16,9 @@ import IconThreadSummarization from './components/assets/icon_thread_summarizati
 import IconReactForMe from './components/assets/icon_react_for_me';
 import RHS from './components/rhs/rhs';
 import Config from './components/system_console/config';
-import {doReaction, doSummarize, getAIDirectChannel} from './client';
+import {doReaction, doSummarize, getAIDirectChannel, trackEvent} from './client';
 import {setOpenRHSAction} from './redux_actions';
-import {BotUsername} from './constants';
+import {BotUsername, TelemetryEvents, TelemetrySources} from './constants';
 import PostEventListener from './websocket';
 import {setupRedux} from './redux';
 import UnreadsSumarize from './components/unreads_summarize';
@@ -156,6 +156,9 @@ export default class Plugin {
         registry.registerAdminConsoleCustomSetting('Config', Config);
         if (rhs) {
             registry.registerChannelHeaderButtonAction(<IconAIContainer src={aiIcon}/>, () => {
+                trackEvent(TelemetryEvents.CopilotAppsBarClicked, TelemetrySources.Widget, {
+                    user_id: store.getState().entities.users.currentUserId,
+                });
                 store.dispatch(rhs.toggleRHSPlugin);
             },
             'Copilot',

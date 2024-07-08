@@ -103,6 +103,13 @@ func (p *Plugin) handleSince(c *gin.Context) {
 		return
 	}
 
+	p.track(evUnreadMessages, map[string]any{
+		"channel_id":     channel.Id,
+		"user_actual_id": user.Id,
+		"since":          data.Since,
+		"type":           promptPreset,
+	})
+
 	prompt, err := p.prompts.ChatCompletion(promptPreset, context, p.getDefaultToolsStore(context.IsDMWithBot()))
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
