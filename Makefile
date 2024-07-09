@@ -10,6 +10,12 @@ DLV_DEBUG_PORT := 2346
 DEFAULT_GOOS := $(shell go env GOOS)
 DEFAULT_GOARCH := $(shell go env GOARCH)
 INCLUDE_FFMPEG ?=
+BUILD_HASH = $(shell git rev-parse HEAD)
+LDFLAGS += -X "main.buildHash=$(BUILD_HASH)"
+LDFLAGS += -X "main.isDebug=$(MM_DEBUG)"
+LDFLAGS += -X "main.rudderWriteKey=$(MM_RUDDER_COPILOT_PROD)"
+LDFLAGS += -X "main.rudderDataplaneURL=$(MM_RUDDER_DATAPLANE_URL)"
+GO_BUILD_FLAGS += -ldflags '$(LDFLAGS)'
 
 export GO111MODULE=on
 
@@ -67,6 +73,14 @@ define check_pending_pulls
 		exit 1; \
 	fi
 endef
+# Prompt for approval
+define prompt_approval
+	@read -p "About to bump $(APP_NAME) to version $(1), approve? (y/n) " userinput; \
+	if [ "$$userinput" != "y" ]; then \
+		echo "Bump aborted."; \
+		exit 1; \
+	fi
+endef
 # ====================================================================================
 
 .PHONY: patch minor major patch-rc minor-rc major-rc
@@ -75,6 +89,7 @@ patch: ## to bump patch version (semver)
 	$(call check_protected_branch)
 	$(call check_pending_pulls)
 	@$(eval PATCH := $(shell echo $$(($(PATCH)+1))))
+	$(call prompt_approval,$(MAJOR).$(MINOR).$(PATCH))
 	@echo Bumping $(APP_NAME) to Patch version $(MAJOR).$(MINOR).$(PATCH)
 	git tag -s -a v$(MAJOR).$(MINOR).$(PATCH) -m "Bumping $(APP_NAME) to Patch version $(MAJOR).$(MINOR).$(PATCH)"
 	git push origin v$(MAJOR).$(MINOR).$(PATCH)
@@ -85,6 +100,7 @@ minor: ## to bump minor version (semver)
 	$(call check_pending_pulls)
 	@$(eval MINOR := $(shell echo $$(($(MINOR)+1))))
 	@$(eval PATCH := 0)
+	$(call prompt_approval,$(MAJOR).$(MINOR).$(PATCH))
 	@echo Bumping $(APP_NAME) to Minor version $(MAJOR).$(MINOR).$(PATCH)
 	git tag -s -a v$(MAJOR).$(MINOR).$(PATCH) -m "Bumping $(APP_NAME) to Minor version $(MAJOR).$(MINOR).$(PATCH)"
 	git push origin v$(MAJOR).$(MINOR).$(PATCH)
@@ -96,6 +112,7 @@ major: ## to bump major version (semver)
 	$(eval MAJOR := $(shell echo $$(($(MAJOR)+1))))
 	$(eval MINOR := 0)
 	$(eval PATCH := 0)
+	$(call prompt_approval,$(MAJOR).$(MINOR).$(PATCH))
 	@echo Bumping $(APP_NAME) to Major version $(MAJOR).$(MINOR).$(PATCH)
 	git tag -s -a v$(MAJOR).$(MINOR).$(PATCH) -m "Bumping $(APP_NAME) to Major version $(MAJOR).$(MINOR).$(PATCH)"
 	git push origin v$(MAJOR).$(MINOR).$(PATCH)
@@ -105,6 +122,7 @@ patch-rc: ## to bump patch release candidate version (semver)
 	$(call check_protected_branch)
 	$(call check_pending_pulls)
 	@$(eval RC := $(shell echo $$(($(RC)+1))))
+	$(call prompt_approval,$(MAJOR).$(MINOR).$(PATCH)-rc$(RC))
 	@echo Bumping $(APP_NAME) to Patch RC version $(MAJOR).$(MINOR).$(PATCH)-rc$(RC)
 	git tag -s -a v$(MAJOR).$(MINOR).$(PATCH)-rc$(RC) -m "Bumping $(APP_NAME) to Patch RC version $(MAJOR).$(MINOR).$(PATCH)-rc$(RC)"
 	git push origin v$(MAJOR).$(MINOR).$(PATCH)-rc$(RC)
@@ -116,6 +134,7 @@ minor-rc: ## to bump minor release candidate version (semver)
 	@$(eval MINOR := $(shell echo $$(($(MINOR)+1))))
 	@$(eval PATCH := 0)
 	@$(eval RC := 1)
+	$(call prompt_approval,$(MAJOR).$(MINOR).$(PATCH)-rc$(RC))
 	@echo Bumping $(APP_NAME) to Minor RC version $(MAJOR).$(MINOR).$(PATCH)-rc$(RC)
 	git tag -s -a v$(MAJOR).$(MINOR).$(PATCH)-rc$(RC) -m "Bumping $(APP_NAME) to Minor RC version $(MAJOR).$(MINOR).$(PATCH)-rc$(RC)"
 	git push origin v$(MAJOR).$(MINOR).$(PATCH)-rc$(RC)
@@ -128,6 +147,7 @@ major-rc: ## to bump major release candidate version (semver)
 	@$(eval MINOR := 0)
 	@$(eval PATCH := 0)
 	@$(eval RC := 1)
+	$(call prompt_approval,$(MAJOR).$(MINOR).$(PATCH)-rc$(RC))
 	@echo Bumping $(APP_NAME) to Major RC version $(MAJOR).$(MINOR).$(PATCH)-rc$(RC)
 	git tag -s -a v$(MAJOR).$(MINOR).$(PATCH)-rc$(RC) -m "Bumping $(APP_NAME) to Major RC version $(MAJOR).$(MINOR).$(PATCH)-rc$(RC)"
 	git push origin v$(MAJOR).$(MINOR).$(PATCH)-rc$(RC)

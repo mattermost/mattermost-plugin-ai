@@ -2,7 +2,9 @@
 
 > Mattermost plugin for local and third-party LLMs
 
-![The Mattermost Copilot AI Plugin is an extension for mattermost that provides functionality for local and third-party LLMs](https://github.com/mattermost/openops/assets/7295363/37cc5337-16a0-4d88-971f-71cd0cdc52e9)
+![The Mattermost Copilot AI Plugin is an extension for mattermost that provides functionality for local and third-party LLMs](https://github.com/mattermost/mattermost-plugin-ai/assets/2040554/6a787ff6-013d-4492-90ce-54aa7a292a4a)
+
+
 
 <!-- omit from toc -->
 ## Table of Contents
@@ -29,7 +31,7 @@ We recommend using Mattermost Server v9.6 or later for the best experience. Comp
 - v9.3.3+
 - v8.1.11+ ([ESR](https://docs.mattermost.com/deploy/mattermost-changelog.html))
 
-See the [Mattermost Product Documentation](https://docs.mattermost.com/configure/enable-ai-copilot.html) for details on installing, configuring, enabling, and using this Mattermost integration.
+See the [Mattermost Product Documentation](https://docs.mattermost.com/configure/enable-copilot.html) for details on installing, configuring, enabling, and using this Mattermost integration.
 
 **Note**: Installation instructions assume you already have [Mattermost Server](https://mattermost.com/download/) installed and configured with [PostgreSQL](https://www.postgresql.org/).
 

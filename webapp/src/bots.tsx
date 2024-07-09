@@ -1,10 +1,13 @@
 import {useState, useEffect} from 'react';
 
-import {useSelector} from 'react-redux';
+import {useDispatch, useSelector} from 'react-redux';
 
 import {GlobalState} from '@mattermost/types/store';
 
 import {getAIBots} from '@/client';
+
+import manifest from './manifest';
+import {BotsHandler} from './redux';
 
 export interface LLMBot {
     id: string;
@@ -17,9 +20,10 @@ export interface LLMBot {
 const defaultBotLocalStorageKey = 'defaultBot';
 
 export const useBotlist = () => {
-    const [bots, setBots] = useState<LLMBot[] | null>(null);
-    const [activeBot, setActiveBotState] = useState<LLMBot | null>(null);
+    const bots = useSelector<GlobalState, LLMBot[] | null>((state: any) => state['plugins-' + manifest.id].bots);
+    const [activeBot, setActiveBot] = useState<LLMBot | null>(null);
     const currentUserId = useSelector<GlobalState, string>((state) => state.entities.users.currentUserId);
+    const dispatch = useDispatch();
 
     // Load bots
     useEffect(() => {
@@ -29,26 +33,27 @@ export const useBotlist = () => {
                 return;
             }
 
-            // Set default bot to the one in local storage otherwise default to the first bot (which should be the server default)
-            let newActiveBot = fetchedBots[0];
-            if (fetchedBots.length > 1) {
-                const defaultBotName = localStorage.getItem(defaultBotLocalStorageKey);
-                const defaultBot = fetchedBots.find((bot: LLMBot) => bot.username === defaultBotName);
-                if (defaultBot) {
-                    newActiveBot = defaultBot;
-                }
-            }
-
-            setBots(fetchedBots);
-            setActiveBotState(newActiveBot);
+            dispatch({
+                type: BotsHandler,
+                bots: fetchedBots,
+            });
         };
-        fetchBots();
-    }, [currentUserId]);
+        if (!bots) {
+            fetchBots();
+        }
+    }, [currentUserId, bots, dispatch]);
 
-    const setActiveBot = (bot: LLMBot) => {
-        setActiveBotState(bot);
-        localStorage.setItem(defaultBotLocalStorageKey, bot.username);
-    };
+    useEffect(() => {
+        const defaultActiveBotName = localStorage.getItem(defaultBotLocalStorageKey);
+        setActiveBot(bots?.find((bot: LLMBot) => bot.username === defaultActiveBotName) || bots?.[0] || null);
+    }, [bots]);
+
+    useEffect(() => {
+        if (!activeBot) {
+            return;
+        }
+        localStorage.setItem(defaultBotLocalStorageKey, activeBot.username);
+    }, [activeBot]);
 
     return {bots, activeBot, setActiveBot};
 };
