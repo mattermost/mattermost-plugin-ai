@@ -195,6 +195,12 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 			p.pluginAPI.Log.Error(err.Error())
 		}
 	}
+
+	if len(post.FileIds) > 0 {
+		if err := p.handleImageIndexing(post); err != nil {
+			p.pluginAPI.Log.Error(err.Error())
+		}
+	}
 }
 
 const (
@@ -293,6 +299,41 @@ func (p *Plugin) handleDMs(bot *Bot, channel *model.Channel, postingUser *model.
 
 	if err := p.processUserRequestToBot(bot, p.MakeConversationContext(bot, postingUser, channel, post)); err != nil {
 		return fmt.Errorf("unable to process bot DM: %w", err)
+	}
+
+	return nil
+}
+
+func (p *Plugin) handleImageIndexing(post *model.Post) error {
+	bot := p.GetBotByUsernameOrFirst("copilot")
+	if bot == nil {
+		return fmt.Errorf("no bot found")
+	}
+
+	if !bot.cfg.EnableVision {
+		return fmt.Errorf("vision is disabled")
+	}
+
+	llm := p.getLLM(bot.cfg)
+
+	aiFiles := p.PostFilesToAIFiles(bot, post)
+	for _, file := range aiFiles {
+		result, err := llm.ChatCompletionNoStream(ai.BotConversation{
+			Posts: []ai.Post{{
+				Role:    ai.PostRoleUser,
+				Message: "Write a descripton and a list of keywords that describe this image. Use plaintext only. Write only the description and the keywords. The keywords should be separted with commas.",
+				Files:   []ai.File{file},
+			}},
+		})
+		if err != nil {
+			p.pluginAPI.Log.Warn("failed to generate image description", "error", err, "file_id", file.ID)
+			continue
+		}
+
+		if err := p.pluginAPI.File.SetSearchableContent(file.ID, result); err != nil {
+			p.pluginAPI.Log.Warn("failed to set searchable content", "error", err, "file_id", file.ID)
+			continue
+		}
 	}
 
 	return nil
