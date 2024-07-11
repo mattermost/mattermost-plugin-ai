@@ -13,7 +13,7 @@ INCLUDE_FFMPEG ?=
 BUILD_HASH = $(shell git rev-parse HEAD)
 LDFLAGS += -X "main.buildHash=$(BUILD_HASH)"
 LDFLAGS += -X "main.isDebug=$(MM_DEBUG)"
-LDFLAGS += -X "main.rudderWriteKey=$(MM_RUDDER_COPILOT_PROD)"
+LDFLAGS += -X "main.rudderWriteKey=$(MM_RUDDER_PLUGINS_PROD)"
 LDFLAGS += -X "main.rudderDataplaneURL=$(MM_RUDDER_DATAPLANE_URL)"
 GO_BUILD_FLAGS += -ldflags '$(LDFLAGS)'
 
