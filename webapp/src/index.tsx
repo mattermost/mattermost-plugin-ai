@@ -21,7 +21,7 @@ import {setOpenRHSAction} from './redux_actions';
 import {BotUsername, TelemetryEvents, TelemetrySources} from './constants';
 import PostEventListener from './websocket';
 import {BotsHandler, setupRedux} from './redux';
-import UnreadsSumarize from './components/unreads_summarize';
+import UnreadsSummarize from './components/unreads_summarize';
 import {PostbackPost} from './components/postback_post';
 
 type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
@@ -157,7 +157,7 @@ export default class Plugin {
         }
 
         if (registry.registerNewMessagesSeparatorActionComponent) {
-            registry.registerNewMessagesSeparatorActionComponent(UnreadsSumarize);
+            registry.registerNewMessagesSeparatorActionComponent(UnreadsSummarize);
         }
     }
 }
