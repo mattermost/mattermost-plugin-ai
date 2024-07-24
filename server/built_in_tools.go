@@ -407,7 +407,7 @@ func (p *Plugin) getBuiltInTools(isDM bool) []ai.Tool {
 			Resolver:    p.toolResolveLookupMattermostUser,
 		})
 
-		// Github plugin tools
+		// GitHub plugin tools
 		status, err := p.pluginAPI.Plugin.GetPluginStatus("github")
 		if err != nil && !errors.Is(err, pluginapi.ErrNotFound) {
 			p.API.LogError("failed to get github plugin status", "error", err.Error())
