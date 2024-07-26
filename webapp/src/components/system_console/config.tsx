@@ -153,12 +153,12 @@ const Config = (props: Props) => {
                     botChangedAvatar={botChangedAvatar}
                 />
                 <PanelFooterText>
-                    <FormattedMessage defaultMessage='AI services are third party services; Mattermost is not responsible for output.'/>
+                    <FormattedMessage defaultMessage='AI services are third-party services. Mattermost is not responsible for service output.'/>
                 </PanelFooterText>
             </Panel>
             <Panel
                 title={intl.formatMessage({defaultMessage: 'AI Functions'})}
-                subtitle={intl.formatMessage({defaultMessage: 'Choose which bot you want to be the default for each function.'})}
+                subtitle={intl.formatMessage({defaultMessage: 'Choose a default bot.'})}
             >
                 <ItemList>
                     <SelectionItem
@@ -183,7 +183,7 @@ const Config = (props: Props) => {
 
             <Panel
                 title={intl.formatMessage({defaultMessage: 'User restrictions (experimental)'})}
-                subtitle={intl.formatMessage({defaultMessage: 'Enable restrictions to allow or not users to use AI in this instance.'})}
+                subtitle={intl.formatMessage({defaultMessage: 'Restrict where Copilot can be used.'})}
             >
                 <div className='form-group'>
                     <label
@@ -318,7 +318,7 @@ const Config = (props: Props) => {
                         </label>
                         <div className='help-text'>
                             <span>
-                                <FormattedMessage defaultMessage='Enable tracing of LLM requests. Outputs whole conversations to the logs.'/>
+                                <FormattedMessage defaultMessage='Enable tracing of LLM requests. Outputs full conversation data to the logs.'/>
                             </span>
                         </div>
                     </div>
