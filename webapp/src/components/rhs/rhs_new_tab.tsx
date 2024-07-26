@@ -74,9 +74,7 @@ const setEditorText = (text: string) => {
 };
 
 const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
-    const dispatch = useDispatch();
     const intl = useIntl();
-    const [draft, updateDraft] = useState<any>(null);
     const addBrainstormingIdeas = useCallback(() => {
         setEditorText(intl.formatMessage({defaultMessage: 'Brainstorm ideas about '}));
     }, []);
@@ -120,37 +118,12 @@ const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
                     data-testid='rhs-new-tab-create-post'
                     channelId={botChannelId}
                     placeholder={intl.formatMessage({defaultMessage: 'Ask Copilot anything...'})}
-                    rootId={'ai_copilot'}
-                    onSubmit={async (p: any) => {
-                        const post = {...p};
-                        post.channel_id = botChannelId || '';
-                        post.props = {};
-                        post.uploadsInProgress = [];
-                        post.file_ids = p.fileInfos.map((f: any) => f.id);
-                        const created = await createPost(post);
-                        selectPost(created.id);
-                        setCurrentTab('thread');
-                        dispatch({
-                            type: 'SET_GLOBAL_ITEM',
-                            data: {
-                                name: 'comment_draft_ai_copilot',
-                                value: {message: '', fileInfos: [], uploadsInProgress: []},
-                            },
-                        });
-                    }}
-                    draft={draft}
-                    onUpdateCommentDraft={(newDraft: any) => {
-                        updateDraft(newDraft);
-                        const timestamp = new Date().getTime();
-                        newDraft.updateAt = timestamp;
-                        newDraft.createAt = newDraft.createAt || timestamp;
-                        dispatch({
-                            type: 'SET_GLOBAL_ITEM',
-                            data: {
-                                name: 'comment_draft_ai_copilot',
-                                value: newDraft,
-                            },
-                        });
+                    isThreadView={true}
+                    afterSubmit={(result: {created?: {id: string}}) => {
+                        if (result.created?.id) {
+                            selectPost(result.created?.id);
+                            setCurrentTab('thread');
+                        }
                     }}
                 />
             </CreatePostContainer>
