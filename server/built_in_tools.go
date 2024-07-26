@@ -150,12 +150,12 @@ func (p *Plugin) toolGetGithubIssue(context ai.ConversationContext, argsGetter a
 		return "invalid parameters to function", fmt.Errorf("failed to get arguments for tool GetGithubIssues: %w", err)
 	}
 
-	// Fail for over lengh repo ownder or name.
+	// Fail for over length repo owner or name.
 	if len(args.RepoOwner) > 39 || len(args.RepoName) > 100 {
 		return "invalid parameters to function", errors.New("invalid repo owner or repo name")
 	}
 
-	// Fail if repo ownder or repo name contain invalid characters.
+	// Fail if repo owner or repo name contain invalid characters.
 	if !validGithubRepoName.MatchString(args.RepoOwner) || !validGithubRepoName.MatchString(args.RepoName) {
 		return "invalid parameters to function", errors.New("invalid repo owner or repo name")
 	}
@@ -407,7 +407,7 @@ func (p *Plugin) getBuiltInTools(isDM bool) []ai.Tool {
 			Resolver:    p.toolResolveLookupMattermostUser,
 		})
 
-		// Github plugin tools
+		// GitHub plugin tools
 		status, err := p.pluginAPI.Plugin.GetPluginStatus("github")
 		if err != nil && !errors.Is(err, pluginapi.ErrNotFound) {
 			p.API.LogError("failed to get github plugin status", "error", err.Error())

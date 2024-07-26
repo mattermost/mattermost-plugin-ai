@@ -17,7 +17,7 @@ const PromptExtension = "tmpl"
 const SystemSubTemplateName = ".system"
 const UserSubTemplateName = ".user"
 
-// Conviance vars for the filenames in ai/prompts/
+// Convenience vars for the filenames in ai/prompts/
 const (
 	PromptSummarizeThread         = "summarize_thread"
 	PromptDirectMessageQuestion   = "direct_message_question"

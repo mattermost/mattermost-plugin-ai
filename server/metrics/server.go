@@ -32,7 +32,7 @@ func (h *Server) Run() error {
 	return errors.Wrap(h.Server.ListenAndServe(), "prometheus ListenAndServe")
 }
 
-// Shutdown will shutdown the prometheus server.
+// Shutdown will shut down the prometheus server.
 func (h *Server) Shutdown() error {
 	return errors.Wrap(h.Server.Close(), "prometheus Close")
 }

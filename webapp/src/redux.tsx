@@ -23,7 +23,7 @@ export async function setupRedux(registry: any, store: WebappStore) {
         handler: makeCallsPostButtonClickedHandler(store.dispatch),
     });
 
-    // This is a workaround for a bug where the the RHS was inaccessable to
+    // This is a workaround for a bug where the RHS was inaccessible to
     // users that where not system admins. This is unable to be fixed properly
     // because the Webapp does not export the AdvancedCreateComment directly.
     // #120 filed to remove this workaround.
