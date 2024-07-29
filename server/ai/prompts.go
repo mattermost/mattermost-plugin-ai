@@ -59,12 +59,12 @@ func (p *Prompts) ChatCompletion(templateName string, context ConversationContex
 		Tools:   tools,
 	}
 
-	template := p.templates.Lookup(withPromptExtension(templateName))
-	if template == nil {
+	tmpl := p.templates.Lookup(withPromptExtension(templateName))
+	if tmpl == nil {
 		return conversation, errors.New("main template not found")
 	}
 
-	if systemTemplate := template.Lookup(templateName + SystemSubTemplateName); systemTemplate != nil {
+	if systemTemplate := tmpl.Lookup(templateName + SystemSubTemplateName); systemTemplate != nil {
 		systemMessage, err := p.execute(systemTemplate, context)
 		if err != nil {
 			return conversation, err
@@ -76,7 +76,7 @@ func (p *Prompts) ChatCompletion(templateName string, context ConversationContex
 		})
 	}
 
-	if userTemplate := template.Lookup(templateName + UserSubTemplateName); userTemplate != nil {
+	if userTemplate := tmpl.Lookup(templateName + UserSubTemplateName); userTemplate != nil {
 		userMessage, err := p.execute(userTemplate, context)
 		if err != nil {
 			return conversation, err
