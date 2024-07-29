@@ -206,7 +206,7 @@ const (
 
 // handleMessages Handled messages posted. Returns true if a response was posted.
 func (p *Plugin) handleMessages(post *model.Post) error {
-	// Don't respond to ouselves
+	// Don't respond to ourselves
 	if p.IsAnyBot(post.UserId) {
 		return fmt.Errorf("not responding to ourselves: %w", ErrNoResponse)
 	}
