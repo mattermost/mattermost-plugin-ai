@@ -58,9 +58,9 @@ func (p *Plugin) handleReact(c *gin.Context) {
 		return
 	}
 
-	context := p.MakeConversationContext(bot, user, channel, post)
-	context.PromptParameters = map[string]string{"Message": post.Message}
-	prompt, err := p.prompts.ChatCompletion(ai.PromptEmojiSelect, context, ai.NewNoTools())
+	conversationContext := p.MakeConversationContext(bot, user, channel, post)
+	conversationContext.PromptParameters = map[string]string{"Message": post.Message}
+	prompt, err := p.prompts.ChatCompletion(ai.PromptEmojiSelect, conversationContext, ai.NewNoTools())
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
@@ -72,7 +72,7 @@ func (p *Plugin) handleReact(c *gin.Context) {
 		return
 	}
 
-	// Do some emoji post processing to hopefully make this an actual emoji.
+	// Do some emoji post-processing to hopefully make this an actual emoji.
 	emojiName = strings.Trim(strings.TrimSpace(emojiName), ":")
 
 	if _, found := model.GetSystemEmojiId(emojiName); !found {
