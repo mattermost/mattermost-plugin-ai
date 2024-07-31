@@ -101,7 +101,7 @@ func (p *Plugin) toolResolveGetChannelPosts(context ai.ConversationContext, args
 	}
 
 	if context.Channel == nil || context.Channel.TeamId == "" {
-		//TODO: support DMs. This will require some way to disabiguate between channels with the same name on different teams.
+		//TODO: support DMs. This will require some way to disambiguate between channels with the same name on different teams.
 		return "Error: Ambiguous channel lookup. Unable to what channel the user is referring to because DMs do not belong to specific teams. Tell the user to ask outside a DM channel.", errors.New("ambiguous channel lookup")
 	}
 
