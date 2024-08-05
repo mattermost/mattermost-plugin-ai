@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -165,7 +166,14 @@ func (p *Plugin) toolGetGithubIssue(context ai.ConversationContext, argsGetter a
 		return "invalid parameters to function", errors.New("invalid issue number")
 	}
 
-	req, err := http.NewRequest("GET", fmt.Sprintf("/github/api/v1/issue?owner=%s&repo=%s&number=%d", args.RepoOwner, args.RepoName, args.Number), nil)
+	req, err := http.NewRequest("GET",
+		fmt.Sprintf("/github/api/v1/issue?owner=%s&repo=%s&number=%d",
+			url.QueryEscape(args.RepoOwner),
+			url.QueryEscape(args.RepoName),
+			args.Number,
+		),
+		nil,
+	)
 	if err != nil {
 		return "internal failure", fmt.Errorf("failed to create request: %w", err)
 	}
