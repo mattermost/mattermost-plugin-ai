@@ -59,6 +59,8 @@ const Bot = (props: Props) => {
 		props.bot.service.type === '' ||
 		(props.bot.service.type !== 'asksage' && props.bot.service.apiKey === '') ||
 		(props.bot.service.type === 'openaicompatible' && props.bot.service.apiURL === '');
+
+    const invalidUsername = props.bot.name !== '' && (!(/^[a-z0-9.\-_]+$/).test(props.bot.name) || !(/[a-z]/).test(props.bot.name.charAt(0)));
     return (
         <BotContainer>
             <HeaderContainer onClick={() => setOpen((o) => !o)}>
@@ -79,6 +81,12 @@ const Bot = (props: Props) => {
                         <FormattedMessage defaultMessage='Missing information'/>
                     </DangerPill>
                 )}
+                {invalidUsername && (
+                    <DangerPill>
+                        <AlertOutlineIcon/>
+                        <FormattedMessage defaultMessage='Invalid Username'/>
+                    </DangerPill>
+                )}
                 <ButtonIcon
                     onClick={props.onDelete}
                 >
@@ -97,6 +105,7 @@ const Bot = (props: Props) => {
                         <TextItem
                             label={intl.formatMessage({defaultMessage: 'Bot Username'})}
                             helptext={intl.formatMessage({defaultMessage: 'Team members can mention this bot with this username'})}
+                            maxLength={22}
                             value={props.bot.name}
                             onChange={(e) => props.onChange({...props.bot, name: e.target.value})}
                         />
