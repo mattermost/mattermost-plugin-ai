@@ -30,10 +30,10 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	router.GET("/ai_bots", p.handleGetAIBots)
 	router.POST("/telemetry/track", p.handleTrackEvent)
 
-	botRequriedRouter := router.Group("")
-	botRequriedRouter.Use(p.aiBotRequired)
+	botRequiredRouter := router.Group("")
+	botRequiredRouter.Use(p.aiBotRequired)
 
-	postRouter := botRequriedRouter.Group("/post/:postid")
+	postRouter := botRequiredRouter.Group("/post/:postid")
 	postRouter.Use(p.postAuthorizationRequired)
 	postRouter.POST("/react", p.handleReact)
 	postRouter.POST("/summarize", p.handleSummarize)
@@ -43,7 +43,7 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	postRouter.POST("/regenerate", p.handleRegenerate)
 	postRouter.POST("/postback_summary", p.handlePostbackSummary)
 
-	channelRouter := botRequriedRouter.Group("/channel/:channelid")
+	channelRouter := botRequiredRouter.Group("/channel/:channelid")
 	channelRouter.Use(p.channelAuthorizationRequired)
 	channelRouter.POST("/since", p.handleSince)
 
@@ -92,7 +92,7 @@ func (p *Plugin) handleGetAIThreads(c *gin.Context) {
 			return
 		}
 
-		// Extra permissions checks are not totally nessiary since a user should always have permission to read their own DMs
+		// Extra permissions checks are not totally necessary since a user should always have permission to read their own DMs
 		if !p.pluginAPI.User.HasPermissionToChannel(userID, botDMChannel.Id, model.PermissionReadChannel) {
 			c.AbortWithError(http.StatusForbidden, errors.New("user doesn't have permission to read channel"))
 			return

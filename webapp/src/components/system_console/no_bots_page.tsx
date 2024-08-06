@@ -16,7 +16,7 @@ const NoBotsPage = (props: Props) => {
         <StyledPanelContainer>
             <SparklesGraphic/>
             <Title>{'No AI bots added yet'}</Title>
-            <Subtitle>{'To get started with AI copilot, add an AI bot'}</Subtitle>
+            <Subtitle>{'To get started with Copilot, add an AI bot'}</Subtitle>
             <PrimaryButton onClick={props.onAddBotPressed}>
                 <StyledPlusIcon/>
                 {'Add an AI Bot'}

@@ -165,8 +165,8 @@ func (b *BotConversation) Truncate(maxTokens int, countTokens func(string) int) 
 		}
 		postTokens := countTokens(post.Message)
 		if (totalTokens + postTokens) > maxTokens {
-			charactorsToCut := (postTokens - (maxTokens - totalTokens)) * 4
-			post.Message = strings.TrimSpace(post.Message[charactorsToCut:])
+			charactersToCut := (postTokens - (maxTokens - totalTokens)) * 4
+			post.Message = strings.TrimSpace(post.Message[charactersToCut:])
 			b.Posts = append(b.Posts, post)
 			slices.Reverse(b.Posts)
 			return true

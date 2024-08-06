@@ -16,6 +16,7 @@ type TextItemProps = {
     helptext?: string,
     multiline?: boolean,
     placeholder?: string,
+    maxLength?: number,
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => void
 };
 
@@ -30,6 +31,7 @@ export const TextItem = (props: TextItemProps) => {
                     type={props.type ? props.type : 'text'}
                     placeholder={props.placeholder ? props.placeholder : props.label}
                     onChange={props.onChange}
+                    maxLength={props.maxLength}
                 />
                 {props.helptext &&
                 <HelpText>{props.helptext}</HelpText>
