@@ -13,12 +13,14 @@ import {useBotlist} from '@/bots';
 
 import RHSImage from '../assets/rhs_image';
 
+import {ThreadViewer as UnstyledThreadViewer} from '@/mm_webapp';
+
 import ThreadItem from './thread_item';
 import RHSHeader from './rhs_header';
 import RHSNewTab from './rhs_new_tab';
 import {RHSPaddingContainer, RHSText, RHSTitle} from './common';
 
-const ThreadViewer = (window as any).Components.ThreadViewer && styled((window as any).Components.ThreadViewer)`
+const ThreadViewer = UnstyledThreadViewer && styled(UnstyledThreadViewer)`
     height: 100%;
 `;
 

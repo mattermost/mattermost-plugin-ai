@@ -14,12 +14,9 @@ import RHSImage from '../assets/rhs_image';
 
 import {createPost} from '@/client';
 
+import {AdvancedTextEditor, CreatePost} from '@/mm_webapp';
+
 import {Button, RHSPaddingContainer, RHSText, RHSTitle} from './common';
-
-const AdvancedTextEditor = (window as any).Components.AdvancedTextEditor;
-
-// Compatibility with pre v10 create post export
-const CreatePost = (window as any).Components.CreatePost;
 
 const CreatePostContainer = styled.div`
 	.custom-textarea {

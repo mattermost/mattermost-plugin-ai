@@ -12,11 +12,11 @@ import {doPostbackSummary, doRegenerate, doStopGenerating} from '@/client';
 
 import {useSelectNotAIPost, useSelectPost} from '@/hooks';
 
+import {PostMessagePreview} from '@/mm_webapp';
+
 import PostText from './post_text';
 import IconRegenerate from './assets/icon_regenerate';
 import IconCancel from './assets/icon_cancel';
-
-const PostMessagePreview = (window as any).Components.PostMessagePreview;
 
 const FixPostHover = createGlobalStyle<{disableHover?: string}>`
 	${(props) => props.disableHover && css`

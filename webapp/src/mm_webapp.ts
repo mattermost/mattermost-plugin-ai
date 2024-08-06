@@ -1,0 +1,15 @@
+
+export const AdvancedTextEditor = (window as any).Components.AdvancedTextEditor;
+
+// Compatibility with pre v10 create post export
+export const CreatePost = (window as any).Components.CreatePost;
+
+export function isRHSCompatable(): boolean {
+    return AdvancedTextEditor || CreatePost;
+}
+
+export const PostMessagePreview = (window as any).Components.PostMessagePreview;
+
+export const Timestamp = (window as any).Components.Timestamp;
+
+export const ThreadViewer = (window as any).Components.ThreadViewer;

@@ -23,6 +23,7 @@ import PostEventListener from './websocket';
 import {BotsHandler, setupRedux} from './redux';
 import UnreadsSummarize from './components/unreads_summarize';
 import {PostbackPost} from './components/postback_post';
+import {isRHSCompatable} from './mm_webapp';
 
 type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
 
@@ -81,7 +82,7 @@ export default class Plugin {
         });
 
         let rhs: any = null;
-        if ((window as any).Components.CreatePost) {
+        if (isRHSCompatable()) {
             rhs = registry.registerRightHandSidebarComponent(RHS, RHSTitle);
             setOpenRHSAction(rhs.showRHSPlugin);
         }
