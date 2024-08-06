@@ -166,7 +166,7 @@ func (p *Plugin) toolGetGithubIssue(context ai.ConversationContext, argsGetter a
 		return "invalid parameters to function", errors.New("invalid issue number")
 	}
 
-	req, err := http.NewRequest("GET",
+	req, err := http.NewRequest(http.MethodGet,
 		fmt.Sprintf("/github/api/v1/issue?owner=%s&repo=%s&number=%d",
 			url.QueryEscape(args.RepoOwner),
 			url.QueryEscape(args.RepoName),

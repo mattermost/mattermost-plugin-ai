@@ -92,7 +92,7 @@ func (c *Client) MessageCompletionNoStream(completionRequest MessageRequest) (st
 		return "", fmt.Errorf("could not marshal completion request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", MessageEndpoint, bytes.NewReader(reqBodyBytes))
+	req, err := http.NewRequest(http.MethodPost, MessageEndpoint, bytes.NewReader(reqBodyBytes))
 	if err != nil {
 		return "", fmt.Errorf("could not create request: %w", err)
 	}
@@ -130,7 +130,7 @@ func (c *Client) MessageCompletion(completionRequest MessageRequest) (*ai.TextSt
 		return nil, err
 	}
 
-	req, err := http.NewRequest("POST", MessageEndpoint, bytes.NewReader(reqBodyBytes))
+	req, err := http.NewRequest(http.MethodPost, MessageEndpoint, bytes.NewReader(reqBodyBytes))
 	if err != nil {
 		return nil, err
 	}
