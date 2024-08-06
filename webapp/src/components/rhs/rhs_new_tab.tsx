@@ -16,7 +16,7 @@ import {createPost} from '@/client';
 
 import {Button, RHSPaddingContainer, RHSText, RHSTitle} from './common';
 
-const AdvanceTextEditor = (window as any).Components.AdvanceTextEditor;
+const AdvancedTextEditor = (window as any).Components.AdvancedTextEditor;
 
 // Compatibility with pre v10 create post export
 const CreatePost = (window as any).Components.CreatePost;
@@ -103,9 +103,9 @@ const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
 
     // Compatibility with pre v10 create post export
     let editorComponent;
-    if (AdvanceTextEditor) {
+    if (AdvancedTextEditor) {
         editorComponent = (
-            <AdvanceTextEditor
+            <AdvancedTextEditor
                 data-testid='rhs-new-tab-create-post'
                 channelId={botChannelId}
                 placeholder={intl.formatMessage({defaultMessage: 'Ask Copilot anything...'})}
