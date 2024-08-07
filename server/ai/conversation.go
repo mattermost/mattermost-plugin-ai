@@ -22,6 +22,7 @@ const (
 )
 
 type File struct {
+	ID       string
 	MimeType string
 	Size     int64
 	Reader   io.Reader
