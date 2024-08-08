@@ -79,7 +79,7 @@ func (c *Client) Login(params GetTokenParams) error {
 			AccessToken string `json:"access_token"`
 		}
 	}
-	err := c.doAuth("POST", "/get-token", &params, &response)
+	err := c.doAuth(http.MethodPost, "/get-token", &params, &response)
 	if err != nil {
 		return err
 	}
@@ -90,7 +90,7 @@ func (c *Client) Login(params GetTokenParams) error {
 
 func (c *Client) Query(params QueryParams) (*CompletionResponse, error) {
 	response := &CompletionResponse{}
-	if err := c.doServer("POST", "/query", &params, response); err != nil {
+	if err := c.doServer(http.MethodPost, "/query", &params, response); err != nil {
 		return nil, err
 	}
 
@@ -99,7 +99,7 @@ func (c *Client) Query(params QueryParams) (*CompletionResponse, error) {
 
 func (c *Client) FollowUpQuestions(params FollowUpParams) (*CompletionResponse, error) {
 	response := &CompletionResponse{}
-	if err := c.doServer("POST", "/follow-up-questions", &params, response); err != nil {
+	if err := c.doServer(http.MethodPost, "/follow-up-questions", &params, response); err != nil {
 		return nil, err
 	}
 	return response, nil
@@ -109,7 +109,7 @@ func (c *Client) GetPersonas() ([]Persona, error) {
 	var response struct {
 		Response []Persona `json:"response"`
 	}
-	if err := c.doServer("POST", "/get-personas", nil, &response); err != nil {
+	if err := c.doServer(http.MethodPost, "/get-personas", nil, &response); err != nil {
 		return nil, err
 	}
 	return response.Response, nil
@@ -119,7 +119,7 @@ func (c *Client) GetDatasets() ([]Dataset, error) {
 	var response struct {
 		Response []Dataset `json:"dataset"`
 	}
-	if err := c.doServer("POST", "/get-datasets", nil, &response); err != nil {
+	if err := c.doServer(http.MethodPost, "/get-datasets", nil, &response); err != nil {
 		return nil, err
 	}
 	return response.Response, nil
