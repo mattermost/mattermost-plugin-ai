@@ -58,6 +58,13 @@ const PlusMinus = styled.i`
     margin-right: 4px;
 `;
 
+const ReverseScroll = styled.div`
+	display: flex;
+	flex-direction: column;
+	flex-grow: 1;
+	justify-content: flex-end;
+`;
+
 type Props = {
     botChannelId: string
     selectPost: (postId: string) => void
@@ -159,30 +166,32 @@ const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
 
     return (
         <RHSPaddingContainer>
-            <RHSImage/>
-            <RHSTitle><FormattedMessage defaultMessage='Ask Copilot anything'/></RHSTitle>
-            <RHSText><FormattedMessage defaultMessage='The Copilot is here to help. Choose from the prompts below or write your own.'/></RHSText>
-            <QuestionOptions>
-                <OptionButton onClick={addBrainstormingIdeas}>
-                    <LightbulbOutlineIcon/>
-                    <FormattedMessage defaultMessage='Brainstorm ideas'/>
-                </OptionButton>
-                <OptionButton onClick={addMeetingAgenda}>
-                    <FormatListNumberedIcon/>
-                    <FormattedMessage defaultMessage='Meeting agenda'/>
-                </OptionButton>
-                <OptionButton onClick={addProsAndCons}>
-                    <PlusMinus className='icon'>{'±'}</PlusMinus>
-                    <FormattedMessage defaultMessage='Pros and Cons'/>
-                </OptionButton>
-                <OptionButton onClick={addToDoList}>
-                    <PlaylistCheckIcon/>
-                    <FormattedMessage defaultMessage='To-do list'/>
-                </OptionButton>
-            </QuestionOptions>
-            <CreatePostContainer>
-                {editorComponent}
-            </CreatePostContainer>
+            <ReverseScroll>
+                <RHSImage/>
+                <RHSTitle><FormattedMessage defaultMessage='Ask Copilot anything'/></RHSTitle>
+                <RHSText><FormattedMessage defaultMessage='The Copilot is here to help. Choose from the prompts below or write your own.'/></RHSText>
+                <QuestionOptions>
+                    <OptionButton onClick={addBrainstormingIdeas}>
+                        <LightbulbOutlineIcon/>
+                        <FormattedMessage defaultMessage='Brainstorm ideas'/>
+                    </OptionButton>
+                    <OptionButton onClick={addMeetingAgenda}>
+                        <FormatListNumberedIcon/>
+                        <FormattedMessage defaultMessage='Meeting agenda'/>
+                    </OptionButton>
+                    <OptionButton onClick={addProsAndCons}>
+                        <PlusMinus className='icon'>{'±'}</PlusMinus>
+                        <FormattedMessage defaultMessage='Pros and Cons'/>
+                    </OptionButton>
+                    <OptionButton onClick={addToDoList}>
+                        <PlaylistCheckIcon/>
+                        <FormattedMessage defaultMessage='To-do list'/>
+                    </OptionButton>
+                </QuestionOptions>
+                <CreatePostContainer>
+                    {editorComponent}
+                </CreatePostContainer>
+            </ReverseScroll>
         </RHSPaddingContainer>
     );
 };

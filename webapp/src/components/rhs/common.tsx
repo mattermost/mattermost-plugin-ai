@@ -48,6 +48,7 @@ export const RHSPaddingContainer = styled.div`
 	margin-top: 16px;
     display: flex;
     flex-direction: column;
+	flex-grow: 1;
 	gap: 8px;
 `;
 
