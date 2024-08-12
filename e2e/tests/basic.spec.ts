@@ -94,3 +94,22 @@ test ('switching bots', async ({ page }) => {
 	// With correct message
 	await expect(page.getByText(responseTestText)).toBeVisible();
 })
+
+test('bot mention', async ({ page }) => {
+	const url = mattermost.url()
+	await login(page, url, "regularuser", "regularuser");;
+	await openAIMock.addCompletionMock(responseTest);
+
+	await page.getByTestId('post_textbox').click();
+	await page.getByTestId('post_textbox').fill('`@mock` TestBotMention1');
+	await page.getByTestId('post_textbox').press('Enter');
+	await expect(page.getByText("reply")).not.toBeVisible();
+
+	await page.getByTestId('post_textbox').fill('```\n@mock\n``` TestBotMention2');
+	await page.getByTestId('post_textbox').press('Enter');
+	await expect(page.getByText("reply")).not.toBeVisible();
+
+	await page.getByTestId('post_textbox').fill('@mock TestBotMention3');
+	await page.getByTestId('post_textbox').press('Enter');
+	await expect(page.getByText("1 reply")).toBeVisible();
+})
