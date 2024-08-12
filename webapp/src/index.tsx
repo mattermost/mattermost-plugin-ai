@@ -147,11 +147,16 @@ export default class Plugin {
 
         registry.registerPostTypeComponent('custom_llmbot', LLMBotPostWithWebsockets);
         registry.registerPostTypeComponent('custom_llm_postback', PostbackPost);
-        registry.registerSearchComponents(SearchButton, SearchSuggestions, SearchHints, async (searchTerms: string) => {
-            const result = await doSearch(searchTerms, '');
-            doSelectPost(result.postid, result.channelid, store.dispatch);
-            if (rhs) {
-                store.dispatch(rhs.showRHSPlugin);
+        registry.registerSearchComponents({
+            buttonComponent: SearchButton,
+            suggestionsComponent: SearchSuggestions,
+            hintsComponent: SearchHints,
+            action: async (searchTerms: string) => {
+                const result = await doSearch(searchTerms, '');
+                doSelectPost(result.postid, result.channelid, store.dispatch);
+                if (rhs) {
+                    store.dispatch(rhs.showRHSPlugin);
+                }
             }
         });
         if (registry.registerPostActionComponent) {
