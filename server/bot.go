@@ -299,7 +299,7 @@ func (p *Plugin) GetBotMentioned(text string) *Bot {
 	defer p.botsLock.RUnlock()
 
 	for _, bot := range p.bots {
-		if userIsMentioned(text, bot.mmBot.Username) {
+		if userIsMentionedMarkdown(text, bot.mmBot.Username) {
 			return bot
 		}
 	}
