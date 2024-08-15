@@ -381,7 +381,7 @@ type WorkerResult struct {
 	return nil
 }*/
 
-func (p *Plugin) PostToAIPost(bot *Bot, post *model.Post) ai.Post {
+func (p *Plugin) PostFilesToAIFiles(bot *Bot, post *model.Post) []ai.File {
 	var files []ai.File
 	if bot.cfg.EnableVision {
 		files = make([]ai.File, 0, len(post.FileIds))
@@ -397,6 +397,7 @@ func (p *Plugin) PostToAIPost(bot *Bot, post *model.Post) ai.Post {
 				continue
 			}
 			files = append(files, ai.File{
+				ID:       fileID,
 				Reader:   file,
 				MimeType: fileInfo.MimeType,
 				Size:     fileInfo.Size,
@@ -404,10 +405,14 @@ func (p *Plugin) PostToAIPost(bot *Bot, post *model.Post) ai.Post {
 		}
 	}
 
+	return files
+}
+
+func (p *Plugin) PostToAIPost(bot *Bot, post *model.Post) ai.Post {
 	return ai.Post{
 		Role:    ai.GetPostRole(bot.mmBot.UserId, post),
 		Message: ai.FormatPostBody(post),
-		Files:   files,
+		Files:   p.PostFilesToAIFiles(bot, post),
 	}
 }
 
