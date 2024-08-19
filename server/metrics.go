@@ -19,8 +19,7 @@ func (p *Plugin) GetMetrics() metrics.Metrics {
 }
 
 func (p *Plugin) metricsMiddleware(c *gin.Context) {
-	metrics := p.GetMetrics()
-	if metrics == nil {
+	if p.GetMetrics() == nil {
 		c.Next()
 		return
 	}
