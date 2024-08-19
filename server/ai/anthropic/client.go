@@ -97,9 +97,7 @@ func (c *Client) MessageCompletionNoStream(completionRequest MessageRequest) (st
 		return "", fmt.Errorf("could not create request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", c.apiKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
+	c.prepareRequestHeaders(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -135,11 +133,9 @@ func (c *Client) MessageCompletion(completionRequest MessageRequest) (*ai.TextSt
 		return nil, err
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", c.apiKey)
+	c.prepareRequestHeaders(req)
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Connection", "keep-alive")
-	req.Header.Set("anthropic-version", "2023-06-01")
 
 	output := make(chan string)
 	errChan := make(chan error)
@@ -202,4 +198,10 @@ func (c *Client) MessageCompletion(completionRequest MessageRequest) (*ai.TextSt
 	}()
 
 	return &ai.TextStreamResult{Stream: output, Err: errChan}, nil
+}
+
+func (c *Client) prepareRequestHeaders(req *http.Request) {
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(APIKeyHeader, c.apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
 }
