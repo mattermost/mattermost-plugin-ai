@@ -57,7 +57,7 @@ const Bot = (props: Props) => {
     const missingInfo = props.bot.name === '' ||
 		props.bot.displayName === '' ||
 		props.bot.service.type === '' ||
-		(props.bot.service.type !== 'asksage' && props.bot.service.apiKey === '') ||
+		(props.bot.service.type !== 'asksage' && props.bot.service.type !== 'openaicompatible' && props.bot.service.apiKey === '') ||
 		(props.bot.service.type === 'openaicompatible' && props.bot.service.apiURL === '');
 
     const invalidUsername = props.bot.name !== '' && (!(/^[a-z0-9.\-_]+$/).test(props.bot.name) || !(/[a-z]/).test(props.bot.name.charAt(0)));
