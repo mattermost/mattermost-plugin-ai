@@ -28,6 +28,7 @@ const defaultNewBot = {
         streamingTimeoutSeconds: 0,
     },
     enableVision: false,
+    disableTools: false,
 };
 
 export const firstNewBot = {

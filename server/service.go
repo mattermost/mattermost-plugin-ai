@@ -47,7 +47,7 @@ func (p *Plugin) processUserRequestToBot(bot *Bot, context ai.ConversationContex
 }
 
 func (p *Plugin) newConversation(bot *Bot, context ai.ConversationContext) error {
-	conversation, err := p.prompts.ChatCompletion(ai.PromptDirectMessageQuestion, context, p.getDefaultToolsStore(context.IsDMWithBot()))
+	conversation, err := p.prompts.ChatCompletion(ai.PromptDirectMessageQuestion, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
 	if err != nil {
 		return err
 	}
@@ -128,7 +128,7 @@ func (p *Plugin) continueConversation(bot *Bot, threadData *ThreadData, context 
 			return nil, err
 		}
 	} else {
-		prompt, err := p.prompts.ChatCompletion(ai.PromptDirectMessageQuestion, context, p.getDefaultToolsStore(context.IsDMWithBot()))
+		prompt, err := p.prompts.ChatCompletion(ai.PromptDirectMessageQuestion, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
 		if err != nil {
 			return nil, err
 		}
@@ -151,7 +151,7 @@ func (p *Plugin) continueThreadConversation(bot *Bot, questionThreadData *Thread
 	originalThread := formatThread(originalThreadData)
 
 	context.PromptParameters = map[string]string{"Thread": originalThread}
-	prompt, err := p.prompts.ChatCompletion(ai.PromptSummarizeThread, context, p.getDefaultToolsStore(context.IsDMWithBot()))
+	prompt, err := p.prompts.ChatCompletion(ai.PromptSummarizeThread, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +177,7 @@ func (p *Plugin) summarizePost(bot *Bot, postIDToSummarize string, context ai.Co
 	formattedThread := formatThread(threadData)
 
 	context.PromptParameters = map[string]string{"Thread": formattedThread}
-	prompt, err := p.prompts.ChatCompletion(ai.PromptSummarizeThread, context, p.getDefaultToolsStore(context.IsDMWithBot()))
+	prompt, err := p.prompts.ChatCompletion(ai.PromptSummarizeThread, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
 	if err != nil {
 		return nil, err
 	}

@@ -31,6 +31,7 @@ export type LLMBotConfig = {
     service: LLMService
     customInstructions: string
     enableVision: boolean
+    disableTools: boolean
 }
 
 type Props = {
@@ -135,17 +136,27 @@ const Bot = (props: Props) => {
                             onChange={(e) => props.onChange({...props.bot, customInstructions: e.target.value})}
                         />
                         { (props.bot.service.type === 'openai' || props.bot.service.type === 'openaicompatible') && (
-                            <BooleanItem
-                                label={
-                                    <Horizontal>
-                                        <FormattedMessage defaultMessage='Enable Vision'/>
-                                        <Pill><FormattedMessage defaultMessage='BETA'/></Pill>
-                                    </Horizontal>
-                                }
-                                value={props.bot.enableVision}
-                                onChange={(to: boolean) => props.onChange({...props.bot, enableVision: to})}
-                                helpText={intl.formatMessage({defaultMessage: 'Enable Vision to allow the bot to process images. Requires a compatible model.'})}
-                            />
+                            <>
+                                <BooleanItem
+                                    label={
+                                        <Horizontal>
+                                            <FormattedMessage defaultMessage='Enable Vision'/>
+                                            <Pill><FormattedMessage defaultMessage='BETA'/></Pill>
+                                        </Horizontal>
+                                    }
+                                    value={props.bot.enableVision}
+                                    onChange={(to: boolean) => props.onChange({...props.bot, enableVision: to})}
+                                    helpText={intl.formatMessage({defaultMessage: 'Enable Vision to allow the bot to process images. Requires a compatible model.'})}
+                                />
+                                <BooleanItem
+                                    label={
+                                        <FormattedMessage defaultMessage='Disable Tools'/>
+                                    }
+                                    value={props.bot.disableTools}
+                                    onChange={(to: boolean) => props.onChange({...props.bot, disableTools: to})}
+                                    helpText={intl.formatMessage({defaultMessage: 'By default some tool use is enabled to allow for features such as integrations with JIRA. Disabling this allows use of models that do not support or are not very good at tool use. Some features will not work without tools.'})}
+                                />
+                            </>
                         )}
                     </ItemList>
                 </ItemListContainer>
