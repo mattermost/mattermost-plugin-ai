@@ -404,8 +404,13 @@ func (p *Plugin) PostToAIPost(bot *Bot, post *model.Post) ai.Post {
 		}
 	}
 
+	role := ai.PostRoleUser
+	if p.IsAnyBot(post.UserId) {
+		role = ai.PostRoleBot
+	}
+
 	return ai.Post{
-		Role:    ai.GetPostRole(bot.mmBot.UserId, post),
+		Role:    role,
 		Message: ai.FormatPostBody(post),
 		Files:   files,
 	}
