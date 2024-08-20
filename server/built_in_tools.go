@@ -440,7 +440,10 @@ func (p *Plugin) getBuiltInTools(isDM bool) []ai.Tool {
 	return builtInTools
 }
 
-func (p *Plugin) getDefaultToolsStore(isDM bool) ai.ToolStore {
+func (p *Plugin) getDefaultToolsStore(bot *Bot, isDM bool) ai.ToolStore {
+	if bot == nil || bot.cfg.DisableTools {
+		return ai.NewNoTools()
+	}
 	store := ai.NewToolStore(&p.pluginAPI.Log, p.getConfiguration().EnableLLMTrace)
 	store.AddTools(p.getBuiltInTools(isDM))
 	return store
