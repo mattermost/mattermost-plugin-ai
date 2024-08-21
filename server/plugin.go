@@ -146,18 +146,18 @@ func (p *Plugin) OnDeactivate() error {
 }
 
 func (p *Plugin) getLLM(llmBotConfig ai.BotConfig) ai.LanguageModel {
-	metrics := p.metricsService.GetMetricsForAIService(llmBotConfig.Name)
+	llmMetrics := p.metricsService.GetMetricsForAIService(llmBotConfig.Name)
 
 	var llm ai.LanguageModel
 	switch llmBotConfig.Service.Type {
 	case "openai":
-		llm = openai.New(llmBotConfig.Service, p.llmUpstreamHTTPClient, metrics)
+		llm = openai.New(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
 	case "openaicompatible":
-		llm = openai.NewCompatible(llmBotConfig.Service, p.llmUpstreamHTTPClient, metrics)
+		llm = openai.NewCompatible(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
 	case "anthropic":
-		llm = anthropic.New(llmBotConfig.Service, p.llmUpstreamHTTPClient, metrics)
+		llm = anthropic.New(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
 	case "asksage":
-		llm = asksage.New(llmBotConfig.Service, p.llmUpstreamHTTPClient, metrics)
+		llm = asksage.New(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
 	}
 
 	cfg := p.getConfiguration()
@@ -179,12 +179,12 @@ func (p *Plugin) getTranscribe() ai.Transcriber {
 			break
 		}
 	}
-	metrics := p.metricsService.GetMetricsForAIService(botConfig.Name)
+	llmMetrics := p.metricsService.GetMetricsForAIService(botConfig.Name)
 	switch botConfig.Service.Type {
 	case "openai":
-		return openai.New(botConfig.Service, p.llmUpstreamHTTPClient, metrics)
+		return openai.New(botConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
 	case "openaicompatible":
-		return openai.NewCompatible(botConfig.Service, p.llmUpstreamHTTPClient, metrics)
+		return openai.NewCompatible(botConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
 	}
 	return nil
 }
