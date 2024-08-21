@@ -66,10 +66,10 @@ type Persona struct {
 
 type Dataset string
 
-func NewClient(authToken string) *Client {
+func NewClient(authToken string, httpClient *http.Client) *Client {
 	return &Client{
 		AuthToken:  authToken,
-		HTTPClient: &http.Client{},
+		HTTPClient: httpClient,
 	}
 }
 

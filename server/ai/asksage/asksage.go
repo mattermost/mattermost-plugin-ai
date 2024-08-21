@@ -1,6 +1,7 @@
 package asksage
 
 import (
+	"net/http"
 	"strings"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
@@ -14,8 +15,8 @@ type AskSage struct {
 	metric       metrics.LLMetrics
 }
 
-func New(llmService ai.ServiceConfig, metric metrics.LLMetrics) *AskSage {
-	client := NewClient("")
+func New(llmService ai.ServiceConfig, httpClient *http.Client, metric metrics.LLMetrics) *AskSage {
+	client := NewClient("", httpClient)
 	client.Login(GetTokenParams{
 		Email:    llmService.Username,
 		Password: llmService.Password,

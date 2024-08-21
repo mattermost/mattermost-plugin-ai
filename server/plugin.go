@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"time"
 
 	"errors"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
+	"github.com/mattermost/mattermost/server/public/shared/httpservice"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 )
 
@@ -72,6 +74,8 @@ type Plugin struct {
 	bots     []*Bot
 
 	i18n *i18n.Bundle
+
+	llmUpstreamHTTPClient *http.Client
 }
 
 func resolveffmpegPath() string {
@@ -99,6 +103,9 @@ func (p *Plugin) OnActivate() error {
 	p.metricsHandler = metrics.NewMetricsHandler(p.GetMetrics())
 
 	p.i18n = i18nInit()
+
+	p.llmUpstreamHTTPClient = httpservice.MakeHTTPServicePlugin(p.API).MakeClient(true)
+	p.llmUpstreamHTTPClient.Timeout = time.Minute * 10 // LLM requests can be slow
 
 	if err := p.MigrateServicesToBots(); err != nil {
 		p.pluginAPI.Log.Error("failed to migrate services to bots", "error", err)
@@ -144,13 +151,13 @@ func (p *Plugin) getLLM(llmBotConfig ai.BotConfig) ai.LanguageModel {
 	var llm ai.LanguageModel
 	switch llmBotConfig.Service.Type {
 	case "openai":
-		llm = openai.New(llmBotConfig.Service, metrics)
+		llm = openai.New(llmBotConfig.Service, p.llmUpstreamHTTPClient, metrics)
 	case "openaicompatible":
-		llm = openai.NewCompatible(llmBotConfig.Service, metrics)
+		llm = openai.NewCompatible(llmBotConfig.Service, p.llmUpstreamHTTPClient, metrics)
 	case "anthropic":
-		llm = anthropic.New(llmBotConfig.Service, metrics)
+		llm = anthropic.New(llmBotConfig.Service, p.llmUpstreamHTTPClient, metrics)
 	case "asksage":
-		llm = asksage.New(llmBotConfig.Service, metrics)
+		llm = asksage.New(llmBotConfig.Service, p.llmUpstreamHTTPClient, metrics)
 	}
 
 	cfg := p.getConfiguration()
@@ -175,9 +182,9 @@ func (p *Plugin) getTranscribe() ai.Transcriber {
 	metrics := p.metricsService.GetMetricsForAIService(botConfig.Name)
 	switch botConfig.Service.Type {
 	case "openai":
-		return openai.New(botConfig.Service, metrics)
+		return openai.New(botConfig.Service, p.llmUpstreamHTTPClient, metrics)
 	case "openaicompatible":
-		return openai.NewCompatible(botConfig.Service, metrics)
+		return openai.NewCompatible(botConfig.Service, p.llmUpstreamHTTPClient, metrics)
 	}
 	return nil
 }
