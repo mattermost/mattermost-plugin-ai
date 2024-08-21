@@ -15,7 +15,6 @@ import (
 
 const (
 	MessageEndpoint = "https://api.anthropic.com/v1/messages"
-	APIKeyHeader    = "X-API-Key" //nolint:gosec
 
 	StopReasonStopSequence = "stop_sequence"
 	StopReasonMaxTokens    = "max_tokens"
@@ -97,9 +96,7 @@ func (c *Client) MessageCompletionNoStream(completionRequest MessageRequest) (st
 		return "", fmt.Errorf("could not create request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", c.apiKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
+	c.setRequestHeaders(req, false)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -135,11 +132,7 @@ func (c *Client) MessageCompletion(completionRequest MessageRequest) (*ai.TextSt
 		return nil, err
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", c.apiKey)
-	req.Header.Set("Accept", "text/event-stream")
-	req.Header.Set("Connection", "keep-alive")
-	req.Header.Set("anthropic-version", "2023-06-01")
+	c.setRequestHeaders(req, true)
 
 	output := make(chan string)
 	errChan := make(chan error)
@@ -202,4 +195,15 @@ func (c *Client) MessageCompletion(completionRequest MessageRequest) (*ai.TextSt
 	}()
 
 	return &ai.TextStreamResult{Stream: output, Err: errChan}, nil
+}
+
+func (c *Client) setRequestHeaders(req *http.Request, isStreaming bool) {
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", c.apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	if isStreaming {
+		req.Header.Set("Accept", "text/event-stream")
+		req.Header.Set("Connection", "keep-alive")
+	}
 }
