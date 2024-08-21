@@ -75,13 +75,13 @@ type MessageStreamEvent struct {
 
 type Client struct {
 	apiKey     string
-	httpClient http.Client
+	httpClient *http.Client
 }
 
-func NewClient(apiKey string) *Client {
+func NewClient(apiKey string, httpClient *http.Client) *Client {
 	return &Client{
 		apiKey:     apiKey,
-		httpClient: http.Client{},
+		httpClient: httpClient,
 	}
 }
 

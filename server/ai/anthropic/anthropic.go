@@ -2,6 +2,7 @@ package anthropic
 
 import (
 	"fmt"
+	"net/http"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-plugin-ai/server/metrics"
@@ -16,8 +17,8 @@ type Anthropic struct {
 	metricsService metrics.LLMetrics
 }
 
-func New(llmService ai.ServiceConfig, metricsService metrics.LLMetrics) *Anthropic {
-	client := NewClient(llmService.APIKey)
+func New(llmService ai.ServiceConfig, httpClient *http.Client, metricsService metrics.LLMetrics) *Anthropic {
+	client := NewClient(llmService.APIKey, httpClient)
 
 	return &Anthropic{
 		client:         client,

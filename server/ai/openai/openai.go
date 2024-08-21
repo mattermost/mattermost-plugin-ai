@@ -9,6 +9,7 @@ import (
 	"image"
 	"image/png"
 	"io"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -38,12 +39,13 @@ const OpenAIMaxImageSize = 20 * 1024 * 1024 // 20 MB
 
 var ErrStreamingTimeout = errors.New("timeout streaming")
 
-func NewCompatible(llmService ai.ServiceConfig, metricsService metrics.LLMetrics) *OpenAI {
+func NewCompatible(llmService ai.ServiceConfig, httpClient *http.Client, metricsService metrics.LLMetrics) *OpenAI {
 	apiKey := llmService.APIKey
 	endpointURL := strings.TrimSuffix(llmService.APIURL, "/")
 	defaultModel := llmService.DefaultModel
 	config := openaiClient.DefaultConfig(apiKey)
 	config.BaseURL = endpointURL
+	config.HTTPClient = httpClient
 
 	parsedURL, err := url.Parse(endpointURL)
 	if err == nil && strings.HasSuffix(parsedURL.Host, "openai.azure.com") {
@@ -64,13 +66,14 @@ func NewCompatible(llmService ai.ServiceConfig, metricsService metrics.LLMetrics
 	}
 }
 
-func New(llmService ai.ServiceConfig, metricsService metrics.LLMetrics) *OpenAI {
+func New(llmService ai.ServiceConfig, httpClient *http.Client, metricsService metrics.LLMetrics) *OpenAI {
 	defaultModel := llmService.DefaultModel
 	if defaultModel == "" {
 		defaultModel = openaiClient.GPT3Dot5Turbo
 	}
 	config := openaiClient.DefaultConfig(llmService.APIKey)
 	config.OrgID = llmService.OrgID
+	config.HTTPClient = httpClient
 
 	streamingTimeout := StreamingTimeoutDefault
 	if llmService.StreamingTimeoutSeconds > 0 {
