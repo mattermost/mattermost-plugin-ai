@@ -179,13 +179,6 @@ func (b *BotConversation) Truncate(maxTokens int, countTokens func(string) int) 
 	return false
 }
 
-func GetPostRole(botID string, post *model.Post) PostRole {
-	if post.UserId == botID {
-		return PostRoleBot
-	}
-	return PostRoleUser
-}
-
 func FormatPostBody(post *model.Post) string {
 	attachments := post.Attachments()
 	if len(attachments) > 0 {

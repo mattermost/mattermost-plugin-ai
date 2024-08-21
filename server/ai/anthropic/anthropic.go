@@ -32,10 +32,21 @@ func conversationToMessages(conversation ai.BotConversation) (string, []InputMes
 	systemMessage := ""
 	messages := make([]InputMessage, 0, len(conversation.Posts))
 	for _, post := range conversation.Posts {
+		previousRole := ""
+		previousContent := ""
+		if len(messages) > 0 {
+			previous := messages[len(messages)-1]
+			previousRole = previous.Role
+			previousContent = previous.Content
+		}
 		switch post.Role {
 		case ai.PostRoleSystem:
 			systemMessage += post.Message
 		case ai.PostRoleBot:
+			if previousRole == RoleAssistant {
+				previousContent += post.Message
+				continue
+			}
 			messages = append(messages,
 				InputMessage{
 					Role:    RoleAssistant,
@@ -43,6 +54,10 @@ func conversationToMessages(conversation ai.BotConversation) (string, []InputMes
 				},
 			)
 		case ai.PostRoleUser:
+			if previousRole == RoleUser {
+				previousContent += post.Message
+				continue
+			}
 			messages = append(messages,
 				InputMessage{
 					Role:    RoleUser,
