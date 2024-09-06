@@ -48,7 +48,7 @@ func NewCompatible(llmService ai.ServiceConfig, httpClient *http.Client, metrics
 	config.HTTPClient = httpClient
 
 	parsedURL, err := url.Parse(endpointURL)
-	if err == nil && strings.HasSuffix(parsedURL.Host, "openai.azure.com") {
+	if err == nil && (strings.HasSuffix(parsedURL.Host, "openai.azure.com") || strings.HasSuffix(parsedURL.Host, "openai.azure.us")) {
 		config = openaiClient.DefaultAzureConfig(apiKey, endpointURL)
 		config.APIVersion = "2023-07-01-preview"
 	}
