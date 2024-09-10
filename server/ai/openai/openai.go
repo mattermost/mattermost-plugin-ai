@@ -10,7 +10,6 @@ import (
 	"image/png"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -39,40 +38,49 @@ const OpenAIMaxImageSize = 20 * 1024 * 1024 // 20 MB
 
 var ErrStreamingTimeout = errors.New("timeout streaming")
 
+func NewAzure(llmService ai.ServiceConfig, httpClient *http.Client, metricsService metrics.LLMetrics) *OpenAI {
+	return newOpenAI(llmService, httpClient, metricsService,
+		func(apiKey string) openaiClient.ClientConfig {
+			config := openaiClient.DefaultAzureConfig(apiKey, strings.TrimSuffix(llmService.APIURL, "/"))
+			config.APIVersion = "2024-06-01"
+			return config
+		},
+	)
+}
+
 func NewCompatible(llmService ai.ServiceConfig, httpClient *http.Client, metricsService metrics.LLMetrics) *OpenAI {
-	apiKey := llmService.APIKey
-	endpointURL := strings.TrimSuffix(llmService.APIURL, "/")
-	defaultModel := llmService.DefaultModel
-	config := openaiClient.DefaultConfig(apiKey)
-	config.BaseURL = endpointURL
-	config.HTTPClient = httpClient
-
-	parsedURL, err := url.Parse(endpointURL)
-	if err == nil && strings.HasSuffix(parsedURL.Host, "openai.azure.com") {
-		config = openaiClient.DefaultAzureConfig(apiKey, endpointURL)
-		config.APIVersion = "2023-07-01-preview"
-	}
-
-	streamingTimeout := StreamingTimeoutDefault
-	if llmService.StreamingTimeoutSeconds > 0 {
-		streamingTimeout = time.Duration(llmService.StreamingTimeoutSeconds) * time.Second
-	}
-	return &OpenAI{
-		client:           openaiClient.NewClientWithConfig(config),
-		defaultModel:     defaultModel,
-		tokenLimit:       llmService.TokenLimit,
-		streamingTimeout: streamingTimeout,
-		metricsService:   metricsService,
-	}
+	return newOpenAI(llmService, httpClient, metricsService,
+		func(apiKey string) openaiClient.ClientConfig {
+			config := openaiClient.DefaultConfig(apiKey)
+			config.BaseURL = strings.TrimSuffix(llmService.APIURL, "/")
+			return config
+		},
+	)
 }
 
 func New(llmService ai.ServiceConfig, httpClient *http.Client, metricsService metrics.LLMetrics) *OpenAI {
+	return newOpenAI(llmService, httpClient, metricsService,
+		func(apiKey string) openaiClient.ClientConfig {
+			config := openaiClient.DefaultConfig(apiKey)
+			config.OrgID = llmService.OrgID
+			return config
+		},
+	)
+}
+
+func newOpenAI(
+	llmService ai.ServiceConfig,
+	httpClient *http.Client,
+	metricsService metrics.LLMetrics,
+	baseConfigFunc func(apiKey string) openaiClient.ClientConfig,
+) *OpenAI {
+	apiKey := llmService.APIKey
 	defaultModel := llmService.DefaultModel
 	if defaultModel == "" {
 		defaultModel = openaiClient.GPT3Dot5Turbo
 	}
-	config := openaiClient.DefaultConfig(llmService.APIKey)
-	config.OrgID = llmService.OrgID
+
+	config := baseConfigFunc(apiKey)
 	config.HTTPClient = httpClient
 
 	streamingTimeout := StreamingTimeoutDefault

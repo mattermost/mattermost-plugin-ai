@@ -154,6 +154,8 @@ func (p *Plugin) getLLM(llmBotConfig ai.BotConfig) ai.LanguageModel {
 		llm = openai.New(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
 	case "openaicompatible":
 		llm = openai.NewCompatible(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
+	case "azure":
+		llm = openai.NewAzure(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
 	case "anthropic":
 		llm = anthropic.New(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
 	case "asksage":
@@ -185,6 +187,8 @@ func (p *Plugin) getTranscribe() ai.Transcriber {
 		return openai.New(botConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
 	case "openaicompatible":
 		return openai.NewCompatible(botConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
+	case "azure":
+		return openai.NewAzure(botConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
 	}
 	return nil
 }
