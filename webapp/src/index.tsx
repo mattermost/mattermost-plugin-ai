@@ -51,20 +51,6 @@ const RHSTitle = () => {
     );
 };
 
-const isProcessableAudio = (fileInfo: any) => {
-    const acceptedExtensions = [
-        'mp3',
-        'mp4',
-        'mpeg',
-        'mpga',
-        'm4a',
-        'wav',
-        'webm',
-    ];
-
-    return acceptedExtensions.includes(fileInfo.extension);
-};
-
 export default class Plugin {
     postEventListener: PostEventListener = new PostEventListener();
 
@@ -120,7 +106,7 @@ export default class Plugin {
             ;
         };
 
-        registry.registerWebSocketEventHandler('config_changed', (message: any) => {
+        registry.registerWebSocketEventHandler('config_changed', () => {
             store.dispatch({
                 type: BotsHandler,
                 bots: null,
