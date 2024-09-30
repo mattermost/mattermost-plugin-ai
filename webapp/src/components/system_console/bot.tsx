@@ -44,6 +44,7 @@ type Props = {
 const mapServiceTypeToDisplayName = new Map<string, string>([
     ['openai', 'OpenAI'],
     ['openaicompatible', 'OpenAI Compatible'],
+    ['azure', 'Azure'],
     ['anthropic', 'Anthropic'],
     ['asksage', 'Ask Sage'],
 ]);
@@ -58,8 +59,8 @@ const Bot = (props: Props) => {
     const missingInfo = props.bot.name === '' ||
 		props.bot.displayName === '' ||
 		props.bot.service.type === '' ||
-		(props.bot.service.type !== 'asksage' && props.bot.service.type !== 'openaicompatible' && props.bot.service.apiKey === '') ||
-		(props.bot.service.type === 'openaicompatible' && props.bot.service.apiURL === '');
+		(props.bot.service.type !== 'asksage' && props.bot.service.type !== 'openaicompatible' && props.bot.service.type !== 'azure' && props.bot.service.apiKey === '') ||
+		((props.bot.service.type === 'openaicompatible' || props.bot.service.type === 'azure') && props.bot.service.apiURL === '');
 
     const invalidUsername = props.bot.name !== '' && (!(/^[a-z0-9.\-_]+$/).test(props.bot.name) || !(/[a-z]/).test(props.bot.name.charAt(0)));
     return (
@@ -121,6 +122,7 @@ const Bot = (props: Props) => {
                         >
                             <SelectionItemOption value='openai'>{'OpenAI'}</SelectionItemOption>
                             <SelectionItemOption value='openaicompatible'>{'OpenAI Compatible'}</SelectionItemOption>
+                            <SelectionItemOption value='azure'>{'Azure'}</SelectionItemOption>
                             <SelectionItemOption value='anthropic'>{'Anthropic'}</SelectionItemOption>
                             <SelectionItemOption value='asksage'>{'Ask Sage (Experimental)'}</SelectionItemOption>
                         </SelectionItem>
@@ -135,7 +137,7 @@ const Bot = (props: Props) => {
                             value={props.bot.customInstructions}
                             onChange={(e) => props.onChange({...props.bot, customInstructions: e.target.value})}
                         />
-                        { (props.bot.service.type === 'openai' || props.bot.service.type === 'openaicompatible') && (
+                        { (props.bot.service.type === 'openai' || props.bot.service.type === 'openaicompatible' || props.bot.service.type === 'azure') && (
                             <>
                                 <BooleanItem
                                     label={
@@ -181,10 +183,10 @@ const ServiceItem = (props: ServiceItemProps) => {
     const type = props.service.type;
     const intl = useIntl();
     const hasAPIKey = type !== 'asksage';
-    const isOpenAIType = type === 'openai' || type === 'openaicompatible';
+    const isOpenAIType = type === 'openai' || type === 'openaicompatible' || type === 'azure';
     return (
         <>
-            {type === 'openaicompatible' && (
+            {(type === 'openaicompatible' || type === 'azure') && (
                 <TextItem
                     label={intl.formatMessage({defaultMessage: 'API URL'})}
                     value={props.service.apiURL}
