@@ -2,10 +2,6 @@ import React, {useEffect, useState} from 'react';
 import styled from 'styled-components';
 import {FormattedMessage, useIntl} from 'react-intl';
 
-import {PlusIcon} from '@mattermost/compass-icons/components';
-
-import {Pill} from '../pill';
-
 import {setUserProfilePictureByUsername} from '@/client';
 
 import {ServiceData} from './service';
