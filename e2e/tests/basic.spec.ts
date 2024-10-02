@@ -33,9 +33,8 @@ test('rhs bot interaction', async ({ page }) => {
 	await openRHS(page);
 
 	await openAIMock.addCompletionMock(responseTest);
-	await page.getByTestId('reply_textbox').click();
 	await page.getByTestId('reply_textbox').fill('Hello!');
-	await page.getByTestId('reply_textbox').press('Enter');
+	await page.locator('#rhsContainer').getByTestId('SendMessageButton').click()
 	await expect(page.getByText("Hello! How can I assist you today?")).toBeVisible();
 })
 
@@ -64,9 +63,8 @@ test ('regenerate button', async ({ page }) => {
 	await openRHS(page);
 	await openAIMock.addCompletionMock(responseTest);
 
-	await page.getByTestId('reply_textbox').click();
 	await page.getByTestId('reply_textbox').fill('Hello!');
-	await page.getByTestId('reply_textbox').press('Enter');
+	await page.locator('#rhsContainer').getByTestId('SendMessageButton').click()
 	await expect(page.getByText(responseTestText)).toBeVisible();
 
 	await openAIMock.addCompletionMock(responseTest2);
@@ -85,9 +83,8 @@ test ('switching bots', async ({ page }) => {
 	await page.getByTestId('menuButtonMock Bot').click();
 	await page.getByRole('button', { name: 'Second Bot' }).click();
 
-	await page.getByTestId('reply_textbox').click();
 	await page.getByTestId('reply_textbox').fill('Hello!');
-	await page.getByTestId('reply_textbox').press('Enter');
+	await page.locator('#rhsContainer').getByTestId('SendMessageButton').click()
 
 	// Second bot responds
 	await expect(page.getByRole('button', { name: 'second', exact: true })).toBeVisible();

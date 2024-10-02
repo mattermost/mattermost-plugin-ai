@@ -114,6 +114,7 @@ const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
                 channelId={botChannelId}
                 placeholder={intl.formatMessage({defaultMessage: 'Ask Copilot anything...'})}
                 isThreadView={true}
+                location={'RHS_COMMENT'}
                 afterSubmit={(result: {created?: {id: string}}) => {
                     if (result.created?.id) {
                         selectPost(result.created?.id);
