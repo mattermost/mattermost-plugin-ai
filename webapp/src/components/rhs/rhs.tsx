@@ -129,6 +129,7 @@ export default function RHS() {
                 rootPostId={selectedPostId}
                 useRelativeTimestamp={false}
                 isThreadView={false}
+                forceClearNewMessages={true}
             />
         );
     } else if (currentTab === 'threads') {
