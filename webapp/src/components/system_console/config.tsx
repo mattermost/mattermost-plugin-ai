@@ -18,11 +18,6 @@ type Config = {
     transcriptBackend: string,
     enableLLMTrace: boolean,
     enableCallSummary: boolean,
-
-    enableUserRestrictions: boolean
-    allowPrivateChannels: boolean
-    allowedTeamIds: string
-    onlyUsersOnTeam: string
 }
 
 type Props = {
@@ -63,10 +58,6 @@ const defaultConfig = {
     llmBackend: '',
     transcriptBackend: '',
     enableLLMTrace: false,
-    enableUserRestrictions: false,
-    allowPrivateChannels: false,
-    allowedTeamIds: '',
-    onlyUsersOnTeam: '',
 };
 
 const BetaMessage = () => (
@@ -175,111 +166,6 @@ const Config = (props: Props) => {
                         ))}
                     </SelectionItem>
                 </ItemList>
-            </Panel>
-
-            <Panel
-                title={intl.formatMessage({defaultMessage: 'User restrictions (experimental)'})}
-                subtitle={intl.formatMessage({defaultMessage: 'Restrict where Copilot can be used.'})}
-            >
-                <div className='form-group'>
-                    <label
-                        className='control-label col-sm-4'
-                    >
-                        <FormattedMessage defaultMessage='Enable User Restrictions:'/>
-                    </label>
-                    <div className='col-sm-8'>
-                        <label className='radio-inline'>
-                            <input
-                                type='radio'
-                                value='true'
-                                checked={value.enableUserRestrictions}
-                                onChange={() => props.onChange(props.id, {...value, enableUserRestrictions: true})}
-                            />
-                            <span><FormattedMessage defaultMessage='true'/></span>
-                        </label>
-                        <label className='radio-inline'>
-                            <input
-                                type='radio'
-                                value='false'
-                                checked={!value.enableUserRestrictions}
-                                onChange={() => props.onChange(props.id, {...value, enableUserRestrictions: false})}
-                            />
-                            <span><FormattedMessage defaultMessage='false'/></span>
-                        </label>
-                        <div className='help-text'>
-                            <span>
-                                <FormattedMessage defaultMessage='Global flag for all below settings.'/>
-                            </span>
-                        </div>
-                    </div>
-                </div>
-                {value.enableUserRestrictions && (
-                    <>
-                        <div className='form-group'>
-                            <label
-                                className='control-label col-sm-4'
-                            >
-                                <FormattedMessage defaultMessage='Allow Private Channels:'/>
-                            </label>
-                            <div className='col-sm-8'>
-                                <label className='radio-inline'>
-                                    <input
-                                        type='radio'
-                                        value='true'
-                                        checked={value.allowPrivateChannels}
-                                        onChange={() => props.onChange(props.id, {...value, allowPrivateChannels: true})}
-                                    />
-                                    <span><FormattedMessage defaultMessage='true'/></span>
-                                </label>
-                                <label className='radio-inline'>
-                                    <input
-                                        type='radio'
-                                        value='false'
-                                        checked={!value.allowPrivateChannels}
-                                        onChange={() => props.onChange(props.id, {...value, allowPrivateChannels: false})}
-                                    />
-                                    <span>
-                                        <FormattedMessage defaultMessage='false'/>
-                                    </span>
-                                </label>
-                            </div>
-                        </div>
-                        <div className='form-group'>
-                            <label
-                                className='control-label col-sm-4'
-                                htmlFor='ai-allow-team-ids'
-                            >
-                                <FormattedMessage defaultMessage='Allow Team IDs (csv):'/>
-                            </label>
-                            <div className='col-sm-8'>
-                                <input
-                                    id='ai-allow-team-ids'
-                                    className='form-control'
-                                    type='text'
-                                    value={value.allowedTeamIds}
-                                    onChange={(e) => props.onChange(props.id, {...value, allowedTeamIds: e.target.value})}
-                                />
-                            </div>
-                        </div>
-                        <div className='form-group'>
-                            <label
-                                className='control-label col-sm-4'
-                                htmlFor='ai-only-users-on-team'
-                            >
-                                <FormattedMessage defaultMessage='Only Users on Team:'/>
-                            </label>
-                            <div className='col-sm-8'>
-                                <input
-                                    id='ai-only-users-on-team'
-                                    className='form-control'
-                                    type='text'
-                                    value={value.onlyUsersOnTeam}
-                                    onChange={(e) => props.onChange(props.id, {...value, onlyUsersOnTeam: e.target.value})}
-                                />
-                            </div>
-                        </div>
-                    </>
-                )}
             </Panel>
 
             <Panel

@@ -1,4 +1,5 @@
 import {Client4 as Client4Class, ClientError} from '@mattermost/client';
+import {ChannelWithTeamData} from '@mattermost/types/channels';
 
 import manifest from './manifest';
 
@@ -261,4 +262,33 @@ export async function setUserProfilePictureByUsername(username: string, file: Fi
 
 export async function setUserProfilePicture(userId: string, file: File) {
     await Client4.uploadProfileImage(userId, file);
+}
+
+export async function getAutocompleteAllUsers(name: string) {
+    return Client4.autocompleteUsers(name, '', '');
+}
+
+export async function getProfilesByIds(userIds: string[]) {
+    return Client4.getProfilesByIds(userIds);
+}
+
+export async function searchAllChannels(term: string): Promise<ChannelWithTeamData[]> {
+    return Client4.searchAllChannels(term, {
+        nonAdminSearch: false,
+        public: true,
+        private: true,
+        include_deleted: false,
+        deleted: false,
+    }) as Promise<ChannelWithTeamData[]>; // With these paremeters we should always get ChannelWithTeamData[]
+}
+
+export async function getChannelById(channelId: string): Promise<ChannelWithTeamData> {
+    const channel = await Client4.getChannel(channelId);
+    const team = await Client4.getTeam(channel.team_id);
+    return {
+        ...channel,
+        team_name: team.display_name,
+        team_display_name: team.display_name,
+        team_update_at: team.update_at,
+    };
 }

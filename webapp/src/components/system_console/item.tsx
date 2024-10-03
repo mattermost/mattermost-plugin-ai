@@ -78,7 +78,7 @@ const TextFieldContainer = styled.div`
 	gap: 8px;
 `;
 
-const HelpText = styled.div`
+export const HelpText = styled.div`
 	font-size: 12px;
 	font-weight: 400;
 	line-height: 16px;

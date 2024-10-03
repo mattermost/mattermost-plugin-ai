@@ -11,6 +11,7 @@ import {ButtonIcon} from '../assets/buttons';
 
 import {BooleanItem, ItemList, SelectionItem, SelectionItemOption, TextItem} from './item';
 import AvatarItem from './avatar';
+import {ChannelAssistanceLevelItem, UserAssistanceLevelItem} from './assistance_level_item';
 
 export type LLMService = {
     type: string
@@ -24,6 +25,20 @@ export type LLMService = {
     streamingTimeoutSeconds: number
 }
 
+export enum ChannelAssistanceLevel {
+    All = 0,
+    Allow,
+    Block,
+    None,
+}
+
+export enum UserAssistanceLevel {
+    All = 0,
+    Allow,
+    Block,
+    None,
+}
+
 export type LLMBotConfig = {
     id: string
     name: string
@@ -32,6 +47,10 @@ export type LLMBotConfig = {
     customInstructions: string
     enableVision: boolean
     disableTools: boolean
+    channelAssistanceLevel: ChannelAssistanceLevel
+    channelIDs: string[]
+    userAssistanceLevel: UserAssistanceLevel
+    userIDs: string[]
 }
 
 type Props = {
@@ -160,6 +179,21 @@ const Bot = (props: Props) => {
                                 />
                             </>
                         )}
+                        <ChannelAssistanceLevelItem
+                            label={intl.formatMessage({defaultMessage: 'Channel Assistance Level'})}
+                            level={props.bot.channelAssistanceLevel ?? ChannelAssistanceLevel.All}
+                            onChangeLevel={(to: ChannelAssistanceLevel) => props.onChange({...props.bot, channelAssistanceLevel: to})}
+                            channelIDs={props.bot.channelIDs ?? []}
+                            onChangeChannelIDs={(channels: string[]) => props.onChange({...props.bot, channelIDs: channels})}
+                        />
+                        <UserAssistanceLevelItem
+                            label={intl.formatMessage({defaultMessage: 'User Assistance Level'})}
+                            level={props.bot.userAssistanceLevel ?? ChannelAssistanceLevel.All}
+                            onChangeLevel={(to: UserAssistanceLevel) => props.onChange({...props.bot, userAssistanceLevel: to})}
+                            userIDs={props.bot.userIDs ?? []}
+                            onChangeUserIDs={(users: string[]) => props.onChange({...props.bot, userIDs: users})}
+                        />
+
                     </ItemList>
                 </ItemListContainer>
             )}

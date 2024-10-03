@@ -2,52 +2,66 @@ package main
 
 import (
 	"fmt"
-	"strings"
+	"slices"
 
 	"errors"
 
+	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
 var ErrUsageRestriction = errors.New("usage restriction")
 
-func (p *Plugin) checkUsageRestrictions(userID string, channel *model.Channel) error {
-	if err := p.checkUsageRestrictionsForUser(userID); err != nil {
+func (p *Plugin) checkUsageRestrictions(requestingUserID string, bot *Bot, channel *model.Channel) error {
+	if err := p.checkUsageRestrictionsForUser(bot, requestingUserID); err != nil {
 		return err
 	}
 
-	if err := p.checkUsageRestrictionsForChannel(channel); err != nil {
+	if err := p.checkUsageRestrictionsForChannel(bot, channel); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (p *Plugin) checkUsageRestrictionsForChannel(channel *model.Channel) error {
-	cfg := p.getConfiguration()
-	if cfg.EnableUseRestrictions {
-		if cfg.AllowedTeamIDs != "" && !strings.Contains(cfg.AllowedTeamIDs, channel.TeamId) {
-			return fmt.Errorf("can't work on this team: %w", ErrUsageRestriction)
+func (p *Plugin) checkUsageRestrictionsForChannel(bot *Bot, channel *model.Channel) error {
+	switch bot.cfg.ChannelAssistanceLevel {
+	case ai.ChannelAssistanceLevelAll:
+		return nil
+	case ai.ChannelAssistanceLevelAllow:
+		if !slices.Contains(bot.cfg.ChannelIDs, channel.Id) {
+			return fmt.Errorf("channel not allowed: %w", ErrUsageRestriction)
 		}
-
-		if !cfg.AllowPrivateChannels {
-			if channel.Type != model.ChannelTypeOpen {
-				if p.GetBotForDMChannel(channel) == nil {
-					return fmt.Errorf("can't work on private channels: %w", ErrUsageRestriction)
-				}
-			}
+		return nil
+	case ai.ChannelAssistanceLevelBlock:
+		if slices.Contains(bot.cfg.ChannelIDs, channel.Id) {
+			return fmt.Errorf("channel blocked: %w", ErrUsageRestriction)
 		}
+		return nil
+	case ai.ChannelAssistanceLevelNone:
+		return fmt.Errorf("channel usage block for bot: %w", ErrUsageRestriction)
 	}
-	return nil
+
+	return fmt.Errorf("unknown channel assistance level")
 }
 
-func (p *Plugin) checkUsageRestrictionsForUser(userID string) error {
-	cfg := p.getConfiguration()
-	if cfg.EnableUseRestrictions && cfg.OnlyUsersOnTeam != "" {
-		if !p.pluginAPI.User.HasPermissionToTeam(userID, cfg.OnlyUsersOnTeam, model.PermissionViewTeam) {
-			return fmt.Errorf("user not on allowed team: %w", ErrUsageRestriction)
+func (p *Plugin) checkUsageRestrictionsForUser(bot *Bot, requestingUserID string) error {
+	switch bot.cfg.UserAssistanceLevel {
+	case ai.UserAssistanceLevelAll:
+		return nil
+	case ai.UserAssistanceLevelAllow:
+		if !slices.Contains(bot.cfg.UserIDs, requestingUserID) {
+			return fmt.Errorf("user not allowed: %w", ErrUsageRestriction)
 		}
+		return nil
+	case ai.UserAssistanceLevelBlock:
+		if slices.Contains(bot.cfg.UserIDs, requestingUserID) {
+			return fmt.Errorf("user blocked: %w", ErrUsageRestriction)
+		}
+		return nil
+	case ai.UserAssistanceLevelNone:
+		return fmt.Errorf("user usage block for bot: %w", ErrUsageRestriction)
 	}
 
-	return nil
+	return fmt.Errorf("unknown user assistance level")
 }

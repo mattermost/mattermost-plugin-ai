@@ -13,14 +13,36 @@ type ServiceConfig struct {
 	StreamingTimeoutSeconds int    `json:"streamingTimeoutSeconds"`
 }
 
+type ChannelAssistanceLevel int
+
+const (
+	ChannelAssistanceLevelAll ChannelAssistanceLevel = iota
+	ChannelAssistanceLevelAllow
+	ChannelAssistanceLevelBlock
+	ChannelAssistanceLevelNone
+)
+
+type UserAssistanceLevel int
+
+const (
+	UserAssistanceLevelAll UserAssistanceLevel = iota
+	UserAssistanceLevelAllow
+	UserAssistanceLevelBlock
+	UserAssistanceLevelNone
+)
+
 type BotConfig struct {
-	ID                 string        `json:"id"`
-	Name               string        `json:"name"`
-	DisplayName        string        `json:"displayName"`
-	CustomInstructions string        `json:"customInstructions"`
-	Service            ServiceConfig `json:"service"`
-	EnableVision       bool          `json:"enableVision"`
-	DisableTools       bool          `json:"disableTools"`
+	ID                     string                 `json:"id"`
+	Name                   string                 `json:"name"`
+	DisplayName            string                 `json:"displayName"`
+	CustomInstructions     string                 `json:"customInstructions"`
+	Service                ServiceConfig          `json:"service"`
+	EnableVision           bool                   `json:"enableVision"`
+	DisableTools           bool                   `json:"disableTools"`
+	ChannelAssistanceLevel ChannelAssistanceLevel `json:"channelAssistanceLevel"`
+	ChannelIDs             []string               `json:"channelIDs"`
+	UserAssistanceLevel    UserAssistanceLevel    `json:"userAssistanceLevel"`
+	UserIDs                []string               `json:"userIDs"`
 }
 
 func (c *BotConfig) IsValid() bool {

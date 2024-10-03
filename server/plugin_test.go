@@ -61,9 +61,197 @@ func makeConfig(config Config) *configuration {
 	}
 }
 
-func TestBotMention(t *testing.T) {
+func TestUsageRestrictions(t *testing.T) {
 	e := SetupTestEnvironment(t)
 	defer e.Cleanup(t)
+
+	testCases := []struct {
+		name           string
+		bot            *Bot
+		channel        *model.Channel
+		requestingUser string
+		expectedError  error
+	}{
+		{
+			name: "All allowed",
+			bot: &Bot{
+				cfg: ai.BotConfig{
+					ChannelAssistanceLevel: ai.ChannelAssistanceLevelAll,
+					UserAssistanceLevel:    ai.UserAssistanceLevelAll,
+				},
+			},
+			channel:        &model.Channel{Id: "channel1"},
+			requestingUser: "user1",
+			expectedError:  nil,
+		},
+		{
+			name: "Channel blocked",
+			bot: &Bot{
+				cfg: ai.BotConfig{
+					ChannelAssistanceLevel: ai.ChannelAssistanceLevelBlock,
+					ChannelIDs:             []string{"channel1"},
+					UserAssistanceLevel:    ai.UserAssistanceLevelAll,
+				},
+			},
+			channel:        &model.Channel{Id: "channel1"},
+			requestingUser: "user1",
+			expectedError:  ErrUsageRestriction,
+		},
+		{
+			name: "User blocked",
+			bot: &Bot{
+				cfg: ai.BotConfig{
+					ChannelAssistanceLevel: ai.ChannelAssistanceLevelAll,
+					UserAssistanceLevel:    ai.UserAssistanceLevelBlock,
+					UserIDs:                []string{"user1"},
+				},
+			},
+			channel:        &model.Channel{Id: "channel1"},
+			requestingUser: "user1",
+			expectedError:  ErrUsageRestriction,
+		},
+		{
+			name: "Channel allowed",
+			bot: &Bot{
+				cfg: ai.BotConfig{
+					ChannelAssistanceLevel: ai.ChannelAssistanceLevelAllow,
+					ChannelIDs:             []string{"channel1"},
+					UserAssistanceLevel:    ai.UserAssistanceLevelAll,
+				},
+			},
+			channel:        &model.Channel{Id: "channel1"},
+			requestingUser: "user1",
+			expectedError:  nil,
+		},
+		{
+			name: "User allowed",
+			bot: &Bot{
+				cfg: ai.BotConfig{
+					ChannelAssistanceLevel: ai.ChannelAssistanceLevelAll,
+					UserAssistanceLevel:    ai.UserAssistanceLevelAllow,
+					UserIDs:                []string{"user1"},
+				},
+			},
+			channel:        &model.Channel{Id: "channel1"},
+			requestingUser: "user1",
+			expectedError:  nil,
+		},
+		{
+			name: "Channel not allowed",
+			bot: &Bot{
+				cfg: ai.BotConfig{
+					ChannelAssistanceLevel: ai.ChannelAssistanceLevelAllow,
+					ChannelIDs:             []string{"channel2"},
+					UserAssistanceLevel:    ai.UserAssistanceLevelAll,
+				},
+			},
+			channel:        &model.Channel{Id: "channel1"},
+			requestingUser: "user1",
+			expectedError:  ErrUsageRestriction,
+		},
+		{
+			name: "User not allowed",
+			bot: &Bot{
+				cfg: ai.BotConfig{
+					ChannelAssistanceLevel: ai.ChannelAssistanceLevelAll,
+					UserAssistanceLevel:    ai.UserAssistanceLevelAllow,
+					UserIDs:                []string{"user2"},
+				},
+			},
+			channel:        &model.Channel{Id: "channel1"},
+			requestingUser: "user1",
+			expectedError:  ErrUsageRestriction,
+		},
+		{
+			name: "Channel none",
+			bot: &Bot{
+				cfg: ai.BotConfig{
+					ChannelAssistanceLevel: ai.ChannelAssistanceLevelNone,
+					UserAssistanceLevel:    ai.UserAssistanceLevelAll,
+				},
+			},
+			channel:        &model.Channel{Id: "channel1"},
+			requestingUser: "user1",
+			expectedError:  ErrUsageRestriction,
+		},
+		{
+			name: "User none",
+			bot: &Bot{
+				cfg: ai.BotConfig{
+					ChannelAssistanceLevel: ai.ChannelAssistanceLevelAll,
+					UserAssistanceLevel:    ai.UserAssistanceLevelNone,
+				},
+			},
+			channel:        &model.Channel{Id: "channel1"},
+			requestingUser: "user1",
+			expectedError:  ErrUsageRestriction,
+		},
+		{
+			name: "Channel block but not in list",
+			bot: &Bot{
+				cfg: ai.BotConfig{
+					ChannelAssistanceLevel: ai.ChannelAssistanceLevelBlock,
+					ChannelIDs:             []string{"channel2"},
+					UserAssistanceLevel:    ai.UserAssistanceLevelAll,
+				},
+			},
+			channel:        &model.Channel{Id: "channel1"},
+			requestingUser: "user1",
+			expectedError:  nil,
+		},
+		{
+			name: "User block but not in list",
+			bot: &Bot{
+				cfg: ai.BotConfig{
+					ChannelAssistanceLevel: ai.ChannelAssistanceLevelAll,
+					UserAssistanceLevel:    ai.UserAssistanceLevelBlock,
+					UserIDs:                []string{"user2"},
+				},
+			},
+			channel:        &model.Channel{Id: "channel1"},
+			requestingUser: "user1",
+			expectedError:  nil,
+		},
+		{
+			name: "Channel allow and user allow",
+			bot: &Bot{
+				cfg: ai.BotConfig{
+					ChannelAssistanceLevel: ai.ChannelAssistanceLevelAllow,
+					ChannelIDs:             []string{"channel1"},
+					UserAssistanceLevel:    ai.UserAssistanceLevelAllow,
+					UserIDs:                []string{"user1"},
+				},
+			},
+			channel:        &model.Channel{Id: "channel1"},
+			requestingUser: "user1",
+			expectedError:  nil,
+		},
+		{
+			name: "Channel allow but user not allowed",
+			bot: &Bot{
+				cfg: ai.BotConfig{
+					ChannelAssistanceLevel: ai.ChannelAssistanceLevelAllow,
+					ChannelIDs:             []string{"channel1"},
+					UserAssistanceLevel:    ai.UserAssistanceLevelAllow,
+					UserIDs:                []string{"user2"},
+				},
+			},
+			channel:        &model.Channel{Id: "channel1"},
+			requestingUser: "user1",
+			expectedError:  ErrUsageRestriction,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := e.plugin.checkUsageRestrictions(tc.requestingUser, tc.bot, tc.channel)
+			if tc.expectedError != nil {
+				require.ErrorIs(t, err, tc.expectedError)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }
 
 func TestHandleMessages(t *testing.T) {
@@ -88,9 +276,6 @@ func TestHandleMessages(t *testing.T) {
 
 	t.Run("don't respond to plugins", func(t *testing.T) {
 		e.ResetMocks(t)
-		e.plugin.setConfiguration(makeConfig(Config{
-			EnableUseRestrictions: false,
-		}))
 		post := &model.Post{
 			UserId: "userid",
 		}
@@ -101,150 +286,11 @@ func TestHandleMessages(t *testing.T) {
 
 	t.Run("don't respond to webhooks", func(t *testing.T) {
 		e.ResetMocks(t)
-		e.plugin.setConfiguration(makeConfig(Config{
-			EnableUseRestrictions: false,
-		}))
 		post := &model.Post{
 			UserId: "userid",
 		}
 		post.AddProp("from_webhook", true)
 		err := e.plugin.handleMessages(post)
-		require.ErrorIs(t, err, ErrNoResponse)
-	})
-}
-
-func TestHandleMentions(t *testing.T) {
-	e := SetupTestEnvironment(t)
-	defer e.Cleanup(t)
-
-	standardPost := &model.Post{
-		UserId:    "userid",
-		ChannelId: "channelid",
-		Message:   "hello @ai",
-	}
-
-	t.Run("don't respond to users that are not allowed", func(t *testing.T) {
-		e.ResetMocks(t)
-		e.plugin.setConfiguration(makeConfig(Config{
-			OnlyUsersOnTeam:       "teamid",
-			EnableUseRestrictions: true,
-		}))
-		e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
-			Type:   model.ChannelTypeOpen,
-			TeamId: "teamid",
-		}, nil)
-		e.mockAPI.On("GetUser", "userid").Return(&model.User{
-			Id: "userid",
-		}, nil)
-		e.mockAPI.On("HasPermissionToTeam", "userid", "teamid", model.PermissionViewTeam).Return(false)
-
-		err := e.plugin.handleMessages(standardPost)
-		require.ErrorIs(t, err, ErrUsageRestriction)
-	})
-
-	t.Run("don't respond if not on allowed team", func(t *testing.T) {
-		e.ResetMocks(t)
-		e.plugin.setConfiguration(makeConfig(Config{
-			AllowedTeamIDs:        "someotherteam,someotherteam2",
-			AllowPrivateChannels:  true,
-			EnableUseRestrictions: true,
-		}))
-		e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
-			Type:   model.ChannelTypeOpen,
-			TeamId: "notallowedteam",
-		}, nil)
-		e.mockAPI.On("GetUser", "userid").Return(&model.User{
-			Id: "userid",
-		}, nil)
-
-		err := e.plugin.handleMessages(standardPost)
-		require.ErrorIs(t, err, ErrUsageRestriction)
-	})
-
-	t.Run("don't respond if in private channel and not allowed", func(t *testing.T) {
-		e.ResetMocks(t)
-		e.plugin.setConfiguration(makeConfig(Config{
-			AllowedTeamIDs:        "teamid",
-			AllowPrivateChannels:  false,
-			EnableUseRestrictions: true,
-		}))
-		e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
-			Type:   model.ChannelTypePrivate,
-			TeamId: "teamid",
-		}, nil)
-		e.mockAPI.On("GetUser", "userid").Return(&model.User{
-			Id: "userid",
-		}, nil)
-
-		err := e.plugin.handleMessages(standardPost)
-		require.ErrorIs(t, err, ErrUsageRestriction)
-	})
-
-	t.Run("don't respond to bots", func(t *testing.T) {
-		e.ResetMocks(t)
-		e.plugin.setConfiguration(makeConfig(Config{
-			EnableUseRestrictions: false,
-		}))
-		e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
-			Type:   model.ChannelTypePrivate,
-			TeamId: "teamid",
-		}, nil)
-		e.mockAPI.On("GetUser", "userid").Return(&model.User{
-			Id:    "userid",
-			IsBot: true,
-		}, nil)
-
-		err := e.plugin.handleMessages(standardPost)
-		require.ErrorIs(t, err, ErrNoResponse)
-	})
-}
-
-func TestHandleDMs(t *testing.T) {
-	e := SetupTestEnvironment(t)
-	defer e.Cleanup(t)
-
-	standardPost := &model.Post{
-		UserId:    "userid",
-		ChannelId: "channelid",
-		Message:   "whatever",
-	}
-
-	t.Run("don't respond to users that are not allowed", func(t *testing.T) {
-		e.ResetMocks(t)
-		e.plugin.setConfiguration(makeConfig(Config{
-			OnlyUsersOnTeam:       "teamid",
-			EnableUseRestrictions: true,
-		}))
-		e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
-			Type:   model.ChannelTypeDirect,
-			Name:   "botid__userid",
-			TeamId: "teamid",
-		}, nil)
-		e.mockAPI.On("GetUser", "userid").Return(&model.User{
-			Id: "userid",
-		}, nil)
-		e.mockAPI.On("HasPermissionToTeam", "userid", "teamid", model.PermissionViewTeam).Return(false)
-
-		err := e.plugin.handleMessages(standardPost)
-		require.ErrorIs(t, err, ErrUsageRestriction)
-	})
-
-	t.Run("don't respond to bots", func(t *testing.T) {
-		e.ResetMocks(t)
-		e.plugin.setConfiguration(makeConfig(Config{
-			EnableUseRestrictions: false,
-		}))
-		e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
-			Type:   model.ChannelTypeDirect,
-			Name:   "botid__userid",
-			TeamId: "teamid",
-		}, nil)
-		e.mockAPI.On("GetUser", "userid").Return(&model.User{
-			Id:    "userid",
-			IsBot: true,
-		}, nil)
-
-		err := e.plugin.handleMessages(standardPost)
 		require.ErrorIs(t, err, ErrNoResponse)
 	})
 }
