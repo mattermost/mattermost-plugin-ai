@@ -8,12 +8,12 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "@mattermost/client": "^9.2.0",
-    "@mattermost/types": "^9.2.0",
-    "@playwright/test": "^1.41.2",
-    "@testcontainers/postgresql": "^10.4.0",
-    "@types/node": "^20.11.19",
-    "pg": "^8.11.3",
-    "testcontainers": "^10.4.0"
+    "@mattermost/client": "10.0.0",
+    "@mattermost/types": "10.0.0",
+    "@playwright/test": "1.48.0",
+    "@testcontainers/postgresql": "10.13.2",
+    "@types/node": "22.7.5",
+    "pg": "8.13.0",
+    "testcontainers": "10.13.2"
   }
 }
