@@ -21,6 +21,7 @@ type BotConfig struct {
 	Service            ServiceConfig `json:"service"`
 	EnableVision       bool          `json:"enableVision"`
 	DisableTools       bool          `json:"disableTools"`
+	MaxFileSize        int64         `json:"maxFileSize"`
 }
 
 func (c *BotConfig) IsValid() bool {
