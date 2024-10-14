@@ -11,7 +11,7 @@ import {ButtonIcon} from '../assets/buttons';
 
 import {BooleanItem, ItemList, SelectionItem, SelectionItemOption, TextItem} from './item';
 import AvatarItem from './avatar';
-import {ChannelAssistanceLevelItem, UserAssistanceLevelItem} from './assistance_level_item';
+import {ChannelAccessLevelItem, UserAccessLevelItem} from './llm_access';
 
 export type LLMService = {
     type: string
@@ -25,14 +25,14 @@ export type LLMService = {
     streamingTimeoutSeconds: number
 }
 
-export enum ChannelAssistanceLevel {
+export enum ChannelAccessLevel {
     All = 0,
     Allow,
     Block,
     None,
 }
 
-export enum UserAssistanceLevel {
+export enum UserAccessLevel {
     All = 0,
     Allow,
     Block,
@@ -47,9 +47,9 @@ export type LLMBotConfig = {
     customInstructions: string
     enableVision: boolean
     disableTools: boolean
-    channelAssistanceLevel: ChannelAssistanceLevel
+    channelAccessLevel: ChannelAccessLevel
     channelIDs: string[]
-    userAssistanceLevel: UserAssistanceLevel
+    userAccessLevel: UserAccessLevel
     userIDs: string[]
 }
 
@@ -179,17 +179,17 @@ const Bot = (props: Props) => {
                                 />
                             </>
                         )}
-                        <ChannelAssistanceLevelItem
-                            label={intl.formatMessage({defaultMessage: 'Channel Assistance Level'})}
-                            level={props.bot.channelAssistanceLevel ?? ChannelAssistanceLevel.All}
-                            onChangeLevel={(to: ChannelAssistanceLevel) => props.onChange({...props.bot, channelAssistanceLevel: to})}
+                        <ChannelAccessLevelItem
+                            label={intl.formatMessage({defaultMessage: 'Channel access'})}
+                            level={props.bot.channelAccessLevel ?? ChannelAccessLevel.All}
+                            onChangeLevel={(to: ChannelAccessLevel) => props.onChange({...props.bot, channelAccessLevel: to})}
                             channelIDs={props.bot.channelIDs ?? []}
                             onChangeChannelIDs={(channels: string[]) => props.onChange({...props.bot, channelIDs: channels})}
                         />
-                        <UserAssistanceLevelItem
-                            label={intl.formatMessage({defaultMessage: 'User Assistance Level'})}
-                            level={props.bot.userAssistanceLevel ?? ChannelAssistanceLevel.All}
-                            onChangeLevel={(to: UserAssistanceLevel) => props.onChange({...props.bot, userAssistanceLevel: to})}
+                        <UserAccessLevelItem
+                            label={intl.formatMessage({defaultMessage: 'User access'})}
+                            level={props.bot.userAccessLevel ?? ChannelAccessLevel.All}
+                            onChangeLevel={(to: UserAccessLevel) => props.onChange({...props.bot, userAccessLevel: to})}
                             userIDs={props.bot.userIDs ?? []}
                             onChangeUserIDs={(users: string[]) => props.onChange({...props.bot, userIDs: users})}
                         />

@@ -111,15 +111,15 @@ func (p *Plugin) handleGetAIThreads(c *gin.Context) {
 }
 
 type AIBotInfo struct {
-	ID                     string                    `json:"id"`
-	DisplayName            string                    `json:"displayName"`
-	Username               string                    `json:"username"`
-	LastIconUpdate         int64                     `json:"lastIconUpdate"`
-	DMChannelID            string                    `json:"dmChannelID"`
-	ChannelAssistanceLevel ai.ChannelAssistanceLevel `json:"channelAssistanceLevel"`
-	ChannelIDs             []string                  `json:"channelIDs"`
-	UserAssistanceLevel    ai.UserAssistanceLevel    `json:"userAssistanceLevel"`
-	UserIDs                []string                  `json:"userIDs"`
+	ID                 string                `json:"id"`
+	DisplayName        string                `json:"displayName"`
+	Username           string                `json:"username"`
+	LastIconUpdate     int64                 `json:"lastIconUpdate"`
+	DMChannelID        string                `json:"dmChannelID"`
+	ChannelAccessLevel ai.ChannelAccessLevel `json:"channelAccessLevel"`
+	ChannelIDs         []string              `json:"channelIDs"`
+	UserAccessLevel    ai.UserAccessLevel    `json:"userAccessLevel"`
+	UserIDs            []string              `json:"userIDs"`
 }
 
 func (p *Plugin) handleGetAIBots(c *gin.Context) {
@@ -143,15 +143,15 @@ func (p *Plugin) handleGetAIBots(c *gin.Context) {
 			continue
 		}
 		bots = append(bots, AIBotInfo{
-			ID:                     bot.mmBot.UserId,
-			DisplayName:            bot.mmBot.DisplayName,
-			Username:               bot.mmBot.Username,
-			LastIconUpdate:         bot.mmBot.LastIconUpdate,
-			DMChannelID:            direct.Id,
-			ChannelAssistanceLevel: bot.cfg.ChannelAssistanceLevel,
-			ChannelIDs:             bot.cfg.ChannelIDs,
-			UserAssistanceLevel:    bot.cfg.UserAssistanceLevel,
-			UserIDs:                bot.cfg.UserIDs,
+			ID:                 bot.mmBot.UserId,
+			DisplayName:        bot.mmBot.DisplayName,
+			Username:           bot.mmBot.Username,
+			LastIconUpdate:     bot.mmBot.LastIconUpdate,
+			DMChannelID:        direct.Id,
+			ChannelAccessLevel: bot.cfg.ChannelAccessLevel,
+			ChannelIDs:         bot.cfg.ChannelIDs,
+			UserAccessLevel:    bot.cfg.UserAccessLevel,
+			UserIDs:            bot.cfg.UserIDs,
 		})
 		if bot.mmBot.Username == defaultBotName {
 			bots[0], bots[i] = bots[i], bots[0]

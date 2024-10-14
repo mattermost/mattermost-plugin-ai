@@ -8,7 +8,7 @@ import {getAIBots} from '@/client';
 
 import manifest from './manifest';
 import {BotsHandler} from './redux';
-import {ChannelAssistanceLevel, UserAssistanceLevel} from './components/system_console/bot';
+import {ChannelAccessLevel, UserAccessLevel} from './components/system_console/bot';
 
 export interface LLMBot {
     id: string;
@@ -16,9 +16,9 @@ export interface LLMBot {
     username: string;
     lastIconUpdate: number;
     dmChannelID: string;
-    channelAssistanceLevel: ChannelAssistanceLevel;
+    channelAccessLevel: ChannelAccessLevel;
     channelIDs: string[];
-    userAssistanceLevel: UserAssistanceLevel;
+    userAccessLevel: UserAccessLevel;
     userIDs: string[];
 }
 
@@ -75,9 +75,9 @@ export const useBotlistForChannel = (channelId: string) => {
         }
 
         const filtered = bots.filter((bot: LLMBot) => {
-            return bot.channelAssistanceLevel === ChannelAssistanceLevel.All ||
-				(bot.channelAssistanceLevel === ChannelAssistanceLevel.Allow && bot.channelIDs.includes(channelId)) ||
-				(bot.channelAssistanceLevel === ChannelAssistanceLevel.Block && !bot.channelIDs.includes(channelId));
+            return bot.channelAccessLevel === ChannelAccessLevel.All ||
+				(bot.channelAccessLevel === ChannelAccessLevel.Allow && bot.channelIDs.includes(channelId)) ||
+				(bot.channelAccessLevel === ChannelAccessLevel.Block && !bot.channelIDs.includes(channelId));
         });
 
         setFilteredBots(filtered);

@@ -76,8 +76,8 @@ func TestUsageRestrictions(t *testing.T) {
 			name: "All allowed",
 			bot: &Bot{
 				cfg: ai.BotConfig{
-					ChannelAssistanceLevel: ai.ChannelAssistanceLevelAll,
-					UserAssistanceLevel:    ai.UserAssistanceLevelAll,
+					ChannelAccessLevel: ai.ChannelAccessLevelAll,
+					UserAccessLevel:    ai.UserAccessLevelAll,
 				},
 			},
 			channel:        &model.Channel{Id: "channel1"},
@@ -88,9 +88,9 @@ func TestUsageRestrictions(t *testing.T) {
 			name: "Channel blocked",
 			bot: &Bot{
 				cfg: ai.BotConfig{
-					ChannelAssistanceLevel: ai.ChannelAssistanceLevelBlock,
-					ChannelIDs:             []string{"channel1"},
-					UserAssistanceLevel:    ai.UserAssistanceLevelAll,
+					ChannelAccessLevel: ai.ChannelAccessLevelBlock,
+					ChannelIDs:         []string{"channel1"},
+					UserAccessLevel:    ai.UserAccessLevelAll,
 				},
 			},
 			channel:        &model.Channel{Id: "channel1"},
@@ -101,9 +101,9 @@ func TestUsageRestrictions(t *testing.T) {
 			name: "User blocked",
 			bot: &Bot{
 				cfg: ai.BotConfig{
-					ChannelAssistanceLevel: ai.ChannelAssistanceLevelAll,
-					UserAssistanceLevel:    ai.UserAssistanceLevelBlock,
-					UserIDs:                []string{"user1"},
+					ChannelAccessLevel: ai.ChannelAccessLevelAll,
+					UserAccessLevel:    ai.UserAccessLevelBlock,
+					UserIDs:            []string{"user1"},
 				},
 			},
 			channel:        &model.Channel{Id: "channel1"},
@@ -114,9 +114,9 @@ func TestUsageRestrictions(t *testing.T) {
 			name: "Channel allowed",
 			bot: &Bot{
 				cfg: ai.BotConfig{
-					ChannelAssistanceLevel: ai.ChannelAssistanceLevelAllow,
-					ChannelIDs:             []string{"channel1"},
-					UserAssistanceLevel:    ai.UserAssistanceLevelAll,
+					ChannelAccessLevel: ai.ChannelAccessLevelAllow,
+					ChannelIDs:         []string{"channel1"},
+					UserAccessLevel:    ai.UserAccessLevelAll,
 				},
 			},
 			channel:        &model.Channel{Id: "channel1"},
@@ -127,9 +127,9 @@ func TestUsageRestrictions(t *testing.T) {
 			name: "User allowed",
 			bot: &Bot{
 				cfg: ai.BotConfig{
-					ChannelAssistanceLevel: ai.ChannelAssistanceLevelAll,
-					UserAssistanceLevel:    ai.UserAssistanceLevelAllow,
-					UserIDs:                []string{"user1"},
+					ChannelAccessLevel: ai.ChannelAccessLevelAll,
+					UserAccessLevel:    ai.UserAccessLevelAllow,
+					UserIDs:            []string{"user1"},
 				},
 			},
 			channel:        &model.Channel{Id: "channel1"},
@@ -140,9 +140,9 @@ func TestUsageRestrictions(t *testing.T) {
 			name: "Channel not allowed",
 			bot: &Bot{
 				cfg: ai.BotConfig{
-					ChannelAssistanceLevel: ai.ChannelAssistanceLevelAllow,
-					ChannelIDs:             []string{"channel2"},
-					UserAssistanceLevel:    ai.UserAssistanceLevelAll,
+					ChannelAccessLevel: ai.ChannelAccessLevelAllow,
+					ChannelIDs:         []string{"channel2"},
+					UserAccessLevel:    ai.UserAccessLevelAll,
 				},
 			},
 			channel:        &model.Channel{Id: "channel1"},
@@ -153,9 +153,9 @@ func TestUsageRestrictions(t *testing.T) {
 			name: "User not allowed",
 			bot: &Bot{
 				cfg: ai.BotConfig{
-					ChannelAssistanceLevel: ai.ChannelAssistanceLevelAll,
-					UserAssistanceLevel:    ai.UserAssistanceLevelAllow,
-					UserIDs:                []string{"user2"},
+					ChannelAccessLevel: ai.ChannelAccessLevelAll,
+					UserAccessLevel:    ai.UserAccessLevelAllow,
+					UserIDs:            []string{"user2"},
 				},
 			},
 			channel:        &model.Channel{Id: "channel1"},
@@ -166,8 +166,8 @@ func TestUsageRestrictions(t *testing.T) {
 			name: "Channel none",
 			bot: &Bot{
 				cfg: ai.BotConfig{
-					ChannelAssistanceLevel: ai.ChannelAssistanceLevelNone,
-					UserAssistanceLevel:    ai.UserAssistanceLevelAll,
+					ChannelAccessLevel: ai.ChannelAccessLevelNone,
+					UserAccessLevel:    ai.UserAccessLevelAll,
 				},
 			},
 			channel:        &model.Channel{Id: "channel1"},
@@ -178,8 +178,8 @@ func TestUsageRestrictions(t *testing.T) {
 			name: "User none",
 			bot: &Bot{
 				cfg: ai.BotConfig{
-					ChannelAssistanceLevel: ai.ChannelAssistanceLevelAll,
-					UserAssistanceLevel:    ai.UserAssistanceLevelNone,
+					ChannelAccessLevel: ai.ChannelAccessLevelAll,
+					UserAccessLevel:    ai.UserAccessLevelNone,
 				},
 			},
 			channel:        &model.Channel{Id: "channel1"},
@@ -190,9 +190,9 @@ func TestUsageRestrictions(t *testing.T) {
 			name: "Channel block but not in list",
 			bot: &Bot{
 				cfg: ai.BotConfig{
-					ChannelAssistanceLevel: ai.ChannelAssistanceLevelBlock,
-					ChannelIDs:             []string{"channel2"},
-					UserAssistanceLevel:    ai.UserAssistanceLevelAll,
+					ChannelAccessLevel: ai.ChannelAccessLevelBlock,
+					ChannelIDs:         []string{"channel2"},
+					UserAccessLevel:    ai.UserAccessLevelAll,
 				},
 			},
 			channel:        &model.Channel{Id: "channel1"},
@@ -203,9 +203,9 @@ func TestUsageRestrictions(t *testing.T) {
 			name: "User block but not in list",
 			bot: &Bot{
 				cfg: ai.BotConfig{
-					ChannelAssistanceLevel: ai.ChannelAssistanceLevelAll,
-					UserAssistanceLevel:    ai.UserAssistanceLevelBlock,
-					UserIDs:                []string{"user2"},
+					ChannelAccessLevel: ai.ChannelAccessLevelAll,
+					UserAccessLevel:    ai.UserAccessLevelBlock,
+					UserIDs:            []string{"user2"},
 				},
 			},
 			channel:        &model.Channel{Id: "channel1"},
@@ -216,10 +216,10 @@ func TestUsageRestrictions(t *testing.T) {
 			name: "Channel allow and user allow",
 			bot: &Bot{
 				cfg: ai.BotConfig{
-					ChannelAssistanceLevel: ai.ChannelAssistanceLevelAllow,
-					ChannelIDs:             []string{"channel1"},
-					UserAssistanceLevel:    ai.UserAssistanceLevelAllow,
-					UserIDs:                []string{"user1"},
+					ChannelAccessLevel: ai.ChannelAccessLevelAllow,
+					ChannelIDs:         []string{"channel1"},
+					UserAccessLevel:    ai.UserAccessLevelAllow,
+					UserIDs:            []string{"user1"},
 				},
 			},
 			channel:        &model.Channel{Id: "channel1"},
@@ -230,10 +230,10 @@ func TestUsageRestrictions(t *testing.T) {
 			name: "Channel allow but user not allowed",
 			bot: &Bot{
 				cfg: ai.BotConfig{
-					ChannelAssistanceLevel: ai.ChannelAssistanceLevelAllow,
-					ChannelIDs:             []string{"channel1"},
-					UserAssistanceLevel:    ai.UserAssistanceLevelAllow,
-					UserIDs:                []string{"user2"},
+					ChannelAccessLevel: ai.ChannelAccessLevelAllow,
+					ChannelIDs:         []string{"channel1"},
+					UserAccessLevel:    ai.UserAccessLevelAllow,
+					UserIDs:            []string{"user2"},
 				},
 			},
 			channel:        &model.Channel{Id: "channel1"},

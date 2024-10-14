@@ -52,8 +52,8 @@ func TestPostRouter(t *testing.T) {
 				request:        httptest.NewRequest(http.MethodPost, url, nil),
 				expectedStatus: http.StatusForbidden,
 				botconfig: ai.BotConfig{
-					UserAssistanceLevel: ai.UserAssistanceLevelBlock,
-					UserIDs:             []string{"userid"},
+					UserAccessLevel: ai.UserAccessLevelBlock,
+					UserIDs:         []string{"userid"},
 				},
 				envSetup: func(e *TestEnvironment) {
 					e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
@@ -166,8 +166,8 @@ func TestChannelRouter(t *testing.T) {
 				request:        httptest.NewRequest(http.MethodPost, url, nil),
 				expectedStatus: http.StatusForbidden,
 				botconfig: ai.BotConfig{
-					UserAssistanceLevel: ai.UserAssistanceLevelBlock,
-					UserIDs:             []string{"userid"},
+					UserAccessLevel: ai.UserAccessLevelBlock,
+					UserIDs:         []string{"userid"},
 				},
 				envSetup: func(e *TestEnvironment) {
 					e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{

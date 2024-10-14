@@ -13,36 +13,36 @@ type ServiceConfig struct {
 	StreamingTimeoutSeconds int    `json:"streamingTimeoutSeconds"`
 }
 
-type ChannelAssistanceLevel int
+type ChannelAccessLevel int
 
 const (
-	ChannelAssistanceLevelAll ChannelAssistanceLevel = iota
-	ChannelAssistanceLevelAllow
-	ChannelAssistanceLevelBlock
-	ChannelAssistanceLevelNone
+	ChannelAccessLevelAll ChannelAccessLevel = iota
+	ChannelAccessLevelAllow
+	ChannelAccessLevelBlock
+	ChannelAccessLevelNone
 )
 
-type UserAssistanceLevel int
+type UserAccessLevel int
 
 const (
-	UserAssistanceLevelAll UserAssistanceLevel = iota
-	UserAssistanceLevelAllow
-	UserAssistanceLevelBlock
-	UserAssistanceLevelNone
+	UserAccessLevelAll UserAccessLevel = iota
+	UserAccessLevelAllow
+	UserAccessLevelBlock
+	UserAccessLevelNone
 )
 
 type BotConfig struct {
-	ID                     string                 `json:"id"`
-	Name                   string                 `json:"name"`
-	DisplayName            string                 `json:"displayName"`
-	CustomInstructions     string                 `json:"customInstructions"`
-	Service                ServiceConfig          `json:"service"`
-	EnableVision           bool                   `json:"enableVision"`
-	DisableTools           bool                   `json:"disableTools"`
-	ChannelAssistanceLevel ChannelAssistanceLevel `json:"channelAssistanceLevel"`
-	ChannelIDs             []string               `json:"channelIDs"`
-	UserAssistanceLevel    UserAssistanceLevel    `json:"userAssistanceLevel"`
-	UserIDs                []string               `json:"userIDs"`
+	ID                 string             `json:"id"`
+	Name               string             `json:"name"`
+	DisplayName        string             `json:"displayName"`
+	CustomInstructions string             `json:"customInstructions"`
+	Service            ServiceConfig      `json:"service"`
+	EnableVision       bool               `json:"enableVision"`
+	DisableTools       bool               `json:"disableTools"`
+	ChannelAccessLevel ChannelAccessLevel `json:"channelAccessLevel"`
+	ChannelIDs         []string           `json:"channelIDs"`
+	UserAccessLevel    UserAccessLevel    `json:"userAccessLevel"`
+	UserIDs            []string           `json:"userIDs"`
 }
 
 func (c *BotConfig) IsValid() bool {

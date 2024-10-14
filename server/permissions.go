@@ -25,20 +25,20 @@ func (p *Plugin) checkUsageRestrictions(requestingUserID string, bot *Bot, chann
 }
 
 func (p *Plugin) checkUsageRestrictionsForChannel(bot *Bot, channel *model.Channel) error {
-	switch bot.cfg.ChannelAssistanceLevel {
-	case ai.ChannelAssistanceLevelAll:
+	switch bot.cfg.ChannelAccessLevel {
+	case ai.ChannelAccessLevelAll:
 		return nil
-	case ai.ChannelAssistanceLevelAllow:
+	case ai.ChannelAccessLevelAllow:
 		if !slices.Contains(bot.cfg.ChannelIDs, channel.Id) {
 			return fmt.Errorf("channel not allowed: %w", ErrUsageRestriction)
 		}
 		return nil
-	case ai.ChannelAssistanceLevelBlock:
+	case ai.ChannelAccessLevelBlock:
 		if slices.Contains(bot.cfg.ChannelIDs, channel.Id) {
 			return fmt.Errorf("channel blocked: %w", ErrUsageRestriction)
 		}
 		return nil
-	case ai.ChannelAssistanceLevelNone:
+	case ai.ChannelAccessLevelNone:
 		return fmt.Errorf("channel usage block for bot: %w", ErrUsageRestriction)
 	}
 
@@ -46,20 +46,20 @@ func (p *Plugin) checkUsageRestrictionsForChannel(bot *Bot, channel *model.Chann
 }
 
 func (p *Plugin) checkUsageRestrictionsForUser(bot *Bot, requestingUserID string) error {
-	switch bot.cfg.UserAssistanceLevel {
-	case ai.UserAssistanceLevelAll:
+	switch bot.cfg.UserAccessLevel {
+	case ai.UserAccessLevelAll:
 		return nil
-	case ai.UserAssistanceLevelAllow:
+	case ai.UserAccessLevelAllow:
 		if !slices.Contains(bot.cfg.UserIDs, requestingUserID) {
 			return fmt.Errorf("user not allowed: %w", ErrUsageRestriction)
 		}
 		return nil
-	case ai.UserAssistanceLevelBlock:
+	case ai.UserAccessLevelBlock:
 		if slices.Contains(bot.cfg.UserIDs, requestingUserID) {
 			return fmt.Errorf("user blocked: %w", ErrUsageRestriction)
 		}
 		return nil
-	case ai.UserAssistanceLevelNone:
+	case ai.UserAccessLevelNone:
 		return fmt.Errorf("user usage block for bot: %w", ErrUsageRestriction)
 	}
 
