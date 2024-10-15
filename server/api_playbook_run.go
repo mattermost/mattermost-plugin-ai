@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"slices"
 
 	"github.com/gin-gonic/gin"
+	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/pkg/errors"
 )
@@ -56,6 +58,7 @@ func (p *Plugin) handleGenerateStatus(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	playbookRun := c.MustGet(ContextPlaybookRunKey).(PlaybookRun)
 	channelID := playbookRun.ChannelID
+	bot := c.MustGet(ContextBotKey).(*Bot)
 
 	if !p.pluginAPI.User.HasPermissionToChannel(userID, channelID, model.PermissionReadChannel) {
 		c.AbortWithError(http.StatusForbidden, errors.New("user doesn't have permission to read channel"))
@@ -85,33 +88,34 @@ func (p *Plugin) handleGenerateStatus(c *gin.Context) {
 	})
 	fomattedPosts := formatThread(postsData)
 
-	context := p.MakeConversationContext(user, nil, nil)
-	context.PromptParameters = map[string]string{
+	ccontext := p.MakeConversationContext(bot, user, nil, nil)
+	ccontext.PromptParameters = map[string]string{
 		"Posts":    fomattedPosts,
 		"Template": playbookRun.StatusUpdateTemplate,
 		"RunName":  playbookRun.Name,
 	}
 
-	prompt, err := p.prompts.ChatCompletion("playbook_run_status", context)
+	prompt, err := p.prompts.ChatCompletion("playbook_run_status", ccontext, ai.NewNoTools())
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "failed to generate prompt"))
 		return
 	}
 
-	resultStream, err := p.getLLM().ChatCompletion(prompt)
+	resultStream, err := p.getLLM(bot.cfg).ChatCompletion(prompt)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "failed to get completion"))
 		return
 	}
 
+	locale := *p.API.GetConfig().LocalizationSettings.DefaultServerLocale
 	// Hack into current streaming solution. TODO: generalize this
-	p.streamResultToPost(resultStream, &model.Post{
+	p.streamResultToPost(context.Background(), resultStream, &model.Post{
 		ChannelId: channelID,
 		Id:        "playbooks_post_update",
 		Message:   "",
-	})
+	}, locale)
 
-	//result := resultStream.ReadAll()
+	// result := resultStream.ReadAll()
 
-	//c.JSON(http.StatusOK, result)
+	// c.JSON(http.StatusOK, result)
 }

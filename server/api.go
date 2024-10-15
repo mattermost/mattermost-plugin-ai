@@ -47,7 +47,7 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	channelRouter.Use(p.channelAuthorizationRequired)
 	channelRouter.POST("/since", p.handleSince)
 
-	playbookRunRouter := router.Group("/playbook_run/:playbookrunid")
+	playbookRunRouter := botRequiredRouter.Group("/playbook_run/:playbookrunid")
 	playbookRunRouter.Use(p.playbookRunAuthorizationRequired)
 	playbookRunRouter.GET("/generate_status", p.handleGenerateStatus)
 
