@@ -477,15 +477,22 @@ func (s *OpenAI) TokenLimit() int {
 	}
 
 	switch {
-	case strings.HasPrefix(s.defaultModel, "gpt-4-32k"):
-		return 32768
+	case strings.HasPrefix(s.defaultModel, "gpt-4o"),
+		strings.HasPrefix(s.defaultModel, "o1-preview"),
+		strings.HasPrefix(s.defaultModel, "o1-mini"),
+		strings.HasPrefix(s.defaultModel, "gpt-4-turbo"),
+		strings.HasPrefix(s.defaultModel, "gpt-4-0125-preview"),
+		strings.HasPrefix(s.defaultModel, "gpt-4-1106-preview"):
+		return 128000
 	case strings.HasPrefix(s.defaultModel, "gpt-4"):
 		return 8192
-	case strings.HasPrefix(s.defaultModel, "gpt-3.5-turbo-16k"):
-		return 16384
-	case strings.HasPrefix(s.defaultModel, "gpt-3.5-turbo"):
+	case strings.HasPrefix(s.defaultModel, "gpt-3.5-turbo"),
+		s.defaultModel == "gpt-3.5-turbo-0125",
+		s.defaultModel == "gpt-3.5-turbo-1106":
+		return 16385
+	case s.defaultModel == "gpt-3.5-turbo-instruct":
 		return 4096
 	}
 
-	return 4096
+	return 128000 // Default fallback
 }
