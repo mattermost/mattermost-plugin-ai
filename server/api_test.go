@@ -34,7 +34,7 @@ func TestPostRouter(t *testing.T) {
 			envSetup       func(e *TestEnvironment)
 		}{
 			"test no permission to channel": {
-				request:        httptest.NewRequest("POST", url, nil),
+				request:        httptest.NewRequest(http.MethodPost, url, nil),
 				expectedStatus: http.StatusForbidden,
 				config: Config{
 					EnableUseRestrictions: false,
@@ -49,7 +49,7 @@ func TestPostRouter(t *testing.T) {
 				},
 			},
 			"test user not allowed": {
-				request:        httptest.NewRequest("POST", url, nil),
+				request:        httptest.NewRequest(http.MethodPost, url, nil),
 				expectedStatus: http.StatusForbidden,
 				config: Config{
 					EnableUseRestrictions: true,
@@ -66,7 +66,7 @@ func TestPostRouter(t *testing.T) {
 				},
 			},
 			"not allowed team": {
-				request:        httptest.NewRequest("POST", url, nil),
+				request:        httptest.NewRequest(http.MethodPost, url, nil),
 				expectedStatus: http.StatusForbidden,
 				config: Config{
 					EnableUseRestrictions: true,
@@ -82,7 +82,7 @@ func TestPostRouter(t *testing.T) {
 				},
 			},
 			"not on private channels": {
-				request:        httptest.NewRequest("POST", url, nil),
+				request:        httptest.NewRequest(http.MethodPost, url, nil),
 				expectedStatus: http.StatusForbidden,
 				config: Config{
 					EnableUseRestrictions: true,
@@ -98,7 +98,7 @@ func TestPostRouter(t *testing.T) {
 				},
 			},
 			"not on dms": {
-				request:        httptest.NewRequest("POST", url, nil),
+				request:        httptest.NewRequest(http.MethodPost, url, nil),
 				expectedStatus: http.StatusForbidden,
 				config: Config{
 					EnableUseRestrictions: true,
@@ -118,6 +118,7 @@ func TestPostRouter(t *testing.T) {
 				e := SetupTestEnvironment(t)
 				defer e.Cleanup(t)
 
+				test.config.DefaultBotName = "ai"
 				e.plugin.setConfiguration(makeConfig(test.config))
 
 				e.mockAPI.On("GetPost", "postid").Return(&model.Post{
@@ -151,7 +152,7 @@ func TestAdminRouter(t *testing.T) {
 			envSetup       func(e *TestEnvironment)
 		}{
 			"only admins": {
-				request:        httptest.NewRequest("GET", url, nil),
+				request:        httptest.NewRequest(http.MethodGet, url, nil),
 				expectedStatus: http.StatusForbidden,
 				config: Config{
 					EnableUseRestrictions: false,
@@ -197,7 +198,7 @@ func TestChannelRouter(t *testing.T) {
 			envSetup       func(e *TestEnvironment)
 		}{
 			"test no permission to channel": {
-				request:        httptest.NewRequest("POST", url, nil),
+				request:        httptest.NewRequest(http.MethodPost, url, nil),
 				expectedStatus: http.StatusForbidden,
 				config: Config{
 					EnableUseRestrictions: false,
@@ -212,7 +213,7 @@ func TestChannelRouter(t *testing.T) {
 				},
 			},
 			"test user not allowed": {
-				request:        httptest.NewRequest("POST", url, nil),
+				request:        httptest.NewRequest(http.MethodPost, url, nil),
 				expectedStatus: http.StatusForbidden,
 				config: Config{
 					EnableUseRestrictions: true,
@@ -229,7 +230,7 @@ func TestChannelRouter(t *testing.T) {
 				},
 			},
 			"not allowed team": {
-				request:        httptest.NewRequest("POST", url, nil),
+				request:        httptest.NewRequest(http.MethodPost, url, nil),
 				expectedStatus: http.StatusForbidden,
 				config: Config{
 					EnableUseRestrictions: true,
@@ -245,7 +246,7 @@ func TestChannelRouter(t *testing.T) {
 				},
 			},
 			"not on private channels": {
-				request:        httptest.NewRequest("POST", url, nil),
+				request:        httptest.NewRequest(http.MethodPost, url, nil),
 				expectedStatus: http.StatusForbidden,
 				config: Config{
 					EnableUseRestrictions: true,
@@ -261,7 +262,7 @@ func TestChannelRouter(t *testing.T) {
 				},
 			},
 			"not on dms": {
-				request:        httptest.NewRequest("POST", url, nil),
+				request:        httptest.NewRequest(http.MethodPost, url, nil),
 				expectedStatus: http.StatusForbidden,
 				config: Config{
 					EnableUseRestrictions: true,
@@ -281,6 +282,7 @@ func TestChannelRouter(t *testing.T) {
 				e := SetupTestEnvironment(t)
 				defer e.Cleanup(t)
 
+				test.config.DefaultBotName = "ai"
 				e.plugin.setConfiguration(makeConfig(test.config))
 
 				e.mockAPI.On("LogError", mock.Anything).Maybe()

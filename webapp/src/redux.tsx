@@ -4,19 +4,24 @@ import {GlobalState} from '@mattermost/types/lib/store';
 import {makeCallsPostButtonClickedHandler} from './calls_button';
 import {makePlaybookRunStatusUpdateHandler} from './playbooks_button';
 import PostEventListener from './websocket';
+import manifest from './manifest';
 
 type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
 
 const CallsClickHandler = 'calls_post_button_clicked_handler';
 const PlaybooksRunStatusUpdateClickHandler = 'playbooks_run_status_update_click_handler';
+export const BotsHandler = manifest.id + '_bots';
 
 export async function setupRedux(registry: any, store: WebappStore, postEventListener: PostEventListener) {
     const reducer = combineReducers({
         callsPostButtonClickedTranscription,
         aiStatusUpdateClicked,
+        bots,
+        botChannelId,
+        selectedPostId,
     });
-
     registry.registerReducer(reducer);
+
     store.dispatch({
         type: CallsClickHandler as any,
         handler: makeCallsPostButtonClickedHandler(store.dispatch),
@@ -26,7 +31,7 @@ export async function setupRedux(registry: any, store: WebappStore, postEventLis
         handler: makePlaybookRunStatusUpdateHandler(store.dispatch, postEventListener),
     });
 
-    // This is a workaround for a bug where the the RHS was inaccessable to
+    // This is a workaround for a bug where the RHS was inaccessible to
     // users that where not system admins. This is unable to be fixed properly
     // because the Webapp does not export the AdvancedCreateComment directly.
     // #120 filed to remove this workaround.
@@ -59,6 +64,33 @@ function aiStatusUpdateClicked(state = false, action: any) {
     switch (action.type) {
     case PlaybooksRunStatusUpdateClickHandler:
         return action.handler || false;
+    default:
+        return state;
+    }
+}
+
+function bots(state = null, action: any) {
+    switch (action.type) {
+    case BotsHandler:
+        return action.bots;
+    default:
+        return state;
+    }
+}
+
+function botChannelId(state = '', action: any) {
+    switch (action.type) {
+    case 'SET_AI_BOT_CHANNEL':
+        return action.botChannelId;
+    default:
+        return state;
+    }
+}
+
+function selectedPostId(state = '', action: any) {
+    switch (action.type) {
+    case 'SELECT_AI_POST':
+        return action.postId;
     default:
         return state;
     }

@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"strings"
 
+	"errors"
+
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost/server/public/model"
-	"github.com/pkg/errors"
 )
 
 const (
@@ -15,9 +16,9 @@ const (
 	RespondingToProp   = "responding_to"
 )
 
-func (p *Plugin) processUserRequestToBot(context ai.ConversationContext) error {
+func (p *Plugin) processUserRequestToBot(bot *Bot, context ai.ConversationContext) error {
 	if context.Post.RootId == "" {
-		return p.newConversation(context)
+		return p.newConversation(bot, context)
 	}
 
 	threadData, err := p.getThreadAndMeta(context.Post.RootId)
@@ -28,7 +29,7 @@ func (p *Plugin) processUserRequestToBot(context ai.ConversationContext) error {
 	// Cutoff the thread at the post we are responding to avoid races.
 	threadData.cutoffAtPostID(context.Post.Id)
 
-	result, err := p.continueConversation(threadData, context)
+	result, err := p.continueConversation(bot, threadData, context)
 	if err != nil {
 		return err
 	}
@@ -38,21 +39,21 @@ func (p *Plugin) processUserRequestToBot(context ai.ConversationContext) error {
 		RootId:    context.Post.RootId,
 	}
 	responsePost.AddProp(RespondingToProp, context.Post.Id)
-	if err := p.streamResultToNewPost(context.RequestingUser.Id, result, responsePost); err != nil {
+	if err := p.streamResultToNewPost(bot.mmBot.UserId, context.RequestingUser.Id, result, responsePost); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (p *Plugin) newConversation(context ai.ConversationContext) error {
-	conversation, err := p.prompts.ChatCompletion(ai.PromptDirectMessageQuestion, context)
+func (p *Plugin) newConversation(bot *Bot, context ai.ConversationContext) error {
+	conversation, err := p.prompts.ChatCompletion(ai.PromptDirectMessageQuestion, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
 	if err != nil {
 		return err
 	}
-	conversation.AddUserPost(context.Post)
+	conversation.AddPost(p.PostToAIPost(bot, context.Post))
 
-	result, err := p.getLLM().ChatCompletion(conversation)
+	result, err := p.getLLM(bot.cfg).ChatCompletion(conversation)
 	if err != nil {
 		return err
 	}
@@ -61,13 +62,13 @@ func (p *Plugin) newConversation(context ai.ConversationContext) error {
 		ChannelId: context.Channel.Id,
 		RootId:    context.Post.Id,
 	}
-	if err := p.streamResultToNewPost(context.RequestingUser.Id, result, responsePost); err != nil {
+	if err := p.streamResultToNewPost(bot.mmBot.UserId, context.RequestingUser.Id, result, responsePost); err != nil {
 		return err
 	}
 
 	go func() {
 		request := "Write a short title for the following request. Include only the title and nothing else, no quotations. Request:\n" + context.Post.Message
-		if err := p.generateTitle(request, context.Post.Id); err != nil {
+		if err := p.generateTitle(bot, request, context.Post.Id); err != nil {
 			p.API.LogError("Failed to generate title", "error", err.Error())
 			return
 		}
@@ -76,29 +77,29 @@ func (p *Plugin) newConversation(context ai.ConversationContext) error {
 	return nil
 }
 
-func (p *Plugin) generateTitle(request string, threadRootID string) error {
+func (p *Plugin) generateTitle(bot *Bot, request string, threadRootID string) error {
 	titleRequest := ai.BotConversation{
 		Posts: []ai.Post{{Role: ai.PostRoleUser, Message: request}},
 	}
-	conversationTitle, err := p.getLLM().ChatCompletionNoStream(titleRequest, ai.WithMaxTokens(25))
+	conversationTitle, err := p.getLLM(bot.cfg).ChatCompletionNoStream(titleRequest, ai.WithMaxGeneratedTokens(25))
 	if err != nil {
-		return errors.Wrap(err, "failed to get title")
+		return fmt.Errorf("failed to get title: %w", err)
 	}
 
 	conversationTitle = strings.Trim(conversationTitle, "\n \"'")
 
 	if err := p.saveTitle(threadRootID, conversationTitle); err != nil {
-		return errors.Wrap(err, "failed to save title")
+		return fmt.Errorf("failed to save title: %w", err)
 	}
 
 	return nil
 }
 
-func (p *Plugin) continueConversation(threadData *ThreadData, context ai.ConversationContext) (*ai.TextStreamResult, error) {
+func (p *Plugin) continueConversation(bot *Bot, threadData *ThreadData, context ai.ConversationContext) (*ai.TextStreamResult, error) {
 	// Special handing for threads started by the bot in response to a summarization request.
 	var result *ai.TextStreamResult
 	originalThreadID, ok := threadData.Posts[0].GetProp(ThreadIDProp).(string)
-	if ok && originalThreadID != "" && threadData.Posts[0].UserId == p.botid {
+	if ok && originalThreadID != "" && threadData.Posts[0].UserId == bot.mmBot.UserId {
 		threadPost, err := p.pluginAPI.Post.GetPost(originalThreadID)
 		if err != nil {
 			return nil, err
@@ -110,29 +111,30 @@ func (p *Plugin) continueConversation(threadData *ThreadData, context ai.Convers
 
 		if !p.pluginAPI.User.HasPermissionToChannel(context.Post.UserId, threadChannel.Id, model.PermissionReadChannel) ||
 			p.checkUsageRestrictions(context.Post.UserId, threadChannel) != nil {
+			T := i18nLocalizerFunc(p.i18n, context.RequestingUser.Locale)
 			responsePost := &model.Post{
 				ChannelId: context.Channel.Id,
 				RootId:    context.Post.RootId,
-				Message:   "Sorry, you no longer have access to the original thread.",
+				Message:   T("copilot.no_longer_access_error", "Sorry, you no longer have access to the original thread."),
 			}
-			if err = p.botCreatePost(context.RequestingUser.Id, responsePost); err != nil {
+			if err = p.botCreatePost(bot.mmBot.UserId, context.RequestingUser.Id, responsePost); err != nil {
 				return nil, err
 			}
 			return nil, errors.New("user no longer has access to original thread")
 		}
 
-		result, err = p.continueThreadConversation(threadData, originalThreadID, context)
+		result, err = p.continueThreadConversation(bot, threadData, originalThreadID, context)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		prompt, err := p.prompts.ChatCompletion(ai.PromptDirectMessageQuestion, context)
+		prompt, err := p.prompts.ChatCompletion(ai.PromptDirectMessageQuestion, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
 		if err != nil {
 			return nil, err
 		}
-		prompt.AppendConversation(ai.ThreadToBotConversation(p.botid, threadData.Posts))
+		prompt.AppendConversation(p.ThreadToBotConversation(bot, threadData.Posts))
 
-		result, err = p.getLLM().ChatCompletion(prompt)
+		result, err = p.getLLM(bot.cfg).ChatCompletion(prompt)
 		if err != nil {
 			return nil, err
 		}
@@ -141,7 +143,7 @@ func (p *Plugin) continueConversation(threadData *ThreadData, context ai.Convers
 	return result, nil
 }
 
-func (p *Plugin) continueThreadConversation(questionThreadData *ThreadData, originalThreadID string, context ai.ConversationContext) (*ai.TextStreamResult, error) {
+func (p *Plugin) continueThreadConversation(bot *Bot, questionThreadData *ThreadData, originalThreadID string, context ai.ConversationContext) (*ai.TextStreamResult, error) {
 	originalThreadData, err := p.getThreadAndMeta(originalThreadID)
 	if err != nil {
 		return nil, err
@@ -149,13 +151,13 @@ func (p *Plugin) continueThreadConversation(questionThreadData *ThreadData, orig
 	originalThread := formatThread(originalThreadData)
 
 	context.PromptParameters = map[string]string{"Thread": originalThread}
-	prompt, err := p.prompts.ChatCompletion(ai.PromptSummarizeThread, context)
+	prompt, err := p.prompts.ChatCompletion(ai.PromptSummarizeThread, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
 	if err != nil {
 		return nil, err
 	}
-	prompt.AppendConversation(ai.ThreadToBotConversation(p.botid, questionThreadData.Posts))
+	prompt.AppendConversation(p.ThreadToBotConversation(bot, questionThreadData.Posts))
 
-	result, err := p.getLLM().ChatCompletion(prompt)
+	result, err := p.getLLM(bot.cfg).ChatCompletion(prompt)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +168,7 @@ func (p *Plugin) continueThreadConversation(questionThreadData *ThreadData, orig
 const ThreadIDProp = "referenced_thread"
 
 // DM the user with a standard message. Run the inferance
-func (p *Plugin) summarizePost(postIDToSummarize string, context ai.ConversationContext) (*ai.TextStreamResult, error) {
+func (p *Plugin) summarizePost(bot *Bot, postIDToSummarize string, context ai.ConversationContext) (*ai.TextStreamResult, error) {
 	threadData, err := p.getThreadAndMeta(postIDToSummarize)
 	if err != nil {
 		return nil, err
@@ -175,11 +177,11 @@ func (p *Plugin) summarizePost(postIDToSummarize string, context ai.Conversation
 	formattedThread := formatThread(threadData)
 
 	context.PromptParameters = map[string]string{"Thread": formattedThread}
-	prompt, err := p.prompts.ChatCompletion(ai.PromptSummarizeThread, context)
+	prompt, err := p.prompts.ChatCompletion(ai.PromptSummarizeThread, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
 	if err != nil {
 		return nil, err
 	}
-	summaryStream, err := p.getLLM().ChatCompletion(prompt)
+	summaryStream, err := p.getLLM(bot.cfg).ChatCompletion(prompt)
 	if err != nil {
 		return nil, err
 	}
@@ -187,69 +189,33 @@ func (p *Plugin) summarizePost(postIDToSummarize string, context ai.Conversation
 	return summaryStream, nil
 }
 
-func summaryPostMessage(postIDToSummarize string, siteURL string) string {
-	return fmt.Sprintf("Sure, I will summarize this thread: %s/_redirect/pl/%s\n", siteURL, postIDToSummarize)
+func (p *Plugin) summaryPostMessage(locale string, postIDToSummarize string, siteURL string) string {
+	T := i18nLocalizerFunc(p.i18n, locale)
+	return T("copilot.summarize_thread", "Sure, I will summarize this thread: %s/_redirect/pl/%s\n", siteURL, postIDToSummarize)
 }
 
-func (p *Plugin) makeSummaryPost(postIDToSummarize string) *model.Post {
+func (p *Plugin) makeSummaryPost(locale string, postIDToSummarize string) *model.Post {
 	siteURL := p.API.GetConfig().ServiceSettings.SiteURL
 	post := &model.Post{
-		Message: summaryPostMessage(postIDToSummarize, *siteURL),
+		Message: p.summaryPostMessage(locale, postIDToSummarize, *siteURL),
 	}
 	post.AddProp(ThreadIDProp, postIDToSummarize)
 
 	return post
 }
 
-func (p *Plugin) startNewSummaryThread(postIDToSummarize string, context ai.ConversationContext) (*model.Post, error) {
-	summaryStream, err := p.summarizePost(postIDToSummarize, context)
+func (p *Plugin) startNewSummaryThread(bot *Bot, postIDToSummarize string, context ai.ConversationContext) (*model.Post, error) {
+	summaryStream, err := p.summarizePost(bot, postIDToSummarize, context)
 	if err != nil {
 		return nil, err
 	}
 
-	post := p.makeSummaryPost(postIDToSummarize)
-	if err := p.streamResultToNewDM(summaryStream, context.RequestingUser.Id, post); err != nil {
+	post := p.makeSummaryPost(context.RequestingUser.Locale, postIDToSummarize)
+	if err := p.streamResultToNewDM(bot.mmBot.UserId, summaryStream, context.RequestingUser.Id, post); err != nil {
 		return nil, err
 	}
 
-	if err := p.saveTitle(post.Id, "Thread Summary"); err != nil {
-		return nil, errors.Wrap(err, "failed to save title")
-	}
+	p.saveTitleAsync(post.Id, "Thread Summary")
 
 	return post, nil
-}
-
-func (p *Plugin) selectEmoji(postToReact *model.Post, context ai.ConversationContext) error {
-	context.PromptParameters = map[string]string{"Message": postToReact.Message}
-	prompt, err := p.prompts.ChatCompletion(ai.PromptEmojiSelect, context)
-	if err != nil {
-		return err
-	}
-
-	emojiName, err := p.getLLM().ChatCompletionNoStream(prompt, ai.WithMaxTokens(25))
-	if err != nil {
-		return err
-	}
-
-	// Do some emoji post processing to hopefully make this an actual emoji.
-	emojiName = strings.Trim(strings.TrimSpace(emojiName), ":")
-
-	if _, found := model.GetSystemEmojiId(emojiName); !found {
-		p.pluginAPI.Post.AddReaction(&model.Reaction{
-			EmojiName: "large_red_square",
-			UserId:    p.botid,
-			PostId:    postToReact.Id,
-		})
-		return errors.New("LLM returned somthing other than emoji: " + emojiName)
-	}
-
-	if err := p.pluginAPI.Post.AddReaction(&model.Reaction{
-		EmojiName: emojiName,
-		UserId:    p.botid,
-		PostId:    postToReact.Id,
-	}); err != nil {
-		return err
-	}
-
-	return nil
 }

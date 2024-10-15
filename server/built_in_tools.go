@@ -5,12 +5,19 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
+	"strings"
+	"time"
 
+	"errors"
+
+	"github.com/andygrunwald/go-jira"
 	"github.com/google/go-github/v41/github"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost/server/public/model"
-	"github.com/pkg/errors"
+	"github.com/mattermost/mattermost/server/public/pluginapi"
+	"github.com/mattermost/mattermost/server/public/shared/httpservice"
 )
 
 type LookupMattermostUserArgs struct {
@@ -21,7 +28,7 @@ func (p *Plugin) toolResolveLookupMattermostUser(context ai.ConversationContext,
 	var args LookupMattermostUserArgs
 	err := argsGetter(&args)
 	if err != nil {
-		return "", errors.Wrap(err, "failed to get arguments for tool LookupMattermostUser")
+		return "invalid parameters to function", fmt.Errorf("failed to get arguments for tool LookupMattermostUser: %w", err)
 	}
 
 	if !model.IsValidUsername(args.Username) {
@@ -30,17 +37,20 @@ func (p *Plugin) toolResolveLookupMattermostUser(context ai.ConversationContext,
 
 	// Fail for guests.
 	if !p.pluginAPI.User.HasPermissionTo(context.RequestingUser.Id, model.PermissionViewMembers) {
-		return "", errors.New("user doesn't have permission to lookup users")
+		return "user doesn't have permissions", errors.New("user doesn't have permission to lookup users")
 	}
 
 	user, err := p.pluginAPI.User.GetByUsername(args.Username)
 	if err != nil {
-		return "", errors.Wrap(err, "failed to lookup user")
+		if errors.Is(err, pluginapi.ErrNotFound) {
+			return "user not found", nil
+		}
+		return "failed to lookup user", fmt.Errorf("failed to lookup user: %w", err)
 	}
 
 	userStatus, err := p.pluginAPI.User.GetStatus(user.Id)
 	if err != nil {
-		return "", errors.Wrap(err, "failed to get user status")
+		return "failed to lookup user", fmt.Errorf("failed to get user status: %w", err)
 	}
 
 	result := fmt.Sprintf("Username: %s", user.Username)
@@ -80,7 +90,7 @@ func (p *Plugin) toolResolveGetChannelPosts(context ai.ConversationContext, args
 	var args GetChannelPosts
 	err := argsGetter(&args)
 	if err != nil {
-		return "invalid parameters to function", errors.Wrap(err, "failed to get arguments for tool GetChannelPosts")
+		return "invalid parameters to function", fmt.Errorf("failed to get arguments for tool GetChannelPosts: %w", err)
 	}
 
 	if !model.IsValidChannelIdentifier(args.ChannelName) {
@@ -92,17 +102,17 @@ func (p *Plugin) toolResolveGetChannelPosts(context ai.ConversationContext, args
 	}
 
 	if context.Channel == nil || context.Channel.TeamId == "" {
-		//TODO: support DMs. This will require some way to disabiguate between channels with the same name on different teams.
+		//TODO: support DMs. This will require some way to disambiguate between channels with the same name on different teams.
 		return "Error: Ambiguous channel lookup. Unable to what channel the user is referring to because DMs do not belong to specific teams. Tell the user to ask outside a DM channel.", errors.New("ambiguous channel lookup")
 	}
 
 	channel, err := p.pluginAPI.Channel.GetByName(context.Channel.TeamId, args.ChannelName, false)
 	if err != nil {
-		return "internal failure", errors.Wrap(err, "failed to lookup channel by name, may not exist")
+		return "internal failure", fmt.Errorf("failed to lookup channel by name, may not exist: %w", err)
 	}
 
 	if err = p.checkUsageRestrictionsForChannel(channel); err != nil {
-		return "user asked for a channel that is blocked by usage restrictions", errors.Wrap(err, "usage restrictions during channel lookup")
+		return "user asked for a channel that is blocked by usage restrictions", fmt.Errorf("usage restrictions during channel lookup: %w", err)
 	}
 
 	if !p.pluginAPI.User.HasPermissionToChannel(context.RequestingUser.Id, channel.Id, model.PermissionReadChannel) {
@@ -111,12 +121,12 @@ func (p *Plugin) toolResolveGetChannelPosts(context ai.ConversationContext, args
 
 	posts, err := p.pluginAPI.Post.GetPostsForChannel(channel.Id, 0, args.NumberPosts)
 	if err != nil {
-		return "internal failure", errors.Wrap(err, "failed to get posts for channel")
+		return "internal failure", fmt.Errorf("failed to get posts for channel: %w", err)
 	}
 
 	postsData, err := p.getMetadataForPosts(posts)
 	if err != nil {
-		return "internal failure", errors.Wrap(err, "failed to get metadata for posts")
+		return "internal failure", fmt.Errorf("failed to get metadata for posts: %w", err)
 	}
 
 	return formatThread(postsData), nil
@@ -128,7 +138,7 @@ type GetGithubIssueArgs struct {
 	Number    int    `jsonschema_description:"The issue number to get. Example: '1'"`
 }
 
-func formatIssue(issue *github.Issue) string {
+func formatGithubIssue(issue *github.Issue) string {
 	return fmt.Sprintf("Title: %s\nNumber: %d\nState: %s\nSubmitter: %s\nIs Pull Request: %v\nBody: %s", issue.GetTitle(), issue.GetNumber(), issue.GetState(), issue.User.GetLogin(), issue.IsPullRequest(), issue.GetBody())
 }
 
@@ -138,15 +148,15 @@ func (p *Plugin) toolGetGithubIssue(context ai.ConversationContext, argsGetter a
 	var args GetGithubIssueArgs
 	err := argsGetter(&args)
 	if err != nil {
-		return "invalid parameters to function", errors.Wrap(err, "failed to get arguments for tool GetGithubIssues")
+		return "invalid parameters to function", fmt.Errorf("failed to get arguments for tool GetGithubIssues: %w", err)
 	}
 
-	// Fail for over lengh repo ownder or name.
+	// Fail for over length repo owner or name.
 	if len(args.RepoOwner) > 39 || len(args.RepoName) > 100 {
 		return "invalid parameters to function", errors.New("invalid repo owner or repo name")
 	}
 
-	// Fail if repo ownder or repo name contain invalid characters.
+	// Fail if repo owner or repo name contain invalid characters.
 	if !validGithubRepoName.MatchString(args.RepoOwner) || !validGithubRepoName.MatchString(args.RepoName) {
 		return "invalid parameters to function", errors.New("invalid repo owner or repo name")
 	}
@@ -156,9 +166,16 @@ func (p *Plugin) toolGetGithubIssue(context ai.ConversationContext, argsGetter a
 		return "invalid parameters to function", errors.New("invalid issue number")
 	}
 
-	req, err := http.NewRequest("GET", fmt.Sprintf("/github/api/v1/issue?owner=%s&repo=%s&number=%d", args.RepoOwner, args.RepoName, args.Number), nil)
+	req, err := http.NewRequest(http.MethodGet,
+		fmt.Sprintf("/github/api/v1/issue?owner=%s&repo=%s&number=%d",
+			url.QueryEscape(args.RepoOwner),
+			url.QueryEscape(args.RepoName),
+			args.Number,
+		),
+		nil,
+	)
 	if err != nil {
-		return "internal failure", errors.Wrap(err, "failed to create request")
+		return "internal failure", fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Mattermost-User-ID", context.RequestingUser.Id)
 
@@ -169,16 +186,213 @@ func (p *Plugin) toolGetGithubIssue(context ai.ConversationContext, argsGetter a
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		result, _ := io.ReadAll(resp.Body)
-		return "Error: unable to get issue, internal failure", errors.Errorf("failed to get issue, status code: %v\n body: %v", resp.Status, string(result))
+		return "Error: unable to get issue, internal failure", fmt.Errorf("failed to get issue, status code: %v\n body: %v", resp.Status, string(result))
 	}
 
 	var issue github.Issue
 	err = json.NewDecoder(resp.Body).Decode(&issue)
 	if err != nil {
-		return "internal failure", errors.Wrap(err, "failed to decode response")
+		return "internal failure", fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	return formatIssue(&issue), nil
+	return formatGithubIssue(&issue), nil
+}
+
+type GetJiraIssueArgs struct {
+	InstanceURL string   `jsonschema_description:"The URL of the Jira instance to get the issue from. Example: 'https://mattermost.atlassian.net'"`
+	IssueKeys   []string `jsonschema_description:"The issue keys of the Jira issues to get. Example: 'MM-1234'"`
+}
+
+var validJiraIssueKey = regexp.MustCompile(`^([[:alnum:]]+)-([[:digit:]]+)$`)
+
+func formatJiraIssue(issue *jira.Issue) string {
+	result := strings.Builder{}
+	result.WriteString("Issue Key: ")
+	result.WriteString(issue.Key)
+	result.WriteRune('\n')
+
+	if issue.Fields != nil {
+		result.WriteString("Summary: ")
+		result.WriteString(issue.Fields.Summary)
+		result.WriteRune('\n')
+
+		result.WriteString("Description: ")
+		result.WriteString(issue.Fields.Description)
+		result.WriteRune('\n')
+
+		result.WriteString("Status: ")
+		if issue.Fields.Status != nil {
+			result.WriteString(issue.Fields.Status.Name)
+		} else {
+			result.WriteString("Unknown")
+		}
+		result.WriteRune('\n')
+
+		result.WriteString("Assignee: ")
+		if issue.Fields.Assignee != nil {
+			result.WriteString(issue.Fields.Assignee.DisplayName)
+		} else {
+			result.WriteString("Unassigned")
+		}
+		result.WriteRune('\n')
+
+		result.WriteString("Created: ")
+		result.WriteString(time.Time(issue.Fields.Created).Format(time.RFC1123))
+		result.WriteRune('\n')
+
+		result.WriteString("Updated: ")
+		result.WriteString(time.Time(issue.Fields.Updated).Format(time.RFC1123))
+		result.WriteRune('\n')
+
+		if issue.Fields.Type.Name != "" {
+			result.WriteString("Type: ")
+			result.WriteString(issue.Fields.Type.Name)
+			result.WriteRune('\n')
+		}
+
+		if issue.Fields.Labels != nil {
+			result.WriteString("Labels: ")
+			result.WriteString(strings.Join(issue.Fields.Labels, ", "))
+			result.WriteRune('\n')
+		}
+
+		if issue.Fields.Reporter != nil {
+			result.WriteString("Reporter: ")
+			result.WriteString(issue.Fields.Reporter.DisplayName)
+			result.WriteRune('\n')
+		} else if issue.Fields.Creator != nil {
+			result.WriteString("Creator: ")
+			result.WriteString(issue.Fields.Creator.DisplayName)
+			result.WriteRune('\n')
+		}
+
+		if issue.Fields.Priority != nil {
+			result.WriteString("Priority: ")
+			result.WriteString(issue.Fields.Priority.Name)
+			result.WriteRune('\n')
+		}
+
+		if !time.Time(issue.Fields.Duedate).IsZero() {
+			result.WriteString("Due Date: ")
+			result.WriteString(time.Time(issue.Fields.Duedate).Format(time.RFC1123))
+			result.WriteRune('\n')
+		}
+
+		if issue.Fields.TimeTracking != nil {
+			if issue.Fields.TimeTracking.OriginalEstimate != "" {
+				result.WriteString("Original Estimate: ")
+				result.WriteString(issue.Fields.TimeTracking.OriginalEstimate)
+				result.WriteRune('\n')
+			}
+			if issue.Fields.TimeTracking.TimeSpent != "" {
+				result.WriteString("Time Spent: ")
+				result.WriteString(issue.Fields.TimeTracking.TimeSpent)
+				result.WriteRune('\n')
+			}
+			if issue.Fields.TimeTracking.RemainingEstimate != "" {
+				result.WriteString("Remaining Estimate: ")
+				result.WriteString(issue.Fields.TimeTracking.RemainingEstimate)
+				result.WriteRune('\n')
+			}
+		}
+
+		if issue.Fields.Comments != nil {
+			for _, comment := range issue.Fields.Comments.Comments {
+				result.WriteString(fmt.Sprintf("Comment from %s at %s: %s\n", comment.Author.DisplayName, comment.Created, comment.Body))
+			}
+		}
+	}
+
+	return result.String()
+}
+
+var fetchedFields = []string{
+	"summary",
+	"description",
+	"status",
+	"assignee",
+	"created",
+	"updated",
+	"issuetype",
+	"labels",
+	"reporter",
+	"creator",
+	"priority",
+	"duedate",
+	"timetracking",
+	"comment",
+}
+
+func (p *Plugin) getPublicJiraIssues(instanceURL string, issueKeys []string) ([]jira.Issue, error) {
+	httpClient := httpservice.MakeHTTPServicePlugin(p.API).MakeClient(false)
+	client, err := jira.NewClient(httpClient, instanceURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Jira client: %w", err)
+	}
+	jql := fmt.Sprintf("key in (%s)", strings.Join(issueKeys, ","))
+	issues, _, err := client.Issue.Search(jql, &jira.SearchOptions{Fields: fetchedFields})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get issue: %w", err)
+	}
+	if issues == nil {
+		return nil, fmt.Errorf("failed to get issue: issue not found")
+	}
+
+	return issues, nil
+}
+
+/*func (p *Plugin) getJiraIssueFromPlugin(instanceURL, issueKey, requestingUserID string) (*jira.Issue, error) {
+	req, err := http.NewRequest("GET", fmt.Sprintf("/jira/api/v2/get-issue-by-key?instance_id=%s&issue_key=%s", instanceURL, issueKey), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Mattermost-User-ID", requestingUserID)
+
+	resp := p.pluginAPI.Plugin.HTTP(req)
+	if resp == nil {
+		return nil, errors.New("failed to get issue, response was nil")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		result, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to get issue, status code: %v\n body: %v", resp.Status, string(result))
+	}
+
+	var issue jira.Issue
+	err = json.NewDecoder(resp.Body).Decode(&issue)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &issue, nil
+}*/
+
+func (p *Plugin) toolGetJiraIssue(context ai.ConversationContext, argsGetter ai.ToolArgumentGetter) (string, error) {
+	var args GetJiraIssueArgs
+	err := argsGetter(&args)
+	if err != nil {
+		return "invalid parameters to function", fmt.Errorf("failed to get arguments for tool GetJiraIssue: %w", err)
+	}
+
+	// Fail for over-length issue key. or doesn't look like an issue key
+	for _, issueKey := range args.IssueKeys {
+		if len(issueKey) > 50 || !validJiraIssueKey.MatchString(issueKey) {
+			return "invalid parameters to function", errors.New("invalid issue key")
+		}
+	}
+
+	issues, err := p.getPublicJiraIssues(args.InstanceURL, args.IssueKeys)
+	if err != nil {
+		return "internal failure", err
+	}
+
+	result := strings.Builder{}
+	for i := range issues {
+		result.WriteString(formatJiraIssue(&issues[i]))
+		result.WriteString("------\n")
+	}
+
+	return result.String(), nil
 }
 
 // getBuiltInTools returns the built-in tools that are available to all users.
@@ -201,9 +415,9 @@ func (p *Plugin) getBuiltInTools(isDM bool) []ai.Tool {
 			Resolver:    p.toolResolveLookupMattermostUser,
 		})
 
-		// Github plugin tools
+		// GitHub plugin tools
 		status, err := p.pluginAPI.Plugin.GetPluginStatus("github")
-		if err != nil {
+		if err != nil && !errors.Is(err, pluginapi.ErrNotFound) {
 			p.API.LogError("failed to get github plugin status", "error", err.Error())
 		} else if status != nil && status.State == model.PluginStateRunning {
 			builtInTools = append(builtInTools, ai.Tool{
@@ -213,7 +427,24 @@ func (p *Plugin) getBuiltInTools(isDM bool) []ai.Tool {
 				Resolver:    p.toolGetGithubIssue,
 			})
 		}
+
+		// Jira plugin tools
+		builtInTools = append(builtInTools, ai.Tool{
+			Name:        "GetJiraIssue",
+			Description: "Retrieve a single Jira issue by issue key.",
+			Schema:      GetJiraIssueArgs{},
+			Resolver:    p.toolGetJiraIssue,
+		})
 	}
 
 	return builtInTools
+}
+
+func (p *Plugin) getDefaultToolsStore(bot *Bot, isDM bool) ai.ToolStore {
+	if bot == nil || bot.cfg.DisableTools {
+		return ai.NewNoTools()
+	}
+	store := ai.NewToolStore(&p.pluginAPI.Log, p.getConfiguration().EnableLLMTrace)
+	store.AddTools(p.getBuiltInTools(isDM))
+	return store
 }

@@ -1,15 +1,20 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"slices"
+	"strings"
+
+	"errors"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/render"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/subtitles"
+	"github.com/mattermost/mattermost-plugin-ai/server/enterprise"
 	"github.com/mattermost/mattermost/server/public/model"
-	"github.com/pkg/errors"
 )
 
 func (p *Plugin) postAuthorizationRequired(c *gin.Context) {
@@ -45,6 +50,7 @@ func (p *Plugin) handleReact(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
+	bot := c.MustGet(ContextBotKey).(*Bot)
 
 	user, err := p.pluginAPI.User.Get(userID)
 	if err != nil {
@@ -52,7 +58,39 @@ func (p *Plugin) handleReact(c *gin.Context) {
 		return
 	}
 
-	if err := p.selectEmoji(post, p.MakeConversationContext(user, channel, nil)); err != nil {
+	conversationContext := p.MakeConversationContext(bot, user, channel, post)
+	conversationContext.PromptParameters = map[string]string{"Message": post.Message}
+	prompt, err := p.prompts.ChatCompletion(ai.PromptEmojiSelect, conversationContext, ai.NewNoTools())
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	emojiName, err := p.getLLM(bot.cfg).ChatCompletionNoStream(prompt, ai.WithMaxGeneratedTokens(25))
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	// Do some emoji post-processing to hopefully make this an actual emoji.
+	emojiName = strings.Trim(strings.TrimSpace(emojiName), ":")
+
+	if _, found := model.GetSystemEmojiId(emojiName); !found {
+		p.pluginAPI.Post.AddReaction(&model.Reaction{
+			EmojiName: "large_red_square",
+			UserId:    bot.mmBot.UserId,
+			PostId:    post.Id,
+		})
+
+		c.AbortWithError(http.StatusInternalServerError, errors.New("LLM returned somthing other than emoji: "+emojiName))
+		return
+	}
+
+	if err := p.pluginAPI.Post.AddReaction(&model.Reaction{
+		EmojiName: emojiName,
+		UserId:    bot.mmBot.UserId,
+		PostId:    post.Id,
+	}); err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
@@ -64,6 +102,12 @@ func (p *Plugin) handleSummarize(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
+	bot := c.MustGet(ContextBotKey).(*Bot)
+
+	if !p.licenseChecker.IsBasicsLicensed() {
+		c.AbortWithError(http.StatusForbidden, enterprise.ErrNotLicensed)
+		return
+	}
 
 	user, err := p.pluginAPI.User.Get(userID)
 	if err != nil {
@@ -71,9 +115,15 @@ func (p *Plugin) handleSummarize(c *gin.Context) {
 		return
 	}
 
-	createdPost, err := p.startNewSummaryThread(post.Id, p.MakeConversationContext(user, channel, nil))
+	p.track(evSummarizeThread, map[string]any{
+		"channel_id":     channel.Id,
+		"post_id":        post.Id,
+		"user_actual_id": user.Id,
+	})
+
+	createdPost, err := p.startNewSummaryThread(bot, post.Id, p.MakeConversationContext(bot, user, channel, nil))
 	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "Unable to produce summary"))
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to produce summary: %w", err))
 		return
 	}
 
@@ -92,6 +142,7 @@ func (p *Plugin) handleTranscribeFile(c *gin.Context) {
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 	fileID := c.Param("fileid")
+	bot := c.MustGet(ContextBotKey).(*Bot)
 
 	user, err := p.pluginAPI.User.Get(userID)
 	if err != nil {
@@ -110,14 +161,14 @@ func (p *Plugin) handleTranscribeFile(c *gin.Context) {
 		return
 	}
 
-	createdPost, err := p.newCallRecordingThread(user, post, channel, fileID)
+	createdPost, err := p.newCallRecordingThread(bot, user, post, channel, fileID)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 
 	if err := p.saveTitle(createdPost.Id, "Meeting Summary"); err != nil {
-		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "failed to save title"))
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to save title: %w", err))
 		return
 	}
 
@@ -135,33 +186,37 @@ func (p *Plugin) handleSummarizeTranscription(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
+	bot := c.MustGet(ContextBotKey).(*Bot)
 
 	user, err := p.pluginAPI.User.Get(userID)
 	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "unable to get user"))
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to get user: %w", err))
 		return
 	}
 
 	targetPostUser, err := p.pluginAPI.User.Get(post.UserId)
 	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "unable to get calls user"))
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to get calls user: %w", err))
 		return
 	}
-	if !targetPostUser.IsBot || targetPostUser.Username != CallsBotUsername {
-		c.AbortWithError(http.StatusBadRequest, errors.New("not a calls bot post"))
+	if !targetPostUser.IsBot || (targetPostUser.Username != CallsBotUsername && targetPostUser.Username != ZoomBotUsername) {
+		c.AbortWithError(http.StatusBadRequest, errors.New("not a calls or zoom bot post"))
 		return
 	}
 
-	createdPost, err := p.newCallTranscriptionSummaryThread(user, post, channel)
+	p.track(evSummarizeTranscription, map[string]any{
+		"channel_id":     channel.Id,
+		"post_id":        post.Id,
+		"user_actual_id": user.Id,
+	})
+
+	createdPost, err := p.newCallTranscriptionSummaryThread(bot, user, post, channel)
 	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "unable to summarize transcription"))
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to summarize transcription: %w", err))
 		return
 	}
 
-	if err := p.saveTitle(createdPost.Id, "Meeting Summary"); err != nil {
-		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "failed to save title"))
-		return
-	}
+	p.saveTitleAsync(createdPost.Id, "Meeting Summary")
 
 	data := struct {
 		PostID    string `json:"postid"`
@@ -175,12 +230,9 @@ func (p *Plugin) handleSummarizeTranscription(c *gin.Context) {
 
 func (p *Plugin) handleStop(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
-	p.streamingContextsMutex.Lock()
-	defer p.streamingContextsMutex.Unlock()
-
 	post := c.MustGet(ContextPostKey).(*model.Post)
 
-	if post.UserId != p.botid {
+	if p.GetBotByID(post.UserId) == nil {
 		c.AbortWithError(http.StatusBadRequest, errors.New("not a bot post"))
 		return
 	}
@@ -190,13 +242,7 @@ func (p *Plugin) handleStop(c *gin.Context) {
 		return
 	}
 
-	cancel, ok := p.streamingContexts[post.Id]
-	if !ok {
-		c.AbortWithError(http.StatusBadRequest, errors.New("context already canceled"))
-		return
-	}
-
-	cancel()
+	p.stopPostStreaming(post.Id)
 }
 
 func (p *Plugin) handleRegenerate(c *gin.Context) {
@@ -204,8 +250,9 @@ func (p *Plugin) handleRegenerate(c *gin.Context) {
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 
-	if post.UserId != p.botid {
-		c.AbortWithError(http.StatusBadRequest, errors.New("Not a AI bot post"))
+	bot := p.GetBotByID(post.UserId)
+	if bot == nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to get bot"))
 		return
 	}
 
@@ -225,89 +272,92 @@ func (p *Plugin) handleRegenerate(c *gin.Context) {
 		return
 	}
 
+	if err := p.regeneratePost(bot, post, user, channel); err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+}
+
+func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, channel *model.Channel) error {
+	ctx, err := p.getPostStreamingContext(context.Background(), post.Id)
+	if err != nil {
+		return err
+	}
+	defer p.finishPostStreaming(post.Id)
+
 	summaryPostIDProp := post.GetProp(ThreadIDProp)
-	refrencedRecordingFileIDProp := post.GetProp(ReferencedRecordingFileID)
+	referenceRecordingFileIDProp := post.GetProp(ReferencedRecordingFileID)
 	referencedTranscriptPostProp := post.GetProp(ReferencedTranscriptPostID)
 	var result *ai.TextStreamResult
 	switch {
 	case summaryPostIDProp != nil:
 		summaryPostID := summaryPostIDProp.(string)
 		siteURL := p.API.GetConfig().ServiceSettings.SiteURL
-		post.Message = summaryPostMessage(summaryPostID, *siteURL)
+		post.Message = p.summaryPostMessage(user.Locale, summaryPostID, *siteURL)
 
-		result, err = p.summarizePost(summaryPostID, p.MakeConversationContext(user, channel, nil))
+		var err error
+		result, err = p.summarizePost(bot, summaryPostID, p.MakeConversationContext(bot, user, channel, nil))
 		if err != nil {
-			c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "could not summarize post on regen"))
-			return
+			return fmt.Errorf("could not summarize post on regen: %w", err)
 		}
-	case refrencedRecordingFileIDProp != nil:
+	case referenceRecordingFileIDProp != nil:
 		post.Message = ""
-		refrencedRecordingFileID := refrencedRecordingFileIDProp.(string)
+		referencedRecordingFileID := referenceRecordingFileIDProp.(string)
 
-		fileInfo, err := p.pluginAPI.File.GetInfo(refrencedRecordingFileID)
+		fileInfo, err := p.pluginAPI.File.GetInfo(referencedRecordingFileID)
 		if err != nil {
-			c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "could not get transcription file on regen"))
-			return
+			return fmt.Errorf("could not get transcription file on regen: %w", err)
 		}
 
 		reader, err := p.pluginAPI.File.Get(post.FileIds[0])
 		if err != nil {
-			c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "could not get transcription file on regen"))
-			return
+			return fmt.Errorf("could not get transcription file on regen: %w", err)
 		}
 		transcription, err := subtitles.NewSubtitlesFromVTT(reader)
 		if err != nil {
-			c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "could not parse transcription file on regen"))
-			return
+			return fmt.Errorf("could not parse transcription file on regen: %w", err)
 		}
 
 		if transcription.IsEmpty() {
-			c.AbortWithError(http.StatusInternalServerError, errors.New("transcription is empty on regen"))
-			return
+			return errors.New("transcription is empty on regen")
 		}
 
 		originalFileChannel, err := p.pluginAPI.Channel.Get(fileInfo.ChannelId)
 		if err != nil {
-			c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "could not get channel of original recording on regen"))
-			return
+			return fmt.Errorf("could not get channel of original recording on regen: %w", err)
 		}
 
-		context := p.MakeConversationContext(user, originalFileChannel, nil)
-		result, err = p.summarizeTranscription(transcription, context)
+		context := p.MakeConversationContext(bot, user, originalFileChannel, nil)
+		result, err = p.summarizeTranscription(bot, transcription, context)
 		if err != nil {
-			c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "could not summarize transcription on regen"))
+			return fmt.Errorf("could not summarize transcription on regen: %w", err)
 		}
 	case referencedTranscriptPostProp != nil:
 		post.Message = ""
-		refrencedTranscriptionPostID := referencedTranscriptPostProp.(string)
-		referencedTranscriptionPost, err := p.pluginAPI.Post.GetPost(refrencedTranscriptionPostID)
+		referencedTranscriptionPostID := referencedTranscriptPostProp.(string)
+		referencedTranscriptionPost, err := p.pluginAPI.Post.GetPost(referencedTranscriptionPostID)
 		if err != nil {
-			c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "could not get transcription post on regen"))
-			return
+			return fmt.Errorf("could not get transcription post on regen: %w", err)
 		}
 
 		transcriptionFileID, err := getCaptionsFileIDFromProps(referencedTranscriptionPost)
 		if err != nil {
-			c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "unable to get transcription file id"))
-			return
+			return fmt.Errorf("unable to get transcription file id: %w", err)
 		}
 		transcriptionFileReader, err := p.pluginAPI.File.Get(transcriptionFileID)
 		if err != nil {
-			c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "unable to read calls file"))
-			return
+			return fmt.Errorf("unable to read calls file: %w", err)
 		}
 
 		transcription, err := subtitles.NewSubtitlesFromVTT(transcriptionFileReader)
 		if err != nil {
-			c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "unable to parse transcription file"))
-			return
+			return fmt.Errorf("unable to parse transcription file: %w", err)
 		}
 
-		context := p.MakeConversationContext(user, channel, nil)
-		result, err = p.summarizeTranscription(transcription, context)
+		context := p.MakeConversationContext(bot, user, channel, nil)
+		result, err = p.summarizeTranscription(bot, transcription, context)
 		if err != nil {
-			c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "unable to summarize transcription"))
-			return
+			return fmt.Errorf("unable to summarize transcription: %w", err)
 		}
 
 	default:
@@ -315,8 +365,7 @@ func (p *Plugin) handleRegenerate(c *gin.Context) {
 
 		threadData, err := p.getThreadAndMeta(post.Id)
 		if err != nil {
-			c.AbortWithError(http.StatusInternalServerError, err)
-			return
+			return err
 		}
 		respondingToPostID, ok := post.GetProp(RespondingToProp).(string)
 		if !ok {
@@ -325,13 +374,82 @@ func (p *Plugin) handleRegenerate(c *gin.Context) {
 			threadData.cutoffAtPostID(respondingToPostID)
 		}
 		postToRegenerate := threadData.latestPost()
-		context := p.MakeConversationContext(user, channel, postToRegenerate)
+		context := p.MakeConversationContext(bot, user, channel, postToRegenerate)
 
-		if result, err = p.continueConversation(threadData, context); err != nil {
-			c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "could not continue conversation on regen"))
-			return
+		if result, err = p.continueConversation(bot, threadData, context); err != nil {
+			return fmt.Errorf("could not continue conversation on regen: %w", err)
 		}
 	}
 
-	p.streamResultToPost(result, post)
+	if channel.Type == model.ChannelTypeDirect {
+		if channel.Name == bot.mmBot.UserId+"__"+user.Id || channel.Name == user.Id+"__"+bot.mmBot.UserId {
+			p.streamResultToPost(ctx, result, post, user.Locale)
+			return nil
+		}
+	}
+
+	p.streamResultToPost(ctx, result, post, *p.API.GetConfig().LocalizationSettings.DefaultServerLocale)
+
+	return nil
+}
+
+func (p *Plugin) handlePostbackSummary(c *gin.Context) {
+	userID := c.GetHeader("Mattermost-User-Id")
+	post := c.MustGet(ContextPostKey).(*model.Post)
+
+	bot := p.GetBotByID(post.UserId)
+	if bot == nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to get bot"))
+		return
+	}
+
+	if post.GetProp(LLMRequesterUserID) != userID {
+		c.AbortWithError(http.StatusForbidden, errors.New("only the original requester can post back"))
+		return
+	}
+
+	transcriptThreadRootPost, err := p.pluginAPI.Post.GetPost(post.RootId)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to get transcript thread root post: %w", err))
+		return
+	}
+
+	originalTranscriptPostID, ok := transcriptThreadRootPost.GetProp(ReferencedTranscriptPostID).(string)
+	if !ok || originalTranscriptPostID == "" {
+		c.AbortWithError(http.StatusBadRequest, errors.New("post missing reference to transcription post ID"))
+		return
+	}
+
+	transcriptionPost, err := p.pluginAPI.Post.GetPost(originalTranscriptPostID)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to get transcription post: %w", err))
+		return
+	}
+
+	if !p.pluginAPI.User.HasPermissionToChannel(userID, transcriptionPost.ChannelId, model.PermissionCreatePost) {
+		c.AbortWithError(http.StatusForbidden, errors.New("user doesn't have permission to create a post in the transcript channel"))
+		return
+	}
+
+	postedSummary := &model.Post{
+		UserId:    bot.mmBot.UserId,
+		ChannelId: transcriptionPost.ChannelId,
+		RootId:    transcriptionPost.RootId,
+		Message:   post.Message,
+		Type:      "custom_llm_postback",
+	}
+	postedSummary.AddProp("userid", userID)
+	if err := p.pluginAPI.Post.CreatePost(postedSummary); err != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to post back summary: %w", err))
+		return
+	}
+
+	data := struct {
+		PostID    string `json:"rootid"`
+		ChannelID string `json:"channelid"`
+	}{
+		PostID:    postedSummary.RootId,
+		ChannelID: postedSummary.ChannelId,
+	}
+	c.Render(http.StatusOK, render.JSON{Data: data})
 }

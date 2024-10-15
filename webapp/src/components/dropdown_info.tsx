@@ -1,4 +1,5 @@
 import React from 'react';
+import {FormattedMessage} from 'react-intl';
 import styled from 'styled-components';
 import {LightbulbOutlineIcon} from '@mattermost/compass-icons/components';
 
@@ -12,8 +13,8 @@ const DropdownMenuItemInfo = styled.div`
 	line-height: 16px;
 	color: rgba(var(--center-channel-color-rgb), 0.72);
 
-	max-width: 236px;
-	margin: 8px 16px;
+	max-width: 240px;
+	padding: 8px 16px;
 `;
 
 const LightbulbOutlineIconStyled = styled(LightbulbOutlineIcon)`
@@ -37,7 +38,7 @@ export const DropdownInfoOnlyVisibleToYou = () => {
     return (
         <DropdownMenuItemInfo>
             <LightbulbOutlineIconStyled/>
-            {'AI Assistant posts responses in the right panel which will only be visible to you.'}
+            <FormattedMessage defaultMessage='Copilot posts responses in the right panel which will only be visible to you.'/>
         </DropdownMenuItemInfo>
     );
 };

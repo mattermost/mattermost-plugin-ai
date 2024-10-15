@@ -1,56 +1,84 @@
 package anthropic
 
 import (
-	"strings"
+	"fmt"
+	"net/http"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
-	"github.com/pkg/errors"
+	"github.com/mattermost/mattermost-plugin-ai/server/metrics"
 )
 
-const (
-	HumanPrompt     = "\n\nHuman: "
-	AssistantPrompt = "\n\nAssistant: "
-)
+const DefaultMaxTokens = 4096
 
 type Anthropic struct {
-	client       *Client
-	defaultModel string
-	maxTokens    int
+	client         *Client
+	defaultModel   string
+	tokenLimit     int
+	metricsService metrics.LLMetrics
 }
 
-func New(llmService ai.ServiceConfig) *Anthropic {
-	client := NewClient(llmService.APIKey)
+func New(llmService ai.ServiceConfig, httpClient *http.Client, metricsService metrics.LLMetrics) *Anthropic {
+	client := NewClient(llmService.APIKey, httpClient)
 
 	return &Anthropic{
-		client:       client,
-		defaultModel: llmService.DefaultModel,
-		maxTokens:    llmService.TokenLimit,
+		client:         client,
+		defaultModel:   llmService.DefaultModel,
+		tokenLimit:     llmService.TokenLimit,
+		metricsService: metricsService,
 	}
 }
 
-func conversationToPrompt(conversation ai.BotConversation) string {
-	prompt := strings.Builder{}
+// conversationToMessages creates a system prompt and a slice of input messages from a bot conversation.
+func conversationToMessages(conversation ai.BotConversation) (string, []InputMessage) {
+	systemMessage := ""
+	messages := make([]InputMessage, 0, len(conversation.Posts))
 	for _, post := range conversation.Posts {
-		if post.Role == ai.PostRoleBot {
-			prompt.WriteString(AssistantPrompt + post.Message)
-		} else if post.Role == ai.PostRoleUser || post.Role == ai.PostRoleSystem {
-			prompt.WriteString(HumanPrompt + post.Message)
+		previousRole := ""
+		previousContent := ""
+		if len(messages) > 0 {
+			previous := messages[len(messages)-1]
+			previousRole = previous.Role
+			previousContent = previous.Content
+		}
+		switch post.Role {
+		case ai.PostRoleSystem:
+			systemMessage += post.Message
+		case ai.PostRoleBot:
+			if previousRole == RoleAssistant {
+				previousContent += post.Message
+				continue
+			}
+			messages = append(messages,
+				InputMessage{
+					Role:    RoleAssistant,
+					Content: post.Message,
+				},
+			)
+		case ai.PostRoleUser:
+			if previousRole == RoleUser {
+				previousContent += post.Message
+				continue
+			}
+			messages = append(messages,
+				InputMessage{
+					Role:    RoleUser,
+					Content: post.Message,
+				},
+			)
 		}
 	}
 
-	prompt.WriteString(AssistantPrompt)
-
-	return prompt.String()
+	return systemMessage, messages
 }
 
 func (a *Anthropic) GetDefaultConfig() ai.LLMConfig {
 	return ai.LLMConfig{
-		Model:     a.defaultModel,
-		MaxTokens: 0,
+		Model:              a.defaultModel,
+		MaxGeneratedTokens: DefaultMaxTokens,
 	}
 }
 
-func (a *Anthropic) createConfig(opts []ai.LanguageModelOption) ai.LLMConfig { //nolint:unused
+func (a *Anthropic) createConfig(opts []ai.LanguageModelOption) ai.LLMConfig {
 	cfg := a.GetDefaultConfig()
 	for _, opt := range opts {
 		opt(&cfg)
@@ -58,21 +86,38 @@ func (a *Anthropic) createConfig(opts []ai.LanguageModelOption) ai.LLMConfig { /
 	return cfg
 }
 
+func (a *Anthropic) createCompletionRequest(conversation ai.BotConversation, opts []ai.LanguageModelOption) MessageRequest {
+	system, messages := conversationToMessages(conversation)
+	cfg := a.createConfig(opts)
+	return MessageRequest{
+		Model:     cfg.Model,
+		Messages:  messages,
+		System:    system,
+		MaxTokens: cfg.MaxGeneratedTokens,
+	}
+}
+
 func (a *Anthropic) ChatCompletion(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (*ai.TextStreamResult, error) {
-	prompt := conversationToPrompt(conversation)
-	result, err := a.client.Completion(prompt)
+	a.metricsService.IncrementLLMRequests()
+
+	request := a.createCompletionRequest(conversation, opts)
+	request.Stream = true
+	result, err := a.client.MessageCompletion(request)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to send query to anthropic")
+		return nil, fmt.Errorf("failed to send query to anthropic: %w", err)
 	}
 
 	return result, nil
 }
 
 func (a *Anthropic) ChatCompletionNoStream(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (string, error) {
-	prompt := conversationToPrompt(conversation)
-	result, err := a.client.CompletionNoStream(prompt)
+	a.metricsService.IncrementLLMRequests()
+
+	request := a.createCompletionRequest(conversation, opts)
+	request.Stream = false
+	result, err := a.client.MessageCompletionNoStream(request)
 	if err != nil {
-		return "", errors.Wrap(err, "failed to send query to anthropic")
+		return "", fmt.Errorf("failed to send query to anthropic: %w", err)
 	}
 
 	return result, nil
@@ -83,8 +128,8 @@ func (a *Anthropic) CountTokens(text string) int {
 }
 
 func (a *Anthropic) TokenLimit() int {
-	if a.maxTokens > 0 {
-		return a.maxTokens
+	if a.tokenLimit > 0 {
+		return a.tokenLimit
 	}
 	return 100000
 }

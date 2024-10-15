@@ -1,19 +1,22 @@
 package asksage
 
 import (
+	"net/http"
 	"strings"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
+	"github.com/mattermost/mattermost-plugin-ai/server/metrics"
 )
 
 type AskSage struct {
 	client       *Client
 	defaultModel string
 	maxTokens    int
+	metric       metrics.LLMetrics
 }
 
-func New(llmService ai.ServiceConfig) *AskSage {
-	client := NewClient("")
+func New(llmService ai.ServiceConfig, httpClient *http.Client, metric metrics.LLMetrics) *AskSage {
+	client := NewClient("", httpClient)
 	client.Login(GetTokenParams{
 		Email:    llmService.Username,
 		Password: llmService.Password,
@@ -22,6 +25,7 @@ func New(llmService ai.ServiceConfig) *AskSage {
 		client:       client,
 		defaultModel: llmService.DefaultModel,
 		maxTokens:    llmService.TokenLimit,
+		metric:       metric,
 	}
 }
 
@@ -46,8 +50,8 @@ func conversationToMessagesList(conversation ai.BotConversation) []Message {
 
 func (s *AskSage) GetDefaultConfig() ai.LLMConfig {
 	return ai.LLMConfig{
-		Model:     s.defaultModel,
-		MaxTokens: 0,
+		Model:              s.defaultModel,
+		MaxGeneratedTokens: 0,
 	}
 }
 
@@ -75,6 +79,8 @@ func (s *AskSage) ChatCompletion(conversation ai.BotConversation, opts ...ai.Lan
 }
 
 func (s *AskSage) ChatCompletionNoStream(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (string, error) {
+	s.metric.IncrementLLMRequests()
+
 	params := s.queryParamsFromConfig(s.createConfig(opts))
 	params.Message = conversationToMessagesList(conversation)
 	params.SystemPrompt = conversation.ExtractSystemMessage()

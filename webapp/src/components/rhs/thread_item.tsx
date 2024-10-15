@@ -1,13 +1,15 @@
 import React from 'react';
 import styled from 'styled-components';
 
+import {Timestamp} from '@/mm_webapp';
+
+import {GrayPill} from '../pill';
+
 const ThreadItemContainer = styled.div`
     padding: 16px;
     cursor: pointer;
     border-bottom: 1px solid rgba(var(--center-channel-color-rgb), 0.12)
 `;
-
-const Timestamp = (window as any).Components.Timestamp;
 
 const Title = styled.div`
     color: var(--center-channel-color);
@@ -50,17 +52,32 @@ const LastActivityDate = styled.div`
     margin-left: 13px;
 `;
 
+const Label = styled(GrayPill)`
+	padding: 0 4px;
+	font-size: 10px;
+	font-weight: 600;
+	line-height: 16px;
+`;
+
+const Footer = styled.div`
+	display: flex;
+	flex-direction: row;
+	gap: 10px;
+`;
+
 type Props = {
     postTitle: string;
     postMessage: string;
     repliesCount: number;
     lastActivityDate: number;
+    label: string;
     onClick: () => void;
 }
 
-const DefaultTitle = 'Conversation with AI Assistant';
+const DefaultTitle = 'Conversation with Copilot';
 
 export default function ThreadItem(props: Props) {
+    const repliesText = props.repliesCount === 1 ? '1 reply' : `${props.repliesCount} replies`;
     return (
         <ThreadItemContainer onClick={props.onClick}>
             <Title>
@@ -75,7 +92,10 @@ export default function ThreadItem(props: Props) {
                 </LastActivityDate>
             </Title>
             <Preview>{props.postMessage}</Preview>
-            <RepliesCount>{props.repliesCount}{' replies'}</RepliesCount>
+            <Footer>
+                <Label>{props.label}</Label>
+                <RepliesCount>{repliesText}</RepliesCount>
+            </Footer>
         </ThreadItemContainer>
     );
 }

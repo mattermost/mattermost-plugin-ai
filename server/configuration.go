@@ -1,16 +1,16 @@
 package main
 
 import (
+	"fmt"
 	"reflect"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
-	"github.com/pkg/errors"
 )
 
 type Config struct {
 	Services            []ai.ServiceConfig `json:"services"`
-	LLMGenerator        string             `json:"llmBackend"`
-	ImageGenerator      string             `json:"imageGeneratorBackend"`
+	Bots                []ai.BotConfig     `json:"bots"`
+	DefaultBotName      string             `json:"defaultBotName"`
 	TranscriptGenerator string             `json:"transcriptBackend"`
 	EnableLLMTrace      bool               `json:"enableLLMTrace"`
 
@@ -85,14 +85,33 @@ func (p *Plugin) setConfiguration(configuration *configuration) {
 
 // OnConfigurationChange is invoked when configuration changes may have been made.
 func (p *Plugin) OnConfigurationChange() error {
+	serverConfig := p.API.GetConfig()
+	if serverConfig != nil {
+		if err := p.initTelemetry(serverConfig.LogSettings.EnableDiagnostics); err != nil {
+			p.API.LogError(err.Error())
+		}
+	} else {
+		p.API.LogError("OnConfigurationChange: failed to get server config")
+	}
+
 	var configuration = new(configuration)
 
 	// Load the public configuration fields from the Mattermost server configuration.
 	if err := p.API.LoadPluginConfiguration(configuration); err != nil {
-		return errors.Wrap(err, "failed to load plugin configuration")
+		return fmt.Errorf("failed to load plugin configuration: %w", err)
 	}
 
 	p.setConfiguration(configuration)
+
+	// If OnActivate hasn't run yet then don't do the change tasks
+	if p.pluginAPI == nil {
+		return nil
+	}
+
+	// Extra config change tasks
+	if err := p.EnsureBots(); err != nil {
+		return fmt.Errorf("failed on config change: %w", err)
+	}
 
 	return nil
 }

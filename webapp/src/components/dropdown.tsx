@@ -2,7 +2,7 @@
 // See LICENSE.txt for license information.
 
 import React, {ComponentProps, cloneElement, useState} from 'react';
-import styled, {css} from 'styled-components';
+import styled from 'styled-components';
 
 import {
     FloatingFocusManager,

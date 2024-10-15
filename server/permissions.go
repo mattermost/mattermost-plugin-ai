@@ -1,11 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 
-	"github.com/mattermost/mattermost-plugin-ai/server/mmapi"
+	"errors"
+
 	"github.com/mattermost/mattermost/server/public/model"
-	"github.com/pkg/errors"
 )
 
 var ErrUsageRestriction = errors.New("usage restriction")
@@ -26,13 +27,13 @@ func (p *Plugin) checkUsageRestrictionsForChannel(channel *model.Channel) error 
 	cfg := p.getConfiguration()
 	if cfg.EnableUseRestrictions {
 		if cfg.AllowedTeamIDs != "" && !strings.Contains(cfg.AllowedTeamIDs, channel.TeamId) {
-			return errors.Wrap(ErrUsageRestriction, "can't work on this team")
+			return fmt.Errorf("can't work on this team: %w", ErrUsageRestriction)
 		}
 
 		if !cfg.AllowPrivateChannels {
 			if channel.Type != model.ChannelTypeOpen {
-				if !mmapi.IsDMWith(p.botid, channel) {
-					return errors.Wrap(ErrUsageRestriction, "can't work on private channels")
+				if p.GetBotForDMChannel(channel) == nil {
+					return fmt.Errorf("can't work on private channels: %w", ErrUsageRestriction)
 				}
 			}
 		}
@@ -44,7 +45,7 @@ func (p *Plugin) checkUsageRestrictionsForUser(userID string) error {
 	cfg := p.getConfiguration()
 	if cfg.EnableUseRestrictions && cfg.OnlyUsersOnTeam != "" {
 		if !p.pluginAPI.User.HasPermissionToTeam(userID, cfg.OnlyUsersOnTeam, model.PermissionViewTeam) {
-			return errors.Wrap(ErrUsageRestriction, "user not on allowed team")
+			return fmt.Errorf("user not on allowed team: %w", ErrUsageRestriction)
 		}
 	}
 

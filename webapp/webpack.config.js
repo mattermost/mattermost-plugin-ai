@@ -67,6 +67,10 @@ const config = {
                 },
             },
             {
+                test: /\.json$/,
+                type: 'json',
+            },
+            {
                 test: /\.(png|eot|tiff|svg|woff2|woff|ttf|gif|mp3|jpg|jpeg)$/,
                 type: 'asset/inline',
             },
@@ -78,6 +82,7 @@ const config = {
         redux: 'Redux',
         'react-redux': 'ReactRedux',
         'prop-types': 'PropTypes',
+        'react-intl': 'ReactIntl',
         'react-bootstrap': 'ReactBootstrap',
         'react-router-dom': 'ReactRouterDom',
     },

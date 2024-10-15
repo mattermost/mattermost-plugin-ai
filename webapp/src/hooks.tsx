@@ -1,8 +1,10 @@
 import {useDispatch} from 'react-redux';
 
-import {selectPost, openRHS} from 'src/redux_actions';
+import {selectPost, openRHS, selectRegularPost} from 'src/redux_actions';
 
 import {viewMyChannel} from 'src/client';
+
+import {isRHSCompatable} from './mm_webapp';
 
 const selectPostLegacy = (postid: string, channelid: string) => {
     return {
@@ -14,8 +16,8 @@ const selectPostLegacy = (postid: string, channelid: string) => {
 };
 
 export const doSelectPost = (postId: string, channelId: string, dispatch: any) => {
-    // This if is for legacy mode where the AdvancedCreatecomment is not exported
-    if ((window as any).Components.CreatePost) {
+    // This if is for legacy mode where the  neither createpost or advancedtexteditor is loaded
+    if (isRHSCompatable()) {
         dispatch(selectPost(postId));
         dispatch(openRHS());
     } else {
@@ -32,3 +34,15 @@ export const useSelectPost = () => {
     };
 };
 
+export const doSelectNotAIPost = (postid: string, channelid: string, dispatch: any) => {
+    dispatch(selectRegularPost(postid, channelid));
+    viewMyChannel(channelid);
+};
+
+export const useSelectNotAIPost = () => {
+    const dispatch = useDispatch();
+
+    return (postid: string, channelid: string) => {
+        doSelectNotAIPost(postid, channelid, dispatch);
+    };
+};

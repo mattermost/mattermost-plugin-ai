@@ -1,7 +1,9 @@
 package ai
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 	"time"
@@ -19,21 +21,29 @@ const (
 	PostRoleSystem
 )
 
+type File struct {
+	MimeType string
+	Size     int64
+	Reader   io.Reader
+}
+
 type Post struct {
 	Role    PostRole
 	Message string
+	Files   []File
 }
 
 type ConversationContext struct {
-	BotID            string
-	Time             string
-	ServerName       string
-	CompanyName      string
-	RequestingUser   *model.User
-	Channel          *model.Channel
-	Team             *model.Team
-	Post             *model.Post
-	PromptParameters map[string]string
+	BotID              string
+	Time               string
+	ServerName         string
+	CompanyName        string
+	RequestingUser     *model.User
+	Channel            *model.Channel
+	Team               *model.Team
+	Post               *model.Post
+	PromptParameters   map[string]string
+	CustomInstructions string
 }
 
 func NewConversationContext(botID string, requestingUser *model.User, channel *model.Channel, post *model.Post) ConversationContext {
@@ -97,11 +107,8 @@ type BotConversation struct {
 	Context ConversationContext
 }
 
-func (b *BotConversation) AddUserPost(post *model.Post) {
-	b.Posts = append(b.Posts, Post{
-		Role:    PostRoleUser,
-		Message: post.Message,
-	})
+func (b *BotConversation) AddPost(post Post) {
+	b.Posts = append(b.Posts, post)
 }
 
 func (b *BotConversation) AppendConversation(conversation BotConversation) {
@@ -158,8 +165,8 @@ func (b *BotConversation) Truncate(maxTokens int, countTokens func(string) int) 
 		}
 		postTokens := countTokens(post.Message)
 		if (totalTokens + postTokens) > maxTokens {
-			charactorsToCut := (postTokens - (maxTokens - totalTokens)) * 4
-			post.Message = strings.TrimSpace(post.Message[charactorsToCut:])
+			charactersToCut := (postTokens - (maxTokens - totalTokens)) * 4
+			post.Message = strings.TrimSpace(post.Message[charactersToCut:])
 			b.Posts = append(b.Posts, post)
 			slices.Reverse(b.Posts)
 			return true
@@ -172,24 +179,42 @@ func (b *BotConversation) Truncate(maxTokens int, countTokens func(string) int) 
 	return false
 }
 
-func GetPostRole(botID string, post *model.Post) PostRole {
-	if post.UserId == botID {
-		return PostRoleBot
-	}
-	return PostRoleUser
-}
+func FormatPostBody(post *model.Post) string {
+	attachments := post.Attachments()
+	if len(attachments) > 0 {
+		result := strings.Builder{}
+		result.WriteString(post.Message)
+		for _, attachment := range attachments {
+			result.WriteString("\n")
+			if attachment.Pretext != "" {
+				result.WriteString(attachment.Pretext)
+				result.WriteString("\n")
+			}
+			if attachment.Title != "" {
+				result.WriteString(attachment.Title)
+				result.WriteString("\n")
+			}
+			if attachment.Text != "" {
+				result.WriteString(attachment.Text)
+				result.WriteString("\n")
+			}
+			for _, field := range attachment.Fields {
+				value, err := json.Marshal(field.Value)
+				if err != nil {
+					continue
+				}
+				result.WriteString(field.Title)
+				result.WriteString(": ")
+				result.Write(value)
+				result.WriteString("\n")
+			}
 
-func ThreadToBotConversation(botID string, posts []*model.Post) BotConversation {
-	result := BotConversation{
-		Posts: make([]Post, 0, len(posts)),
+			if attachment.Footer != "" {
+				result.WriteString(attachment.Footer)
+				result.WriteString("\n")
+			}
+		}
+		return result.String()
 	}
-
-	for _, post := range posts {
-		result.Posts = append(result.Posts, Post{
-			Role:    GetPostRole(botID, post),
-			Message: post.Message,
-		})
-	}
-
-	return result
+	return post.Message
 }

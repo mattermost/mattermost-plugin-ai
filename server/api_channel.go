@@ -5,11 +5,13 @@ import (
 	"net/http"
 	"slices"
 
+	"errors"
+
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/render"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
+	"github.com/mattermost/mattermost-plugin-ai/server/enterprise"
 	"github.com/mattermost/mattermost/server/public/model"
-	"github.com/pkg/errors"
 )
 
 func (p *Plugin) channelAuthorizationRequired(c *gin.Context) {
@@ -37,6 +39,12 @@ func (p *Plugin) channelAuthorizationRequired(c *gin.Context) {
 func (p *Plugin) handleSince(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
+	bot := c.MustGet(ContextBotKey).(*Bot)
+
+	if !p.licenseChecker.IsBasicsLicensed() {
+		c.AbortWithError(http.StatusForbidden, enterprise.ErrNotLicensed)
+		return
+	}
 
 	data := struct {
 		Since        int64  `json:"since"`
@@ -75,7 +83,7 @@ func (p *Plugin) handleSince(c *gin.Context) {
 
 	formattedThread := formatThread(threadData)
 
-	context := p.MakeConversationContext(user, channel, nil)
+	context := p.MakeConversationContext(bot, user, channel, nil)
 	context.PromptParameters = map[string]string{
 		"Posts": formattedThread,
 	}
@@ -95,13 +103,20 @@ func (p *Plugin) handleSince(c *gin.Context) {
 		return
 	}
 
-	prompt, err := p.prompts.ChatCompletion(promptPreset, context)
+	p.track(evUnreadMessages, map[string]any{
+		"channel_id":     channel.Id,
+		"user_actual_id": user.Id,
+		"since":          data.Since,
+		"type":           promptPreset,
+	})
+
+	prompt, err := p.prompts.ChatCompletion(promptPreset, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 
-	resultStream, err := p.getLLM().ChatCompletion(prompt)
+	resultStream, err := p.getLLM(bot.cfg).ChatCompletion(prompt)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
@@ -109,7 +124,7 @@ func (p *Plugin) handleSince(c *gin.Context) {
 
 	post := &model.Post{}
 	post.AddProp(NoRegen, "true")
-	if err := p.streamResultToNewDM(resultStream, user.Id, post); err != nil {
+	if err := p.streamResultToNewDM(bot.mmBot.UserId, resultStream, user.Id, post); err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
@@ -124,10 +139,7 @@ func (p *Plugin) handleSince(c *gin.Context) {
 		promptTitle = "Find Open Questions"
 	}
 
-	if err := p.saveTitle(post.Id, promptTitle); err != nil {
-		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "failed to save title"))
-		return
-	}
+	p.saveTitleAsync(post.Id, promptTitle)
 
 	result := struct {
 		PostID    string `json:"postid"`

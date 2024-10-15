@@ -3,111 +3,136 @@ package anthropic
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
-	"strings"
+
+	"errors"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
-	"github.com/pkg/errors"
 	"github.com/r3labs/sse/v2"
 )
 
 const (
-	CompletionEndpoint = "https://api.anthropic.com/v1/complete"
-	APIKeyHeader       = "X-API-Key" //nolint:gosec
+	MessageEndpoint = "https://api.anthropic.com/v1/messages"
 
 	StopReasonStopSequence = "stop_sequence"
 	StopReasonMaxTokens    = "max_tokens"
 )
 
-type CompletionRequest struct {
-	Prompt            string `json:"prompt"`
-	Model             string `json:"model"`
-	MaxTokensToSample int    `json:"max_tokens_to_sample"`
-	Stream            bool   `json:"stream"`
+const RoleUser = "user"
+const RoleAssistant = "assistant"
+
+type InputMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
 }
 
-type CompletionResponse struct {
-	Completion string `json:"completion"`
+type RequestMetadata struct {
+	UserID string `json:"user_id"`
+}
+
+type MessageRequest struct {
+	Model     string          `json:"model"`
+	Messages  []InputMessage  `json:"messages"`
+	System    string          `json:"system"`
+	MaxTokens int             `json:"max_tokens"`
+	Metadata  RequestMetadata `json:"metadata"`
+	Stream    bool            `json:"stream"`
+}
+
+type Content struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+type Usage struct {
+	InputTokens  int `json:"input_tokens"`
+	OutputTokens int `json:"output_tokens"`
+}
+
+type OutputMessage struct {
+	ID         string    `json:"id"`
+	Content    []Content `json:"content"`
+	StopReason string    `json:"stop_reason"`
+	Usage      Usage     `json:"usage"`
+}
+
+type StreamDelta struct {
+	Type       string `json:"type"`
+	Text       string `json:"text"`
 	StopReason string `json:"stop_reason"`
+	Usage      Usage  `json:"usage"`
+}
+
+type MessageStreamEvent struct {
+	Type         string `json:"type"`
+	Message      OutputMessage
+	Index        int         `json:"index"`
+	ContentBlock StreamDelta `json:"content_block"`
+	Delta        StreamDelta `json:"delta"`
 }
 
 type Client struct {
 	apiKey     string
-	httpClient http.Client
+	httpClient *http.Client
 }
 
-func NewClient(apiKey string) *Client {
+func NewClient(apiKey string, httpClient *http.Client) *Client {
 	return &Client{
 		apiKey:     apiKey,
-		httpClient: http.Client{},
+		httpClient: httpClient,
 	}
 }
 
-func (c *Client) CompletionNoStream(prompt string) (string, error) {
-	reqBody := CompletionRequest{
-		Prompt:            prompt,
-		Model:             "claude-v1",
-		MaxTokensToSample: 1000,
-		Stream:            false,
-	}
-	reqBodyBytes, err := json.Marshal(reqBody)
+func (c *Client) MessageCompletionNoStream(completionRequest MessageRequest) (string, error) {
+	reqBodyBytes, err := json.Marshal(completionRequest)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("could not marshal completion request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", CompletionEndpoint, bytes.NewReader(reqBodyBytes))
+	req, err := http.NewRequest(http.MethodPost, MessageEndpoint, bytes.NewReader(reqBodyBytes))
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("could not create request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", c.apiKey)
+	c.setRequestHeaders(req, false)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("could not send request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return "", errors.Wrap(err, "unable to read response body on error: "+resp.Status)
+			return "", fmt.Errorf("unable to read response body on status %v. Error: %w", resp.Status, err)
 		}
 
 		return "", errors.New("non 200 response from anthropic: " + resp.Status + "\nBody:\n" + string(body))
 	}
 
-	completionResponse := CompletionResponse{}
-	if err := json.NewDecoder(resp.Body).Decode(&completionResponse); err != nil {
-		return "", err
+	outputMessage := OutputMessage{}
+	if err := json.NewDecoder(resp.Body).Decode(&outputMessage); err != nil {
+		return "", fmt.Errorf("couldn't unmarshal response body: %w", err)
 	}
 
-	return completionResponse.Completion, nil
+	return outputMessage.Content[0].Text, nil
 }
 
-func (c *Client) Completion(prompt string) (*ai.TextStreamResult, error) {
-	reqBody := CompletionRequest{
-		Prompt:            prompt,
-		Model:             "claude-v1",
-		MaxTokensToSample: 1000,
-		Stream:            true,
-	}
-	reqBodyBytes, err := json.Marshal(reqBody)
+func (c *Client) MessageCompletion(completionRequest MessageRequest) (*ai.TextStreamResult, error) {
+	reqBodyBytes, err := json.Marshal(completionRequest)
 	if err != nil {
 		return nil, err
 	}
 
-	req, err := http.NewRequest("POST", CompletionEndpoint, bytes.NewReader(reqBodyBytes))
+	req, err := http.NewRequest(http.MethodPost, MessageEndpoint, bytes.NewReader(reqBodyBytes))
 	if err != nil {
 		return nil, err
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", c.apiKey)
-	req.Header.Set("Accept", "text/event-stream")
-	req.Header.Set("Connection", "keep-alive")
+	c.setRequestHeaders(req, true)
 
 	output := make(chan string)
 	errChan := make(chan error)
@@ -125,7 +150,7 @@ func (c *Client) Completion(prompt string) (*ai.TextStreamResult, error) {
 		if resp.StatusCode != http.StatusOK {
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
-				errChan <- errors.Wrap(err, "unable to read response body on error: "+resp.Status)
+				errChan <- fmt.Errorf("unable to read response body on status %v. Error: %w", resp.Status, err)
 				return
 			}
 
@@ -134,36 +159,51 @@ func (c *Client) Completion(prompt string) (*ai.TextStreamResult, error) {
 		}
 
 		reader := sse.NewEventStreamReader(resp.Body, 65536)
-
-		seen := strings.Builder{}
 		for {
 			nextEvent, err := reader.ReadEvent()
 			if err != nil {
 				if errors.Is(err, io.EOF) {
 					return
 				}
-				errChan <- errors.Wrap(err, "error while reading event")
+				errChan <- fmt.Errorf("error while reading event: %w", err)
 				return
 			}
 
-			nextEvent = bytes.TrimPrefix(nextEvent, []byte("data: "))
-
-			// There is a bunch of other garbage that can be sent. Just skip it.
-			if !json.Valid(nextEvent) {
-				continue
+			var nextData []byte
+			for _, line := range bytes.FieldsFunc(nextEvent, func(r rune) bool { return r == '\n' || r == '\r' }) {
+				if result, isData := bytes.CutPrefix(line, []byte("data: ")); isData {
+					nextData = result
+				}
 			}
 
-			completionResponse := CompletionResponse{}
-			if err := json.Unmarshal(nextEvent, &completionResponse); err != nil {
-				errChan <- errors.Wrap(err, "couldn't unmarshal data block")
+			messageStreamEvent := MessageStreamEvent{}
+			if err := json.Unmarshal(nextData, &messageStreamEvent); err != nil {
+				errChan <- fmt.Errorf("couldn't unmarshal data block: %w", err)
 				return
 			}
 
-			nextString := strings.TrimPrefix(completionResponse.Completion, seen.String())
-			output <- nextString
-			seen.WriteString(nextString)
+			if messageStreamEvent.Type == "content_block_delta" {
+				// Handle future anthropic changes
+				if messageStreamEvent.Index != 0 {
+					continue
+				}
+				output <- messageStreamEvent.Delta.Text
+			} else if messageStreamEvent.Type == "message_stop" {
+				return
+			}
 		}
 	}()
 
 	return &ai.TextStreamResult{Stream: output, Err: errChan}, nil
+}
+
+func (c *Client) setRequestHeaders(req *http.Request, isStreaming bool) {
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", c.apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	if isStreaming {
+		req.Header.Set("Accept", "text/event-stream")
+		req.Header.Set("Connection", "keep-alive")
+	}
 }

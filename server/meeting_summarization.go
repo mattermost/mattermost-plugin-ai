@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os/exec"
@@ -8,10 +9,11 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 
+	"errors"
+
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/subtitles"
 	"github.com/mattermost/mattermost/server/public/model"
-	"github.com/pkg/errors"
 )
 
 const ReferencedRecordingFileID = "referenced_recording_file_id"
@@ -45,12 +47,12 @@ func (p *Plugin) createTranscription(recordingFileID string) (*subtitles.Subtitl
 
 	recordingFileInfo, err := p.pluginAPI.File.GetInfo(recordingFileID)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to get calls file info")
+		return nil, fmt.Errorf("unable to get calls file info: %w", err)
 	}
 
 	fileReader, err := p.pluginAPI.File.Get(recordingFileID)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to read calls file")
+		return nil, fmt.Errorf("unable to read calls file: %w", err)
 	}
 
 	var cmd *exec.Cmd
@@ -64,120 +66,148 @@ func (p *Plugin) createTranscription(recordingFileID string) (*subtitles.Subtitl
 
 	audioReader, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, errors.Wrap(err, "couldn't create stdout pipe")
+		return nil, fmt.Errorf("couldn't create stdout pipe: %w", err)
 	}
 
 	errorReader, err := cmd.StderrPipe()
 	if err != nil {
-		return nil, errors.Wrap(err, "couldn't create stderr pipe")
+		return nil, fmt.Errorf("couldn't create stderr pipe: %w", err)
 	}
 
 	if err = cmd.Start(); err != nil {
-		return nil, errors.Wrap(err, "couldn't run ffmpeg")
+		return nil, fmt.Errorf("couldn't run ffmpeg: %w", err)
 	}
 
 	transcriber := p.getTranscribe()
 	// Limit reader should probably error out instead of just silently failing
 	transcription, err := transcriber.Transcribe(io.LimitReader(audioReader, WhisperAPILimit))
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to transcribe")
+		return nil, fmt.Errorf("unable to transcribe: %w", err)
 	}
 
 	errout, err := io.ReadAll(errorReader)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to read stderr from ffmpeg")
+		return nil, fmt.Errorf("unable to read stderr from ffmpeg: %w", err)
 	}
 
 	if err := cmd.Wait(); err != nil {
 		p.pluginAPI.Log.Debug("ffmpeg stderr: " + string(errout))
-		return nil, errors.Wrap(err, "error while waiting for ffmpeg")
+		return nil, fmt.Errorf("error while waiting for ffmpeg: %w", err)
 	}
 
 	return transcription, nil
 }
 
-func (p *Plugin) newCallRecordingThread(requestingUser *model.User, recordingPost *model.Post, channel *model.Channel, fileID string) (*model.Post, error) {
+func (p *Plugin) newCallRecordingThread(bot *Bot, requestingUser *model.User, recordingPost *model.Post, channel *model.Channel, fileID string) (*model.Post, error) {
 	siteURL := p.API.GetConfig().ServiceSettings.SiteURL
+	T := i18nLocalizerFunc(p.i18n, requestingUser.Locale)
 	surePost := &model.Post{
-		Message: fmt.Sprintf("Sure, I will summarize this recording: %s/_redirect/pl/%s\n", *siteURL, recordingPost.Id),
+		Message: T("copilot.summarize_recording", "Sure, I will summarize this recording: %s/_redirect/pl/%s\n", *siteURL, recordingPost.Id),
 	}
 	surePost.AddProp(NoRegen, "true")
-	if err := p.botDM(requestingUser.Id, surePost); err != nil {
+	if err := p.botDM(bot.mmBot.UserId, requestingUser.Id, surePost); err != nil {
 		return nil, err
 	}
 
-	if err := p.summarizeCallRecording(surePost.Id, requestingUser, fileID, channel); err != nil {
+	if err := p.summarizeCallRecording(bot, surePost.Id, requestingUser, fileID, channel); err != nil {
 		return nil, err
 	}
 
 	return surePost, nil
 }
 
-func (p *Plugin) newCallTranscriptionSummaryThread(requestingUser *model.User, transcriptionPost *model.Post, channel *model.Channel) (*model.Post, error) {
+func (p *Plugin) newCallTranscriptionSummaryThread(bot *Bot, requestingUser *model.User, transcriptionPost *model.Post, channel *model.Channel) (*model.Post, error) {
 	if len(transcriptionPost.FileIds) != 1 {
-		return nil, errors.New("Unexpected number of files in calls post")
+		return nil, errors.New("unexpected number of files in calls post")
 	}
 
 	siteURL := p.API.GetConfig().ServiceSettings.SiteURL
+	T := i18nLocalizerFunc(p.i18n, requestingUser.Locale)
 	surePost := &model.Post{
-		Message: fmt.Sprintf("Sure, I will summarize this transcription: %s/_redirect/pl/%s\n", *siteURL, transcriptionPost.Id),
+		Message: T("copilot.summarize_transcription", "Sure, I will summarize this transcription: %s/_redirect/pl/%s\n", *siteURL, transcriptionPost.Id),
 	}
 	surePost.AddProp(NoRegen, "true")
-	if err := p.botDM(requestingUser.Id, surePost); err != nil {
+	surePost.AddProp(ReferencedTranscriptPostID, transcriptionPost.Id)
+	if err := p.botDM(bot.mmBot.UserId, requestingUser.Id, surePost); err != nil {
 		return nil, err
 	}
 
-	transcriptionFileID, err := getCaptionsFileIDFromProps(transcriptionPost)
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to get transcription file id")
-	}
-	transcriptionFileInfo, err := p.pluginAPI.File.GetInfo(transcriptionFileID)
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to get transcription file info")
-	}
-	transcriptionFilePost, err := p.pluginAPI.Post.GetPost(transcriptionFileInfo.PostId)
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to get transcription file post")
-	}
-	if transcriptionFilePost.ChannelId != channel.Id {
-		return nil, errors.New("strange configuration of calls transcription file")
-	}
-	transcriptionFileReader, err := p.pluginAPI.File.Get(transcriptionFileID)
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to read calls file")
-	}
+	go func() (reterr error) {
+		// Update to an error if we return one.
+		defer func() {
+			if reterr != nil {
+				surePost.Message = T("copilot.summairize_subscription_error", "Sorry! Something went wrong. Check the server logs for details.")
+				if err := p.pluginAPI.Post.UpdatePost(surePost); err != nil {
+					p.API.LogError("Failed to update post in error handling newCallTranscriptionSummaryThread", "error", err)
+				}
+				p.API.LogError("Error in call recording post", "error", reterr)
+			}
+		}()
 
-	transcription, err := subtitles.NewSubtitlesFromVTT(transcriptionFileReader)
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to parse transcription file")
-	}
+		transcriptionFileID, err := getCaptionsFileIDFromProps(transcriptionPost)
+		if err != nil {
+			return fmt.Errorf("unable to get transcription file id: %w", err)
+		}
+		transcriptionFileInfo, err := p.pluginAPI.File.GetInfo(transcriptionFileID)
+		if err != nil {
+			return fmt.Errorf("unable to get transcription file info: %w", err)
+		}
+		transcriptionFilePost, err := p.pluginAPI.Post.GetPost(transcriptionFileInfo.PostId)
+		if err != nil {
+			return fmt.Errorf("unable to get transcription file post: %w", err)
+		}
+		if transcriptionFilePost.ChannelId != channel.Id {
+			return errors.New("strange configuration of calls transcription file")
+		}
+		transcriptionFileReader, err := p.pluginAPI.File.Get(transcriptionFileID)
+		if err != nil {
+			return fmt.Errorf("unable to read calls file: %w", err)
+		}
 
-	context := p.MakeConversationContext(requestingUser, channel, nil)
-	summaryStream, err := p.summarizeTranscription(transcription, context)
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to summarize transcription")
-	}
+		var transcription *subtitles.Subtitles
+		if transcriptionFilePost.Type == "custom_zoom_chat" {
+			transcription, err = subtitles.NewSubtitlesFromZoomChat(transcriptionFileReader)
+			if err != nil {
+				return fmt.Errorf("unable to parse transcription file: %w", err)
+			}
+		} else {
+			transcription, err = subtitles.NewSubtitlesFromVTT(transcriptionFileReader)
+			if err != nil {
+				return fmt.Errorf("unable to parse transcription file: %w", err)
+			}
+		}
 
-	summaryPost := &model.Post{
-		RootId:    surePost.Id,
-		ChannelId: surePost.ChannelId,
-		Message:   "",
-	}
-	summaryPost.AddProp(ReferencedTranscriptPostID, transcriptionPost.Id)
-	if err := p.streamResultToNewPost(requestingUser.Id, summaryStream, summaryPost); err != nil {
-		return nil, errors.Wrap(err, "unable to stream result to post")
-	}
+		context := p.MakeConversationContext(bot, requestingUser, channel, nil)
+		summaryStream, err := p.summarizeTranscription(bot, transcription, context)
+		if err != nil {
+			return fmt.Errorf("unable to summarize transcription: %w", err)
+		}
+
+		summaryPost := &model.Post{
+			RootId:    surePost.Id,
+			ChannelId: surePost.ChannelId,
+			Message:   "",
+		}
+		summaryPost.AddProp(ReferencedTranscriptPostID, transcriptionPost.Id)
+		if err := p.streamResultToNewPost(bot.mmBot.UserId, requestingUser.Id, summaryStream, summaryPost); err != nil {
+			return fmt.Errorf("unable to stream result to post: %w", err)
+		}
+
+		return nil
+	}()
 
 	return surePost, nil
 }
 
-func (p *Plugin) summarizeCallRecording(rootID string, requestingUser *model.User, recordingFileID string, channel *model.Channel) error {
+func (p *Plugin) summarizeCallRecording(bot *Bot, rootID string, requestingUser *model.User, recordingFileID string, channel *model.Channel) error {
+	T := i18nLocalizerFunc(p.i18n, requestingUser.Locale)
+
 	transcriptPost := &model.Post{
 		RootId:  rootID,
-		Message: "Processing audio into transcription. This will take some time...",
+		Message: T("copilot.summarize_call_recording_processing", "Processing audio into transcription. This will take some time..."),
 	}
 	transcriptPost.AddProp(ReferencedRecordingFileID, recordingFileID)
-	if err := p.botDM(requestingUser.Id, transcriptPost); err != nil {
+	if err := p.botDM(bot.mmBot.UserId, requestingUser.Id, transcriptPost); err != nil {
 		return err
 	}
 
@@ -185,7 +215,7 @@ func (p *Plugin) summarizeCallRecording(rootID string, requestingUser *model.Use
 		// Update to an error if we return one.
 		defer func() {
 			if reterr != nil {
-				transcriptPost.Message = "Sorry! Somthing went wrong. Check the server logs for details."
+				transcriptPost.Message = T("copilot.summarize_call_recording_processing_error", "Sorry! Something went wrong. Check the server logs for details.")
 				if err := p.pluginAPI.Post.UpdatePost(transcriptPost); err != nil {
 					p.API.LogError("Failed to update post in error handling handleCallRecordingPost", "error", err)
 				}
@@ -195,27 +225,31 @@ func (p *Plugin) summarizeCallRecording(rootID string, requestingUser *model.Use
 
 		transcription, err := p.createTranscription(recordingFileID)
 		if err != nil {
-			return errors.Wrap(err, "failed to create transcription")
+			return fmt.Errorf("failed to create transcription: %w", err)
 		}
 
 		transcriptFileInfo, err := p.pluginAPI.File.Upload(strings.NewReader(transcription.FormatVTT()), "transcript.txt", channel.Id)
 		if err != nil {
-			return errors.Wrap(err, "unable to upload transcript")
+			return fmt.Errorf("unable to upload transcript: %w", err)
 		}
 
-		context := p.MakeConversationContext(requestingUser, channel, nil)
-		summaryStream, err := p.summarizeTranscription(transcription, context)
+		conversationContext := p.MakeConversationContext(bot, requestingUser, channel, nil)
+		summaryStream, err := p.summarizeTranscription(bot, transcription, conversationContext)
 		if err != nil {
-			return errors.Wrap(err, "unable to summarize transcription")
+			return fmt.Errorf("unable to summarize transcription: %w", err)
 		}
 
-		if err := p.updatePostWithFile(transcriptPost, transcriptFileInfo); err != nil {
-			return errors.Wrap(err, "unable to update transcript post")
+		if err = p.updatePostWithFile(transcriptPost, transcriptFileInfo); err != nil {
+			return fmt.Errorf("unable to update transcript post: %w", err)
 		}
 
-		if err := p.streamResultToPost(summaryStream, transcriptPost); err != nil {
-			return errors.Wrap(err, "unable to stream result to post")
+		ctx, err := p.getPostStreamingContext(context.Background(), transcriptPost.Id)
+		if err != nil {
+			return fmt.Errorf("unable to get post streaming context: %w", err)
 		}
+		defer p.finishPostStreaming(transcriptPost.Id)
+
+		p.streamResultToPost(ctx, summaryStream, transcriptPost, requestingUser.Locale)
 
 		return nil
 	}()
@@ -223,10 +257,10 @@ func (p *Plugin) summarizeCallRecording(rootID string, requestingUser *model.Use
 	return nil
 }
 
-func (p *Plugin) summarizeTranscription(transcription *subtitles.Subtitles, context ai.ConversationContext) (*ai.TextStreamResult, error) {
+func (p *Plugin) summarizeTranscription(bot *Bot, transcription *subtitles.Subtitles, context ai.ConversationContext) (*ai.TextStreamResult, error) {
 	llmFormattedTranscription := transcription.FormatForLLM()
-	tokens := p.getLLM().CountTokens(llmFormattedTranscription)
-	tokenLimitWithMargin := int(float64(p.getLLM().TokenLimit())*0.75) - ContextTokenMargin
+	tokens := p.getLLM(bot.cfg).CountTokens(llmFormattedTranscription)
+	tokenLimitWithMargin := int(float64(p.getLLM(bot.cfg).TokenLimit())*0.75) - ContextTokenMargin
 	if tokenLimitWithMargin < 0 {
 		tokenLimitWithMargin = ContextTokenMargin / 2
 	}
@@ -238,14 +272,14 @@ func (p *Plugin) summarizeTranscription(transcription *subtitles.Subtitles, cont
 		p.pluginAPI.Log.Debug("Split into chunks", "chunks", len(chunks))
 		for _, chunk := range chunks {
 			context.PromptParameters = map[string]string{"TranscriptionChunk": chunk}
-			summarizeChunkPrompt, err := p.prompts.ChatCompletion(ai.PromptSummarizeChunk, context)
+			summarizeChunkPrompt, err := p.prompts.ChatCompletion(ai.PromptSummarizeChunk, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
 			if err != nil {
-				return nil, errors.Wrap(err, "unable to get summarize chunk prompt")
+				return nil, fmt.Errorf("unable to get summarize chunk prompt: %w", err)
 			}
 
-			summarizedChunk, err := p.getLLM().ChatCompletionNoStream(summarizeChunkPrompt)
+			summarizedChunk, err := p.getLLM(bot.cfg).ChatCompletionNoStream(summarizeChunkPrompt)
 			if err != nil {
-				return nil, errors.Wrap(err, "unable to get summarized chunk")
+				return nil, fmt.Errorf("unable to get summarized chunk: %w", err)
 			}
 
 			summarizedChunks = append(summarizedChunks, summarizedChunk)
@@ -253,18 +287,18 @@ func (p *Plugin) summarizeTranscription(transcription *subtitles.Subtitles, cont
 
 		llmFormattedTranscription = strings.Join(summarizedChunks, "\n\n")
 		isChunked = true
-		p.pluginAPI.Log.Debug("Completed chunk summarization", "chunks", len(summarizedChunks), "tokens", p.getLLM().CountTokens(llmFormattedTranscription))
+		p.pluginAPI.Log.Debug("Completed chunk summarization", "chunks", len(summarizedChunks), "tokens", p.getLLM(bot.cfg).CountTokens(llmFormattedTranscription))
 	}
 
 	context.PromptParameters = map[string]string{"Transcription": llmFormattedTranscription, "IsChunked": fmt.Sprintf("%t", isChunked)}
-	summaryPrompt, err := p.prompts.ChatCompletion(ai.PromptMeetingSummary, context)
+	summaryPrompt, err := p.prompts.ChatCompletion(ai.PromptMeetingSummary, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to get meeting summary prompt")
+		return nil, fmt.Errorf("unable to get meeting summary prompt: %w", err)
 	}
 
-	summaryStream, err := p.getLLM().ChatCompletion(summaryPrompt)
+	summaryStream, err := p.getLLM(bot.cfg).ChatCompletion(summaryPrompt)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to get meeting summary")
+		return nil, fmt.Errorf("unable to get meeting summary: %w", err)
 	}
 
 	return summaryStream, nil
@@ -279,13 +313,13 @@ func (p *Plugin) updatePostWithFile(post *model.Post, fileinfo *model.FileInfo) 
 			sq.Eq{"Id": fileinfo.Id},
 			sq.Eq{"PostId": ""},
 		})); err != nil {
-		return errors.Wrap(err, "unable to update file info")
+		return fmt.Errorf("unable to update file info: %w", err)
 	}
 
 	post.FileIds = []string{fileinfo.Id}
 	post.Message = ""
 	if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
-		return errors.Wrap(err, "unable to update post")
+		return fmt.Errorf("unable to update post: %w", err)
 	}
 
 	return nil

@@ -5,7 +5,6 @@ import styled, {keyframes, css} from 'styled-components';
 import {GlobalState} from '@mattermost/types/store';
 import {Channel} from '@mattermost/types/channels';
 import {Team} from '@mattermost/types/teams';
-import {Post} from '@mattermost/types/posts';
 
 export type ChannelNamesMap = {
     [name: string]: {
@@ -17,6 +16,7 @@ export type ChannelNamesMap = {
 interface Props {
     message: string;
     channelID: string;
+    postID: string;
     showCursor?: boolean;
 }
 
@@ -28,7 +28,20 @@ const blinkKeyframes = keyframes`
 
 const TextContainer = styled.div<{showCursor?: boolean}>`
 	${(props) => props.showCursor && css`
-		>p:last-of-type::after {
+		>ul:last-child>li:last-child>span:not(:has(li))::after,
+		>ol:last-child>li:last-child>span:not(:has(li))::after,
+		>ul:last-child>li:last-child>span>ul>li:last-child>span:not(:has(li))::after,
+		>ol:last-child>li:last-child>span>ul>li:last-child>span:not(:has(li))::after,
+		>ul:last-child>li:last-child>span>ol>li:last-child>span:not(:has(li))::after,
+		>ol:last-child>li:last-child>span>ol>li:last-child>span:not(:has(li))::after,
+		>h1:last-child::after,
+		>h2:last-child::after,
+		>h3:last-child::after,
+		>h4:last-child::after,
+		>h5:last-child::after,
+		>h6:last-child::after,
+		>blockquote:last-child>p::after,
+		>p:last-child::after {
 			content: '';
 			width: 7px;
 			height: 16px;
@@ -44,8 +57,7 @@ const TextContainer = styled.div<{showCursor?: boolean}>`
 const PostText = (props: Props) => {
     const channel = useSelector<GlobalState, Channel>((state) => state.entities.channels.channels[props.channelID]);
     const team = useSelector<GlobalState, Team>((state) => state.entities.teams.teams[channel?.team_id]);
-
-    //const channelNamesMap = useSelector<GlobalState, ChannelNamesMap>(getChannelsNameMapInCurrentTeam);
+    const siteURL = useSelector<GlobalState, string | undefined>((state) => state.entities.general.config.SiteURL);
 
     // @ts-ignore
     const {formatText, messageHtmlToComponent} = window.PostUtils;
@@ -55,26 +67,32 @@ const PostText = (props: Props) => {
         mentionHighlight: true,
         atMentions: true,
         team,
-
-        //channelNamesMap,
+        unsafeLinks: true,
+        minimumHashtagLength: 1000000000,
+        siteURL,
     };
 
     const messageHtmlToComponentOptions = {
         hasPluginTooltips: true,
+        latex: false,
+        inlinelatex: false,
+        postId: props.postID,
     };
 
     const text = messageHtmlToComponent(
         formatText(props.message, markdownOptions),
-        true,
         messageHtmlToComponentOptions,
     );
 
     if (!text) {
-        return <TextContainer showCursor={true}>{<p/>}</TextContainer>;
+        return <TextContainer showCursor={props.showCursor}>{<p/>}</TextContainer>;
     }
 
     return (
-        <TextContainer showCursor={props.showCursor}>
+        <TextContainer
+            data-testid='posttext'
+            showCursor={props.showCursor}
+        >
             {text}
         </TextContainer>
     );

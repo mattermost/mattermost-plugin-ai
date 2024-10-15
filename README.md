@@ -1,45 +1,84 @@
-# Mattermost AI Plugin
+# Mattermost Copilot Plugin
 
 > Mattermost plugin for local and third-party LLMs
 
-![The Mattermost AI Plugin is an extension for mattermost that provides functionality for local and third-party LLMs](https://github.com/mattermost/openops/assets/7295363/37cc5337-16a0-4d88-971f-71cd0cdc52e9)
+![The Mattermost Copilot AI Plugin is an extension for mattermost that provides functionality for local and third-party LLMs](https://github.com/mattermost/mattermost-plugin-ai/assets/2040554/6a787ff6-013d-4492-90ce-54aa7a292a4a)
+
+
 
 <!-- omit from toc -->
 ## Table of Contents
 
 - [Background](#background)
-- [Install](#install)
-- [Usage](#usage)
 - [Contributing](#contributing)
 - [License](#license)
 
 ## Background
 
-The Mattermost AI Plugin adds functionality for local (self-hosted) and third-party (vendor-hosted) LLMs within Mattermost.
+The Mattermost Copilot Plugin adds functionality for local (self-hosted) and third-party (vendor-hosted) LLMs within Mattermost v9.6 and above. This plugin is currently experimental. 
 
-This plugin is currently experimental. Contributions and suggestions are welcome. See the [Contributing](#contributing) section for more details!
-
-Mattermost AI Plugin is also part of the [Mattermost OpenOps](https://openops.mattermost.com) framework for responsible development of AI-enhanced workflows.
+Contributions and suggestions are welcome. See the [Contributing](#contributing) section for more details!
 
 Join the discussion in the [~AI-Exchange channel](https://community.mattermost.com/core/channels/ai-exchange) and explore the [Discourse forum](https://forum.mattermost.com/c/openops-ai/40). 💬
 
 ## Install
 
-These installation instructions assume you already have a [Mattermost instance](https://mattermost.com/download/) with [PostgreSQL](https://www.postgresql.org/):
+We recommend using Mattermost Server v9.6 or later for the best experience. Compatible Mattermost server versions include:
 
-1. Download the [latest release](https://github.com/mattermost/mattermost-plugin-ai/releases) of the Mattermost AI Plugin
-2. Log in to Mattermost as an administrator
-3. Upload the `*.tar.gz` to your server via **System Console** ➡️ **Plugin Management**. See [this documentation](https://developers.mattermost.com/integrate/plugins/using-and-managing-plugins/#custom-plugins) for help.
-4. Enable the Mattermost AI Plugin via **System Console** ➡️ **Mattermost AI Plugin**.
-5. Follow the [configuration guide](./docs/configuration-guide.md) to set up the Mattermost AI Plugin.
+- v9.6 or later
+- v9.5.2+ ([ESR](https://docs.mattermost.com/deploy/mattermost-changelog.html#release-v9-5-extended-support-release))
+- v9.4.4+
+- v9.3.3+
+- v8.1.11+ ([ESR](https://docs.mattermost.com/deploy/mattermost-changelog.html))
 
-## Usage
+See the [Mattermost Product Documentation](https://docs.mattermost.com/configure/enable-copilot.html) for details on installing, configuring, enabling, and using this Mattermost integration.
 
-After following the [configuration guide](./docs/configuration-guide.md) to connect your LLM to Mattermost, there many ways to integrate AI into your collaboration workflows. To help you get started, check out the examples in the [Usage](./docs/usage.md) documentation. 🚀
+**Note**: Installation instructions assume you already have [Mattermost Server](https://mattermost.com/download/) installed and configured with [PostgreSQL](https://www.postgresql.org/).
+
+## How to Release
+
+To trigger a release, follow these steps:
+
+1. **For Patch Release:** Run the following command:
+    ```
+    make patch
+    ```
+   This will release a patch change.
+
+2. **For Minor Release:** Run the following command:
+    ```
+    make minor
+    ```
+   This will release a minor change.
+
+3. **For Major Release:** Run the following command:
+    ```
+    make major
+    ```
+   This will release a major change.
+
+4. **For Patch Release Candidate (RC):** Run the following command:
+    ```
+    make patch-rc
+    ```
+   This will release a patch release candidate.
+
+5. **For Minor Release Candidate (RC):** Run the following command:
+    ```
+    make minor-rc
+    ```
+   This will release a minor release candidate.
+
+6. **For Major Release Candidate (RC):** Run the following command:
+    ```
+    make major-rc
+    ```
+   This will release a major release candidate.
+
 
 ## Contributing
 
-Interested in contributing to our open source project? Start by reviewing the [contributor guidelines](./.github/CONTRIBUTING.md) for this repository.
+Interested in contributing to our open source project? Start by reviewing the [contributor guidelines](./.github/CONTRIBUTING.md) for this repository. See the [Developer Setup Guide](docs/developer-setup-guide.md) for details on setting up a Mattermost instance for development.
 
 ## License
 

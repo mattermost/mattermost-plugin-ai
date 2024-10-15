@@ -1,29 +1,39 @@
 package main
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
-	"github.com/pkg/errors"
+	"github.com/mattermost/mattermost/server/public/pluginapi"
 )
 
 const (
 	ContextPostKey        = "post"
 	ContextChannelKey     = "channel"
+	ContextBotKey         = "bot"
 	ContextPlaybookRunKey = "playbookrun"
+
+	requestBodyMaxSizeBytes = 1024 * 1024 // 1MB
 )
 
-// ServeHTTP demonstrates a plugin that handles HTTP requests by greeting the world.
 func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Request) {
 	router := gin.Default()
 	router.Use(p.ginlogger)
 	router.Use(p.MattermostAuthorizationRequired)
+	router.Use(p.metricsMiddleware)
 
 	router.GET("/ai_threads", p.handleGetAIThreads)
+	router.GET("/ai_bots", p.handleGetAIBots)
+	router.POST("/telemetry/track", p.handleTrackEvent)
 
-	postRouter := router.Group("/post/:postid")
+	botRequiredRouter := router.Group("")
+	botRequiredRouter.Use(p.aiBotRequired)
+
+	postRouter := botRequiredRouter.Group("/post/:postid")
 	postRouter.Use(p.postAuthorizationRequired)
 	postRouter.POST("/react", p.handleReact)
 	postRouter.POST("/summarize", p.handleSummarize)
@@ -31,8 +41,9 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	postRouter.POST("/summarize_transcription", p.handleSummarizeTranscription)
 	postRouter.POST("/stop", p.handleStop)
 	postRouter.POST("/regenerate", p.handleRegenerate)
+	postRouter.POST("/postback_summary", p.handlePostbackSummary)
 
-	channelRouter := router.Group("/channel/:channelid")
+	channelRouter := botRequiredRouter.Group("/channel/:channelid")
 	channelRouter.Use(p.channelAuthorizationRequired)
 	channelRouter.POST("/since", p.handleSince)
 
@@ -44,6 +55,16 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	adminRouter.Use(p.mattermostAdminAuthorizationRequired)
 
 	router.ServeHTTP(w, r)
+}
+
+func (p *Plugin) aiBotRequired(c *gin.Context) {
+	botUsername := c.DefaultQuery("botUsername", p.getConfiguration().DefaultBotName)
+	bot := p.GetBotByUsernameOrFirst(botUsername)
+	if bot == nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to get bot: %s", botUsername))
+		return
+	}
+	c.Set(ContextBotKey, bot)
 }
 
 func (p *Plugin) ginlogger(c *gin.Context) {
@@ -65,23 +86,72 @@ func (p *Plugin) MattermostAuthorizationRequired(c *gin.Context) {
 func (p *Plugin) handleGetAIThreads(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 
-	botDMChannel, err := p.pluginAPI.Channel.GetDirect(userID, p.botid)
+	p.botsLock.RLock()
+	defer p.botsLock.RUnlock()
+	dmChannelIDs := []string{}
+	for _, bot := range p.bots {
+		botDMChannel, err := p.pluginAPI.Channel.GetDirect(userID, bot.mmBot.UserId)
+		if err != nil {
+			c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to get DM with AI bot: %w", err))
+			return
+		}
+
+		// Extra permissions checks are not totally necessary since a user should always have permission to read their own DMs
+		if !p.pluginAPI.User.HasPermissionToChannel(userID, botDMChannel.Id, model.PermissionReadChannel) {
+			c.AbortWithError(http.StatusForbidden, errors.New("user doesn't have permission to read channel"))
+			return
+		}
+
+		dmChannelIDs = append(dmChannelIDs, botDMChannel.Id)
+	}
+
+	threads, err := p.getAIThreads(dmChannelIDs)
 	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "unable to get DM with AI bot"))
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to get posts for bot DM: %w", err))
 		return
 	}
 
-	// Extra permissions checks are not totally nessiary since a user should always have permission to read their own DMs
-	if !p.pluginAPI.User.HasPermissionToChannel(userID, botDMChannel.Id, model.PermissionReadChannel) {
-		c.AbortWithError(http.StatusForbidden, errors.New("user doesn't have permission to read channel"))
-		return
-	}
+	c.JSON(http.StatusOK, threads)
+}
 
-	posts, err := p.getAIThreads(botDMChannel.Id)
+type AIBotInfo struct {
+	ID             string `json:"id"`
+	DisplayName    string `json:"displayName"`
+	Username       string `json:"username"`
+	LastIconUpdate int64  `json:"lastIconUpdate"`
+	DMChannelID    string `json:"dmChannelID"`
+}
+
+func (p *Plugin) handleGetAIBots(c *gin.Context) {
+	userID := c.GetHeader("Mattermost-User-Id")
+
+	ownedBots, err := p.pluginAPI.Bot.List(0, 1000, pluginapi.BotOwner("mattermost-ai"))
 	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "failed to get posts for bot DM"))
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to get bots: %w", err))
 		return
 	}
 
-	c.JSON(http.StatusOK, posts)
+	// Get the info from all the bots.
+	// Put the default bot first.
+	bots := make([]AIBotInfo, len(ownedBots))
+	defaultBotName := p.getConfiguration().DefaultBotName
+	for i, bot := range ownedBots {
+		direct, err := p.pluginAPI.Channel.GetDirect(userID, bot.UserId)
+		if err != nil {
+			p.API.LogError("unable to get direct channel for bot", "error", err)
+			continue
+		}
+		bots[i] = AIBotInfo{
+			ID:             bot.UserId,
+			DisplayName:    bot.DisplayName,
+			Username:       bot.Username,
+			LastIconUpdate: bot.LastIconUpdate,
+			DMChannelID:    direct.Id,
+		}
+		if bot.Username == defaultBotName {
+			bots[0], bots[i] = bots[i], bots[0]
+		}
+	}
+
+	c.JSON(http.StatusOK, bots)
 }

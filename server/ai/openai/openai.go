@@ -9,65 +9,102 @@ import (
 	"image"
 	"image/png"
 	"io"
-	"net/url"
+	"net/http"
 	"strings"
+	"time"
+
+	"errors"
 
 	"github.com/invopop/jsonschema"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/subtitles"
-	"github.com/pkg/errors"
+	"github.com/mattermost/mattermost-plugin-ai/server/metrics"
 	openaiClient "github.com/sashabaranov/go-openai"
 )
 
 type OpenAI struct {
-	client       *openaiClient.Client
-	defaultModel string
-	maxTokens    int
+	client           *openaiClient.Client
+	defaultModel     string
+	tokenLimit       int
+	streamingTimeout time.Duration
+	metricsService   metrics.LLMetrics
 }
+
+const StreamingTimeoutDefault = 10 * time.Second
 
 const MaxFunctionCalls = 10
 
-func NewCompatible(llmService ai.ServiceConfig) *OpenAI {
-	apiKey := llmService.APIKey
-	endpointURL := llmService.URL
-	defaultModel := llmService.DefaultModel
-	config := openaiClient.DefaultConfig(apiKey)
-	config.BaseURL = endpointURL
+const OpenAIMaxImageSize = 20 * 1024 * 1024 // 20 MB
 
-	parsedURL, err := url.Parse(endpointURL)
-	if err == nil && strings.HasSuffix(parsedURL.Host, "openai.azure.com") {
-		config = openaiClient.DefaultAzureConfig(apiKey, endpointURL)
-		config.APIVersion = "2023-07-01-preview"
-	}
-	return &OpenAI{
-		client:       openaiClient.NewClientWithConfig(config),
-		defaultModel: defaultModel,
-		maxTokens:    llmService.TokenLimit,
-	}
+var ErrStreamingTimeout = errors.New("timeout streaming")
+
+func NewAzure(llmService ai.ServiceConfig, httpClient *http.Client, metricsService metrics.LLMetrics) *OpenAI {
+	return newOpenAI(llmService, httpClient, metricsService,
+		func(apiKey string) openaiClient.ClientConfig {
+			config := openaiClient.DefaultAzureConfig(apiKey, strings.TrimSuffix(llmService.APIURL, "/"))
+			config.APIVersion = "2024-06-01"
+			return config
+		},
+	)
 }
 
-func New(llmService ai.ServiceConfig) *OpenAI {
+func NewCompatible(llmService ai.ServiceConfig, httpClient *http.Client, metricsService metrics.LLMetrics) *OpenAI {
+	return newOpenAI(llmService, httpClient, metricsService,
+		func(apiKey string) openaiClient.ClientConfig {
+			config := openaiClient.DefaultConfig(apiKey)
+			config.BaseURL = strings.TrimSuffix(llmService.APIURL, "/")
+			return config
+		},
+	)
+}
+
+func New(llmService ai.ServiceConfig, httpClient *http.Client, metricsService metrics.LLMetrics) *OpenAI {
+	return newOpenAI(llmService, httpClient, metricsService,
+		func(apiKey string) openaiClient.ClientConfig {
+			config := openaiClient.DefaultConfig(apiKey)
+			config.OrgID = llmService.OrgID
+			return config
+		},
+	)
+}
+
+func newOpenAI(
+	llmService ai.ServiceConfig,
+	httpClient *http.Client,
+	metricsService metrics.LLMetrics,
+	baseConfigFunc func(apiKey string) openaiClient.ClientConfig,
+) *OpenAI {
+	apiKey := llmService.APIKey
 	defaultModel := llmService.DefaultModel
 	if defaultModel == "" {
 		defaultModel = openaiClient.GPT3Dot5Turbo
 	}
-	config := openaiClient.DefaultConfig(llmService.APIKey)
-	config.OrgID = llmService.OrgID
+
+	config := baseConfigFunc(apiKey)
+	config.HTTPClient = httpClient
+
+	streamingTimeout := StreamingTimeoutDefault
+	if llmService.StreamingTimeoutSeconds > 0 {
+		streamingTimeout = time.Duration(llmService.StreamingTimeoutSeconds) * time.Second
+	}
+
 	return &OpenAI{
-		client:       openaiClient.NewClientWithConfig(config),
-		defaultModel: defaultModel,
-		maxTokens:    llmService.TokenLimit,
+		client:           openaiClient.NewClientWithConfig(config),
+		defaultModel:     defaultModel,
+		tokenLimit:       llmService.TokenLimit,
+		streamingTimeout: streamingTimeout,
+		metricsService:   metricsService,
 	}
 }
 
 func modifyCompletionRequestWithConversation(request openaiClient.ChatCompletionRequest, conversation ai.BotConversation) openaiClient.ChatCompletionRequest {
 	request.Messages = postsToChatCompletionMessages(conversation.Posts)
-	request.Functions = toolsToFunctionDefinitions(conversation.Tools.GetTools())
+	request.Tools = toolsToOpenAITools(conversation.Tools.GetTools())
 	return request
 }
 
-func toolsToFunctionDefinitions(tools []ai.Tool) []openaiClient.FunctionDefinition {
-	result := make([]openaiClient.FunctionDefinition, 0, len(tools))
+func toolsToOpenAITools(tools []ai.Tool) []openaiClient.Tool {
+	result := make([]openaiClient.Tool, 0, len(tools))
 
 	schemaMaker := jsonschema.Reflector{
 		Anonymous:      true,
@@ -76,10 +113,13 @@ func toolsToFunctionDefinitions(tools []ai.Tool) []openaiClient.FunctionDefiniti
 
 	for _, tool := range tools {
 		schema := schemaMaker.Reflect(tool.Schema)
-		result = append(result, openaiClient.FunctionDefinition{
-			Name:        tool.Name,
-			Description: tool.Description,
-			Parameters:  schema,
+		result = append(result, openaiClient.Tool{
+			Type: openaiClient.ToolTypeFunction,
+			Function: &openaiClient.FunctionDefinition{
+				Name:        tool.Name,
+				Description: tool.Description,
+				Parameters:  schema,
+			},
 		})
 	}
 
@@ -96,10 +136,55 @@ func postsToChatCompletionMessages(posts []ai.Post) []openaiClient.ChatCompletio
 		} else if post.Role == ai.PostRoleSystem {
 			role = openaiClient.ChatMessageRoleSystem
 		}
-		result = append(result, openaiClient.ChatCompletionMessage{
-			Role:    role,
-			Content: post.Message,
-		})
+		completionMessage := openaiClient.ChatCompletionMessage{
+			Role: role,
+		}
+
+		if len(post.Files) > 0 {
+			completionMessage.MultiContent = make([]openaiClient.ChatMessagePart, 0, len(post.Files)+1)
+			if post.Message != "" {
+				completionMessage.MultiContent = append(completionMessage.MultiContent, openaiClient.ChatMessagePart{
+					Type: openaiClient.ChatMessagePartTypeText,
+					Text: post.Message,
+				})
+			}
+			for _, file := range post.Files {
+				if file.MimeType != "image/png" &&
+					file.MimeType != "image/jpeg" &&
+					file.MimeType != "image/gif" &&
+					file.MimeType != "image/webp" {
+					completionMessage.MultiContent = append(completionMessage.MultiContent, openaiClient.ChatMessagePart{
+						Type: openaiClient.ChatMessagePartTypeText,
+						Text: "User submitted image was not a supported format. Tell the user this.",
+					})
+					continue
+				}
+				if file.Size > OpenAIMaxImageSize {
+					completionMessage.MultiContent = append(completionMessage.MultiContent, openaiClient.ChatMessagePart{
+						Type: openaiClient.ChatMessagePartTypeText,
+						Text: "User submitted a image larger than 20MB. Tell the user this.",
+					})
+					continue
+				}
+				fileBytes, err := io.ReadAll(file.Reader)
+				if err != nil {
+					continue
+				}
+				imageEncoded := base64.StdEncoding.EncodeToString(fileBytes)
+				encodedString := fmt.Sprintf("data:"+file.MimeType+";base64,%s", imageEncoded)
+				completionMessage.MultiContent = append(completionMessage.MultiContent, openaiClient.ChatMessagePart{
+					Type: openaiClient.ChatMessagePartTypeImageURL,
+					ImageURL: &openaiClient.ChatMessageImageURL{
+						URL:    encodedString,
+						Detail: openaiClient.ImageURLDetailAuto,
+					},
+				})
+			}
+		} else {
+			completionMessage.Content = post.Message
+		}
+
+		result = append(result, completionMessage)
 	}
 
 	return result
@@ -112,42 +197,69 @@ func createFunctionArrgmentResolver(jsonArgs string) ai.ToolArgumentGetter {
 	}
 }
 
-func (s *OpenAI) handleStreamFunctionCall(request openaiClient.ChatCompletionRequest, conversation ai.BotConversation, name, arguments string) (openaiClient.ChatCompletionRequest, error) {
-	toolResult, err := conversation.Tools.ResolveTool(name, createFunctionArrgmentResolver(arguments), conversation.Context)
-	if err != nil {
-		fmt.Println("Error resolving function: ", err)
-	}
-	request.Messages = append(request.Messages, openaiClient.ChatCompletionMessage{
-		Role:    openaiClient.ChatMessageRoleFunction,
-		Name:    name,
-		Content: toolResult,
-	})
-
-	return request, nil
+type ToolBufferElement struct {
+	id   strings.Builder
+	name strings.Builder
+	args strings.Builder
 }
 
 func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionRequest, conversation ai.BotConversation, output chan<- string, errChan chan<- error) {
 	request.Stream = true
-	stream, err := s.client.CreateChatCompletionStream(context.Background(), request)
+
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+
+	// watchdog to cancel if the streaming stalls
+	watchdog := make(chan struct{})
+	go func() {
+		timer := time.NewTimer(s.streamingTimeout)
+		defer timer.Stop()
+		for {
+			select {
+			case <-timer.C:
+				cancel(ErrStreamingTimeout)
+				return
+			case <-ctx.Done():
+				return
+			case <-watchdog:
+				if !timer.Stop() {
+					<-timer.C
+				}
+				timer.Reset(s.streamingTimeout)
+			}
+		}
+	}()
+
+	stream, err := s.client.CreateChatCompletionStream(ctx, request)
 	if err != nil {
-		errChan <- err
+		if ctxErr := context.Cause(ctx); ctxErr != nil {
+			errChan <- ctxErr
+		} else {
+			errChan <- err
+		}
 		return
 	}
 
 	defer stream.Close()
 
-	// Buffering in the case of a function call.
-	functionName := strings.Builder{}
-	functionArguments := strings.Builder{}
+	// Buffering in the case of tool use
+	var toolsBuffer map[int]*ToolBufferElement
 	for {
 		response, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
 			return
 		}
 		if err != nil {
-			errChan <- err
+			if ctxErr := context.Cause(ctx); ctxErr != nil {
+				errChan <- ctxErr
+			} else {
+				errChan <- err
+			}
 			return
 		}
+
+		// Ping the watchdog when we receive a response
+		watchdog <- struct{}{}
 
 		if len(response.Choices) == 0 {
 			continue
@@ -159,41 +271,87 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 			// Not done yet, keep going
 		case openaiClient.FinishReasonStop:
 			return
-		case openaiClient.FinishReasonFunctionCall:
+		case openaiClient.FinishReasonToolCalls:
 			// Verify OpenAI functions are not recursing too deep.
 			numFunctionCalls := 0
 			for i := len(request.Messages) - 1; i >= 0; i-- {
-				if request.Messages[i].Role == openaiClient.ChatMessageRoleFunction {
+				if request.Messages[i].Role == openaiClient.ChatMessageRoleTool {
 					numFunctionCalls++
 				} else {
 					break
 				}
 			}
 			if numFunctionCalls > MaxFunctionCalls {
-				errChan <- errors.New("Too many function calls")
+				errChan <- errors.New("too many function calls")
 				return
 			}
 
-			// Call ourselves again with the result of the function call
-			recursiveRequest, err := s.handleStreamFunctionCall(request, conversation, functionName.String(), functionArguments.String())
-			if err != nil {
-				errChan <- err
-				return
+			// Transfer the buffered tools into tool calls
+			tools := []openaiClient.ToolCall{}
+			for i, tool := range toolsBuffer {
+				name := tool.name.String()
+				arguments := tool.args.String()
+				toolID := tool.id.String()
+				num := i
+				tools = append(tools, openaiClient.ToolCall{
+					Function: openaiClient.FunctionCall{
+						Name:      name,
+						Arguments: arguments,
+					},
+					ID:    toolID,
+					Index: &num,
+					Type:  openaiClient.ToolTypeFunction,
+				})
 			}
-			s.streamResultToChannels(recursiveRequest, conversation, output, errChan)
+
+			// Add the tool calls to the request
+			request.Messages = append(request.Messages, openaiClient.ChatCompletionMessage{
+				Role:      openaiClient.ChatMessageRoleAssistant,
+				ToolCalls: tools,
+			})
+
+			// Resolve the tools and create messages for each
+			for _, tool := range tools {
+				name := tool.Function.Name
+				arguments := tool.Function.Arguments
+				toolID := tool.ID
+				toolResult, err := conversation.Tools.ResolveTool(name, createFunctionArrgmentResolver(arguments), conversation.Context)
+				if err != nil {
+					fmt.Printf("Error resolving function %s: %s", name, err)
+				}
+				request.Messages = append(request.Messages, openaiClient.ChatCompletionMessage{
+					Role:       openaiClient.ChatMessageRoleTool,
+					Name:       name,
+					Content:    toolResult,
+					ToolCallID: toolID,
+				})
+			}
+
+			// Call ourselves again with the result of the function call
+			s.streamResultToChannels(request, conversation, output, errChan)
 			return
 		default:
 			fmt.Printf("Unknown finish reason: %s", response.Choices[0].FinishReason)
 			return
 		}
 
-		// Keep track of any function call received
-		if response.Choices[0].Delta.FunctionCall != nil {
-			if response.Choices[0].Delta.FunctionCall.Name != "" {
-				functionName.WriteString(response.Choices[0].Delta.FunctionCall.Name)
+		delta := response.Choices[0].Delta
+		numTools := len(delta.ToolCalls)
+		if numTools != 0 {
+			if toolsBuffer == nil {
+				toolsBuffer = make(map[int]*ToolBufferElement)
 			}
-			if response.Choices[0].Delta.FunctionCall.Arguments != "" {
-				functionArguments.WriteString(response.Choices[0].Delta.FunctionCall.Arguments)
+			for _, toolCall := range delta.ToolCalls {
+				if toolCall.Index == nil {
+					continue
+				}
+				toolIndex := *toolCall.Index
+				if toolsBuffer[toolIndex] == nil {
+					toolsBuffer[toolIndex] = &ToolBufferElement{}
+				}
+				toolsBuffer[toolIndex].name.WriteString(toolCall.Function.Name)
+				toolsBuffer[toolIndex].args.WriteString(toolCall.Function.Arguments)
+				toolsBuffer[toolIndex].id.WriteString(toolCall.ID)
 			}
 		}
 
@@ -215,8 +373,8 @@ func (s *OpenAI) streamResult(request openaiClient.ChatCompletionRequest, conver
 
 func (s *OpenAI) GetDefaultConfig() ai.LLMConfig {
 	return ai.LLMConfig{
-		Model:     s.defaultModel,
-		MaxTokens: 0,
+		Model:              s.defaultModel,
+		MaxGeneratedTokens: 0,
 	}
 }
 
@@ -225,13 +383,14 @@ func (s *OpenAI) createConfig(opts []ai.LanguageModelOption) ai.LLMConfig {
 	for _, opt := range opts {
 		opt(&cfg)
 	}
+
 	return cfg
 }
 
 func (s *OpenAI) completionRequestFromConfig(cfg ai.LLMConfig) openaiClient.ChatCompletionRequest {
 	return openaiClient.ChatCompletionRequest{
 		Model:            cfg.Model,
-		MaxTokens:        cfg.MaxTokens,
+		MaxTokens:        cfg.MaxGeneratedTokens,
 		Temperature:      1.0,
 		TopP:             1.0,
 		FrequencyPenalty: 0,
@@ -240,6 +399,8 @@ func (s *OpenAI) completionRequestFromConfig(cfg ai.LLMConfig) openaiClient.Chat
 }
 
 func (s *OpenAI) ChatCompletion(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (*ai.TextStreamResult, error) {
+	s.metricsService.IncrementLLMRequests()
+
 	request := s.completionRequestFromConfig(s.createConfig(opts))
 	request = modifyCompletionRequestWithConversation(request, conversation)
 	request.Stream = true
@@ -263,12 +424,12 @@ func (s *OpenAI) Transcribe(file io.Reader) (*subtitles.Subtitles, error) {
 		Format:   openaiClient.AudioResponseFormatVTT,
 	})
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to create whisper transcription")
+		return nil, fmt.Errorf("unable to create whisper transcription: %w", err)
 	}
 
 	timedTranscript, err := subtitles.NewSubtitlesFromVTT(strings.NewReader(resp.Text))
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to parse whisper transcription")
+		return nil, fmt.Errorf("unable to parse whisper transcription: %w", err)
 	}
 
 	return timedTranscript, nil
@@ -311,20 +472,27 @@ func (s *OpenAI) CountTokens(text string) int {
 }
 
 func (s *OpenAI) TokenLimit() int {
-	if s.maxTokens > 0 {
-		return s.maxTokens
+	if s.tokenLimit > 0 {
+		return s.tokenLimit
 	}
 
 	switch {
-	case strings.HasPrefix(s.defaultModel, "gpt-4-32k"):
-		return 32768
+	case strings.HasPrefix(s.defaultModel, "gpt-4o"),
+		strings.HasPrefix(s.defaultModel, "o1-preview"),
+		strings.HasPrefix(s.defaultModel, "o1-mini"),
+		strings.HasPrefix(s.defaultModel, "gpt-4-turbo"),
+		strings.HasPrefix(s.defaultModel, "gpt-4-0125-preview"),
+		strings.HasPrefix(s.defaultModel, "gpt-4-1106-preview"):
+		return 128000
 	case strings.HasPrefix(s.defaultModel, "gpt-4"):
 		return 8192
-	case strings.HasPrefix(s.defaultModel, "gpt-3.5-turbo-16k"):
-		return 16384
-	case strings.HasPrefix(s.defaultModel, "gpt-3.5-turbo"):
+	case strings.HasPrefix(s.defaultModel, "gpt-3.5-turbo"),
+		s.defaultModel == "gpt-3.5-turbo-0125",
+		s.defaultModel == "gpt-3.5-turbo-1106":
+		return 16385
+	case s.defaultModel == "gpt-3.5-turbo-instruct":
 		return 4096
 	}
 
-	return 4096
+	return 128000 // Default fallback
 }

@@ -3,10 +3,11 @@ package asksage
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 
-	"github.com/pkg/errors"
+	"errors"
 )
 
 const (
@@ -65,10 +66,10 @@ type Persona struct {
 
 type Dataset string
 
-func NewClient(authToken string) *Client {
+func NewClient(authToken string, httpClient *http.Client) *Client {
 	return &Client{
 		AuthToken:  authToken,
-		HTTPClient: &http.Client{},
+		HTTPClient: httpClient,
 	}
 }
 
@@ -78,7 +79,7 @@ func (c *Client) Login(params GetTokenParams) error {
 			AccessToken string `json:"access_token"`
 		}
 	}
-	err := c.doAuth("POST", "/get-token", &params, &response)
+	err := c.doAuth(http.MethodPost, "/get-token", &params, &response)
 	if err != nil {
 		return err
 	}
@@ -89,7 +90,7 @@ func (c *Client) Login(params GetTokenParams) error {
 
 func (c *Client) Query(params QueryParams) (*CompletionResponse, error) {
 	response := &CompletionResponse{}
-	if err := c.doServer("POST", "/query", &params, response); err != nil {
+	if err := c.doServer(http.MethodPost, "/query", &params, response); err != nil {
 		return nil, err
 	}
 
@@ -98,7 +99,7 @@ func (c *Client) Query(params QueryParams) (*CompletionResponse, error) {
 
 func (c *Client) FollowUpQuestions(params FollowUpParams) (*CompletionResponse, error) {
 	response := &CompletionResponse{}
-	if err := c.doServer("POST", "/follow-up-questions", &params, response); err != nil {
+	if err := c.doServer(http.MethodPost, "/follow-up-questions", &params, response); err != nil {
 		return nil, err
 	}
 	return response, nil
@@ -108,7 +109,7 @@ func (c *Client) GetPersonas() ([]Persona, error) {
 	var response struct {
 		Response []Persona `json:"response"`
 	}
-	if err := c.doServer("POST", "/get-personas", nil, &response); err != nil {
+	if err := c.doServer(http.MethodPost, "/get-personas", nil, &response); err != nil {
 		return nil, err
 	}
 	return response.Response, nil
@@ -118,7 +119,7 @@ func (c *Client) GetDatasets() ([]Dataset, error) {
 	var response struct {
 		Response []Dataset `json:"dataset"`
 	}
-	if err := c.doServer("POST", "/get-datasets", nil, &response); err != nil {
+	if err := c.doServer(http.MethodPost, "/get-datasets", nil, &response); err != nil {
 		return nil, err
 	}
 	return response.Response, nil
@@ -167,7 +168,7 @@ func (c *Client) do(method, path string, body interface{}, result interface{}) e
 	if resp.StatusCode != http.StatusOK {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return errors.Wrap(err, "unable to read response body on error: "+resp.Status)
+			return fmt.Errorf("unable to read response body on status %v. Error: %w", resp.Status, err)
 		}
 
 		return errors.New("non 200 response from asksage: " + resp.Status + "\nBody:\n" + string(body))

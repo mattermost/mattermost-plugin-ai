@@ -8,13 +8,13 @@
     git clone https://github.com/mattermost/mattermost-plugin-ai && cd mattermost-plugin-ai
     ```
 
-1. Install Mattermost AI Plugin on Mattermost by following the [plugin developer workflow documentation](https://developers.mattermost.com/integrate/plugins/developer-workflow/) or using this command:
+1. Install Mattermost Copilot Plugin on Mattermost by following the [plugin developer workflow documentation](https://developers.mattermost.com/integrate/plugins/developer-workflow/) or using this command:
 
     ```bash
     MM_SERVICESETTINGS_SITEURL=http://localhost:8065 MM_ADMIN_USERNAME=<YOUR_USERNAME> MM_ADMIN_PASSWORD=<YOUR_PASSWORD> make deploy
     ```
 
-1. Access Mattermost and configure the Mattermost AI Plugin:
+1. Access Mattermost and configure the Mattermost Copilot Plugin:
 
    1. Log in to Mattermost as an administrator
-   1. Follow the [configuration guide](./docs/configuration-guide.md) to set up the Mattermost AI Plugin.
+   1. Follow the [Mattermost Product Documentation](https://docs.mattermost.com/configure/enable-ai-copilot.html) to set up the Mattermost Copilot Plugin.

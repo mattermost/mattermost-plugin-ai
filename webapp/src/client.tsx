@@ -37,8 +37,8 @@ export async function doReaction(postid: string) {
     });
 }
 
-export async function doSummarize(postid: string) {
-    const url = `${postRoute(postid)}/summarize`;
+export async function doSummarize(postid: string, botUsername: string) {
+    const url = `${postRoute(postid)}/summarize?botUsername=${botUsername}`;
     const response = await fetch(url, Client4.getOptions({
         method: 'POST',
     }));
@@ -122,8 +122,25 @@ export async function doRegenerate(postid: string) {
     });
 }
 
-export async function summarizeChannelSince(channelID: string, since: number, prompt: string) {
-    const url = `${channelRoute(channelID)}/since`;
+export async function doPostbackSummary(postid: string) {
+    const url = `${postRoute(postid)}/postback_summary`;
+    const response = await fetch(url, Client4.getOptions({
+        method: 'POST',
+    }));
+
+    if (response.ok) {
+        return response.json();
+    }
+
+    throw new ClientError(Client4.url, {
+        message: '',
+        status_code: response.status,
+        url,
+    });
+}
+
+export async function summarizeChannelSince(channelID: string, since: number, prompt: string, botUsername: string) {
+    const url = `${channelRoute(channelID)}/since?botUsername=${botUsername}`;
     const response = await fetch(url, Client4.getOptions({
         method: 'POST',
         body: JSON.stringify({
@@ -150,6 +167,11 @@ export async function viewMyChannel(channelID: string) {
 export async function getAIDirectChannel(currentUserId: string) {
     const botUser = await Client4.getUserByUsername('ai');
     const dm = await Client4.createDirectChannel([currentUserId, botUser.id]);
+    return dm.id;
+}
+
+export async function getBotDirectChannel(currentUserId: string, botUserID: string) {
+    const dm = await Client4.createDirectChannel([currentUserId, botUserID]);
     return dm.id;
 }
 
@@ -187,6 +209,48 @@ export async function generateStatusUpdate(playbookRunID: string) {
     });
 }
 
+export async function getAIBots() {
+    const url = `${baseRoute()}/ai_bots`;
+    const response = await fetch(url, Client4.getOptions({
+        method: 'GET',
+    }));
+
+    if (response.ok) {
+        return response.json();
+    }
+
+    throw new ClientError(Client4.url, {
+        message: '',
+        status_code: response.status,
+        url,
+    });
+}
+
+export async function trackEvent(event: string, source: string, props?: Record<string, string>) {
+    const url = `${baseRoute()}/telemetry/track`;
+    const userAgent = window.navigator.userAgent;
+    const clientType = (userAgent.indexOf('Mattermost') === -1 || userAgent.indexOf('Electron') === -1) ? 'web' : 'desktop';
+    const response = await fetch(url, Client4.getOptions({
+        method: 'POST',
+        body: JSON.stringify({
+            event,
+            source,
+            clientType,
+            props: props || {},
+        }),
+    }));
+
+    if (response.ok) {
+        return response.json();
+    }
+
+    throw new ClientError(Client4.url, {
+        message: '',
+        status_code: response.status,
+        url,
+    });
+}
+
 export async function createPost(post: any) {
     const created = await Client4.createPost(post);
     return created;
@@ -194,4 +258,28 @@ export async function createPost(post: any) {
 
 export async function updateRead(userId: string, teamId: string, selectedPostId: string, timestamp: number) {
     Client4.updateThreadReadForUser(userId, teamId, selectedPostId, timestamp);
+}
+
+export function getProfilePictureUrl(userId: string, lastIconUpdate: number) {
+    return Client4.getProfilePictureUrl(userId, lastIconUpdate);
+}
+
+export async function getBotProfilePictureUrl(username: string) {
+    const user = await Client4.getUserByUsername(username);
+    if (!user || user.id === '') {
+        return '';
+    }
+    return getProfilePictureUrl(user.id, user.last_picture_update);
+}
+
+export async function setUserProfilePictureByUsername(username: string, file: File) {
+    const user = await Client4.getUserByUsername(username);
+    if (!user || user.id === '') {
+        return;
+    }
+    await setUserProfilePicture(user.id, file);
+}
+
+export async function setUserProfilePicture(userId: string, file: File) {
+    await Client4.uploadProfileImage(userId, file);
 }

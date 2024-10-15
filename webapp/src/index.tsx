@@ -1,6 +1,7 @@
 import React from 'react';
 import {Store, Action} from 'redux';
 import styled from 'styled-components';
+import {FormattedMessage} from 'react-intl';
 
 import {GlobalState} from '@mattermost/types/lib/store';
 
@@ -15,14 +16,14 @@ import IconThreadSummarization from './components/assets/icon_thread_summarizati
 import IconReactForMe from './components/assets/icon_react_for_me';
 import RHS from './components/rhs/rhs';
 import Config from './components/system_console/config';
-import {doReaction, doSummarize, doTranscribe, getAIDirectChannel} from './client';
+import {doReaction, doSummarize, getAIDirectChannel, trackEvent} from './client';
 import {setOpenRHSAction} from './redux_actions';
-import {BotUsername} from './constants';
+import {BotUsername, TelemetryEvents, TelemetrySources} from './constants';
 import PostEventListener from './websocket';
-import {setupRedux} from './redux';
-import UnreadsSumarize from './components/unreads_summarize';
-import IconAI from './components/assets/icon_ai';
-import {doSelectPost} from './hooks';
+import {BotsHandler, setupRedux} from './redux';
+import UnreadsSummarize from './components/unreads_summarize';
+import {PostbackPost} from './components/postback_post';
+import {isRHSCompatable} from './mm_webapp';
 
 type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
 
@@ -41,31 +42,13 @@ const RHSTitleContainer = styled.span`
 	margin-left: 8px;
 `;
 
-const SummarizeRecordingIconContainer = styled.span`
-	color: rgba(var(--center-channel-color-rgb), 0.56);
-`;
-
 const RHSTitle = () => {
     return (
         <RHSTitleContainer>
             <IconAIContainer src={aiIcon}/>
-            {'AI Assistant'}
+            {'Copilot'}
         </RHSTitleContainer>
     );
-};
-
-const isProcessableAudio = (fileInfo: any) => {
-    const acceptedExtensions = [
-        'mp3',
-        'mp4',
-        'mpeg',
-        'mpga',
-        'm4a',
-        'wav',
-        'webm',
-    ];
-
-    return acceptedExtensions.includes(fileInfo.extension);
 };
 
 export default class Plugin {
@@ -75,27 +58,19 @@ export default class Plugin {
     public async initialize(registry: any, store: WebappStore) {
         setupRedux(registry, store, this.postEventListener);
 
+        registry.registerTranslations((locale: string) => {
+            try {
+                // eslint-disable-next-line global-require
+                return require(`./i18n/${locale}.json`);
+            } catch (e) {
+                return {};
+            }
+        });
+
         let rhs: any = null;
-        if ((window as any).Components.CreatePost) {
+        if (isRHSCompatable()) {
             rhs = registry.registerRightHandSidebarComponent(RHS, RHSTitle);
             setOpenRHSAction(rhs.showRHSPlugin);
-
-            registry.registerReducer((state = {}, action: any) => {
-                switch (action.type) {
-                case 'SET_AI_BOT_CHANNEL':
-                    return {
-                        ...state,
-                        botChannelId: action.botChannelId,
-                    };
-                case 'SELECT_AI_POST':
-                    return {
-                        ...state,
-                        selectedPostId: action.postId,
-                    };
-                default:
-                    return state;
-                }
-            });
         }
 
         let currentUserId = store.getState().entities.users.currentUserId;
@@ -131,37 +106,46 @@ export default class Plugin {
             ;
         };
 
+        registry.registerWebSocketEventHandler('config_changed', () => {
+            store.dispatch({
+                type: BotsHandler,
+                bots: null,
+            } as any);
+        });
+
         registry.registerPostTypeComponent('custom_llmbot', LLMBotPostWithWebsockets);
+        registry.registerPostTypeComponent('custom_llm_postback', PostbackPost);
         if (registry.registerPostActionComponent) {
             registry.registerPostActionComponent(PostMenu);
         } else {
-            registry.registerPostDropdownMenuAction(<><span className='icon'><IconThreadSummarization/></span>{'Summarize Thread'}</>, (postId: string) => {
+            registry.registerPostDropdownMenuAction(<><span className='icon'><IconThreadSummarization/></span><FormattedMessage defaultMessage='Summarize Thread'/></>, (postId: string) => {
                 const state = store.getState();
                 const team = state.entities.teams.teams[state.entities.teams.currentTeamId];
                 window.WebappUtils.browserHistory.push('/' + team.name + '/messages/@' + BotUsername);
-                doSummarize(postId);
+                doSummarize(postId, '');
                 if (rhs) {
                     store.dispatch(rhs.showRHSPlugin);
                 }
             });
-            registry.registerPostDropdownMenuAction(<><span className='icon'><IconReactForMe/></span>{'React for me'}</>, doReaction);
+            registry.registerPostDropdownMenuAction(<><span className='icon'><IconReactForMe/></span><FormattedMessage defaultMessage='React for me'/></>, doReaction);
         }
 
         registry.registerAdminConsoleCustomSetting('Config', Config);
         if (rhs) {
             registry.registerChannelHeaderButtonAction(<IconAIContainer src={aiIcon}/>, () => {
+                trackEvent(TelemetryEvents.CopilotAppsBarClicked, TelemetrySources.Widget, {
+                    user_id: store.getState().entities.users.currentUserId,
+                });
                 store.dispatch(rhs.toggleRHSPlugin);
-            });
+            },
+            'Copilot',
+            'Copilot',
+            );
         }
 
         if (registry.registerNewMessagesSeparatorActionComponent) {
-            registry.registerNewMessagesSeparatorActionComponent(UnreadsSumarize);
+            registry.registerNewMessagesSeparatorActionComponent(UnreadsSummarize);
         }
-
-        registry.registerFileDropdownMenuAction(isProcessableAudio, <><SummarizeRecordingIconContainer className='icon'><IconAI/></SummarizeRecordingIconContainer>{'Summarize recording'}</>, async (fileInfo: any) => {
-            const result = await doTranscribe(fileInfo.post_id, fileInfo.id);
-            doSelectPost(result.postid, result.channelid, store.dispatch);
-        });
     }
 }
 

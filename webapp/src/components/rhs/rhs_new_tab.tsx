@@ -1,5 +1,6 @@
-import React from 'react';
+import React, {useState, useCallback} from 'react';
 import styled from 'styled-components';
+import {useIntl, FormattedMessage} from 'react-intl';
 
 import {
     FormatListNumberedIcon,
@@ -7,13 +8,15 @@ import {
     PlaylistCheckIcon,
 } from '@mattermost/compass-icons/components';
 
+import {useDispatch} from 'react-redux';
+
 import RHSImage from '../assets/rhs_image';
 
 import {createPost} from '@/client';
 
-import {Button} from './common';
+import {AdvancedTextEditor, CreatePost} from '@/mm_webapp';
 
-const CreatePost = (window as any).Components.CreatePost;
+import {Button, RHSPaddingContainer, RHSText, RHSTitle} from './common';
 
 const CreatePostContainer = styled.div`
 	.custom-textarea {
@@ -40,25 +43,6 @@ const OptionButton = styled(Button)`
 	font-size: 12px;
 `;
 
-const NewQuestion = styled.div`
-	margin: 0 24px;
-	margin-top: 16px;
-    display: flex;
-    flex-direction: column;
-	gap: 8px;
-`;
-
-const QuestionTitle = styled.div`
-    font-family: Metropolis;
-    font-weight: 600;
-    font-size: 22px;
-`;
-
-const QuestionDescription = styled.div`
-    font-weight: 400;
-    font-size: 14px;
-`;
-
 const QuestionOptions = styled.div`
     display: flex;
 	gap: 8px;
@@ -72,6 +56,13 @@ const PlusMinus = styled.i`
     font-size: 14px;
     font-weight: 400;
     margin-right: 4px;
+`;
+
+const ReverseScroll = styled.div`
+	display: flex;
+	flex-direction: column;
+	flex-grow: 1;
+	justify-content: flex-end;
 `;
 
 type Props = {
@@ -89,47 +80,120 @@ const setEditorText = (text: string) => {
     }
 };
 
-const addBrainstormingIdeas = () => {
-    setEditorText('Brainstorm ideas about ');
-};
-
-const addMeetingAgenda = () => {
-    setEditorText('Write a meeting agenda about ');
-};
-
-const addToDoList = () => {
-    setEditorText('Write a todo list about ');
-};
-
-const addProsAndCons = () => {
-    setEditorText('Write a pros and cons list about ');
-};
-
 const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
-    return (
-        <NewQuestion>
-            <RHSImage/>
-            <QuestionTitle>{'Ask AI Assistant anything'}</QuestionTitle>
-            <QuestionDescription>{'The AI Assistant is here to help. Choose from the prompts below or write your own.'}</QuestionDescription>
-            <QuestionOptions>
-                <OptionButton onClick={addBrainstormingIdeas}><LightbulbOutlineIcon/>{'Brainstorm ideas'}</OptionButton>
-                <OptionButton onClick={addMeetingAgenda}><FormatListNumberedIcon/>{'Meeting agenda'}</OptionButton>
-                <OptionButton onClick={addProsAndCons}><PlusMinus className='icon'>{'±'}</PlusMinus>{'Pros and Cons'}</OptionButton>
-                <OptionButton onClick={addToDoList}><PlaylistCheckIcon/>{'To-do list'}</OptionButton>
-            </QuestionOptions>
-            <CreatePostContainer>
-                <CreatePost
-                    placeholder={'Ask AI Assistant anything...'}
-                    onSubmit={async (p: any) => {
-                        p.channel_id = botChannelId || '';
-                        p.props = {};
-                        const created = await createPost(p);
-                        selectPost(created.id);
+    const intl = useIntl();
+
+    // Compatibility with pre v10 create post export
+    const dispatch = useDispatch();
+
+    // Compatibility with pre v10 create post export
+    const [draft, updateDraft] = useState<any>(null);
+
+    const addBrainstormingIdeas = useCallback(() => {
+        setEditorText(intl.formatMessage({defaultMessage: 'Brainstorm ideas about '}));
+    }, []);
+
+    const addMeetingAgenda = useCallback(() => {
+        setEditorText(intl.formatMessage({defaultMessage: 'Write a meeting agenda about '}));
+    }, []);
+
+    const addToDoList = useCallback(() => {
+        setEditorText(intl.formatMessage({defaultMessage: 'Write a todo list about '}));
+    }, []);
+
+    const addProsAndCons = useCallback(() => {
+        setEditorText(intl.formatMessage({defaultMessage: 'Write a pros and cons list about '}));
+    }, []);
+
+    // Compatibility with pre v10 create post export
+    let editorComponent;
+    if (AdvancedTextEditor) {
+        editorComponent = (
+            <AdvancedTextEditor
+                data-testid='rhs-new-tab-create-post'
+                channelId={botChannelId}
+                placeholder={intl.formatMessage({defaultMessage: 'Ask Copilot anything...'})}
+                isThreadView={true}
+                location={'RHS_COMMENT'}
+                afterSubmit={(result: {created?: {id: string}}) => {
+                    if (result.created?.id) {
+                        selectPost(result.created?.id);
                         setCurrentTab('thread');
-                    }}
-                />
-            </CreatePostContainer>
-        </NewQuestion>
+                    }
+                }}
+            />
+        );
+    } else {
+        editorComponent = (
+            <CreatePost
+                data-testid='rhs-new-tab-create-post'
+                channelId={botChannelId}
+                placeholder={intl.formatMessage({defaultMessage: 'Ask Copilot anything...'})}
+                rootId={'ai_copilot'}
+                onSubmit={async (p: any) => {
+                    const post = {...p};
+                    post.channel_id = botChannelId || '';
+                    post.props = {};
+                    post.uploadsInProgress = [];
+                    post.file_ids = p.fileInfos.map((f: any) => f.id);
+                    const created = await createPost(post);
+                    selectPost(created.id);
+                    setCurrentTab('thread');
+                    dispatch({
+                        type: 'SET_GLOBAL_ITEM',
+                        data: {
+                            name: 'comment_draft_ai_copilot',
+                            value: {message: '', fileInfos: [], uploadsInProgress: []},
+                        },
+                    });
+                }}
+                draft={draft}
+                onUpdateCommentDraft={(newDraft: any) => {
+                    updateDraft(newDraft);
+                    const timestamp = new Date().getTime();
+                    newDraft.updateAt = timestamp;
+                    newDraft.createAt = newDraft.createAt || timestamp;
+                    dispatch({
+                        type: 'SET_GLOBAL_ITEM',
+                        data: {
+                            name: 'comment_draft_ai_copilot',
+                            value: newDraft,
+                        },
+                    });
+                }}
+            />
+        );
+    }
+
+    return (
+        <RHSPaddingContainer>
+            <ReverseScroll>
+                <RHSImage/>
+                <RHSTitle><FormattedMessage defaultMessage='Ask Copilot anything'/></RHSTitle>
+                <RHSText><FormattedMessage defaultMessage='The Copilot is here to help. Choose from the prompts below or write your own.'/></RHSText>
+                <QuestionOptions>
+                    <OptionButton onClick={addBrainstormingIdeas}>
+                        <LightbulbOutlineIcon/>
+                        <FormattedMessage defaultMessage='Brainstorm ideas'/>
+                    </OptionButton>
+                    <OptionButton onClick={addMeetingAgenda}>
+                        <FormatListNumberedIcon/>
+                        <FormattedMessage defaultMessage='Meeting agenda'/>
+                    </OptionButton>
+                    <OptionButton onClick={addProsAndCons}>
+                        <PlusMinus className='icon'>{'±'}</PlusMinus>
+                        <FormattedMessage defaultMessage='Pros and Cons'/>
+                    </OptionButton>
+                    <OptionButton onClick={addToDoList}>
+                        <PlaylistCheckIcon/>
+                        <FormattedMessage defaultMessage='To-do list'/>
+                    </OptionButton>
+                </QuestionOptions>
+                <CreatePostContainer>
+                    {editorComponent}
+                </CreatePostContainer>
+            </ReverseScroll>
+        </RHSPaddingContainer>
     );
 };
 

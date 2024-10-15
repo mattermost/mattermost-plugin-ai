@@ -72,12 +72,16 @@ export const isE20LicensedOrDevelopment = (state: GlobalState): boolean => {
 // isE10LicensedOrDevelopment returns true when the server is at least licensed with a legacy Mattermost
 // Enterprise E10 License or a Mattermost Professional License, or has `EnableDeveloper` and
 // `EnableTesting` configuration settings enabled, signaling a non-production, developer mode.
-const isE10LicensedOrDevelopment = (state: GlobalState): boolean => {
+export const isE10LicensedOrDevelopment = (state: GlobalState): boolean => {
     const license = state.entities.general.license;
 
     return checkE10Licensed(license) || isConfiguredForDevelopment(state);
 };
 
 export function useIsMultiLLMLicensed() {
-    return useSelector(isE10LicensedOrDevelopment);
+    return useSelector(isE20LicensedOrDevelopment);
+}
+
+export function useIsBasicsLicensed() {
+    return useSelector(isE20LicensedOrDevelopment);
 }
