@@ -3,12 +3,15 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost/server/public/model"
 )
+
+const defaultMaxFileSize = int64(1024 * 1024 * 5) // 5MB
 
 type ThreadData struct {
 	Posts     []*model.Post
@@ -381,27 +384,70 @@ type WorkerResult struct {
 	return nil
 }*/
 
+func isImageMimeType(mimeType string) bool {
+	return strings.HasPrefix(mimeType, "image/")
+}
+
 func (p *Plugin) PostToAIPost(bot *Bot, post *model.Post) ai.Post {
-	var files []ai.File
-	if bot.cfg.EnableVision {
-		files = make([]ai.File, 0, len(post.FileIds))
-		for _, fileID := range post.FileIds {
-			fileInfo, err := p.pluginAPI.File.GetInfo(fileID)
-			if err != nil {
-				p.API.LogError("Error getting file info", "error", err)
-				continue
-			}
+	var filesForUpstream []ai.File
+	message := ai.FormatPostBody(post)
+	var extractedFileContents []string
+
+	maxFileSize := defaultMaxFileSize
+	if bot.cfg.MaxFileSize > 0 {
+		maxFileSize = bot.cfg.MaxFileSize
+	}
+
+	for _, fileID := range post.FileIds {
+		fileInfo, err := p.pluginAPI.File.GetInfo(fileID)
+		if err != nil {
+			p.API.LogError("Error getting file info", "error", err)
+			continue
+		}
+
+		// Check for files that have been interpreted already by the server or are text files.
+		content := ""
+		if trimmedContent := strings.TrimSpace(fileInfo.Content); trimmedContent != "" {
+			content = trimmedContent
+		} else if strings.HasPrefix(fileInfo.MimeType, "text/") {
 			file, err := p.pluginAPI.File.Get(fileID)
 			if err != nil {
 				p.API.LogError("Error getting file", "error", err)
 				continue
 			}
-			files = append(files, ai.File{
+			contentBytes, err := io.ReadAll(io.LimitReader(file, maxFileSize))
+			if err != nil {
+				p.API.LogError("Error reading file content", "error", err)
+				continue
+			}
+			content = string(contentBytes)
+			if int64(len(contentBytes)) == maxFileSize {
+				content += "\n... (content truncated due to size limit)"
+			}
+		}
+
+		if content != "" {
+			fileContent := fmt.Sprintf("File Name: %s\nContent: %s", fileInfo.Name, content)
+			extractedFileContents = append(extractedFileContents, fileContent)
+		}
+
+		if bot.cfg.EnableVision && isImageMimeType(fileInfo.MimeType) {
+			file, err := p.pluginAPI.File.Get(fileID)
+			if err != nil {
+				p.API.LogError("Error getting file", "error", err)
+				continue
+			}
+			filesForUpstream = append(filesForUpstream, ai.File{
 				Reader:   file,
 				MimeType: fileInfo.MimeType,
 				Size:     fileInfo.Size,
 			})
 		}
+	}
+
+	// Add structured file contents to the message
+	if len(extractedFileContents) > 0 {
+		message += "\nAttached File Contents:\n" + strings.Join(extractedFileContents, "\n\n")
 	}
 
 	role := ai.PostRoleUser
@@ -411,8 +457,8 @@ func (p *Plugin) PostToAIPost(bot *Bot, post *model.Post) ai.Post {
 
 	return ai.Post{
 		Role:    role,
-		Message: ai.FormatPostBody(post),
-		Files:   files,
+		Message: message,
+		Files:   filesForUpstream,
 	}
 }
 
