@@ -7,7 +7,7 @@ import {useSelectPost} from '@/hooks';
 import {summarizeChannelSince} from '@/client';
 import {useIsBasicsLicensed} from '@/license';
 
-import {useBotlist} from '@/bots';
+import {useBotlistForChannel} from '@/bots';
 
 import IconAI from './assets/icon_ai';
 import IconSparkleCheckmark from './assets/icon_sparkle_checkmark';
@@ -15,7 +15,7 @@ import IconSparkleQuestion from './assets/icon_sparkle_question';
 import IconThreadSummarization from './assets/icon_thread_summarization';
 
 import DotMenu, {DropdownMenu, DropdownMenuItem} from './dot_menu';
-import {Divider, DropdownInfoOnlyVisibleToYou} from './dropdown_info';
+import {Divider, DropdownChannelBlocked, DropdownInfoOnlyVisibleToYou} from './dropdown_info';
 import {DropdownBotSelector} from './bot_slector';
 
 const AskAIButton = styled(DotMenu)`
@@ -81,7 +81,7 @@ interface Props {
 const UnreadsSumarize = (props: Props) => {
     const selectPost = useSelectPost();
     const isBasicsLicensed = useIsBasicsLicensed();
-    const {bots, activeBot, setActiveBot} = useBotlist();
+    const {bots, activeBot, setActiveBot, wasFiltered} = useBotlistForChannel(props.channelId);
 
     const summarizeNew = async () => {
         const result = await summarizeChannelSince(props.channelId, props.lastViewedAt, 'summarize', activeBot?.username || '');
@@ -102,8 +102,22 @@ const UnreadsSumarize = (props: Props) => {
         return null;
     }
 
-    // Unconfigured state
     if (bots && bots.length === 0) {
+        if (wasFiltered) {
+            // Filtered by permissions state
+            return (
+                <AskAIButton
+                    icon={<><SmallerIconAI/>
+                        <FormattedMessage defaultMessage=' Ask AI'/>
+                    </>}
+                    dropdownMenu={StyledDropdownMenu}
+                >
+                    <DropdownChannelBlocked/>
+                </AskAIButton>
+            );
+        }
+
+        // Unconfigured state
         return null;
     }
 

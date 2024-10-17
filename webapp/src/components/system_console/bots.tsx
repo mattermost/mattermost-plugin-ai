@@ -7,7 +7,7 @@ import {TertiaryButton} from '../assets/buttons';
 
 import {useIsMultiLLMLicensed} from '@/license';
 
-import Bot, {LLMBotConfig} from './bot';
+import Bot, {ChannelAccessLevel, LLMBotConfig, UserAccessLevel} from './bot';
 import EnterpriseChip from './enterprise_chip';
 
 const defaultNewBot = {
@@ -29,6 +29,10 @@ const defaultNewBot = {
     },
     enableVision: false,
     disableTools: false,
+    channelAccessLevel: ChannelAccessLevel.All,
+    channelIDs: [],
+    userAccessLevel: UserAccessLevel.All,
+    userIDs: [],
 };
 
 export const firstNewBot = {

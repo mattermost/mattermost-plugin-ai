@@ -11,6 +11,7 @@ import {ButtonIcon} from '../assets/buttons';
 
 import {BooleanItem, ItemList, SelectionItem, SelectionItemOption, TextItem} from './item';
 import AvatarItem from './avatar';
+import {ChannelAccessLevelItem, UserAccessLevelItem} from './llm_access';
 
 export type LLMService = {
     type: string
@@ -24,6 +25,20 @@ export type LLMService = {
     streamingTimeoutSeconds: number
 }
 
+export enum ChannelAccessLevel {
+    All = 0,
+    Allow,
+    Block,
+    None,
+}
+
+export enum UserAccessLevel {
+    All = 0,
+    Allow,
+    Block,
+    None,
+}
+
 export type LLMBotConfig = {
     id: string
     name: string
@@ -32,6 +47,10 @@ export type LLMBotConfig = {
     customInstructions: string
     enableVision: boolean
     disableTools: boolean
+    channelAccessLevel: ChannelAccessLevel
+    channelIDs: string[]
+    userAccessLevel: UserAccessLevel
+    userIDs: string[]
 }
 
 type Props = {
@@ -160,6 +179,21 @@ const Bot = (props: Props) => {
                                 />
                             </>
                         )}
+                        <ChannelAccessLevelItem
+                            label={intl.formatMessage({defaultMessage: 'Channel access'})}
+                            level={props.bot.channelAccessLevel ?? ChannelAccessLevel.All}
+                            onChangeLevel={(to: ChannelAccessLevel) => props.onChange({...props.bot, channelAccessLevel: to})}
+                            channelIDs={props.bot.channelIDs ?? []}
+                            onChangeChannelIDs={(channels: string[]) => props.onChange({...props.bot, channelIDs: channels})}
+                        />
+                        <UserAccessLevelItem
+                            label={intl.formatMessage({defaultMessage: 'User access'})}
+                            level={props.bot.userAccessLevel ?? ChannelAccessLevel.All}
+                            onChangeLevel={(to: UserAccessLevel) => props.onChange({...props.bot, userAccessLevel: to})}
+                            userIDs={props.bot.userIDs ?? []}
+                            onChangeUserIDs={(users: string[]) => props.onChange({...props.bot, userIDs: users})}
+                        />
+
                     </ItemList>
                 </ItemListContainer>
             )}
