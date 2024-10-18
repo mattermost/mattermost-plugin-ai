@@ -36,7 +36,7 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	postRouter := botRequiredRouter.Group("/post/:postid")
 	postRouter.Use(p.postAuthorizationRequired)
 	postRouter.POST("/react", p.handleReact)
-	postRouter.POST("/summarize", p.handleSummarize)
+	postRouter.POST("/analyze", p.handleThreadAnalysis)
 	postRouter.POST("/transcribe/file/:fileid", p.handleTranscribeFile)
 	postRouter.POST("/summarize_transcription", p.handleSummarizeTranscription)
 	postRouter.POST("/stop", p.handleStop)

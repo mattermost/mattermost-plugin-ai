@@ -19,7 +19,7 @@ const (
 	evContinueConversation    = "continue_conversation"
 	evAIBotMention            = "ai_bot_mention"
 	evUnreadMessages          = "unread_messages"
-	evSummarizeThread         = "summarize_thread"
+	evThreadButton            = "thread_button"
 	evSummarizeTranscription  = "summarize_transcription"
 )
 
@@ -39,7 +39,7 @@ var (
 	// servers will map to null as expected.
 	eventToSkusMap = map[string][]string{
 		evUnreadMessages:         enterpriseSKUs,
-		evSummarizeThread:        enterpriseSKUs,
+		evThreadButton:           enterpriseSKUs,
 		evSummarizeTranscription: enterpriseSKUs,
 	}
 )

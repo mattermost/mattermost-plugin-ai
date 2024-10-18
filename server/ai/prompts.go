@@ -35,6 +35,8 @@ const (
 	PromptSuggestCodeImprovements = "suggest_code_improvements"
 	PromptFindActionItemsSince    = "find_action_items_since"
 	PromptFindOpenQuestionsSince  = "find_open_questions_since"
+	PromptFindActionItems         = "find_action_items"
+	PromptFindOpenQuestions       = "find_open_questions"
 )
 
 func NewPrompts(input fs.FS) (*Prompts, error) {

@@ -16,7 +16,7 @@ import IconThreadSummarization from './components/assets/icon_thread_summarizati
 import IconReactForMe from './components/assets/icon_react_for_me';
 import RHS from './components/rhs/rhs';
 import Config from './components/system_console/config';
-import {doReaction, doSummarize, getAIDirectChannel, trackEvent} from './client';
+import {doReaction, doThreadAnalysis, getAIDirectChannel, trackEvent} from './client';
 import {setOpenRHSAction} from './redux_actions';
 import {BotUsername, TelemetryEvents, TelemetrySources} from './constants';
 import PostEventListener from './websocket';
@@ -122,7 +122,7 @@ export default class Plugin {
                 const state = store.getState();
                 const team = state.entities.teams.teams[state.entities.teams.currentTeamId];
                 window.WebappUtils.browserHistory.push('/' + team.name + '/messages/@' + BotUsername);
-                doSummarize(postId, '');
+                doThreadAnalysis(postId, 'summarize_thread', '');
                 if (rhs) {
                     store.dispatch(rhs.showRHSPlugin);
                 }
