@@ -188,9 +188,12 @@ ifneq ($(HAS_SERVER),)
 	$(GOBIN)/golangci-lint run ./...
 endif
 
+generate:
+	$(GO) generate ./...
+
 ## Builds the server, if it exists, for all supported architectures, unless MM_SERVICESETTINGS_ENABLEDEVELOPER is set.
 .PHONY: server
-server:
+server: generate
 ifneq ($(HAS_SERVER),)
 ifneq ($(MM_DEBUG),)
 	$(info DEBUG mode is on; to disable, unset MM_DEBUG)

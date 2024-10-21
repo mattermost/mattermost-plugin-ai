@@ -17,27 +17,9 @@ const PromptExtension = "tmpl"
 const SystemSubTemplateName = ".system"
 const UserSubTemplateName = ".user"
 
+//go:generate go run generate_prompt_vars.go
+
 // Convenience vars for the filenames in ai/prompts/
-const (
-	PromptSummarizeThread         = "summarize_thread"
-	PromptDirectMessageQuestion   = "direct_message_question"
-	PromptEmojiSelect             = "emoji_select"
-	PromptMeetingSummary          = "meeting_summary"
-	PromptMeetingSummaryOnly      = "summary_only"
-	PromptMeetingKeyPoints        = "meeting_key_points"
-	PromptSpellcheck              = "spellcheck"
-	PromptChangeTone              = "change_tone"
-	PromptSimplifyText            = "simplify_text"
-	PromptAIChangeText            = "ai_change_text"
-	PromptSummarizeChannelSince   = "summarize_channel_since"
-	PromptSummarizeChunk          = "summarize_chunk"
-	PromptExplainCode             = "explain_code"
-	PromptSuggestCodeImprovements = "suggest_code_improvements"
-	PromptFindActionItemsSince    = "find_action_items_since"
-	PromptFindOpenQuestionsSince  = "find_open_questions_since"
-	PromptFindActionItems         = "find_action_items"
-	PromptFindOpenQuestions       = "find_open_questions"
-)
 
 func NewPrompts(input fs.FS) (*Prompts, error) {
 	templates, err := template.ParseFS(input, "ai/prompts/*")
