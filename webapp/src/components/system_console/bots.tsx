@@ -26,6 +26,7 @@ const defaultNewBot = {
         password: '',
         tokenLimit: 0,
         streamingTimeoutSeconds: 0,
+        withUserId: false,
     },
     enableVision: false,
     disableTools: false,

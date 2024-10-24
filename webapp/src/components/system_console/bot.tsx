@@ -22,6 +22,7 @@ export type LLMService = {
     password: string
     tokenLimit: number
     streamingTimeoutSeconds: number
+    withUserId: boolean
 }
 
 export type LLMBotConfig = {
@@ -202,11 +203,19 @@ const ServiceItem = (props: ServiceItemProps) => {
                 />
             )}
             {isOpenAIType && (
-                <TextItem
-                    label={intl.formatMessage({defaultMessage: 'Organization ID'})}
-                    value={props.service.orgId}
-                    onChange={(e) => props.onChange({...props.service, orgId: e.target.value})}
-                />
+                <>
+                    <TextItem
+                        label={intl.formatMessage({defaultMessage: 'Organization ID'})}
+                        value={props.service.orgId}
+                        onChange={(e) => props.onChange({...props.service, orgId: e.target.value})}
+                    />
+                    <BooleanItem
+                        label={intl.formatMessage({defaultMessage: 'Send User ID'})}
+                        value={props.service.withUserId}
+                        onChange={(to: boolean) => props.onChange({...props.service, withUserId: to})}
+                        helpText={intl.formatMessage({defaultMessage: 'Sending end-user IDs in your requests can be useful OpenAI to monitor and detect abuse.'})}
+                    />
+                </>
             )}
             {type === 'asksage' && (
                 <>

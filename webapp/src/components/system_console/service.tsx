@@ -10,4 +10,5 @@ export type ServiceData = {
     password: string
     tokenLimit: number
     streamingTimeoutSeconds: number
+    withUserId: boolean
 }
