@@ -34,10 +34,13 @@ export async function doReaction(postid: string) {
     });
 }
 
-export async function doSummarize(postid: string, botUsername: string) {
-    const url = `${postRoute(postid)}/summarize?botUsername=${botUsername}`;
+export async function doThreadAnalysis(postid: string, analysisType: string, botUsername: string) {
+    const url = `${postRoute(postid)}/analyze?botUsername=${botUsername}`;
     const response = await fetch(url, Client4.getOptions({
         method: 'POST',
+        body: JSON.stringify({
+            analysis_type: analysisType,
+        }),
     }));
 
     if (response.ok) {

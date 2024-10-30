@@ -99,7 +99,7 @@ func (p *Plugin) handleReact(c *gin.Context) {
 	c.Status(http.StatusOK)
 }
 
-func (p *Plugin) handleSummarize(c *gin.Context) {
+func (p *Plugin) handleThreadAnalysis(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
@@ -116,26 +116,45 @@ func (p *Plugin) handleSummarize(c *gin.Context) {
 		return
 	}
 
-	p.track(evSummarizeThread, map[string]any{
-		"channel_id":     channel.Id,
-		"post_id":        post.Id,
-		"user_actual_id": user.Id,
-	})
-
-	createdPost, err := p.startNewSummaryThread(bot, post.Id, p.MakeConversationContext(bot, user, channel, nil))
-	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to produce summary: %w", err))
+	var data struct {
+		AnalysisType string `json:"analysis_type" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&data); err != nil {
+		c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
-	data := struct {
+	switch data.AnalysisType {
+	case "summarize_thread":
+	case "action_items":
+	case "open_questions":
+		break
+	default:
+		c.AbortWithError(http.StatusBadRequest, fmt.Errorf("invalid analysis type: %s", data.AnalysisType))
+		return
+	}
+
+	p.track(evThreadButton, map[string]any{
+		"channel_id":     channel.Id,
+		"post_id":        post.Id,
+		"user_actual_id": user.Id,
+		"preset_prompt":  data.AnalysisType,
+	})
+
+	createdPost, err := p.startNewAnalysisThread(bot, post.Id, data.AnalysisType, p.MakeConversationContext(bot, user, channel, nil))
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to perform analysis: %w", err))
+		return
+	}
+
+	result := struct {
 		PostID    string `json:"postid"`
 		ChannelID string `json:"channelid"`
 	}{
 		PostID:    createdPost.Id,
 		ChannelID: createdPost.ChannelId,
 	}
-	c.Render(http.StatusOK, render.JSON{Data: data})
+	c.JSON(http.StatusOK, result)
 }
 
 func (p *Plugin) handleTranscribeFile(c *gin.Context) {
@@ -286,18 +305,20 @@ func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, ch
 	}
 	defer p.finishPostStreaming(post.Id)
 
-	summaryPostIDProp := post.GetProp(ThreadIDProp)
+	threadIDProp := post.GetProp(ThreadIDProp)
+	analysisTypeProp := post.GetProp(AnalysisTypeProp)
 	referenceRecordingFileIDProp := post.GetProp(ReferencedRecordingFileID)
 	referencedTranscriptPostProp := post.GetProp(ReferencedTranscriptPostID)
 	var result *ai.TextStreamResult
 	switch {
-	case summaryPostIDProp != nil:
-		summaryPostID := summaryPostIDProp.(string)
+	case threadIDProp != nil:
+		threadID := threadIDProp.(string)
+		analysisType := analysisTypeProp.(string)
 		siteURL := p.API.GetConfig().ServiceSettings.SiteURL
-		post.Message = p.summaryPostMessage(user.Locale, summaryPostID, *siteURL)
+		post.Message = p.analysisPostMessage(user.Locale, threadID, analysisType, *siteURL)
 
 		var err error
-		result, err = p.summarizePost(bot, summaryPostID, p.MakeConversationContext(bot, user, channel, nil))
+		result, err = p.analyzeThread(bot, threadID, analysisType, p.MakeConversationContext(bot, user, channel, nil))
 		if err != nil {
 			return fmt.Errorf("could not summarize post on regen: %w", err)
 		}

@@ -22,7 +22,7 @@ func TestPostRouter(t *testing.T) {
 
 	for urlName, url := range map[string]string{
 		"react":                   "/post/postid/react",
-		"summarize":               "/post/postid/summarize",
+		"summarize":               "/post/postid/analyze",
 		"transcribe":              "/post/postid/transcribe/file/fileid",
 		"summarize_transcription": "/post/postid/summarize_transcription",
 		"stop":                    "/post/postid/stop",
