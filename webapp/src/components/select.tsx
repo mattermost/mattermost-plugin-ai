@@ -138,11 +138,13 @@ export const SelectUser = (props: SelectUserProps) => {
 
     const fetchUsers = async (inputValue: string) => {
         const initialUsers = await getAutocompleteAllUsers(inputValue);
-        return initialUsers.users.map((user: UserProfile) => ({
-            value: user.id,
-            label: user.username,
-            avatar: getProfilePictureUrl(user.id, user.last_picture_update),
-        }));
+        return initialUsers.users.
+            filter((user: UserProfile) => !user.is_bot). // Remove bot users
+            map((user: UserProfile) => ({
+                value: user.id,
+                label: user.username,
+                avatar: getProfilePictureUrl(user.id, user.last_picture_update),
+            }));
     };
 
     const formatUserOptionLabel = (option: UserOption) => (

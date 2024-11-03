@@ -8,7 +8,7 @@ import {ServiceData} from './service';
 import Panel, {PanelFooterText} from './panel';
 import Bots, {firstNewBot} from './bots';
 import {LLMBotConfig} from './bot';
-import {ItemList, SelectionItem, SelectionItemOption} from './item';
+import {ItemList, SelectionItem, SelectionItemOption, StyledRadio} from './item';
 import NoBotsPage from './no_bots_page';
 
 type Config = {
@@ -32,8 +32,8 @@ type Props = {
     setByEnv: boolean
     onChange: (id: string, value: any) => void
     setSaveNeeded: () => void
-    registerSaveAction: (action: () => Promise<{error?: {message?: string}}>) => void
-    unRegisterSaveAction: (action: () => Promise<{error?: {message?: string}}>) => void
+    registerSaveAction: (action: () => Promise<{ error?: { message?: string } }>) => void
+    unRegisterSaveAction: (action: () => Promise<{ error?: { message?: string } }>) => void
 }
 
 const MessageContainer = styled.div`
@@ -65,15 +65,17 @@ const BetaMessage = () => (
         <span>
             <FormattedMessage
                 defaultMessage='To report a bug or to provide feedback, <link>create a new issue in the plugin repository</link>.'
-                values={{link: (chunks: any) => (
-                    <a
-                        target={'_blank'}
-                        rel={'noopener noreferrer'}
-                        href='http://github.com/mattermost/mattermost-plugin-ai/issues'
-                    >
-                        {chunks}
-                    </a>
-                )}}
+                values={{
+                    link: (chunks: any) => (
+                        <a
+                            target={'_blank'}
+                            rel={'noopener noreferrer'}
+                            href='http://github.com/mattermost/mattermost-plugin-ai/issues'
+                        >
+                            {chunks}
+                        </a>
+                    ),
+                }}
             />
         </span>
     </MessageContainer>
@@ -81,7 +83,7 @@ const BetaMessage = () => (
 
 const Config = (props: Props) => {
     const value = props.value || defaultConfig;
-    const [avatarUpdates, setAvatarUpdates] = useState<{[key: string]: File}>({});
+    const [avatarUpdates, setAvatarUpdates] = useState<{ [key: string]: File }>({});
     const intl = useIntl();
 
     useEffect(() => {
@@ -96,7 +98,7 @@ const Config = (props: Props) => {
     }, [avatarUpdates]);
 
     const botChangedAvatar = (bot: LLMBotConfig, image: File) => {
-        setAvatarUpdates((prev: {[key: string]: File}) => ({...prev, [bot.name]: image}));
+        setAvatarUpdates((prev: { [key: string]: File }) => ({...prev, [bot.name]: image}));
         props.setSaveNeeded();
     };
 
@@ -181,7 +183,7 @@ const Config = (props: Props) => {
                     </label>
                     <div className='col-sm-8'>
                         <label className='radio-inline'>
-                            <input
+                            <StyledRadio
                                 type='radio'
                                 value='true'
                                 checked={value.enableLLMTrace}
@@ -190,7 +192,7 @@ const Config = (props: Props) => {
                             <span><FormattedMessage defaultMessage='true'/></span>
                         </label>
                         <label className='radio-inline'>
-                            <input
+                            <StyledRadio
                                 type='radio'
                                 value='false'
                                 checked={!value.enableLLMTrace}

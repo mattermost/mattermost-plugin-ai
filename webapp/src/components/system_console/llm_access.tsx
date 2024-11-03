@@ -6,7 +6,7 @@ import {SelectUser, SelectChannel} from '../select';
 
 import {ChannelAccessLevel, UserAccessLevel} from './bot';
 
-import {HelpText, ItemLabel} from './item';
+import {HelpText, ItemLabel, StyledRadio} from './item';
 
 const AllowTypes = styled.div`
 	margin-top: 24px;
@@ -43,21 +43,21 @@ export const UserAccessLevelItem = (props: UserAccessLevelProps) => {
                     <FormattedMessage defaultMessage='Users can chat with this bot and get private assistance about content across all channels the user has access to. Select the users you would like to allow below.'/>
                 </HelpText>
                 <AllowTypes>
-                    <input
+                    <StyledRadio
                         type='radio'
                         value={UserAccessLevel.All}
                         checked={props.level === UserAccessLevel.All}
                         onChange={() => props.onChangeLevel(UserAccessLevel.All)}
                     />
                     <FormattedMessage defaultMessage='Allow for all users'/>
-                    <input
+                    <StyledRadio
                         type='radio'
                         value={UserAccessLevel.Allow}
                         checked={props.level === UserAccessLevel.Allow}
                         onChange={() => props.onChangeLevel(UserAccessLevel.Allow)}
                     />
                     <FormattedMessage defaultMessage='Allow for selected users'/>
-                    <input
+                    <StyledRadio
                         type='radio'
                         value={UserAccessLevel.Block}
                         checked={props.level === UserAccessLevel.Block}
@@ -105,28 +105,28 @@ export const ChannelAccessLevelItem = (props: ChannelAccessLevelProps) => {
                     <FormattedMessage defaultMessage='This bot can be a "channel expert" that can consume the contents of a given channel and provide answers only from content available in the channel. Select the channels you would like it to allow below.'/>
                 </HelpText>
                 <AllowTypes>
-                    <input
+                    <StyledRadio
                         type='radio'
                         value={ChannelAccessLevel.All}
                         checked={props.level === ChannelAccessLevel.All}
                         onChange={() => props.onChangeLevel(ChannelAccessLevel.All)}
                     />
                     <FormattedMessage defaultMessage='Allow for all channels'/>
-                    <input
+                    <StyledRadio
                         type='radio'
                         value={ChannelAccessLevel.Allow}
                         checked={props.level === ChannelAccessLevel.Allow}
                         onChange={() => props.onChangeLevel(ChannelAccessLevel.Allow)}
                     />
                     <FormattedMessage defaultMessage='Allow for selected channels'/>
-                    <input
+                    <StyledRadio
                         type='radio'
                         value={ChannelAccessLevel.Block}
                         checked={props.level === ChannelAccessLevel.Block}
                         onChange={() => props.onChangeLevel(ChannelAccessLevel.Block)}
                     />
                     <FormattedMessage defaultMessage='Block selected channels'/>
-                    <input
+                    <StyledRadio
                         type='radio'
                         value={ChannelAccessLevel.None}
                         checked={props.level === ChannelAccessLevel.None}

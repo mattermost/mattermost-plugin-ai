@@ -156,7 +156,7 @@ const Bot = (props: Props) => {
                             value={props.bot.customInstructions}
                             onChange={(e) => props.onChange({...props.bot, customInstructions: e.target.value})}
                         />
-                        { (props.bot.service.type === 'openai' || props.bot.service.type === 'openaicompatible' || props.bot.service.type === 'azure') && (
+                        {(props.bot.service.type === 'openai' || props.bot.service.type === 'openaicompatible' || props.bot.service.type === 'azure') && (
                             <>
                                 <BooleanItem
                                     label={
@@ -171,10 +171,10 @@ const Bot = (props: Props) => {
                                 />
                                 <BooleanItem
                                     label={
-                                        <FormattedMessage defaultMessage='Disable Tools'/>
+                                        <FormattedMessage defaultMessage='Enable Tools'/>
                                     }
-                                    value={props.bot.disableTools}
-                                    onChange={(to: boolean) => props.onChange({...props.bot, disableTools: to})}
+                                    value={!props.bot.disableTools}
+                                    onChange={(to: boolean) => props.onChange({...props.bot, disableTools: !to})}
                                     helpText={intl.formatMessage({defaultMessage: 'By default some tool use is enabled to allow for features such as integrations with JIRA. Disabling this allows use of models that do not support or are not very good at tool use. Some features will not work without tools.'})}
                                 />
                             </>
