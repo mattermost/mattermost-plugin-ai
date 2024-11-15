@@ -10,13 +10,12 @@ import {useIsMultiLLMLicensed} from '@/license';
 import Bot, {LLMBotConfig} from './bot';
 import EnterpriseChip from './enterprise_chip';
 
-const defaultNewBot = {
+const defaultNewBot: LLMBotConfig = {
     id: '',
     name: '',
     displayName: '',
     customInstructions: '',
     service: {
-        id: '',
         type: 'openai',
         apiKey: '',
         apiURL: '',
@@ -26,7 +25,7 @@ const defaultNewBot = {
         password: '',
         tokenLimit: 0,
         streamingTimeoutSeconds: 0,
-        withUserId: false,
+        sendUserID: false,
     },
     enableVision: false,
     disableTools: false,

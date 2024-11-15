@@ -28,7 +28,7 @@ type OpenAI struct {
 	tokenLimit       int
 	streamingTimeout time.Duration
 	metricsService   metrics.LLMetrics
-	withUserId       bool
+	sendUserID       bool
 }
 
 const StreamingTimeoutDefault = 10 * time.Second
@@ -95,7 +95,7 @@ func newOpenAI(
 		tokenLimit:       llmService.TokenLimit,
 		streamingTimeout: streamingTimeout,
 		metricsService:   metricsService,
-		withUserId:       llmService.WithUserId,
+		sendUserID:       llmService.SendUserID,
 	}
 }
 
@@ -406,8 +406,8 @@ func (s *OpenAI) ChatCompletion(conversation ai.BotConversation, opts ...ai.Lang
 	request := s.completionRequestFromConfig(s.createConfig(opts))
 	request = modifyCompletionRequestWithConversation(request, conversation)
 	request.Stream = true
-	if s.withUserId {
-		request.User = conversation.Context.RequestingUser.Username
+	if s.sendUserID {
+		request.User = conversation.Context.RequestingUser.Id
 	}
 	return s.streamResult(request, conversation)
 }

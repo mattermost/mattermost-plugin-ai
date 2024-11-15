@@ -22,7 +22,7 @@ export type LLMService = {
     password: string
     tokenLimit: number
     streamingTimeoutSeconds: number
-    withUserId: boolean
+    sendUserId: boolean
 }
 
 export type LLMBotConfig = {
@@ -138,7 +138,7 @@ const Bot = (props: Props) => {
                             value={props.bot.customInstructions}
                             onChange={(e) => props.onChange({...props.bot, customInstructions: e.target.value})}
                         />
-                        { (props.bot.service.type === 'openai' || props.bot.service.type === 'openaicompatible' || props.bot.service.type === 'azure') && (
+                        {(props.bot.service.type === 'openai' || props.bot.service.type === 'openaicompatible' || props.bot.service.type === 'azure') && (
                             <>
                                 <BooleanItem
                                     label={
@@ -211,9 +211,9 @@ const ServiceItem = (props: ServiceItemProps) => {
                     />
                     <BooleanItem
                         label={intl.formatMessage({defaultMessage: 'Send User ID'})}
-                        value={props.service.withUserId}
-                        onChange={(to: boolean) => props.onChange({...props.service, withUserId: to})}
-                        helpText={intl.formatMessage({defaultMessage: 'Sending end-user IDs in your requests can be useful OpenAI to monitor and detect abuse.'})}
+                        value={props.service.sendUserId}
+                        onChange={(to: boolean) => props.onChange({...props.service, sendUserId: to})}
+                        helpText={intl.formatMessage({defaultMessage: 'Sends the Mattermost user ID to the upstream LLM.'})}
                     />
                 </>
             )}

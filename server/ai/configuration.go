@@ -11,7 +11,7 @@ type ServiceConfig struct {
 	Password                string `json:"password"`
 	TokenLimit              int    `json:"tokenLimit"`
 	StreamingTimeoutSeconds int    `json:"streamingTimeoutSeconds"`
-	WithUserId              bool   `json:"withUserId"`
+	SendUserID              bool   `json:"sendUserID"`
 }
 
 type BotConfig struct {
