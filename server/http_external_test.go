@@ -99,43 +99,43 @@ func TestCreateRestrictedClient(t *testing.T) {
 	testHostname := tsURL.Hostname()
 
 	tests := []struct {
-		name            string
-		allowedHosts    []string
-		targetURL       string
-		expectError     bool
-		errorSubstring  string
+		name           string
+		allowedHosts   []string
+		targetURL      string
+		expectError    bool
+		errorSubstring string
 	}{
 		{
-			name:            "allowed host",
-			allowedHosts:    []string{testHostname},
-			targetURL:       ts.URL,
-			expectError:     false,
+			name:         "allowed host",
+			allowedHosts: []string{testHostname},
+			targetURL:    ts.URL,
+			expectError:  false,
 		},
 		{
-			name:            "blocked host",
-			allowedHosts:    []string{"allowed.com"},
-			targetURL:       ts.URL,
-			expectError:     true,
-			errorSubstring:  "not in allowed list",
+			name:           "blocked host",
+			allowedHosts:   []string{"allowed.com"},
+			targetURL:      ts.URL,
+			expectError:    true,
+			errorSubstring: "not on allowed list",
 		},
 		{
-			name:            "wildcard allowed",
-			allowedHosts:    []string{"*"},
-			targetURL:       ts.URL,
-			expectError:     false,
+			name:         "wildcard allowed",
+			allowedHosts: []string{"*"},
+			targetURL:    ts.URL,
+			expectError:  false,
 		},
 		{
-			name:            "multiple patterns with match",
-			allowedHosts:    []string{"other.com", testHostname, "another.com"},
-			targetURL:       ts.URL,
-			expectError:     false,
+			name:         "multiple patterns with match",
+			allowedHosts: []string{"other.com", testHostname, "another.com"},
+			targetURL:    ts.URL,
+			expectError:  false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			client := createRestrictedClient(nil, tt.allowedHosts)
-			
+
 			req, err := http.NewRequest("GET", tt.targetURL, nil)
 			assert.NoError(t, err)
 

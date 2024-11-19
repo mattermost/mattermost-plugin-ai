@@ -179,7 +179,7 @@ const Config = (props: Props) => {
                         label={intl.formatMessage({defaultMessage: 'Allowed Upstream Hostnames (csv)'})}
                         value={value.allowedUpstreamHostnames}
                         onChange={(e) => props.onChange(props.id, {...value, allowedUpstreamHostnames: e.target.value})}
-                        helptext={intl.formatMessage({defaultMessage: 'Comma-separated list of hostnames that bots are allowed to contact.'})}
+                        helptext={intl.formatMessage({defaultMessage: 'Comma separated list of hostnames that LLMs are allowed to contact when using tools. Supports wildcards like *.mydomain.com. For instance to allow JIRA tool use to the Mattermost JIRA instance use mattermost.atlassian.net'})}
                     />
                 </ItemList>
             </Panel>
