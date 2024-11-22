@@ -12,75 +12,145 @@ import (
 func TestHostnameAllowed(t *testing.T) {
 	tests := []struct {
 		name            string
-		hostname        string
+		url             string
 		allowedPatterns []string
 		want            bool
 	}{
 		{
 			name:            "exact match",
-			hostname:        "example.com",
+			url:             "https://example.com/path",
 			allowedPatterns: []string{"example.com"},
 			want:            true,
 		},
 		{
 			name:            "wildcard subdomain match",
-			hostname:        "sub.example.com",
+			url:             "https://sub.example.com/api",
 			allowedPatterns: []string{"*.example.com"},
 			want:            true,
 		},
 		{
+			name:            "base domain not matched by wildcard",
+			url:             "http://example.com",
+			allowedPatterns: []string{"*.example.com"},
+			want:            false, // *.example.com should not match example.com itself
+		},
+		{
 			name:            "wildcard subdomain no match",
-			hostname:        "sub.different.com",
+			url:             "https://sub.different.com/test",
 			allowedPatterns: []string{"*.example.com"},
 			want:            false,
 		},
 		{
 			name:            "global wildcard match",
-			hostname:        "anything.com",
+			url:             "https://anything.com/path",
 			allowedPatterns: []string{"*"},
 			want:            true,
 		},
 		{
 			name:            "multiple patterns with match",
-			hostname:        "api.github.com",
+			url:             "https://api.github.com/v3",
 			allowedPatterns: []string{"*.example.com", "api.github.com", "*.mattermost.com"},
 			want:            true,
 		},
 		{
 			name:            "multiple patterns no match",
-			hostname:        "evil.com",
+			url:             "https://evil.com/hack",
 			allowedPatterns: []string{"*.example.com", "api.github.com", "*.mattermost.com"},
 			want:            false,
 		},
 		{
 			name:            "empty patterns list",
-			hostname:        "example.com",
+			url:             "http://example.com",
 			allowedPatterns: []string{},
 			want:            false,
 		},
 		{
 			name:            "nil patterns list",
-			hostname:        "example.com",
+			url:             "https://example.com",
 			allowedPatterns: nil,
 			want:            false,
 		},
 		{
 			name:            "deep subdomain match",
-			hostname:        "deep.sub.example.com",
+			url:             "https://deep.sub.example.com/path",
 			allowedPatterns: []string{"*.example.com"},
 			want:            true,
 		},
 		{
 			name:            "partial suffix no match",
-			hostname:        "notexample.com",
+			url:             "https://notexample.com/path",
 			allowedPatterns: []string{"*.example.com"},
+			want:            false,
+		},
+		{
+			name:            "ipv6 with zone id blocked",
+			url:             "https://[2001:4860:4860::8844%25eth0]",
+			allowedPatterns: []string{"2001:4860:4860::8844"},
+			want:            false,
+		},
+		{
+			name:            "ipv6 with zone id allowed exact match",
+			url:             "https://[2001:4860:4860::8844%25eth0]",
+			allowedPatterns: []string{"2001:4860:4860::8844%eth0"},
+			want:            true,
+		},
+		{
+			name:            "ipv6 with url encoded zone id",
+			url:             "https://[2001:db8::1%25wlan0]",
+			allowedPatterns: []string{"2001:db8::1%wlan0"},
+			want:            true,
+		},
+		{
+			name:            "ipv6 with numeric zone id",
+			url:             "https://[fe80::1234:5678:9abc%252]",
+			allowedPatterns: []string{"fe80::1234:5678:9abc%2"},
+			want:            true,
+		},
+		{
+			name:            "ipv6 with zone in domain name blocked",
+			url:             "https://[2001:4860:4860::8844%25atlassian.net]",
+			allowedPatterns: []string{"atlassian.net"},
+			want:            false,
+		},
+		{
+			name:            "ipv6 with zone in domain name exact match",
+			url:             "https://[2001:4860:4860::8844%25atlassian.net]",
+			allowedPatterns: []string{"2001:4860:4860::8844%atlassian.net"},
+			want:            true,
+		},
+		{
+			name:            "ipv6 wildcard matched with with zone",
+			url:             "https://[2001:db8::1%25eth0.example.com]",
+			allowedPatterns: []string{"*.example.com"},
+			want:            false,
+		},
+		{
+			name:            "ipv6 literal with wildcard subdomain",
+			url:             "https://[fe80::1234:5678:9abc]",
+			allowedPatterns: []string{"*.fe80::1234:5678:9abc"},
+			want:            false,
+		},
+		{
+			name:            "ipv4 address exact match",
+			url:             "http://192.168.1.1/path",
+			allowedPatterns: []string{"192.168.1.1"},
+			want:            true,
+		},
+		{
+			name:            "ipv4 address no match",
+			url:             "http://192.168.1.1/path",
+			allowedPatterns: []string{"192.168.1.2"},
 			want:            false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := hostnameAllowed(tt.hostname, tt.allowedPatterns)
+			u, err := url.Parse(tt.url)
+			assert.NoError(t, err)
+			hostname := u.Hostname()
+			t.Logf("URL: %q -> Hostname: %q", tt.url, hostname)
+			got := hostnameAllowed(hostname, tt.allowedPatterns)
 			assert.Equal(t, tt.want, got)
 		})
 	}

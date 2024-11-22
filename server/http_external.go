@@ -8,6 +8,15 @@ import (
 	"github.com/mattermost/mattermost/server/public/shared/httpservice"
 )
 
+// Hostname matching rules:
+// 1. Exact matches: A hostname must exactly match an allowed pattern
+// 2. Wildcard matches: Patterns starting with "*." only match subdomains
+//    - "*.example.com" matches "sub.example.com" and "deep.sub.example.com"
+//    - "*.example.com" does NOT match "example.com" itself
+// 3. Global wildcard: A pattern of "*" matches all hostnames
+// 4. IPv6 zones: Hostnames containing zone IDs (%) require exact matches
+//    - Wildcard patterns never match hostnames containing zone IDs
+
 // hostnameAllowed checks if a hostname matches any of the allowed patterns
 func hostnameAllowed(hostname string, allowedPatterns []string) bool {
 	for _, pattern := range allowedPatterns {
@@ -16,6 +25,11 @@ func hostnameAllowed(hostname string, allowedPatterns []string) bool {
 		}
 
 		if strings.HasPrefix(pattern, "*.") {
+			// Reject hosts with ipv6 zones
+			if strings.ContainsAny(hostname, "%") {
+				return false
+			}
+
 			suffix := pattern[1:] // Remove the *
 			if strings.HasSuffix(hostname, suffix) {
 				return true
