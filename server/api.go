@@ -33,6 +33,8 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	botRequiredRouter := router.Group("")
 	botRequiredRouter.Use(p.aiBotRequired)
 
+	botRequiredRouter.POST("/suggest_webhook_schema", p.handleSuggestWebhookSchema)
+
 	postRouter := botRequiredRouter.Group("/post/:postid")
 	postRouter.Use(p.postAuthorizationRequired)
 	postRouter.POST("/react", p.handleReact)

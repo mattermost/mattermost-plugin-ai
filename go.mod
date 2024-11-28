@@ -2,6 +2,7 @@ module github.com/mattermost/mattermost-plugin-ai
 
 go 1.22
 
+toolchain go1.22.7
 require (
 	github.com/Masterminds/squirrel v1.5.4
 	github.com/andygrunwald/go-jira v1.16.0

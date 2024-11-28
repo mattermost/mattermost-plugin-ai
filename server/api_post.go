@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"slices"
 	"strings"
@@ -199,6 +201,71 @@ func (p *Plugin) handleTranscribeFile(c *gin.Context) {
 		ChannelID: createdPost.ChannelId,
 	}
 	c.Render(http.StatusOK, render.JSON{Data: data})
+}
+
+func (p *Plugin) handleSuggestWebhookSchema(c *gin.Context) {
+	bot := c.MustGet(ContextBotKey).(*Bot)
+
+	// Read the request body
+	var requestBody map[string]interface{}
+	if err := c.ShouldBindJSON(&requestBody); err != nil {
+		c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	// Convert the JSON object to a string
+	requestBodyStr, err := json.Marshal(requestBody)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	resultSchema := model.IncomingWebhookRequest{
+		Attachments: []*model.SlackAttachment{
+			&model.SlackAttachment{},
+		},
+		Priority: &model.PostPriority{
+			RequestedAck:            model.NewPointer(false),
+			PersistentNotifications: model.NewPointer(false),
+		},
+	}
+
+	standardSchemaJson, err := json.Marshal(resultSchema)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+	// Use the string as a value in promptParameters
+	promptParameters := map[string]string{
+		"incomingWebhookSchema": string(requestBodyStr),
+		"standardizedSchema":    string(standardSchemaJson),
+	}
+	conversationContext := ai.NewConversationContextParametersOnly(promptParameters)
+
+	prompt, err := p.prompts.ChatCompletion(ai.PromptSuggestWebhookSchema, conversationContext, ai.NewNoTools())
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	result, err := p.getLLM(bot.cfg).ChatCompletionNoStream(prompt)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	log.Println(result)
+
+	err = json.Unmarshal([]byte(result), &resultSchema)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	resultSchema.ChannelName = ""
+	resultSchema.IconURL = ""
+
+	c.JSON(http.StatusOK, resultSchema)
 }
 
 func (p *Plugin) handleSummarizeTranscription(c *gin.Context) {

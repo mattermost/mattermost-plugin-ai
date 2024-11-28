@@ -37,6 +37,7 @@ const (
 	PromptFindOpenQuestionsSince  = "find_open_questions_since"
 	PromptFindActionItems         = "find_action_items"
 	PromptFindOpenQuestions       = "find_open_questions"
+	PromptSuggestWebhookSchema    = "suggest_webhook_schema"
 )
 
 func NewPrompts(input fs.FS) (*Prompts, error) {
