@@ -69,5 +69,6 @@ jobs:
             curl -H "Authorization: Bearer $token" \
                  -X POST \
                  -F "plugin=@$PLUGIN_FILE" \
+                 -F "force=true" \
                  "$url/api/v4/plugins"
           done
