@@ -8,7 +8,7 @@ import {ServiceData} from './service';
 import Panel, {PanelFooterText} from './panel';
 import Bots, {firstNewBot} from './bots';
 import {LLMBotConfig} from './bot';
-import {ItemList, SelectionItem, SelectionItemOption, StyledRadio} from './item';
+import {BooleanItem, ItemList, SelectionItem, SelectionItemOption, TextItem} from './item';
 import NoBotsPage from './no_bots_page';
 
 type Config = {
@@ -18,6 +18,7 @@ type Config = {
     transcriptBackend: string,
     enableLLMTrace: boolean,
     enableCallSummary: boolean,
+    allowedUpstreamHostnames: string
 }
 
 type Props = {
@@ -167,46 +168,26 @@ const Config = (props: Props) => {
                             </SelectionItemOption>
                         ))}
                     </SelectionItem>
+                    <TextItem
+                        label={intl.formatMessage({defaultMessage: 'Allowed Upstream Hostnames (csv)'})}
+                        value={value.allowedUpstreamHostnames}
+                        onChange={(e) => props.onChange(props.id, {...value, allowedUpstreamHostnames: e.target.value})}
+                        helptext={intl.formatMessage({defaultMessage: 'Comma separated list of hostnames that LLMs are allowed to contact when using tools. Supports wildcards like *.mydomain.com. For instance to allow JIRA tool use to the Mattermost JIRA instance use mattermost.atlassian.net'})}
+                    />
                 </ItemList>
             </Panel>
-
             <Panel
                 title={intl.formatMessage({defaultMessage: 'Debug'})}
                 subtitle=''
             >
-                <div className='form-group'>
-                    <label
-                        className='control-label col-sm-4'
-                        htmlFor='ai-service-name'
-                    >
-                        <FormattedMessage defaultMessage='Enable LLM Trace:'/>
-                    </label>
-                    <div className='col-sm-8'>
-                        <label className='radio-inline'>
-                            <StyledRadio
-                                type='radio'
-                                value='true'
-                                checked={value.enableLLMTrace}
-                                onChange={() => props.onChange(props.id, {...value, enableLLMTrace: true})}
-                            />
-                            <span><FormattedMessage defaultMessage='true'/></span>
-                        </label>
-                        <label className='radio-inline'>
-                            <StyledRadio
-                                type='radio'
-                                value='false'
-                                checked={!value.enableLLMTrace}
-                                onChange={() => props.onChange(props.id, {...value, enableLLMTrace: false})}
-                            />
-                            <span><FormattedMessage defaultMessage='false'/></span>
-                        </label>
-                        <div className='help-text'>
-                            <span>
-                                <FormattedMessage defaultMessage='Enable tracing of LLM requests. Outputs full conversation data to the logs.'/>
-                            </span>
-                        </div>
-                    </div>
-                </div>
+                <ItemList>
+                    <BooleanItem
+                        label={intl.formatMessage({defaultMessage: 'Enable LLM Trace'})}
+                        value={value.enableLLMTrace}
+                        onChange={(to) => props.onChange(props.id, {...value, enableLLMTrace: to})}
+                        helpText={intl.formatMessage({defaultMessage: 'Enable tracing of LLM requests. Outputs full conversation data to the logs.'})}
+                    />
+                </ItemList>
             </Panel>
         </ConfigContainer>
     );

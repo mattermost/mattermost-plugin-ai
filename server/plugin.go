@@ -213,9 +213,9 @@ const (
 	FromWebhookProp = "from_webhook"
 	FromBotProp     = "from_bot"
 	FromPluginProp  = "from_plugin"
+	WranglerProp    = "wrangler"
 )
 
-// handleMessages Handled messages posted. Returns true if a response was posted.
 func (p *Plugin) handleMessages(post *model.Post) error {
 	// Don't respond to ourselves
 	if p.IsAnyBot(post.UserId) {
@@ -225,6 +225,11 @@ func (p *Plugin) handleMessages(post *model.Post) error {
 	// Never respond to remote posts
 	if post.RemoteId != nil && *post.RemoteId != "" {
 		return fmt.Errorf("not responding to remote posts: %w", ErrNoResponse)
+	}
+
+	// Wranger posts should be ignored
+	if post.GetProp(WranglerProp) != nil {
+		return fmt.Errorf("not responding to wrangler posts: %w", ErrNoResponse)
 	}
 
 	// Don't respond to plugins unless they ask for it

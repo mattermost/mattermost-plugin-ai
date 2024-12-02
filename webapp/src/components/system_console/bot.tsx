@@ -23,6 +23,7 @@ export type LLMService = {
     password: string
     tokenLimit: number
     streamingTimeoutSeconds: number
+    sendUserId: boolean
 }
 
 export enum ChannelAccessLevel {
@@ -238,11 +239,19 @@ const ServiceItem = (props: ServiceItemProps) => {
                 />
             )}
             {isOpenAIType && (
-                <TextItem
-                    label={intl.formatMessage({defaultMessage: 'Organization ID'})}
-                    value={props.service.orgId}
-                    onChange={(e) => props.onChange({...props.service, orgId: e.target.value})}
-                />
+                <>
+                    <TextItem
+                        label={intl.formatMessage({defaultMessage: 'Organization ID'})}
+                        value={props.service.orgId}
+                        onChange={(e) => props.onChange({...props.service, orgId: e.target.value})}
+                    />
+                    <BooleanItem
+                        label={intl.formatMessage({defaultMessage: 'Send User ID'})}
+                        value={props.service.sendUserId}
+                        onChange={(to: boolean) => props.onChange({...props.service, sendUserId: to})}
+                        helpText={intl.formatMessage({defaultMessage: 'Sends the Mattermost user ID to the upstream LLM.'})}
+                    />
+                </>
             )}
             {type === 'asksage' && (
                 <>

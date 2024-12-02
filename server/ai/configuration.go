@@ -11,6 +11,7 @@ type ServiceConfig struct {
 	Password                string `json:"password"`
 	TokenLimit              int    `json:"tokenLimit"`
 	StreamingTimeoutSeconds int    `json:"streamingTimeoutSeconds"`
+	SendUserID              bool   `json:"sendUserID"`
 }
 
 type ChannelAccessLevel int

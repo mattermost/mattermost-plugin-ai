@@ -7,13 +7,17 @@ type TextStreamResult struct {
 
 func NewStreamFromString(text string) *TextStreamResult {
 	output := make(chan string)
+	err := make(chan error)
 
 	go func() {
 		output <- text
+		close(output)
+		close(err)
 	}()
 
 	return &TextStreamResult{
 		Stream: output,
+		Err:    err,
 	}
 }
 

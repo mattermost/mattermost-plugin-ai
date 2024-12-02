@@ -8,11 +8,12 @@ import (
 )
 
 type Config struct {
-	Services            []ai.ServiceConfig `json:"services"`
-	Bots                []ai.BotConfig     `json:"bots"`
-	DefaultBotName      string             `json:"defaultBotName"`
-	TranscriptGenerator string             `json:"transcriptBackend"`
-	EnableLLMTrace      bool               `json:"enableLLMTrace"`
+	Services                 []ai.ServiceConfig `json:"services"`
+	Bots                     []ai.BotConfig     `json:"bots"`
+	DefaultBotName           string             `json:"defaultBotName"`
+	TranscriptGenerator      string             `json:"transcriptBackend"`
+	EnableLLMTrace           bool               `json:"enableLLMTrace"`
+	AllowedUpstreamHostnames string             `json:"allowedUpstreamHostnames"`
 }
 
 // configuration captures the plugin's external configuration as exposed in the Mattermost server
