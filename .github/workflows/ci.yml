@@ -78,9 +78,7 @@ jobs:
 
           gh release create latest-master \
             --title "Latest Master Build" \
-            --notes "Latest build from master branch - ${COMMIT_HASH}
-
-            ${COMMIT_MSG}" \
+            --notes "Latest build from master branch - ${COMMIT_HASH}" \
             --prerelease \
             $PLUGIN_FILE
 
