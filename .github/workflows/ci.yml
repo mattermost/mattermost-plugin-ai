@@ -43,3 +43,30 @@ jobs:
       golangci-lint-version: "v1.54.2"
       golang-version: "1.21"
     secrets: inherit
+
+  deploy:
+    needs: [plugin-ci, e2e]
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build plugin
+        run: make dist
+      
+      - name: Deploy to Mattermost instances
+        env:
+          MM_ADMIN_TOKEN: ${{ secrets.MM_ADMIN_TOKEN }}
+          MM_SERVER_URLS: ${{ secrets.MM_SERVER_URLS }}
+        run: |
+          PLUGIN_FILE=$(ls dist/*.tar.gz)
+          echo "Found plugin bundle: $PLUGIN_FILE"
+          
+          IFS=',' read -ra SERVERS <<< "$MM_SERVER_URLS"
+          for server in "${SERVERS[@]}"; do
+            echo "Deploying to $server"
+            curl -H "Authorization: Bearer $MM_ADMIN_TOKEN" \
+                 -X POST \
+                 -F "plugin=@$PLUGIN_FILE" \
+                 "$server/api/v4/plugins"
+          done
