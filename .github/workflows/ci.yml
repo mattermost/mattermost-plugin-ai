@@ -3,7 +3,6 @@ on:
   push:
     branches:
       - master
-      - rapid-deploy
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
   pull_request:
@@ -47,7 +46,7 @@ jobs:
 
   deploy:
     needs: [plugin-ci, e2e]
-    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/rapid-deploy'
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
