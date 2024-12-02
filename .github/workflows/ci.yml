@@ -56,17 +56,18 @@ jobs:
       
       - name: Deploy to Mattermost instances
         env:
-          MM_ADMIN_TOKEN: ${{ secrets.MM_ADMIN_TOKEN }}
-          MM_SERVER_URLS: ${{ secrets.MM_SERVER_URLS }}
+          MM_SERVERS_CONFIG: ${{ secrets.MM_SERVERS_CONFIG }}
         run: |
           PLUGIN_FILE=$(ls dist/*.tar.gz)
           echo "Found plugin bundle: $PLUGIN_FILE"
           
-          IFS=',' read -ra SERVERS <<< "$MM_SERVER_URLS"
-          for server in "${SERVERS[@]}"; do
-            echo "Deploying to $server"
-            curl -H "Authorization: Bearer $MM_ADMIN_TOKEN" \
+          echo "$MM_SERVERS_CONFIG" | jq -c '.[]' | while read -r server; do
+            url=$(echo "$server" | jq -r '.url')
+            token=$(echo "$server" | jq -r '.token')
+            
+            echo "Deploying to $url"
+            curl -H "Authorization: Bearer $token" \
                  -X POST \
                  -F "plugin=@$PLUGIN_FILE" \
-                 "$server/api/v4/plugins"
+                 "$url/api/v4/plugins"
           done
