@@ -30,7 +30,8 @@ func (p *Plugin) channelAuthorizationRequired(c *gin.Context) {
 		return
 	}
 
-	if err := p.checkUsageRestrictions(userID, channel); err != nil {
+	bot := c.MustGet(ContextBotKey).(*Bot)
+	if err := p.checkUsageRestrictions(userID, bot, channel); err != nil {
 		c.AbortWithError(http.StatusForbidden, err)
 		return
 	}

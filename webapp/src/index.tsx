@@ -3,7 +3,7 @@ import {Store, Action} from 'redux';
 import styled from 'styled-components';
 import {FormattedMessage} from 'react-intl';
 
-import {GlobalState} from '@mattermost/types/lib/store';
+import {GlobalState} from '@mattermost/types/store';
 
 //@ts-ignore it exists
 import aiIcon from '../../assets/bot_icon.png';

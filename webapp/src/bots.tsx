@@ -8,6 +8,7 @@ import {getAIBots} from '@/client';
 
 import manifest from './manifest';
 import {BotsHandler} from './redux';
+import {ChannelAccessLevel, UserAccessLevel} from './components/system_console/bot';
 
 export interface LLMBot {
     id: string;
@@ -15,6 +16,11 @@ export interface LLMBot {
     username: string;
     lastIconUpdate: number;
     dmChannelID: string;
+    channelAccessLevel: ChannelAccessLevel;
+    channelIDs: string[];
+    userAccessLevel: UserAccessLevel;
+    userIDs: string[];
+    teamIDs: string[];
 }
 
 const defaultBotLocalStorageKey = 'defaultBot';
@@ -56,4 +62,32 @@ export const useBotlist = () => {
     }, [activeBot]);
 
     return {bots, activeBot, setActiveBot};
+};
+
+// useBotlistForChannel only shows bots the user is allowed to use in a specific channel. Also returns if bots were filtered for showing
+// a sorry no bots message.
+export const useBotlistForChannel = (channelId: string) => {
+    const {bots, activeBot, setActiveBot} = useBotlist();
+    const [filteredBots, setFilteredBots] = useState<LLMBot[]>([]);
+
+    useEffect(() => {
+        if (!bots) {
+            return;
+        }
+
+        const filtered = bots.filter((bot: LLMBot) => {
+            return bot.channelAccessLevel === ChannelAccessLevel.All ||
+				(bot.channelAccessLevel === ChannelAccessLevel.Allow && bot.channelIDs.includes(channelId)) ||
+				(bot.channelAccessLevel === ChannelAccessLevel.Block && !bot.channelIDs.includes(channelId));
+        });
+
+        setFilteredBots(filtered);
+        if (!filtered.find((bot) => bot.username === activeBot?.username)) {
+            setActiveBot(filtered[0] || null);
+        }
+    }, [bots, channelId, activeBot, setActiveBot]);
+
+    const wasFiltered = bots && (filteredBots.length !== bots.length);
+
+    return {bots: filteredBots, activeBot, setActiveBot, wasFiltered};
 };

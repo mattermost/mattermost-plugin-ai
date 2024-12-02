@@ -111,7 +111,7 @@ func (p *Plugin) continueConversation(bot *Bot, threadData *ThreadData, context 
 		}
 
 		if !p.pluginAPI.User.HasPermissionToChannel(context.Post.UserId, threadChannel.Id, model.PermissionReadChannel) ||
-			p.checkUsageRestrictions(context.Post.UserId, threadChannel) != nil {
+			p.checkUsageRestrictions(context.Post.UserId, bot, threadChannel) != nil {
 			T := i18nLocalizerFunc(p.i18n, context.RequestingUser.Locale)
 			responsePost := &model.Post{
 				ChannelId: context.Channel.Id,

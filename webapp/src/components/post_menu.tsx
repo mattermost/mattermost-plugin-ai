@@ -11,7 +11,7 @@ import {useSelectPost} from '@/hooks';
 
 import {useIsBasicsLicensed} from '@/license';
 
-import {useBotlist} from '@/bots';
+import {useBotlistForChannel} from '@/bots';
 
 import IconAI from './assets/icon_ai';
 import IconReactForMe from './assets/icon_react_for_me';
@@ -19,7 +19,7 @@ import IconSparkleCheckmark from './assets/icon_sparkle_checkmark';
 import IconSparkleQuestion from './assets/icon_sparkle_question';
 import DotMenu, {DropdownMenu, DropdownMenuItem} from './dot_menu';
 import IconThreadSummarization from './assets/icon_thread_summarization';
-import {Divider, DropdownInfoOnlyVisibleToYou} from './dropdown_info';
+import {Divider, DropdownChannelBlocked, DropdownInfoOnlyVisibleToYou} from './dropdown_info';
 import {DropdownBotSelector} from './bot_slector';
 
 type Props = {
@@ -29,7 +29,7 @@ type Props = {
 const PostMenu = (props: Props) => {
     const selectPost = useSelectPost();
     const intl = useIntl();
-    const {bots, activeBot, setActiveBot} = useBotlist();
+    const {bots, activeBot, setActiveBot, wasFiltered} = useBotlistForChannel(props.post.channel_id);
     const post = props.post;
     const isBasicsLicensed = useIsBasicsLicensed();
 
@@ -42,8 +42,21 @@ const PostMenu = (props: Props) => {
         return null;
     }
 
-    // Unconfigured state
     if (bots && bots.length === 0) {
+        // Filtered by permissions state
+        if (wasFiltered) {
+            return (
+                <DotMenu
+                    icon={<IconAI/>}
+                    title={intl.formatMessage({defaultMessage: 'AI Actions'})}
+                    dropdownMenu={StyledDropdownMenu}
+                >
+                    <DropdownChannelBlocked/>
+                </DotMenu>
+            );
+        }
+
+        // Unconfigured state
         return null;
     }
 

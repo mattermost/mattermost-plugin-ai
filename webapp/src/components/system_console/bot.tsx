@@ -11,6 +11,7 @@ import {ButtonIcon} from '../assets/buttons';
 
 import {BooleanItem, ItemList, SelectionItem, SelectionItemOption, TextItem} from './item';
 import AvatarItem from './avatar';
+import {ChannelAccessLevelItem, UserAccessLevelItem} from './llm_access';
 
 export type LLMService = {
     type: string
@@ -25,6 +26,20 @@ export type LLMService = {
     sendUserId: boolean
 }
 
+export enum ChannelAccessLevel {
+    All = 0,
+    Allow,
+    Block,
+    None,
+}
+
+export enum UserAccessLevel {
+    All = 0,
+    Allow,
+    Block,
+    None,
+}
+
 export type LLMBotConfig = {
     id: string
     name: string
@@ -33,6 +48,11 @@ export type LLMBotConfig = {
     customInstructions: string
     enableVision: boolean
     disableTools: boolean
+    channelAccessLevel: ChannelAccessLevel
+    channelIDs: string[]
+    userAccessLevel: UserAccessLevel
+    userIDs: string[]
+    teamIDs: string[]
 }
 
 type Props = {
@@ -153,14 +173,30 @@ const Bot = (props: Props) => {
                                 />
                                 <BooleanItem
                                     label={
-                                        <FormattedMessage defaultMessage='Disable Tools'/>
+                                        <FormattedMessage defaultMessage='Enable Tools'/>
                                     }
-                                    value={props.bot.disableTools}
-                                    onChange={(to: boolean) => props.onChange({...props.bot, disableTools: to})}
+                                    value={!props.bot.disableTools}
+                                    onChange={(to: boolean) => props.onChange({...props.bot, disableTools: !to})}
                                     helpText={intl.formatMessage({defaultMessage: 'By default some tool use is enabled to allow for features such as integrations with JIRA. Disabling this allows use of models that do not support or are not very good at tool use. Some features will not work without tools.'})}
                                 />
                             </>
                         )}
+                        <ChannelAccessLevelItem
+                            label={intl.formatMessage({defaultMessage: 'Channel access'})}
+                            level={props.bot.channelAccessLevel ?? ChannelAccessLevel.All}
+                            onChangeLevel={(to: ChannelAccessLevel) => props.onChange({...props.bot, channelAccessLevel: to})}
+                            channelIDs={props.bot.channelIDs ?? []}
+                            onChangeChannelIDs={(channels: string[]) => props.onChange({...props.bot, channelIDs: channels})}
+                        />
+                        <UserAccessLevelItem
+                            label={intl.formatMessage({defaultMessage: 'User access'})}
+                            level={props.bot.userAccessLevel ?? ChannelAccessLevel.All}
+                            onChangeLevel={(to: UserAccessLevel) => props.onChange({...props.bot, userAccessLevel: to})}
+                            userIDs={props.bot.userIDs ?? []}
+                            teamIDs={props.bot.teamIDs ?? []}
+                            onChangeIDs={(userIds: string[], teamIds: string[]) => props.onChange({...props.bot, userIDs: userIds, teamIDs: teamIds})}
+                        />
+
                     </ItemList>
                 </ItemListContainer>
             )}
