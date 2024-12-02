@@ -33,6 +33,7 @@ const defaultNewBot = {
     channelIDs: [],
     userAccessLevel: UserAccessLevel.All,
     userIDs: [],
+    teamIDs: [],
 };
 
 export const firstNewBot = {

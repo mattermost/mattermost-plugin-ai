@@ -20,6 +20,7 @@ export interface LLMBot {
     channelIDs: string[];
     userAccessLevel: UserAccessLevel;
     userIDs: string[];
+    teamIDs: string[];
 }
 
 const defaultBotLocalStorageKey = 'defaultBot';

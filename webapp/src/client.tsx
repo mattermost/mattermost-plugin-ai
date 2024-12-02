@@ -1,5 +1,6 @@
 import {Client4 as Client4Class, ClientError} from '@mattermost/client';
 import {ChannelWithTeamData} from '@mattermost/types/channels';
+import {Team} from '@mattermost/types/lib/teams';
 
 import manifest from './manifest';
 
@@ -272,6 +273,9 @@ export async function getAutocompleteAllUsers(name: string) {
 }
 
 export async function getProfilesByIds(userIds: string[]) {
+    if (userIds.length === 0) {
+        return [];
+    }
     return Client4.getProfilesByIds(userIds);
 }
 
@@ -294,4 +298,19 @@ export async function getChannelById(channelId: string): Promise<ChannelWithTeam
         team_display_name: team.display_name,
         team_update_at: team.update_at,
     };
+}
+
+export async function getTeamsByIds(teamIds: string[]) {
+    if (teamIds.length === 0) {
+        return [];
+    }
+    return Promise.all(teamIds.map((id) => Client4.getTeam(id)));
+}
+
+export async function searchTeams(term: string) {
+    return Client4.searchTeams(term, {}) as Promise<Team[]>;
+}
+
+export function getTeamIconUrl(teamId: string, lastTeamIconUpdate: number) {
+    return Client4.getTeamIconUrl(teamId, lastTeamIconUpdate);
 }

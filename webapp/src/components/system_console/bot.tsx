@@ -51,6 +51,7 @@ export type LLMBotConfig = {
     channelIDs: string[]
     userAccessLevel: UserAccessLevel
     userIDs: string[]
+    teamIDs: string[]
 }
 
 type Props = {
@@ -191,7 +192,8 @@ const Bot = (props: Props) => {
                             level={props.bot.userAccessLevel ?? ChannelAccessLevel.All}
                             onChangeLevel={(to: UserAccessLevel) => props.onChange({...props.bot, userAccessLevel: to})}
                             userIDs={props.bot.userIDs ?? []}
-                            onChangeUserIDs={(users: string[]) => props.onChange({...props.bot, userIDs: users})}
+                            teamIDs={props.bot.teamIDs ?? []}
+                            onChangeIDs={(userIds: string[], teamIds: string[]) => props.onChange({...props.bot, userIDs: userIds, teamIDs: teamIds})}
                         />
 
                     </ItemList>

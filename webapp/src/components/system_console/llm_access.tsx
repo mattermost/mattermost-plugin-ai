@@ -31,7 +31,8 @@ type UserAccessLevelProps = {
     level: UserAccessLevel;
     onChangeLevel: (level: UserAccessLevel) => void;
     userIDs: string[];
-    onChangeUserIDs: (userIds: string[]) => void;
+    teamIDs: string[];
+    onChangeIDs: (userIds: string[], teamIds: string[]) => void;
 };
 
 export const UserAccessLevelItem = (props: UserAccessLevelProps) => {
@@ -72,7 +73,8 @@ export const UserAccessLevelItem = (props: UserAccessLevelProps) => {
                         </ItemLabel>
                         <SelectUser
                             userIDs={props.userIDs}
-                            onChangeUserIDs={props.onChangeUserIDs}
+                            teamIDs={props.teamIDs}
+                            onChangeIDs={props.onChangeIDs}
                         />
                         <HelpText>
                             {props.level === UserAccessLevel.Allow ? (

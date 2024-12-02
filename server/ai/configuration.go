@@ -43,6 +43,7 @@ type BotConfig struct {
 	ChannelIDs         []string           `json:"channelIDs"`
 	UserAccessLevel    UserAccessLevel    `json:"userAccessLevel"`
 	UserIDs            []string           `json:"userIDs"`
+	TeamIDs            []string           `json:"teamIDs"`
 	MaxFileSize        int64              `json:"maxFileSize"`
 }
 
