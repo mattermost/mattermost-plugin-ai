@@ -14,10 +14,11 @@ type Config struct {
 	TranscriptGenerator string             `json:"transcriptBackend"`
 	EnableLLMTrace      bool               `json:"enableLLMTrace"`
 
-	EnableUseRestrictions bool   `json:"enableUserRestrictions"`
-	AllowPrivateChannels  bool   `json:"allowPrivateChannels"`
-	AllowedTeamIDs        string `json:"allowedTeamIDs"`
-	OnlyUsersOnTeam       string `json:"onlyUsersOnTeam"`
+	EnableUseRestrictions    bool   `json:"enableUserRestrictions"`
+	AllowPrivateChannels     bool   `json:"allowPrivateChannels"`
+	AllowedTeamIDs           string `json:"allowedTeamIDs"`
+	OnlyUsersOnTeam          string `json:"onlyUsersOnTeam"`
+	AllowedUpstreamHostnames string `json:"allowedUpstreamHostnames"`
 }
 
 // configuration captures the plugin's external configuration as exposed in the Mattermost server
