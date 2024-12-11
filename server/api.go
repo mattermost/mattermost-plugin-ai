@@ -49,7 +49,7 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 
 	playbookRunRouter := botRequiredRouter.Group("/playbook_run/:playbookrunid")
 	playbookRunRouter.Use(p.playbookRunAuthorizationRequired)
-	playbookRunRouter.GET("/generate_status", p.handleGenerateStatus)
+	playbookRunRouter.POST("/generate_status", p.handleGenerateStatus)
 
 	adminRouter := router.Group("/admin")
 	adminRouter.Use(p.mattermostAdminAuthorizationRequired)

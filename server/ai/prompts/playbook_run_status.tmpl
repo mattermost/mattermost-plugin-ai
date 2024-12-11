@@ -15,4 +15,10 @@ The template you should follow when creating the status update is given below de
 {{.PromptParameters.Template}}
 ```
 {{end}}
+{{if .PromptParameters.Instructions}}
+For building the status udate, use the following instructions to given below delimited by ```. Do not include ```.
+```
+{{.PromptParameters.Instructions}}
+```
+{{end}}
 {{end}}

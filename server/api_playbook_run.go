@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
@@ -60,6 +61,12 @@ func (p *Plugin) handleGenerateStatus(c *gin.Context) {
 	channelID := playbookRun.ChannelID
 	bot := c.MustGet(ContextBotKey).(*Bot)
 
+	var instructions []string
+	if err := json.NewDecoder(c.Request.Body).Decode(&instructions); err != nil {
+		c.AbortWithError(http.StatusBadRequest, errors.New("You need to pass a list of instructions, it can be an empty list"))
+		return
+	}
+
 	if !p.pluginAPI.User.HasPermissionToChannel(userID, channelID, model.PermissionReadChannel) {
 		c.AbortWithError(http.StatusForbidden, errors.New("user doesn't have permission to read channel"))
 		return
@@ -90,9 +97,10 @@ func (p *Plugin) handleGenerateStatus(c *gin.Context) {
 
 	ccontext := p.MakeConversationContext(bot, user, nil, nil)
 	ccontext.PromptParameters = map[string]string{
-		"Posts":    fomattedPosts,
-		"Template": playbookRun.StatusUpdateTemplate,
-		"RunName":  playbookRun.Name,
+		"Posts":        fomattedPosts,
+		"Template":     playbookRun.StatusUpdateTemplate,
+		"RunName":      playbookRun.Name,
+		"Instructions": strings.TrimSpace(strings.Join(instructions, "\n")),
 	}
 
 	prompt, err := p.prompts.ChatCompletion("playbook_run_status", ccontext, ai.NewNoTools())
