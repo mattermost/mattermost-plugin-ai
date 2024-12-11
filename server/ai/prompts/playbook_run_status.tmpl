@@ -2,6 +2,9 @@
 A playbook is a repeatable process that consists of a sequence of tasks.
 A playbook run is an execution of a playbook. It includes tasks and a channel to talk about those tasks within.
 Use the following context to write a useful status update for a playbook run. If a template is provided follow it exactly.
+{{if .CustomInstructions}}
+{{.CustomInstructions}}
+{{end}}
 {{end}}
 {{define "playbook_run_status.user"}}
 Playbook run name: "{{.PromptParameters.RunName}}"
@@ -19,6 +22,12 @@ The template you should follow when creating the status update is given below de
 For building the status udate, use the following instructions to given below delimited by ```. Do not include ```.
 ```
 {{.PromptParameters.Instructions}}
+```
+{{end}}
+{{if .PromptParameters.PreviousMessages}}
+This is a list of the previous messages that you proposed me ordered by time and separated by a line with -----. Use them to follow the instruction, taking into account that the instrunctions probably refers to the last message you shared. The list is given below delimited by ```. Do not include ```.
+```
+{{.PromptParameters.PreviousMessages}}
 ```
 {{end}}
 {{end}}

@@ -59,12 +59,21 @@ func (p *Plugin) handleGenerateStatus(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	playbookRun := c.MustGet(ContextPlaybookRunKey).(PlaybookRun)
 	channelID := playbookRun.ChannelID
-	bot := c.MustGet(ContextBotKey).(*Bot)
 
-	var instructions []string
-	if err := json.NewDecoder(c.Request.Body).Decode(&instructions); err != nil {
+	var generateRequest struct {
+		Instructions []string `json:"instructions"`
+		Messages     []string `json:"messages"`
+		Bot          string   `json:"bot"`
+	}
+
+	if err := json.NewDecoder(c.Request.Body).Decode(&generateRequest); err != nil {
 		c.AbortWithError(http.StatusBadRequest, errors.New("You need to pass a list of instructions, it can be an empty list"))
 		return
+	}
+
+	bot := p.GetBotByID(generateRequest.Bot)
+	if bot == nil {
+		bot = c.MustGet(ContextBotKey).(*Bot)
 	}
 
 	if !p.pluginAPI.User.HasPermissionToChannel(userID, channelID, model.PermissionReadChannel) {
@@ -97,10 +106,11 @@ func (p *Plugin) handleGenerateStatus(c *gin.Context) {
 
 	ccontext := p.MakeConversationContext(bot, user, nil, nil)
 	ccontext.PromptParameters = map[string]string{
-		"Posts":        fomattedPosts,
-		"Template":     playbookRun.StatusUpdateTemplate,
-		"RunName":      playbookRun.Name,
-		"Instructions": strings.TrimSpace(strings.Join(instructions, "\n")),
+		"Posts":            fomattedPosts,
+		"Template":         playbookRun.StatusUpdateTemplate,
+		"RunName":          playbookRun.Name,
+		"Instructions":     strings.TrimSpace(strings.Join(generateRequest.Instructions, "\n")),
+		"PreviousMessages": strings.TrimSpace(strings.Join(generateRequest.Messages, "\n-----\n")),
 	}
 
 	prompt, err := p.prompts.ChatCompletion("playbook_run_status", ccontext, ai.NewNoTools())
