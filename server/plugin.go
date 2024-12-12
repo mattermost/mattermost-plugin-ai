@@ -271,7 +271,7 @@ func (p *Plugin) handleMessages(post *model.Post) error {
 }
 
 func (p *Plugin) handleMentions(bot *Bot, post *model.Post, postingUser *model.User, channel *model.Channel) error {
-	if err := p.checkUsageRestrictions(postingUser.Id, channel); err != nil {
+	if err := p.checkUsageRestrictions(postingUser.Id, bot, channel); err != nil {
 		return err
 	}
 
@@ -289,7 +289,7 @@ func (p *Plugin) handleMentions(bot *Bot, post *model.Post, postingUser *model.U
 }
 
 func (p *Plugin) handleDMs(bot *Bot, channel *model.Channel, postingUser *model.User, post *model.Post) error {
-	if err := p.checkUsageRestrictionsForUser(postingUser.Id); err != nil {
+	if err := p.checkUsageRestrictionsForUser(bot, postingUser.Id); err != nil {
 		return err
 	}
 

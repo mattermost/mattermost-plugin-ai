@@ -85,7 +85,7 @@ type GetChannelPosts struct {
 	NumberPosts int    `jsonschema_description:"The number of most recent posts to get. Example: '30'"`
 }
 
-func (p *Plugin) toolResolveGetChannelPosts(context ai.ConversationContext, argsGetter ai.ToolArgumentGetter) (string, error) {
+func (p *Plugin) toolResolveGetChannelPosts(context ai.ConversationContext, argsGetter ai.ToolArgumentGetter, bot *Bot) (string, error) {
 	var args GetChannelPosts
 	err := argsGetter(&args)
 	if err != nil {
@@ -110,7 +110,7 @@ func (p *Plugin) toolResolveGetChannelPosts(context ai.ConversationContext, args
 		return "internal failure", fmt.Errorf("failed to lookup channel by name, may not exist: %w", err)
 	}
 
-	if err = p.checkUsageRestrictionsForChannel(channel); err != nil {
+	if err = p.checkUsageRestrictionsForChannel(bot, channel); err != nil {
 		return "user asked for a channel that is blocked by usage restrictions", fmt.Errorf("usage restrictions during channel lookup: %w", err)
 	}
 
@@ -396,7 +396,7 @@ func (p *Plugin) toolGetJiraIssue(context ai.ConversationContext, argsGetter ai.
 
 // getBuiltInTools returns the built-in tools that are available to all users.
 // isDM is true if the response will be in a DM with the user. More tools are available in DMs because of security properties.
-func (p *Plugin) getBuiltInTools(isDM bool) []ai.Tool {
+func (p *Plugin) getBuiltInTools(isDM bool, bot *Bot) []ai.Tool {
 	builtInTools := []ai.Tool{}
 
 	if isDM {
@@ -404,7 +404,9 @@ func (p *Plugin) getBuiltInTools(isDM bool) []ai.Tool {
 			Name:        "GetChannelPosts",
 			Description: "Get the most recent posts from a Mattermost channel. Returns posts in the format 'username: message'",
 			Schema:      GetChannelPosts{},
-			Resolver:    p.toolResolveGetChannelPosts,
+			Resolver: func(context ai.ConversationContext, argsGetter ai.ToolArgumentGetter) (string, error) {
+				return p.toolResolveGetChannelPosts(context, argsGetter, bot)
+			},
 		})
 
 		builtInTools = append(builtInTools, ai.Tool{
@@ -444,6 +446,6 @@ func (p *Plugin) getDefaultToolsStore(bot *Bot, isDM bool) ai.ToolStore {
 		return ai.NewNoTools()
 	}
 	store := ai.NewToolStore(&p.pluginAPI.Log, p.getConfiguration().EnableLLMTrace)
-	store.AddTools(p.getBuiltInTools(isDM))
+	store.AddTools(p.getBuiltInTools(isDM, bot))
 	return store
 }
