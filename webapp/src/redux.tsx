@@ -2,17 +2,24 @@ import {combineReducers, Store, Action} from 'redux';
 import {GlobalState} from '@mattermost/types/store';
 
 import {makeCallsPostButtonClickedHandler} from './calls_button';
+import {makePlaybookRunStatusUpdateHandler} from './playbooks_button';
+import PostEventListener from './websocket';
 import manifest from './manifest';
+import {DropdownBotSelector} from './components/bot_slector'
 
 type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
 
 const CallsClickHandler = 'calls_post_button_clicked_handler';
+const PlaybooksRunStatusUpdateClickHandler = 'playbooks_run_status_update_click_handler';
+const AIBotSelectorComponent = 'ai_bots_selector_component';
 export const BotsHandler = manifest.id + '_bots';
 
-export async function setupRedux(registry: any, store: WebappStore) {
+export async function setupRedux(registry: any, store: WebappStore, postEventListener: PostEventListener) {
     const reducer = combineReducers({
         callsPostButtonClickedTranscription,
+        aiStatusUpdateClicked,
         bots,
+        botSelector,
         botChannelId,
         selectedPostId,
     });
@@ -21,6 +28,14 @@ export async function setupRedux(registry: any, store: WebappStore) {
     store.dispatch({
         type: CallsClickHandler as any,
         handler: makeCallsPostButtonClickedHandler(store.dispatch),
+    });
+    store.dispatch({
+        type: PlaybooksRunStatusUpdateClickHandler as any,
+        handler: makePlaybookRunStatusUpdateHandler(store.dispatch, postEventListener),
+    });
+    store.dispatch({
+        type: AIBotSelectorComponent as any,
+        component: DropdownBotSelector,
     });
 
     // This is a workaround for a bug where the RHS was inaccessible to
@@ -47,6 +62,24 @@ function callsPostButtonClickedTranscription(state = false, action: any) {
     switch (action.type) {
     case CallsClickHandler:
         return action.handler || false;
+    default:
+        return state;
+    }
+}
+
+function aiStatusUpdateClicked(state = false, action: any) {
+    switch (action.type) {
+    case PlaybooksRunStatusUpdateClickHandler:
+        return action.handler || false;
+    default:
+        return state;
+    }
+}
+
+function botSelector(state = false, action: any) {
+    switch (action.type) {
+    case AIBotSelectorComponent:
+        return action.component;
     default:
         return state;
     }

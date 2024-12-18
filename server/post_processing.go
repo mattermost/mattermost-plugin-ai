@@ -99,8 +99,10 @@ func formatThread(data *ThreadData) string {
 	return result
 }
 
-const LLMRequesterUserID = "llm_requester_user_id"
-const UnsafeLinksPostProp = "unsafe_links"
+const (
+	LLMRequesterUserID  = "llm_requester_user_id"
+	UnsafeLinksPostProp = "unsafe_links"
+)
 
 func (p *Plugin) modifyPostForBot(botid string, requesterUserID string, post *model.Post) {
 	post.UserId = botid
@@ -214,9 +216,11 @@ func (p *Plugin) sendPostStreamingUpdateEvent(post *model.Post, message string) 
 	})
 }
 
-const PostStreamingControlCancel = "cancel"
-const PostStreamingControlEnd = "end"
-const PostStreamingControlStart = "start"
+const (
+	PostStreamingControlCancel = "cancel"
+	PostStreamingControlEnd    = "end"
+	PostStreamingControlStart  = "start"
+)
 
 func (p *Plugin) sendPostStreamingControlEvent(post *model.Post, control string) {
 	p.API.PublishWebSocketEvent("postupdate", map[string]interface{}{
@@ -287,9 +291,11 @@ func (p *Plugin) streamResultToPost(ctx context.Context, stream *ai.TextStreamRe
 					post.Message = T("copilot.stream_to_post_llm_not_return", "Sorry! The LLM did not return a result.")
 					p.sendPostStreamingUpdateEvent(post, post.Message)
 				}
-				if err = p.pluginAPI.Post.UpdatePost(post); err != nil {
-					p.API.LogError("Streaming failed to update post", "error", err)
-					return
+				if post.Id != "playbooks_post_update" {
+					if err = p.pluginAPI.Post.UpdatePost(post); err != nil {
+						p.API.LogError("Streaming failed to update post", "error", err)
+						return
+					}
 				}
 				return
 			}
@@ -302,16 +308,20 @@ func (p *Plugin) streamResultToPost(ctx context.Context, stream *ai.TextStreamRe
 			p.API.LogError("Streaming result to post failed partway", "error", err)
 			post.Message = T("copilot.stream_to_post_access_llm_error", "Sorry! An error occurred while accessing the LLM. See server logs for details.")
 
-			if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
-				p.API.LogError("Error recovering from streaming error", "error", err)
-				return
+			if post.Id != "playbooks_post_update" {
+				if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
+					p.API.LogError("Error recovering from streaming error", "error", err)
+					return
+				}
 			}
 			p.sendPostStreamingUpdateEvent(post, post.Message)
 			return
 		case <-ctx.Done():
-			if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
-				p.API.LogError("Error updating post on stop signaled", "error", err)
-				return
+			if post.Id != "playbooks_post_update" {
+				if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
+					p.API.LogError("Error updating post on stop signaled", "error", err)
+					return
+				}
 			}
 			p.sendPostStreamingControlEvent(post, PostStreamingControlCancel)
 			return
