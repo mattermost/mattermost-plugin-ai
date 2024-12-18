@@ -1,5 +1,5 @@
 import {combineReducers, Store, Action} from 'redux';
-import {GlobalState} from '@mattermost/types/lib/store';
+import {GlobalState} from '@mattermost/types/store';
 
 import {makeCallsPostButtonClickedHandler} from './calls_button';
 import {makePlaybookRunStatusUpdateHandler} from './playbooks_button';

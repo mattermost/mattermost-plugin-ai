@@ -1,4 +1,4 @@
-# Mattermost Copilot Plugin
+# Mattermost Copilot Plugin [![Download Latest Master Build](https://img.shields.io/badge/Download-Latest%20Master%20Build-blue)](https://github.com/mattermost/mattermost-plugin-ai/releases/tag/latest-master)
 
 > Mattermost plugin for local and third-party LLMs
 

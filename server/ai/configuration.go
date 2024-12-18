@@ -14,15 +14,38 @@ type ServiceConfig struct {
 	SendUserID              bool   `json:"sendUserID"`
 }
 
+type ChannelAccessLevel int
+
+const (
+	ChannelAccessLevelAll ChannelAccessLevel = iota
+	ChannelAccessLevelAllow
+	ChannelAccessLevelBlock
+	ChannelAccessLevelNone
+)
+
+type UserAccessLevel int
+
+const (
+	UserAccessLevelAll UserAccessLevel = iota
+	UserAccessLevelAllow
+	UserAccessLevelBlock
+	UserAccessLevelNone
+)
+
 type BotConfig struct {
-	ID                 string        `json:"id"`
-	Name               string        `json:"name"`
-	DisplayName        string        `json:"displayName"`
-	CustomInstructions string        `json:"customInstructions"`
-	Service            ServiceConfig `json:"service"`
-	EnableVision       bool          `json:"enableVision"`
-	DisableTools       bool          `json:"disableTools"`
-	MaxFileSize        int64         `json:"maxFileSize"`
+	ID                 string             `json:"id"`
+	Name               string             `json:"name"`
+	DisplayName        string             `json:"displayName"`
+	CustomInstructions string             `json:"customInstructions"`
+	Service            ServiceConfig      `json:"service"`
+	EnableVision       bool               `json:"enableVision"`
+	DisableTools       bool               `json:"disableTools"`
+	ChannelAccessLevel ChannelAccessLevel `json:"channelAccessLevel"`
+	ChannelIDs         []string           `json:"channelIDs"`
+	UserAccessLevel    UserAccessLevel    `json:"userAccessLevel"`
+	UserIDs            []string           `json:"userIDs"`
+	TeamIDs            []string           `json:"teamIDs"`
+	MaxFileSize        int64              `json:"maxFileSize"`
 }
 
 func (c *BotConfig) IsValid() bool {
