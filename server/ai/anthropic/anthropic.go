@@ -28,46 +28,100 @@ func New(llmService ai.ServiceConfig, httpClient *http.Client, metricsService me
 	}
 }
 
+// isValidImageType checks if the MIME type is supported by the Anthropic API
+func isValidImageType(mimeType string) bool {
+	validTypes := map[string]bool{
+		"image/jpeg": true,
+		"image/png":  true,
+		"image/gif":  true,
+		"image/webp": true,
+	}
+	return validTypes[mimeType]
+}
+
 // conversationToMessages creates a system prompt and a slice of input messages from a bot conversation.
 func conversationToMessages(conversation ai.BotConversation) (string, []InputMessage) {
 	systemMessage := ""
 	messages := make([]InputMessage, 0, len(conversation.Posts))
-	for _, post := range conversation.Posts {
-		previousRole := ""
-		previousContent := ""
-		if len(messages) > 0 {
-			previous := messages[len(messages)-1]
-			previousRole = previous.Role
-			previousContent = previous.Content
-		}
-		switch post.Role {
-		case ai.PostRoleSystem:
-			systemMessage += post.Message
-		case ai.PostRoleBot:
-			if previousRole == RoleAssistant {
-				previousContent += post.Message
-				continue
+
+	var currentBlocks []ContentBlock
+	var currentRole string
+
+	flushCurrentMessage := func() {
+		if len(currentBlocks) > 0 {
+			var content interface{}
+			if len(currentBlocks) == 1 && currentBlocks[0].Type == "text" {
+				content = currentBlocks[0].Text
+			} else {
+				content = currentBlocks
 			}
-			messages = append(messages,
-				InputMessage{
-					Role:    RoleAssistant,
-					Content: post.Message,
-				},
-			)
-		case ai.PostRoleUser:
-			if previousRole == RoleUser {
-				previousContent += post.Message
-				continue
-			}
-			messages = append(messages,
-				InputMessage{
-					Role:    RoleUser,
-					Content: post.Message,
-				},
-			)
+			messages = append(messages, InputMessage{
+				Role:    currentRole,
+				Content: content,
+			})
+			currentBlocks = nil
 		}
 	}
 
+	for _, post := range conversation.Posts {
+		switch post.Role {
+		case ai.PostRoleSystem:
+			systemMessage += post.Message
+			continue
+		case ai.PostRoleBot:
+			if currentRole != RoleAssistant {
+				flushCurrentMessage()
+				currentRole = RoleAssistant
+			}
+		case ai.PostRoleUser:
+			if currentRole != RoleUser {
+				flushCurrentMessage()
+				currentRole = RoleUser
+			}
+		default:
+			continue
+		}
+
+		// Handle text message
+		if post.Message != "" {
+			currentBlocks = append(currentBlocks, ContentBlock{
+				Type: "text",
+				Text: post.Message,
+			})
+		}
+
+		// Handle files/images
+		for _, file := range post.Files {
+			if !isValidImageType(file.MimeType) {
+				currentBlocks = append(currentBlocks, ContentBlock{
+					Type: "text",
+					Text: fmt.Sprintf("[Unsupported image type: %s]", file.MimeType),
+				})
+				continue
+			}
+
+			// Read image data
+			data, err := io.ReadAll(file.Reader)
+			if err != nil {
+				currentBlocks = append(currentBlocks, ContentBlock{
+					Type: "text",
+					Text: "[Error reading image data]",
+				})
+				continue
+			}
+
+			currentBlocks = append(currentBlocks, ContentBlock{
+				Type: "image",
+				Source: &ImageSource{
+					Type:      "base64",
+					MediaType: file.MimeType,
+					Data:      base64.StdEncoding.EncodeToString(data),
+				},
+			})
+		}
+	}
+
+	flushCurrentMessage()
 	return systemMessage, messages
 }
 

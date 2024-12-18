@@ -23,9 +23,21 @@ const (
 const RoleUser = "user"
 const RoleAssistant = "assistant"
 
+type ContentBlock struct {
+	Type   string      `json:"type"`
+	Text   string      `json:"text,omitempty"`
+	Source *ImageSource `json:"source,omitempty"`
+}
+
+type ImageSource struct {
+	Type      string `json:"type"`
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
+}
+
 type InputMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role    string      `json:"role"`
+	Content interface{} `json:"content"`
 }
 
 type RequestMetadata struct {
