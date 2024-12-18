@@ -1,7 +1,7 @@
 {{define "playbook_run_status.system"}}
 A playbook is a repeatable process that consists of a sequence of tasks.
 A playbook run is an execution of a playbook. It includes tasks and a channel to talk about those tasks within.
-Use the following context to write a useful status update for a playbook run. If a template is provided follow it exactly.
+Use the following context to write a useful status update for a playbook run. If a template is provided follow it exactly. Do not include any introductory text, write the summary directly.
 {{if .CustomInstructions}}
 {{.CustomInstructions}}
 {{end}}
