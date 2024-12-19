@@ -24,8 +24,8 @@ const RoleUser = "user"
 const RoleAssistant = "assistant"
 
 type ContentBlock struct {
-	Type   string      `json:"type"`
-	Text   string      `json:"text,omitempty"`
+	Type   string       `json:"type"`
+	Text   string       `json:"text,omitempty"`
 	Source *ImageSource `json:"source,omitempty"`
 }
 

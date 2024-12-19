@@ -1,7 +1,9 @@
 package anthropic
 
 import (
+	"encoding/base64"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
