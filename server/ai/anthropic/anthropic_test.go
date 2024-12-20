@@ -135,7 +135,7 @@ func TestConversationToMessages(t *testing.T) {
 			name: "multiple roles with multiple images",
 			conversation: ai.BotConversation{
 				Posts: []ai.Post{
-					{Role: ai.PostRoleUser, Message: "Look at these images:", 
+					{Role: ai.PostRoleUser, Message: "Look at these images:",
 						Files: []ai.File{
 							{
 								MimeType: "image/jpeg",
