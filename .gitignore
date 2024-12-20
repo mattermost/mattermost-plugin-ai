@@ -11,3 +11,5 @@ server/manifest.go
 
 # VSCode
 .vscode/
+.aider*
+.env
