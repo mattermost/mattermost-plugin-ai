@@ -96,9 +96,7 @@ func TestConversationToMessages(t *testing.T) {
 			},
 			wantSystem: "",
 			wantMessages: []InputMessage{
-				{Role: RoleUser, Content: []ContentBlock{
-					{Type: "text", Text: "[Unsupported image type: image/tiff]"},
-				}},
+				{Role: RoleUser, Content: "[Unsupported image type: image/tiff]"},
 			},
 		},
 	}
