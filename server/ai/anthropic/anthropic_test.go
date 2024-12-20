@@ -10,10 +10,10 @@ import (
 
 func TestConversationToMessages(t *testing.T) {
 	tests := []struct {
-		name           string
-		conversation   ai.BotConversation
-		wantSystem    string
-		wantMessages  []InputMessage
+		name         string
+		conversation ai.BotConversation
+		wantSystem   string
+		wantMessages []InputMessage
 	}{
 		{
 			name: "basic conversation with system message",
@@ -56,13 +56,13 @@ func TestConversationToMessages(t *testing.T) {
 			name: "conversation with image",
 			conversation: ai.BotConversation{
 				Posts: []ai.Post{
-					{Role: ai.PostRoleUser, Message: "Look at this:", 
-					 Files: []ai.File{
-						{
-							MimeType: "image/jpeg",
-							Reader:   bytes.NewReader([]byte("fake-image-data")),
-						},
-					}},
+					{Role: ai.PostRoleUser, Message: "Look at this:",
+						Files: []ai.File{
+							{
+								MimeType: "image/jpeg",
+								Reader:   bytes.NewReader([]byte("fake-image-data")),
+							},
+						}},
 					{Role: ai.PostRoleBot, Message: "I see the image"},
 				},
 			},
