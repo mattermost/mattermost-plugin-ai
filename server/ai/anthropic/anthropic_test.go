@@ -42,10 +42,14 @@ func TestConversationToMessages(t *testing.T) {
 			},
 			wantSystem: "",
 			wantMessages: []InputMessage{
-				{Role: RoleUser, Content: "First message"},
-				{Role: RoleUser, Content: "Second message"},
-				{Role: RoleAssistant, Content: "First response"},
-				{Role: RoleAssistant, Content: "Second response"},
+				{Role: RoleUser, Content: []ContentBlock{
+					{Type: "text", Text: "First message"},
+					{Type: "text", Text: "Second message"},
+				}},
+				{Role: RoleAssistant, Content: []ContentBlock{
+					{Type: "text", Text: "First response"},
+					{Type: "text", Text: "Second response"},
+				}},
 			},
 		},
 		{
