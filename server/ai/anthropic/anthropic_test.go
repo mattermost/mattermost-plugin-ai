@@ -28,7 +28,7 @@ func TestConversationToMessages(t *testing.T) {
 			wantSystem: "You are a helpful assistant",
 			wantMessages: []anthropicSDK.MessageParam{
 				{
-					Role: anthropicSDK.F("user"),
+					Role: anthropicSDK.F(anthropicSDK.MessageParamRoleUser),
 					Content: anthropicSDK.F([]anthropicSDK.ContentBlockParamUnion{
 						anthropicSDK.TextBlockParam{
 							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
@@ -37,7 +37,7 @@ func TestConversationToMessages(t *testing.T) {
 					}),
 				},
 				{
-					Role: anthropicSDK.F("assistant"),
+					Role: anthropicSDK.F(anthropicSDK.MessageParamRoleAssistant),
 					Content: anthropicSDK.F([]anthropicSDK.ContentBlockParamUnion{
 						anthropicSDK.TextBlockParam{
 							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
@@ -60,7 +60,7 @@ func TestConversationToMessages(t *testing.T) {
 			wantSystem: "",
 			wantMessages: []anthropicSDK.MessageParam{
 				{
-					Role: anthropicSDK.F("user"),
+					Role: anthropicSDK.F(anthropicSDK.MessageParamRoleUser),
 					Content: anthropicSDK.F([]anthropicSDK.ContentBlockParamUnion{
 						anthropicSDK.TextBlockParam{
 							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
@@ -73,7 +73,7 @@ func TestConversationToMessages(t *testing.T) {
 					}),
 				},
 				{
-					Role: anthropicSDK.F("assistant"),
+					Role: anthropicSDK.F(anthropicSDK.MessageParamRoleAssistant),
 					Content: anthropicSDK.F([]anthropicSDK.ContentBlockParamUnion{
 						anthropicSDK.TextBlockParam{
 							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
@@ -104,7 +104,7 @@ func TestConversationToMessages(t *testing.T) {
 			wantSystem: "",
 			wantMessages: []anthropicSDK.MessageParam{
 				{
-					Role: anthropicSDK.F("user"),
+					Role: anthropicSDK.F(anthropicSDK.MessageParamRoleUser),
 					Content: anthropicSDK.F([]anthropicSDK.ContentBlockParamUnion{
 						anthropicSDK.TextBlockParam{
 							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
@@ -121,7 +121,7 @@ func TestConversationToMessages(t *testing.T) {
 					}),
 				},
 				{
-					Role: anthropicSDK.F("assistant"),
+					Role: anthropicSDK.F(anthropicSDK.MessageParamRoleAssistant),
 					Content: anthropicSDK.F([]anthropicSDK.ContentBlockParamUnion{
 						anthropicSDK.TextBlockParam{
 							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
@@ -146,7 +146,7 @@ func TestConversationToMessages(t *testing.T) {
 			wantSystem: "",
 			wantMessages: []anthropicSDK.MessageParam{
 				{
-					Role: anthropicSDK.F("user"),
+					Role: anthropicSDK.F(anthropicSDK.MessageParamRoleUser),
 					Content: anthropicSDK.F([]anthropicSDK.ContentBlockParamUnion{
 						anthropicSDK.TextBlockParam{
 							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
@@ -174,7 +174,7 @@ func TestConversationToMessages(t *testing.T) {
 			wantSystem: "",
 			wantMessages: []anthropicSDK.MessageParam{
 				{
-					Role: anthropicSDK.F("user"),
+					Role: anthropicSDK.F(anthropicSDK.MessageParamRoleUser),
 					Content: anthropicSDK.F([]anthropicSDK.ContentBlockParamUnion{
 						anthropicSDK.TextBlockParam{
 							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
@@ -183,7 +183,7 @@ func TestConversationToMessages(t *testing.T) {
 					}),
 				},
 				{
-					Role: anthropicSDK.F("assistant"),
+					Role: anthropicSDK.F(anthropicSDK.MessageParamRoleAssistant),
 					Content: anthropicSDK.F([]anthropicSDK.ContentBlockParamUnion{
 						anthropicSDK.TextBlockParam{
 							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
@@ -192,7 +192,7 @@ func TestConversationToMessages(t *testing.T) {
 					}),
 				},
 				{
-					Role: anthropicSDK.F("user"),
+					Role: anthropicSDK.F(anthropicSDK.MessageParamRoleUser),
 					Content: anthropicSDK.F([]anthropicSDK.ContentBlockParamUnion{
 						anthropicSDK.TextBlockParam{
 							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
