@@ -13,14 +13,17 @@ import (
 const DefaultMaxTokens = 4096
 
 type Anthropic struct {
-	client         *Client
+	client         *anthropicSDK.Client
 	defaultModel   string
 	tokenLimit     int
 	metricsService metrics.LLMetrics
 }
 
 func New(llmService ai.ServiceConfig, httpClient *http.Client, metricsService metrics.LLMetrics) *Anthropic {
-	client := NewClient(llmService.APIKey, httpClient)
+	client := anthropicSDK.NewClient(
+		option.WithAPIKey(llmService.APIKey),
+		option.WithHTTPClient(httpClient),
+	)
 
 	return &Anthropic{
 		client:         client,
@@ -42,24 +45,18 @@ func isValidImageType(mimeType string) bool {
 }
 
 // conversationToMessages creates a system prompt and a slice of input messages from a bot conversation.
-func conversationToMessages(conversation ai.BotConversation) (string, []InputMessage) {
+func conversationToMessages(conversation ai.BotConversation) (string, []anthropicSDK.MessageParam) {
 	systemMessage := ""
-	messages := make([]InputMessage, 0, len(conversation.Posts))
+	messages := make([]anthropicSDK.MessageParam, 0, len(conversation.Posts))
 
-	var currentBlocks []ContentBlock
+	var currentBlocks []anthropicSDK.ContentBlockParam
 	var currentRole string
 
 	flushCurrentMessage := func() {
 		if len(currentBlocks) > 0 {
-			var content interface{}
-			if len(currentBlocks) == 1 && currentBlocks[0].Type == "text" {
-				content = currentBlocks[0].Text
-			} else {
-				content = currentBlocks
-			}
-			messages = append(messages, InputMessage{
+			messages = append(messages, anthropicSDK.MessageParam{
 				Role:    currentRole,
-				Content: content,
+				Content: currentBlocks,
 			})
 			currentBlocks = nil
 		}
@@ -71,55 +68,44 @@ func conversationToMessages(conversation ai.BotConversation) (string, []InputMes
 			systemMessage += post.Message
 			continue
 		case ai.PostRoleBot:
-			if currentRole != RoleAssistant {
+			if currentRole != "assistant" {
 				flushCurrentMessage()
-				currentRole = RoleAssistant
+				currentRole = "assistant"
 			}
 		case ai.PostRoleUser:
-			if currentRole != RoleUser {
+			if currentRole != "user" {
 				flushCurrentMessage()
-				currentRole = RoleUser
+				currentRole = "user"
 			}
 		default:
 			continue
 		}
 
-		// Handle text message
 		if post.Message != "" {
-			currentBlocks = append(currentBlocks, ContentBlock{
-				Type: "text",
-				Text: post.Message,
-			})
+			currentBlocks = append(currentBlocks, anthropicSDK.NewTextBlock(post.Message))
 		}
 
-		// Handle files/images
 		for _, file := range post.Files {
 			if !isValidImageType(file.MimeType) {
-				currentBlocks = append(currentBlocks, ContentBlock{
-					Type: "text",
-					Text: fmt.Sprintf("[Unsupported image type: %s]", file.MimeType),
-				})
+				currentBlocks = append(currentBlocks, anthropicSDK.NewTextBlock(
+					fmt.Sprintf("[Unsupported image type: %s]", file.MimeType),
+				))
 				continue
 			}
 
-			// Read image data
 			data, err := io.ReadAll(file.Reader)
 			if err != nil {
-				currentBlocks = append(currentBlocks, ContentBlock{
-					Type: "text",
-					Text: "[Error reading image data]",
-				})
+				currentBlocks = append(currentBlocks, anthropicSDK.NewTextBlock("[Error reading image data]"))
 				continue
 			}
 
-			currentBlocks = append(currentBlocks, ContentBlock{
-				Type: "image",
-				Source: &ImageSource{
+			currentBlocks = append(currentBlocks, anthropicSDK.NewImageBlock(
+				anthropicSDK.ImageBlockSource{
 					Type:      "base64",
 					MediaType: file.MimeType,
 					Data:      base64.StdEncoding.EncodeToString(data),
 				},
-			})
+			))
 		}
 	}
 
@@ -156,27 +142,58 @@ func (a *Anthropic) createCompletionRequest(conversation ai.BotConversation, opt
 func (a *Anthropic) ChatCompletion(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (*ai.TextStreamResult, error) {
 	a.metricsService.IncrementLLMRequests()
 
-	request := a.createCompletionRequest(conversation, opts)
-	request.Stream = true
-	result, err := a.client.MessageCompletion(request)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send query to anthropic: %w", err)
-	}
+	system, messages := conversationToMessages(conversation)
+	cfg := a.createConfig(opts)
 
-	return result, nil
+	stream := a.client.Messages.NewStreaming(context.Background(), anthropicSDK.MessageNewParams{
+		Model:     anthropicSDK.F(cfg.Model),
+		MaxTokens: anthropicSDK.F(int64(cfg.MaxGeneratedTokens)),
+		Messages:  anthropicSDK.F(messages),
+		System:    anthropicSDK.F([]anthropicSDK.TextBlockParam{anthropicSDK.NewTextBlock(system)}),
+	})
+
+	output := make(chan string)
+	errChan := make(chan error)
+
+	go func() {
+		defer close(output)
+		defer close(errChan)
+
+		for stream.Next() {
+			event := stream.Current()
+			switch delta := event.Delta.(type) {
+			case anthropicSDK.ContentBlockDeltaEventDelta:
+				if delta.Text != "" {
+					output <- delta.Text
+				}
+			}
+		}
+
+		if err := stream.Err(); err != nil {
+			errChan <- err
+		}
+	}()
+
+	return &ai.TextStreamResult{Stream: output, Err: errChan}, nil
 }
 
 func (a *Anthropic) ChatCompletionNoStream(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (string, error) {
 	a.metricsService.IncrementLLMRequests()
 
-	request := a.createCompletionRequest(conversation, opts)
-	request.Stream = false
-	result, err := a.client.MessageCompletionNoStream(request)
+	system, messages := conversationToMessages(conversation)
+	cfg := a.createConfig(opts)
+
+	message, err := a.client.Messages.New(context.Background(), anthropicSDK.MessageNewParams{
+		Model:     anthropicSDK.F(cfg.Model),
+		MaxTokens: anthropicSDK.F(int64(cfg.MaxGeneratedTokens)),
+		Messages:  anthropicSDK.F(messages),
+		System:    anthropicSDK.F([]anthropicSDK.TextBlockParam{anthropicSDK.NewTextBlock(system)}),
+	})
 	if err != nil {
 		return "", fmt.Errorf("failed to send query to anthropic: %w", err)
 	}
 
-	return result, nil
+	return message.Content[0].Text, nil
 }
 
 func (a *Anthropic) CountTokens(text string) int {
