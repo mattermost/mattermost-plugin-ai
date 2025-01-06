@@ -52,14 +52,14 @@ func conversationToMessages(conversation ai.BotConversation) (string, []anthropi
 	systemMessage := ""
 	messages := make([]anthropicSDK.MessageParam, 0, len(conversation.Posts))
 
-	var currentBlocks []anthropicSDK.ContentBlockParam
-	var currentRole string
+	var currentBlocks []anthropicSDK.ContentBlockParamUnion
+	var currentRole anthropicSDK.MessageParamRole
 
 	flushCurrentMessage := func() {
 		if len(currentBlocks) > 0 {
 			messages = append(messages, anthropicSDK.MessageParam{
-				Role:    currentRole,
-				Content: currentBlocks,
+				Role:    anthropicSDK.F(currentRole),
+				Content: anthropicSDK.F(currentBlocks),
 			})
 			currentBlocks = nil
 		}
@@ -85,30 +85,42 @@ func conversationToMessages(conversation ai.BotConversation) (string, []anthropi
 		}
 
 		if post.Message != "" {
-			currentBlocks = append(currentBlocks, anthropicSDK.NewTextBlock(post.Message))
+			textBlock := anthropicSDK.TextBlockParam{
+				Type: anthropicSDK.F("text"),
+				Text: anthropicSDK.F(post.Message),
+			}
+			currentBlocks = append(currentBlocks, textBlock)
 		}
 
 		for _, file := range post.Files {
 			if !isValidImageType(file.MimeType) {
-				currentBlocks = append(currentBlocks, anthropicSDK.NewTextBlock(
-					fmt.Sprintf("[Unsupported image type: %s]", file.MimeType),
-				))
+				textBlock := anthropicSDK.TextBlockParam{
+					Type: anthropicSDK.F("text"),
+					Text: anthropicSDK.F(fmt.Sprintf("[Unsupported image type: %s]", file.MimeType)),
+				}
+				currentBlocks = append(currentBlocks, textBlock)
 				continue
 			}
 
 			data, err := io.ReadAll(file.Reader)
 			if err != nil {
-				currentBlocks = append(currentBlocks, anthropicSDK.NewTextBlock("[Error reading image data]"))
+				textBlock := anthropicSDK.TextBlockParam{
+					Type: anthropicSDK.F("text"),
+					Text: anthropicSDK.F("[Error reading image data]"),
+				}
+				currentBlocks = append(currentBlocks, textBlock)
 				continue
 			}
 
-			currentBlocks = append(currentBlocks, anthropicSDK.NewImageBlock(
-				anthropicSDK.ImageBlockSource{
-					Type:      "base64",
-					MediaType: file.MimeType,
-					Data:      base64.StdEncoding.EncodeToString(data),
-				},
-			))
+			imageBlock := anthropicSDK.ImageBlockParam{
+				Type: anthropicSDK.F("image"),
+				Source: anthropicSDK.F(anthropicSDK.ImageBlockParamSource{
+					Type:      anthropicSDK.F("base64"),
+					MediaType: anthropicSDK.F(file.MimeType),
+					Data:      anthropicSDK.F(base64.StdEncoding.EncodeToString(data)),
+				}),
+			}
+			currentBlocks = append(currentBlocks, imageBlock)
 		}
 	}
 
@@ -131,14 +143,17 @@ func (a *Anthropic) createConfig(opts []ai.LanguageModelOption) ai.LLMConfig {
 	return cfg
 }
 
-func (a *Anthropic) createCompletionRequest(conversation ai.BotConversation, opts []ai.LanguageModelOption) MessageRequest {
+func (a *Anthropic) createCompletionRequest(conversation ai.BotConversation, opts []ai.LanguageModelOption) anthropicSDK.MessageNewParams {
 	system, messages := conversationToMessages(conversation)
 	cfg := a.createConfig(opts)
-	return MessageRequest{
-		Model:     cfg.Model,
-		Messages:  messages,
-		System:    system,
-		MaxTokens: cfg.MaxGeneratedTokens,
+	return anthropicSDK.MessageNewParams{
+		Model:     anthropicSDK.F(cfg.Model),
+		Messages:  anthropicSDK.F(messages),
+		System:    anthropicSDK.F([]anthropicSDK.TextBlockParam{{
+			Type: anthropicSDK.F("text"),
+			Text: anthropicSDK.F(system),
+		}}),
+		MaxTokens: anthropicSDK.F(int64(cfg.MaxGeneratedTokens)),
 	}
 }
 
