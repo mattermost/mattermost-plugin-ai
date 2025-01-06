@@ -13,7 +13,7 @@ func TestConversationToMessages(t *testing.T) {
 		name         string
 		conversation ai.BotConversation
 		wantSystem   string
-		wantMessages []InputMessage
+		wantMessages []anthropicSDK.MessageParam
 	}{
 		{
 			name: "basic conversation with system message",
@@ -25,9 +25,25 @@ func TestConversationToMessages(t *testing.T) {
 				},
 			},
 			wantSystem: "You are a helpful assistant",
-			wantMessages: []InputMessage{
-				{Role: RoleUser, Content: "Hello"},
-				{Role: RoleAssistant, Content: "Hi there!"},
+			wantMessages: []anthropicSDK.MessageParam{
+				{
+					Role: anthropicSDK.F("user"),
+					Content: anthropicSDK.F([]anthropicSDK.ContentBlockParamUnion{
+						anthropicSDK.TextBlockParam{
+							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
+							Text: anthropicSDK.F("Hello"),
+						},
+					}),
+				},
+				{
+					Role: anthropicSDK.F("assistant"),
+					Content: anthropicSDK.F([]anthropicSDK.ContentBlockParamUnion{
+						anthropicSDK.TextBlockParam{
+							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
+							Text: anthropicSDK.F("Hi there!"),
+						},
+					}),
+				},
 			},
 		},
 		{
@@ -41,15 +57,33 @@ func TestConversationToMessages(t *testing.T) {
 				},
 			},
 			wantSystem: "",
-			wantMessages: []InputMessage{
-				{Role: RoleUser, Content: []ContentBlock{
-					{Type: "text", Text: "First message"},
-					{Type: "text", Text: "Second message"},
-				}},
-				{Role: RoleAssistant, Content: []ContentBlock{
-					{Type: "text", Text: "First response"},
-					{Type: "text", Text: "Second response"},
-				}},
+			wantMessages: []anthropicSDK.MessageParam{
+				{
+					Role: anthropicSDK.F("user"),
+					Content: anthropicSDK.F([]anthropicSDK.ContentBlockParamUnion{
+						anthropicSDK.TextBlockParam{
+							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
+							Text: anthropicSDK.F("First message"),
+						},
+						anthropicSDK.TextBlockParam{
+							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
+							Text: anthropicSDK.F("Second message"),
+						},
+					}),
+				},
+				{
+					Role: anthropicSDK.F("assistant"),
+					Content: anthropicSDK.F([]anthropicSDK.ContentBlockParamUnion{
+						anthropicSDK.TextBlockParam{
+							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
+							Text: anthropicSDK.F("First response"),
+						},
+						anthropicSDK.TextBlockParam{
+							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
+							Text: anthropicSDK.F("Second response"),
+						},
+					}),
+				},
 			},
 		},
 		{
@@ -67,19 +101,33 @@ func TestConversationToMessages(t *testing.T) {
 				},
 			},
 			wantSystem: "",
-			wantMessages: []InputMessage{
-				{Role: RoleUser, Content: []ContentBlock{
-					{Type: "text", Text: "Look at this:"},
-					{
-						Type: "image",
-						Source: &ImageSource{
-							Type:      "base64",
-							MediaType: "image/jpeg",
-							Data:      "ZmFrZS1pbWFnZS1kYXRh", // base64 encoded "fake-image-data"
+			wantMessages: []anthropicSDK.MessageParam{
+				{
+					Role: anthropicSDK.F("user"),
+					Content: anthropicSDK.F([]anthropicSDK.ContentBlockParamUnion{
+						anthropicSDK.TextBlockParam{
+							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
+							Text: anthropicSDK.F("Look at this:"),
 						},
-					},
-				}},
-				{Role: RoleAssistant, Content: "I see the image"},
+						anthropicSDK.ImageBlockParam{
+							Type: anthropicSDK.F(anthropicSDK.ImageBlockParamTypeImage),
+							Source: anthropicSDK.F(anthropicSDK.ImageBlockParamSource{
+								Type:      anthropicSDK.F(anthropicSDK.ImageBlockParamSourceTypeBase64),
+								MediaType: anthropicSDK.F(anthropicSDK.ImageBlockParamSourceMediaType("image/jpeg")),
+								Data:      anthropicSDK.F("ZmFrZS1pbWFnZS1kYXRh"),
+							}),
+						},
+					}),
+				},
+				{
+					Role: anthropicSDK.F("assistant"),
+					Content: anthropicSDK.F([]anthropicSDK.ContentBlockParamUnion{
+						anthropicSDK.TextBlockParam{
+							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
+							Text: anthropicSDK.F("I see the image"),
+						},
+					}),
+				},
 			},
 		},
 		{
@@ -95,8 +143,16 @@ func TestConversationToMessages(t *testing.T) {
 				},
 			},
 			wantSystem: "",
-			wantMessages: []InputMessage{
-				{Role: RoleUser, Content: "[Unsupported image type: image/tiff]"},
+			wantMessages: []anthropicSDK.MessageParam{
+				{
+					Role: anthropicSDK.F("user"),
+					Content: anthropicSDK.F([]anthropicSDK.ContentBlockParamUnion{
+						anthropicSDK.TextBlockParam{
+							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
+							Text: anthropicSDK.F("[Unsupported image type: image/tiff]"),
+						},
+					}),
+				},
 			},
 		},
 		{
