@@ -172,20 +172,68 @@ func TestConversationToMessages(t *testing.T) {
 				},
 			},
 			wantSystem: "",
-			wantMessages: []InputMessage{
-				{Role: RoleUser, Content: "First question"},
-				{Role: RoleAssistant, Content: "First answer"},
-				{Role: RoleUser, Content: []ContentBlock{
-					{Type: "text", Text: "Follow up 1"},
-					{Type: "text", Text: "Follow up 2"},
-					{Type: "text", Text: "Follow up 3"},
-				}},
-				{Role: RoleAssistant, Content: []ContentBlock{
-					{Type: "text", Text: "Response 1"},
-					{Type: "text", Text: "Response 2"},
-					{Type: "text", Text: "Response 3"},
-				}},
-				{Role: RoleUser, Content: "Final question"},
+			wantMessages: []anthropicSDK.MessageParam{
+				{
+					Role: anthropicSDK.F("user"),
+					Content: anthropicSDK.F([]anthropicSDK.ContentBlockParamUnion{
+						anthropicSDK.TextBlockParam{
+							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
+							Text: anthropicSDK.F("First question"),
+						},
+					}),
+				},
+				{
+					Role: anthropicSDK.F("assistant"),
+					Content: anthropicSDK.F([]anthropicSDK.ContentBlockParamUnion{
+						anthropicSDK.TextBlockParam{
+							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
+							Text: anthropicSDK.F("First answer"),
+						},
+					}),
+				},
+				{
+					Role: anthropicSDK.F("user"),
+					Content: anthropicSDK.F([]anthropicSDK.ContentBlockParamUnion{
+						anthropicSDK.TextBlockParam{
+							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
+							Text: anthropicSDK.F("Follow up 1"),
+						},
+						anthropicSDK.TextBlockParam{
+							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
+							Text: anthropicSDK.F("Follow up 2"),
+						},
+						anthropicSDK.TextBlockParam{
+							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
+							Text: anthropicSDK.F("Follow up 3"),
+						},
+					}),
+				},
+				{
+					Role: anthropicSDK.F("assistant"),
+					Content: anthropicSDK.F([]anthropicSDK.ContentBlockParamUnion{
+						anthropicSDK.TextBlockParam{
+							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
+							Text: anthropicSDK.F("Response 1"),
+						},
+						anthropicSDK.TextBlockParam{
+							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
+							Text: anthropicSDK.F("Response 2"),
+						},
+						anthropicSDK.TextBlockParam{
+							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
+							Text: anthropicSDK.F("Response 3"),
+						},
+					}),
+				},
+				{
+					Role: anthropicSDK.F("user"),
+					Content: anthropicSDK.F([]anthropicSDK.ContentBlockParamUnion{
+						anthropicSDK.TextBlockParam{
+							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
+							Text: anthropicSDK.F("Final question"),
+						},
+					}),
+				},
 			},
 		},
 		{
@@ -224,47 +272,70 @@ func TestConversationToMessages(t *testing.T) {
 				},
 			},
 			wantSystem: "",
-			wantMessages: []InputMessage{
-				{Role: RoleUser, Content: []ContentBlock{
-					{Type: "text", Text: "Look at these images:"},
-					{
-						Type: "image",
-						Source: &ImageSource{
-							Type:      "base64",
-							MediaType: "image/jpeg",
-							Data:      "aW1hZ2UtMQ==", // base64 encoded "image-1"
+			wantMessages: []anthropicSDK.MessageParam{
+				{
+					Role: anthropicSDK.F("user"),
+					Content: anthropicSDK.F([]anthropicSDK.ContentBlockParamUnion{
+						anthropicSDK.TextBlockParam{
+							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
+							Text: anthropicSDK.F("Look at these images:"),
 						},
-					},
-					{
-						Type: "image",
-						Source: &ImageSource{
-							Type:      "base64",
-							MediaType: "image/png",
-							Data:      "aW1hZ2UtMg==", // base64 encoded "image-2"
+						anthropicSDK.ImageBlockParam{
+							Type: anthropicSDK.F(anthropicSDK.ImageBlockParamTypeImage),
+							Source: anthropicSDK.F(anthropicSDK.ImageBlockParamSource{
+								Type:      anthropicSDK.F(anthropicSDK.ImageBlockParamSourceTypeBase64),
+								MediaType: anthropicSDK.F(anthropicSDK.ImageBlockParamSourceMediaType("image/jpeg")),
+								Data:      anthropicSDK.F("aW1hZ2UtMQ=="),
+							}),
 						},
-					},
-				}},
-				{Role: RoleAssistant, Content: "I see them"},
-				{Role: RoleUser, Content: []ContentBlock{
-					{Type: "text", Text: "Here are more:"},
-					{
-						Type: "image",
-						Source: &ImageSource{
-							Type:      "base64",
-							MediaType: "image/webp",
-							Data:      "aW1hZ2UtMw==", // base64 encoded "image-3"
+						anthropicSDK.ImageBlockParam{
+							Type: anthropicSDK.F(anthropicSDK.ImageBlockParamTypeImage),
+							Source: anthropicSDK.F(anthropicSDK.ImageBlockParamSource{
+								Type:      anthropicSDK.F(anthropicSDK.ImageBlockParamSourceTypeBase64),
+								MediaType: anthropicSDK.F(anthropicSDK.ImageBlockParamSourceMediaType("image/png")),
+								Data:      anthropicSDK.F("aW1hZ2UtMg=="),
+							}),
 						},
-					},
-					{Type: "text", Text: "[Unsupported image type: image/tiff]"},
-					{
-						Type: "image",
-						Source: &ImageSource{
-							Type:      "base64",
-							MediaType: "image/gif",
-							Data:      "aW1hZ2UtNQ==", // base64 encoded "image-5"
+					}),
+				},
+				{
+					Role: anthropicSDK.F("assistant"),
+					Content: anthropicSDK.F([]anthropicSDK.ContentBlockParamUnion{
+						anthropicSDK.TextBlockParam{
+							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
+							Text: anthropicSDK.F("I see them"),
 						},
-					},
-				}},
+					}),
+				},
+				{
+					Role: anthropicSDK.F("user"),
+					Content: anthropicSDK.F([]anthropicSDK.ContentBlockParamUnion{
+						anthropicSDK.TextBlockParam{
+							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
+							Text: anthropicSDK.F("Here are more:"),
+						},
+						anthropicSDK.ImageBlockParam{
+							Type: anthropicSDK.F(anthropicSDK.ImageBlockParamTypeImage),
+							Source: anthropicSDK.F(anthropicSDK.ImageBlockParamSource{
+								Type:      anthropicSDK.F(anthropicSDK.ImageBlockParamSourceTypeBase64),
+								MediaType: anthropicSDK.F(anthropicSDK.ImageBlockParamSourceMediaType("image/webp")),
+								Data:      anthropicSDK.F("aW1hZ2UtMw=="),
+							}),
+						},
+						anthropicSDK.TextBlockParam{
+							Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
+							Text: anthropicSDK.F("[Unsupported image type: image/tiff]"),
+						},
+						anthropicSDK.ImageBlockParam{
+							Type: anthropicSDK.F(anthropicSDK.ImageBlockParamTypeImage),
+							Source: anthropicSDK.F(anthropicSDK.ImageBlockParamSource{
+								Type:      anthropicSDK.F(anthropicSDK.ImageBlockParamSourceTypeBase64),
+								MediaType: anthropicSDK.F(anthropicSDK.ImageBlockParamSourceMediaType("image/gif")),
+								Data:      anthropicSDK.F("aW1hZ2UtNQ=="),
+							}),
+						},
+					}),
+				},
 			},
 		},
 	}
