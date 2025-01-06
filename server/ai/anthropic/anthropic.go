@@ -196,22 +196,12 @@ func (a *Anthropic) ChatCompletion(conversation ai.BotConversation, opts ...ai.L
 }
 
 func (a *Anthropic) ChatCompletionNoStream(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (string, error) {
-	a.metricsService.IncrementLLMRequests()
-
-	system, messages := conversationToMessages(conversation)
-	cfg := a.createConfig(opts)
-
-	message, err := a.client.Messages.New(context.Background(), anthropicSDK.MessageNewParams{
-		Model:     anthropicSDK.F(cfg.Model),
-		MaxTokens: anthropicSDK.F(int64(cfg.MaxGeneratedTokens)),
-		Messages:  anthropicSDK.F(messages),
-		System:    anthropicSDK.F([]anthropicSDK.TextBlockParam{anthropicSDK.NewTextBlock(system)}),
-	})
+	// This could perform better if we didn't use the streaming API here, but the complexity is not worth it.
+	result, err := a.ChatCompletion(conversation, opts...)
 	if err != nil {
-		return "", fmt.Errorf("failed to send query to anthropic: %w", err)
+		return "", err
 	}
-
-	return message.Content[0].Text, nil
+	return result.ReadAll(), nil
 }
 
 func (a *Anthropic) CountTokens(text string) int {
