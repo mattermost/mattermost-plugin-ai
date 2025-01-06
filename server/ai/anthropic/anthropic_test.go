@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"testing"
 
+	anthropicSDK "github.com/anthropics/anthropic-sdk-go"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/stretchr/testify/assert"
 )
