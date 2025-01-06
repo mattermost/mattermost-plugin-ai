@@ -3,6 +3,7 @@ package anthropic
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,7 +14,15 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/server/metrics"
 )
 
-const DefaultMaxTokens = 4096
+const (
+	DefaultMaxTokens        = 4096
+	MaxToolResolutionDepth  = 10
+)
+
+type messageState struct {
+	posts       []ai.Post
+	toolResults []anthropicSDK.MessageParamContentUnion
+}
 
 type Anthropic struct {
 	client         *anthropicSDK.Client
@@ -48,9 +57,9 @@ func isValidImageType(mimeType string) bool {
 }
 
 // conversationToMessages creates a system prompt and a slice of input messages from a bot conversation.
-func conversationToMessages(conversation ai.BotConversation) (string, []anthropicSDK.MessageParam) {
+func conversationToMessages(state messageState) (string, []anthropicSDK.MessageParam) {
 	systemMessage := ""
-	messages := make([]anthropicSDK.MessageParam, 0, len(conversation.Posts))
+	messages := make([]anthropicSDK.MessageParam, 0, len(state.posts))
 
 	var currentBlocks []anthropicSDK.ContentBlockParamUnion
 	var currentRole anthropicSDK.MessageParamRole
@@ -65,7 +74,7 @@ func conversationToMessages(conversation ai.BotConversation) (string, []anthropi
 		}
 	}
 
-	for _, post := range conversation.Posts {
+	for _, post := range state.posts {
 		switch post.Role {
 		case ai.PostRoleSystem:
 			systemMessage += post.Message
@@ -124,6 +133,15 @@ func conversationToMessages(conversation ai.BotConversation) (string, []anthropi
 		}
 	}
 
+	// Add tool results if this is a user message continuation
+	if len(state.toolResults) > 0 {
+		if currentRole != "user" {
+			flushCurrentMessage()
+			currentRole = "user"
+		}
+		currentBlocks = append(currentBlocks, state.toolResults...)
+	}
+
 	flushCurrentMessage()
 	return systemMessage, messages
 }
@@ -157,10 +175,12 @@ func (a *Anthropic) createCompletionRequest(conversation ai.BotConversation, opt
 	}
 }
 
-func (a *Anthropic) ChatCompletion(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (*ai.TextStreamResult, error) {
-	a.metricsService.IncrementLLMRequests()
+func (a *Anthropic) handleToolResolution(conversation ai.BotConversation, state messageState, depth int, opts ...ai.LanguageModelOption) (*ai.TextStreamResult, error) {
+	if depth >= MaxToolResolutionDepth {
+		return nil, fmt.Errorf("max tool resolution depth (%d) exceeded", MaxToolResolutionDepth)
+	}
 
-	system, messages := conversationToMessages(conversation)
+	system, messages := conversationToMessages(state)
 	cfg := a.createConfig(opts)
 
 	stream := a.client.Messages.NewStreaming(context.Background(), anthropicSDK.MessageNewParams{
@@ -177,8 +197,14 @@ func (a *Anthropic) ChatCompletion(conversation ai.BotConversation, opts ...ai.L
 		defer close(output)
 		defer close(errChan)
 
+		message := anthropicSDK.Message{}
+		var toolResults []anthropicSDK.MessageParamContentUnion
+
 		for stream.Next() {
 			event := stream.Current()
+			message.Accumulate(event)
+
+			// Stream text content immediately
 			switch delta := event.Delta.(type) {
 			case anthropicSDK.ContentBlockDeltaEventDelta:
 				if delta.Text != "" {
@@ -189,10 +215,62 @@ func (a *Anthropic) ChatCompletion(conversation ai.BotConversation, opts ...ai.L
 
 		if err := stream.Err(); err != nil {
 			errChan <- err
+			return
+		}
+
+		// Check for tool usage after message is complete
+		for _, block := range message.Content {
+			if block.Type == anthropicSDK.ContentBlockTypeToolUse {
+				// Resolve the tool
+				result, err := conversation.Tools.ResolveTool(block.Name, func(args any) error {
+					return json.Unmarshal(block.Input, args)
+				}, conversation.Context)
+
+				if err != nil {
+					errChan <- fmt.Errorf("tool resolution error: %w", err)
+					return
+				}
+
+				toolResults = append(toolResults, anthropicSDK.NewToolResultBlock(block.ID, result, false))
+			}
+		}
+
+		// If tools were used, continue the conversation with the results
+		if len(toolResults) > 0 {
+			newState := messageState{
+				posts:       state.posts,
+				toolResults: toolResults,
+			}
+
+			// Recursively handle the continued conversation
+			continuedStream, err := a.handleToolResolution(conversation, newState, depth+1, opts...)
+			if err != nil {
+				errChan <- err
+				return
+			}
+
+			// Forward the continued conversation's output
+			for text := range continuedStream.Stream {
+				output <- text
+			}
+			if err := <-continuedStream.Err; err != nil {
+				errChan <- err
+			}
 		}
 	}()
 
 	return &ai.TextStreamResult{Stream: output, Err: errChan}, nil
+}
+
+func (a *Anthropic) ChatCompletion(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (*ai.TextStreamResult, error) {
+	a.metricsService.IncrementLLMRequests()
+
+	initialState := messageState{
+		posts:       conversation.Posts,
+		toolResults: nil,
+	}
+
+	return a.handleToolResolution(conversation, initialState, 0, opts...)
 }
 
 func (a *Anthropic) ChatCompletionNoStream(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (string, error) {
