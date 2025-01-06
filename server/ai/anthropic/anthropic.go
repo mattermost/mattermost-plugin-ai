@@ -1,11 +1,14 @@
 package anthropic
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
 
+	anthropicSDK "github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-plugin-ai/server/metrics"
 )
