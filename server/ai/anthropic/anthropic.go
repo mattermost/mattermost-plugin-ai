@@ -21,7 +21,7 @@ const (
 
 type messageState struct {
 	posts       []ai.Post
-	toolResults []anthropicSDK.MessageParamContentUnion
+	toolResults []anthropicSDK.ContentBlockParamUnion
 }
 
 type Anthropic struct {
@@ -162,7 +162,7 @@ func (a *Anthropic) createConfig(opts []ai.LanguageModelOption) ai.LLMConfig {
 }
 
 func (a *Anthropic) createCompletionRequest(conversation ai.BotConversation, opts []ai.LanguageModelOption) anthropicSDK.MessageNewParams {
-	system, messages := conversationToMessages(conversation)
+	system, messages := conversationToMessages(messageState{posts: conversation.Posts})
 	cfg := a.createConfig(opts)
 	return anthropicSDK.MessageNewParams{
 		Model:     anthropicSDK.F(cfg.Model),
@@ -198,7 +198,7 @@ func (a *Anthropic) handleToolResolution(conversation ai.BotConversation, state 
 		defer close(errChan)
 
 		message := anthropicSDK.Message{}
-		var toolResults []anthropicSDK.MessageParamContentUnion
+		var toolResults []anthropicSDK.ContentBlockParamUnion
 
 		for stream.Next() {
 			event := stream.Current()
