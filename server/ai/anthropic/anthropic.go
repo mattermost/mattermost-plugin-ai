@@ -86,7 +86,7 @@ func conversationToMessages(conversation ai.BotConversation) (string, []anthropi
 
 		if post.Message != "" {
 			textBlock := anthropicSDK.TextBlockParam{
-				Type: anthropicSDK.F("text"),
+				Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
 				Text: anthropicSDK.F(post.Message),
 			}
 			currentBlocks = append(currentBlocks, textBlock)
@@ -95,7 +95,7 @@ func conversationToMessages(conversation ai.BotConversation) (string, []anthropi
 		for _, file := range post.Files {
 			if !isValidImageType(file.MimeType) {
 				textBlock := anthropicSDK.TextBlockParam{
-					Type: anthropicSDK.F("text"),
+					Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
 					Text: anthropicSDK.F(fmt.Sprintf("[Unsupported image type: %s]", file.MimeType)),
 				}
 				currentBlocks = append(currentBlocks, textBlock)
@@ -105,7 +105,7 @@ func conversationToMessages(conversation ai.BotConversation) (string, []anthropi
 			data, err := io.ReadAll(file.Reader)
 			if err != nil {
 				textBlock := anthropicSDK.TextBlockParam{
-					Type: anthropicSDK.F("text"),
+					Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
 					Text: anthropicSDK.F("[Error reading image data]"),
 				}
 				currentBlocks = append(currentBlocks, textBlock)
@@ -113,10 +113,10 @@ func conversationToMessages(conversation ai.BotConversation) (string, []anthropi
 			}
 
 			imageBlock := anthropicSDK.ImageBlockParam{
-				Type: anthropicSDK.F("image"),
+				Type: anthropicSDK.F(anthropicSDK.ImageBlockParamTypeImage),
 				Source: anthropicSDK.F(anthropicSDK.ImageBlockParamSource{
-					Type:      anthropicSDK.F("base64"),
-					MediaType: anthropicSDK.F(file.MimeType),
+					Type:      anthropicSDK.F(anthropicSDK.ImageBlockParamSourceTypeBase64),
+					MediaType: anthropicSDK.F(anthropicSDK.ImageBlockParamSourceMediaType(file.MimeType)),
 					Data:      anthropicSDK.F(base64.StdEncoding.EncodeToString(data)),
 				}),
 			}
@@ -150,7 +150,7 @@ func (a *Anthropic) createCompletionRequest(conversation ai.BotConversation, opt
 		Model:     anthropicSDK.F(cfg.Model),
 		Messages:  anthropicSDK.F(messages),
 		System:    anthropicSDK.F([]anthropicSDK.TextBlockParam{{
-			Type: anthropicSDK.F("text"),
+			Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
 			Text: anthropicSDK.F(system),
 		}}),
 		MaxTokens: anthropicSDK.F(int64(cfg.MaxGeneratedTokens)),
