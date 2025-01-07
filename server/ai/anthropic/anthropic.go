@@ -188,6 +188,7 @@ func (a *Anthropic) handleToolResolution(conversation ai.BotConversation, state 
 		MaxTokens: anthropicSDK.F(int64(cfg.MaxGeneratedTokens)),
 		Messages:  anthropicSDK.F(messages),
 		System:    anthropicSDK.F([]anthropicSDK.TextBlockParam{anthropicSDK.NewTextBlock(system)}),
+		Tools:     anthropicSDK.F(conversation.Tools.GetTools()),
 	})
 
 	output := make(chan string)
