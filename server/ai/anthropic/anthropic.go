@@ -243,11 +243,11 @@ func (a *Anthropic) streamChatWithTools(state messageState) error {
 			newState := messageState{
 				posts:       state.posts,
 				toolResults: toolResults,
-				output:     state.output,
-				errChan:    state.errChan,
-				depth:      state.depth + 1,
-				config:     state.config,
-				tools:      state.tools,
+				output:      state.output,
+				errChan:     state.errChan,
+				depth:       state.depth + 1,
+				config:      state.config,
+				tools:       state.tools,
 			}
 
 			// Recursively handle the continued conversation
@@ -267,23 +267,23 @@ func (a *Anthropic) ChatCompletion(conversation ai.BotConversation, opts ...ai.L
 	errChan := make(chan error)
 
 	cfg := a.createConfig(opts)
-	
+
 	initialState := messageState{
 		posts:       conversation.Posts,
 		toolResults: nil,
-		output:     output,
-		errChan:    errChan,
-		depth:      0,
-		config:     cfg,
-		tools:      conversation.Tools.GetTools(),
-		resolver:   conversation.Tools.ResolveTool,
-		context:    conversation.Context,
+		output:      output,
+		errChan:     errChan,
+		depth:       0,
+		config:      cfg,
+		tools:       conversation.Tools.GetTools(),
+		resolver:    conversation.Tools.ResolveTool,
+		context:     conversation.Context,
 	}
 
 	go func() {
 		defer close(output)
 		defer close(errChan)
-		
+
 		if err := a.streamChatWithTools(initialState); err != nil {
 			errChan <- err
 		}
