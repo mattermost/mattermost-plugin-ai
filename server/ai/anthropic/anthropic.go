@@ -190,72 +190,67 @@ func (a *Anthropic) streamChatWithTools(state messageState) error {
 		Tools: anthropicSDK.F(convertTools(state.tools)),
 	})
 
-	go func() {
+	message := anthropicSDK.Message{}
+	var toolResults []anthropicSDK.ContentBlockParamUnion
 
-		message := anthropicSDK.Message{}
-		var toolResults []anthropicSDK.ContentBlockParamUnion
+	for stream.Next() {
+		event := stream.Current()
+		message.Accumulate(event)
 
-		for stream.Next() {
-			event := stream.Current()
-			message.Accumulate(event)
-
-			// Stream text content immediately
-			switch delta := event.Delta.(type) {
-			case anthropicSDK.ContentBlockDeltaEventDelta:
-				if delta.Text != "" {
-					state.output <- delta.Text
-				}
+		// Stream text content immediately
+		switch delta := event.Delta.(type) {
+		case anthropicSDK.ContentBlockDeltaEventDelta:
+			if delta.Text != "" {
+				state.output <- delta.Text
 			}
 		}
+	}
 
-		if err := stream.Err(); err != nil {
-			state.errChan <- err
-			return
-		}
+	if err := stream.Err(); err != nil {
+		return fmt.Errorf("Error from anthropic stream: %w", err)
+	}
 
-		// Check for tool usage after message is complete
-		for _, block := range message.Content {
-			if block.Type == anthropicSDK.ContentBlockTypeToolUse {
-				// Resolve the tool
-				result, err := state.resolver(block.Name, func(args any) error {
-					return json.Unmarshal(block.Input, args)
-				}, state.context)
+	// Check for tool usage after message is complete
+	for _, block := range message.Content {
+		if block.Type == anthropicSDK.ContentBlockTypeToolUse {
+			// Resolve the tool
+			result, err := state.resolver(block.Name, func(args any) error {
+				return json.Unmarshal(block.Input, args)
+			}, state.context)
 
-				if err != nil {
-					state.errChan <- fmt.Errorf("tool resolution error: %w", err)
-					return
-				}
-
-				toolResults = append(toolResults, anthropicSDK.NewToolResultBlock(block.ID, result, false))
-			}
-		}
-
-		// If tools were used, continue the conversation with the results
-		if len(toolResults) > 0 {
-			// Add tool results as a new user message
-			state.messages = append(state.messages, anthropicSDK.MessageParam{
-				Role:    anthropicSDK.F(anthropicSDK.MessageParamRoleUser),
-				Content: anthropicSDK.F(toolResults),
-			})
-
-			newState := messageState{
-				messages: state.messages,
-				system:   state.system,
-				output:   state.output,
-				errChan:  state.errChan,
-				depth:    state.depth + 1,
-				config:   state.config,
-				tools:    state.tools,
-				resolver: state.resolver,
-				context:  state.context,
+			if err != nil {
+				return fmt.Errorf("tool resolution error: %w", err)
 			}
 
-			// Recursively handle the continued conversation
-			if err := a.streamChatWithTools(newState); err != nil {
-				state.errChan <- err
-			}
+			toolResults = append(toolResults, anthropicSDK.NewToolResultBlock(block.ID, result, false))
 		}
-	}()
+	}
+
+	// If tools were used, continue the conversation with the results
+	if len(toolResults) > 0 {
+		// Add tool results as a new user message
+		state.messages = append(state.messages, anthropicSDK.MessageParam{
+			Role:    anthropicSDK.F(anthropicSDK.MessageParamRoleUser),
+			Content: anthropicSDK.F(toolResults),
+		})
+
+		newState := messageState{
+			messages: state.messages,
+			system:   state.system,
+			output:   state.output,
+			errChan:  state.errChan,
+			depth:    state.depth + 1,
+			config:   state.config,
+			tools:    state.tools,
+			resolver: state.resolver,
+			context:  state.context,
+		}
+
+		// Recursively handle the continued conversation
+		if err := a.streamChatWithTools(newState); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
