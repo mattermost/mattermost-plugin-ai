@@ -5,6 +5,7 @@ import {makeCallsPostButtonClickedHandler} from './calls_button';
 import {makePlaybookRunStatusUpdateHandler} from './playbooks_button';
 import PostEventListener from './websocket';
 import manifest from './manifest';
+import {useBotlist} from './bots';
 import {DropdownBotSelector} from './components/bot_slector'
 
 type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
@@ -12,6 +13,7 @@ type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
 const CallsClickHandler = 'calls_post_button_clicked_handler';
 const PlaybooksRunStatusUpdateClickHandler = 'playbooks_run_status_update_click_handler';
 const AIBotSelectorComponent = 'ai_bots_selector_component';
+const AIBotsLoaderHook = 'ai_bots_loader_hook';
 export const BotsHandler = manifest.id + '_bots';
 
 export async function setupRedux(registry: any, store: WebappStore, postEventListener: PostEventListener) {
@@ -20,6 +22,7 @@ export async function setupRedux(registry: any, store: WebappStore, postEventLis
         aiStatusUpdateClicked,
         bots,
         botSelector,
+        botsLoaderHook,
         botChannelId,
         selectedPostId,
     });
@@ -36,6 +39,11 @@ export async function setupRedux(registry: any, store: WebappStore, postEventLis
     store.dispatch({
         type: AIBotSelectorComponent as any,
         component: DropdownBotSelector,
+    });
+
+    store.dispatch({
+        type: AIBotsLoaderHook as any,
+        hook: useBotlist,
     });
 
     // This is a workaround for a bug where the RHS was inaccessible to
@@ -80,6 +88,15 @@ function botSelector(state = false, action: any) {
     switch (action.type) {
     case AIBotSelectorComponent:
         return action.component;
+    default:
+        return state;
+    }
+}
+
+function botsLoaderHook(state = false, action: any) {
+    switch (action.type) {
+    case AIBotsLoaderHook:
+        return action.hook;
     default:
         return state;
     }
