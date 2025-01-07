@@ -25,6 +25,9 @@ type messageState struct {
 	toolResults []anthropicSDK.ContentBlockParamUnion
 	output      chan<- string
 	errChan     chan<- error
+	depth       int
+	config      ai.LLMConfig
+	tools       []ai.Tool
 }
 
 type Anthropic struct {
@@ -178,20 +181,19 @@ func (a *Anthropic) createCompletionRequest(conversation ai.BotConversation, opt
 	}
 }
 
-func (a *Anthropic) handleToolResolution(conversation ai.BotConversation, state messageState, depth int, opts ...ai.LanguageModelOption) error {
-	if depth >= MaxToolResolutionDepth {
+func (a *Anthropic) handleToolResolution(conversation ai.BotConversation, state messageState) error {
+	if state.depth >= MaxToolResolutionDepth {
 		return fmt.Errorf("max tool resolution depth (%d) exceeded", MaxToolResolutionDepth)
 	}
 
 	system, messages := conversationToMessages(state)
-	cfg := a.createConfig(opts)
 
 	stream := a.client.Messages.NewStreaming(context.Background(), anthropicSDK.MessageNewParams{
-		Model:     anthropicSDK.F(cfg.Model),
-		MaxTokens: anthropicSDK.F(int64(cfg.MaxGeneratedTokens)),
+		Model:     anthropicSDK.F(state.config.Model),
+		MaxTokens: anthropicSDK.F(int64(state.config.MaxGeneratedTokens)),
 		Messages:  anthropicSDK.F(messages),
 		System:    anthropicSDK.F([]anthropicSDK.TextBlockParam{anthropicSDK.NewTextBlock(system)}),
-		Tools:     anthropicSDK.F(convertTools(conversation.Tools.GetTools())),
+		Tools:     anthropicSDK.F(convertTools(state.tools)),
 	})
 
 	go func() {
@@ -239,12 +241,15 @@ func (a *Anthropic) handleToolResolution(conversation ai.BotConversation, state 
 			newState := messageState{
 				posts:       state.posts,
 				toolResults: toolResults,
+				output:     state.output,
+				errChan:    state.errChan,
+				depth:      state.depth + 1,
+				config:     state.config,
+				tools:      state.tools,
 			}
 
-			// Recursively handle the continued conversation with same channels
-			newState.output = state.output
-			newState.errChan = state.errChan
-			if err := a.handleToolResolution(conversation, newState, depth+1, opts...); err != nil {
+			// Recursively handle the continued conversation
+			if err := a.handleToolResolution(conversation, newState); err != nil {
 				state.errChan <- err
 			}
 		}
@@ -259,18 +264,23 @@ func (a *Anthropic) ChatCompletion(conversation ai.BotConversation, opts ...ai.L
 	output := make(chan string)
 	errChan := make(chan error)
 
+	cfg := a.createConfig(opts)
+	
 	initialState := messageState{
 		posts:       conversation.Posts,
 		toolResults: nil,
 		output:     output,
 		errChan:    errChan,
+		depth:      0,
+		config:     cfg,
+		tools:      conversation.Tools.GetTools(),
 	}
 
 	go func() {
 		defer close(output)
 		defer close(errChan)
 		
-		if err := a.handleToolResolution(conversation, initialState, 0, opts...); err != nil {
+		if err := a.handleToolResolution(conversation, initialState); err != nil {
 			errChan <- err
 		}
 	}()
