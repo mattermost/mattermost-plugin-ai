@@ -141,15 +141,6 @@ func conversationToMessages(posts []ai.Post) (string, []anthropicSDK.MessagePara
 		}
 	}
 
-	// Add tool results if this is a user message continuation
-	if len(state.toolResults) > 0 {
-		if currentRole != "user" {
-			flushCurrentMessage()
-			currentRole = "user"
-		}
-		currentBlocks = append(currentBlocks, state.toolResults...)
-	}
-
 	flushCurrentMessage()
 	return systemMessage, messages
 }
