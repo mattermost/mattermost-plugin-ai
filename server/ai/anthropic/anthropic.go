@@ -292,9 +292,9 @@ func convertTools(tools []ai.Tool) []anthropicSDK.ToolParam {
 	converted := make([]anthropicSDK.ToolParam, len(tools))
 	for i, tool := range tools {
 		converted[i] = anthropicSDK.ToolParam{
-			Name:        tool.Name,
-			Description: tool.Description,
-			Schema:      tool.Schema,
+			Name:        anthropicSDK.F(tool.Name),
+			Description: anthropicSDK.F(tool.Description),
+			InputSchema: anthropicSDK.F(tool.Schema),
 		}
 	}
 	return converted
