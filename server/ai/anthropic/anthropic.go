@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	DefaultMaxTokens        = 4096
-	MaxToolResolutionDepth  = 10
+	DefaultMaxTokens       = 4096
+	MaxToolResolutionDepth = 10
 )
 
 type messageState struct {
@@ -165,9 +165,9 @@ func (a *Anthropic) createCompletionRequest(conversation ai.BotConversation, opt
 	system, messages := conversationToMessages(messageState{posts: conversation.Posts})
 	cfg := a.createConfig(opts)
 	return anthropicSDK.MessageNewParams{
-		Model:     anthropicSDK.F(cfg.Model),
-		Messages:  anthropicSDK.F(messages),
-		System:    anthropicSDK.F([]anthropicSDK.TextBlockParam{{
+		Model:    anthropicSDK.F(cfg.Model),
+		Messages: anthropicSDK.F(messages),
+		System: anthropicSDK.F([]anthropicSDK.TextBlockParam{{
 			Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
 			Text: anthropicSDK.F(system),
 		}}),
@@ -288,10 +288,10 @@ func (a *Anthropic) CountTokens(text string) int {
 }
 
 // convertTools converts from ai.Tool to anthropicSDK.Tool format
-func convertTools(tools []ai.Tool) []anthropicSDK.Tool {
-	converted := make([]anthropicSDK.Tool, len(tools))
+func convertTools(tools []ai.Tool) []anthropicSDK.ToolParam {
+	converted := make([]anthropicSDK.ToolParam, len(tools))
 	for i, tool := range tools {
-		converted[i] = anthropicSDK.Tool{
+		converted[i] = anthropicSDK.ToolParam{
 			Name:        tool.Name,
 			Description: tool.Description,
 			Schema:      tool.Schema,
