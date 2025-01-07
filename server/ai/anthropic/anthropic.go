@@ -188,7 +188,7 @@ func (a *Anthropic) handleToolResolution(conversation ai.BotConversation, state 
 		MaxTokens: anthropicSDK.F(int64(cfg.MaxGeneratedTokens)),
 		Messages:  anthropicSDK.F(messages),
 		System:    anthropicSDK.F([]anthropicSDK.TextBlockParam{anthropicSDK.NewTextBlock(system)}),
-		Tools:     anthropicSDK.F(conversation.Tools.GetTools()),
+		Tools:     anthropicSDK.F(convertTools(conversation.Tools.GetTools())),
 	})
 
 	output := make(chan string)
@@ -285,6 +285,19 @@ func (a *Anthropic) ChatCompletionNoStream(conversation ai.BotConversation, opts
 
 func (a *Anthropic) CountTokens(text string) int {
 	return 0
+}
+
+// convertTools converts from ai.Tool to anthropicSDK.Tool format
+func convertTools(tools []ai.Tool) []anthropicSDK.Tool {
+	converted := make([]anthropicSDK.Tool, len(tools))
+	for i, tool := range tools {
+		converted[i] = anthropicSDK.Tool{
+			Name:        tool.Name,
+			Description: tool.Description,
+			Schema:      tool.Schema,
+		}
+	}
+	return converted
 }
 
 func (a *Anthropic) TokenLimit() int {
