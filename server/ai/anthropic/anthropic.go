@@ -64,10 +64,10 @@ func isValidImageType(mimeType string) bool {
 	return validTypes[mimeType]
 }
 
-// conversationToMessages creates a system prompt and a slice of input messages from a bot conversation.
-func conversationToMessages(state messageState) (string, []anthropicSDK.MessageParam) {
+// conversationToMessages creates a system prompt and a slice of input messages from conversation posts.
+func conversationToMessages(posts []ai.Post) (string, []anthropicSDK.MessageParam) {
 	systemMessage := ""
-	messages := make([]anthropicSDK.MessageParam, 0, len(state.posts))
+	messages := make([]anthropicSDK.MessageParam, 0, len(posts))
 
 	var currentBlocks []anthropicSDK.ContentBlockParamUnion
 	var currentRole anthropicSDK.MessageParamRole
@@ -82,7 +82,7 @@ func conversationToMessages(state messageState) (string, []anthropicSDK.MessageP
 		}
 	}
 
-	for _, post := range state.posts {
+	for _, post := range posts {
 		switch post.Role {
 		case ai.PostRoleSystem:
 			systemMessage += post.Message
@@ -170,7 +170,7 @@ func (a *Anthropic) createConfig(opts []ai.LanguageModelOption) ai.LLMConfig {
 }
 
 func (a *Anthropic) createCompletionRequest(conversation ai.BotConversation, opts []ai.LanguageModelOption) anthropicSDK.MessageNewParams {
-	system, messages := conversationToMessages(messageState{posts: conversation.Posts})
+	system, messages := conversationToMessages(conversation.Posts)
 	cfg := a.createConfig(opts)
 	return anthropicSDK.MessageNewParams{
 		Model:    anthropicSDK.F(cfg.Model),
@@ -277,7 +277,7 @@ func (a *Anthropic) ChatCompletion(conversation ai.BotConversation, opts ...ai.L
 
 	cfg := a.createConfig(opts)
 
-	system, messages := conversationToMessages(messageState{posts: conversation.Posts})
+	system, messages := conversationToMessages(conversation.Posts)
 
 	initialState := messageState{
 		messages: messages,
