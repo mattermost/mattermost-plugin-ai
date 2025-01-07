@@ -236,14 +236,21 @@ func (a *Anthropic) streamChatWithTools(state messageState) error {
 
 		// If tools were used, continue the conversation with the results
 		if len(toolResults) > 0 {
+			// Add tool results as a new user message
+			state.messages = append(state.messages, anthropicSDK.MessageParam{
+				Role:    anthropicSDK.F(anthropicSDK.MessageParamRoleUser),
+				Content: anthropicSDK.F(toolResults),
+			})
+
 			newState := messageState{
-				posts:       state.posts,
-				toolResults: toolResults,
-				output:      state.output,
-				errChan:     state.errChan,
-				depth:       state.depth + 1,
-				config:      state.config,
-				tools:       state.tools,
+				messages: state.messages,
+				output:   state.output,
+				errChan:  state.errChan,
+				depth:    state.depth + 1,
+				config:   state.config,
+				tools:    state.tools,
+				resolver: state.resolver,
+				context:  state.context,
 			}
 
 			// Recursively handle the continued conversation
