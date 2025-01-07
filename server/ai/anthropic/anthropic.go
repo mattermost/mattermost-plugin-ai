@@ -8,9 +8,9 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/invopop/jsonschema"
 	anthropicSDK "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/invopop/jsonschema"
 	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-plugin-ai/server/metrics"
 )
@@ -296,7 +296,7 @@ func convertTools(tools []ai.Tool) []anthropicSDK.ToolParam {
 			AllowAdditionalProperties: false,
 			DoNotReference:            true,
 		}
-		schema := reflector.Reflect(tool.Schema)
+		schema := any(reflector.Reflect(tool.Schema))
 		converted[i] = anthropicSDK.ToolParam{
 			Name:        anthropicSDK.F(tool.Name),
 			Description: anthropicSDK.F(tool.Description),
