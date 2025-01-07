@@ -181,7 +181,12 @@ func (a *Anthropic) createCompletionRequest(conversation ai.BotConversation, opt
 	}
 }
 
-func (a *Anthropic) handleToolResolution(conversation ai.BotConversation, state messageState) error {
+type toolResolver struct {
+	resolveTool func(name string, argsGetter ai.ToolArgumentGetter, context ai.ConversationContext) (string, error)
+	context     ai.ConversationContext
+}
+
+func (a *Anthropic) handleToolResolution(resolver toolResolver, state messageState) error {
 	if state.depth >= MaxToolResolutionDepth {
 		return fmt.Errorf("max tool resolution depth (%d) exceeded", MaxToolResolutionDepth)
 	}
@@ -223,9 +228,9 @@ func (a *Anthropic) handleToolResolution(conversation ai.BotConversation, state 
 		for _, block := range message.Content {
 			if block.Type == anthropicSDK.ContentBlockTypeToolUse {
 				// Resolve the tool
-				result, err := conversation.Tools.ResolveTool(block.Name, func(args any) error {
+				result, err := resolver.resolveTool(block.Name, func(args any) error {
 					return json.Unmarshal(block.Input, args)
-				}, conversation.Context)
+				}, resolver.context)
 
 				if err != nil {
 					state.errChan <- fmt.Errorf("tool resolution error: %w", err)
@@ -249,7 +254,7 @@ func (a *Anthropic) handleToolResolution(conversation ai.BotConversation, state 
 			}
 
 			// Recursively handle the continued conversation
-			if err := a.handleToolResolution(conversation, newState); err != nil {
+			if err := a.handleToolResolution(resolver, newState); err != nil {
 				state.errChan <- err
 			}
 		}
@@ -280,7 +285,12 @@ func (a *Anthropic) ChatCompletion(conversation ai.BotConversation, opts ...ai.L
 		defer close(output)
 		defer close(errChan)
 		
-		if err := a.handleToolResolution(conversation, initialState); err != nil {
+		resolver := toolResolver{
+			resolveTool: conversation.Tools.ResolveTool,
+			context:     conversation.Context,
+		}
+		
+		if err := a.handleToolResolution(resolver, initialState); err != nil {
 			errChan <- err
 		}
 	}()
