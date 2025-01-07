@@ -23,6 +23,8 @@ const (
 type messageState struct {
 	posts       []ai.Post
 	toolResults []anthropicSDK.ContentBlockParamUnion
+	output      chan<- string
+	errChan     chan<- error
 }
 
 type Anthropic struct {
@@ -176,9 +178,9 @@ func (a *Anthropic) createCompletionRequest(conversation ai.BotConversation, opt
 	}
 }
 
-func (a *Anthropic) handleToolResolution(conversation ai.BotConversation, state messageState, depth int, opts ...ai.LanguageModelOption) (*ai.TextStreamResult, error) {
+func (a *Anthropic) handleToolResolution(conversation ai.BotConversation, state messageState, depth int, opts ...ai.LanguageModelOption) error {
 	if depth >= MaxToolResolutionDepth {
-		return nil, fmt.Errorf("max tool resolution depth (%d) exceeded", MaxToolResolutionDepth)
+		return fmt.Errorf("max tool resolution depth (%d) exceeded", MaxToolResolutionDepth)
 	}
 
 	system, messages := conversationToMessages(state)
@@ -192,12 +194,7 @@ func (a *Anthropic) handleToolResolution(conversation ai.BotConversation, state 
 		Tools:     anthropicSDK.F(convertTools(conversation.Tools.GetTools())),
 	})
 
-	output := make(chan string)
-	errChan := make(chan error)
-
 	go func() {
-		defer close(output)
-		defer close(errChan)
 
 		message := anthropicSDK.Message{}
 		var toolResults []anthropicSDK.ContentBlockParamUnion
@@ -210,13 +207,13 @@ func (a *Anthropic) handleToolResolution(conversation ai.BotConversation, state 
 			switch delta := event.Delta.(type) {
 			case anthropicSDK.ContentBlockDeltaEventDelta:
 				if delta.Text != "" {
-					output <- delta.Text
+					state.output <- delta.Text
 				}
 			}
 		}
 
 		if err := stream.Err(); err != nil {
-			errChan <- err
+			state.errChan <- err
 			return
 		}
 
@@ -229,7 +226,7 @@ func (a *Anthropic) handleToolResolution(conversation ai.BotConversation, state 
 				}, conversation.Context)
 
 				if err != nil {
-					errChan <- fmt.Errorf("tool resolution error: %w", err)
+					state.errChan <- fmt.Errorf("tool resolution error: %w", err)
 					return
 				}
 
@@ -244,35 +241,41 @@ func (a *Anthropic) handleToolResolution(conversation ai.BotConversation, state 
 				toolResults: toolResults,
 			}
 
-			// Recursively handle the continued conversation
-			continuedStream, err := a.handleToolResolution(conversation, newState, depth+1, opts...)
-			if err != nil {
-				errChan <- err
-				return
-			}
-
-			// Forward the continued conversation's output
-			for text := range continuedStream.Stream {
-				output <- text
-			}
-			if err := <-continuedStream.Err; err != nil {
-				errChan <- err
+			// Recursively handle the continued conversation with same channels
+			newState.output = state.output
+			newState.errChan = state.errChan
+			if err := a.handleToolResolution(conversation, newState, depth+1, opts...); err != nil {
+				state.errChan <- err
 			}
 		}
 	}()
 
-	return &ai.TextStreamResult{Stream: output, Err: errChan}, nil
+	return nil
 }
 
 func (a *Anthropic) ChatCompletion(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (*ai.TextStreamResult, error) {
 	a.metricsService.IncrementLLMRequests()
 
+	output := make(chan string)
+	errChan := make(chan error)
+
 	initialState := messageState{
 		posts:       conversation.Posts,
 		toolResults: nil,
+		output:     output,
+		errChan:    errChan,
 	}
 
-	return a.handleToolResolution(conversation, initialState, 0, opts...)
+	go func() {
+		defer close(output)
+		defer close(errChan)
+		
+		if err := a.handleToolResolution(conversation, initialState, 0, opts...); err != nil {
+			errChan <- err
+		}
+	}()
+
+	return &ai.TextStreamResult{Stream: output, Err: errChan}, nil
 }
 
 func (a *Anthropic) ChatCompletionNoStream(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (string, error) {
