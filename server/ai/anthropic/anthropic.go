@@ -183,7 +183,7 @@ func (a *Anthropic) createCompletionRequest(conversation ai.BotConversation, opt
 	}
 }
 
-func (a *Anthropic) handleToolResolution(state messageState) error {
+func (a *Anthropic) streamChatWithTools(state messageState) error {
 	if state.depth >= MaxToolResolutionDepth {
 		return fmt.Errorf("max tool resolution depth (%d) exceeded", MaxToolResolutionDepth)
 	}
@@ -251,7 +251,7 @@ func (a *Anthropic) handleToolResolution(state messageState) error {
 			}
 
 			// Recursively handle the continued conversation
-			if err := a.handleToolResolution(newState); err != nil {
+			if err := a.streamChatWithTools(newState); err != nil {
 				state.errChan <- err
 			}
 		}
@@ -284,7 +284,7 @@ func (a *Anthropic) ChatCompletion(conversation ai.BotConversation, opts ...ai.L
 		defer close(output)
 		defer close(errChan)
 		
-		if err := a.handleToolResolution(initialState); err != nil {
+		if err := a.streamChatWithTools(initialState); err != nil {
 			errChan <- err
 		}
 	}()
