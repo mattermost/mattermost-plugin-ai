@@ -28,6 +28,8 @@ type messageState struct {
 	depth       int
 	config      ai.LLMConfig
 	tools       []ai.Tool
+	resolver    func(name string, argsGetter ai.ToolArgumentGetter, context ai.ConversationContext) (string, error)
+	context     ai.ConversationContext
 }
 
 type Anthropic struct {
@@ -181,12 +183,7 @@ func (a *Anthropic) createCompletionRequest(conversation ai.BotConversation, opt
 	}
 }
 
-type toolResolver struct {
-	resolveTool func(name string, argsGetter ai.ToolArgumentGetter, context ai.ConversationContext) (string, error)
-	context     ai.ConversationContext
-}
-
-func (a *Anthropic) handleToolResolution(resolver toolResolver, state messageState) error {
+func (a *Anthropic) handleToolResolution(state messageState) error {
 	if state.depth >= MaxToolResolutionDepth {
 		return fmt.Errorf("max tool resolution depth (%d) exceeded", MaxToolResolutionDepth)
 	}
@@ -228,9 +225,9 @@ func (a *Anthropic) handleToolResolution(resolver toolResolver, state messageSta
 		for _, block := range message.Content {
 			if block.Type == anthropicSDK.ContentBlockTypeToolUse {
 				// Resolve the tool
-				result, err := resolver.resolveTool(block.Name, func(args any) error {
+				result, err := state.resolver(block.Name, func(args any) error {
 					return json.Unmarshal(block.Input, args)
-				}, resolver.context)
+				}, state.context)
 
 				if err != nil {
 					state.errChan <- fmt.Errorf("tool resolution error: %w", err)
@@ -254,7 +251,7 @@ func (a *Anthropic) handleToolResolution(resolver toolResolver, state messageSta
 			}
 
 			// Recursively handle the continued conversation
-			if err := a.handleToolResolution(resolver, newState); err != nil {
+			if err := a.handleToolResolution(newState); err != nil {
 				state.errChan <- err
 			}
 		}
@@ -279,18 +276,15 @@ func (a *Anthropic) ChatCompletion(conversation ai.BotConversation, opts ...ai.L
 		depth:      0,
 		config:     cfg,
 		tools:      conversation.Tools.GetTools(),
+		resolver:   conversation.Tools.ResolveTool,
+		context:    conversation.Context,
 	}
 
 	go func() {
 		defer close(output)
 		defer close(errChan)
 		
-		resolver := toolResolver{
-			resolveTool: conversation.Tools.ResolveTool,
-			context:     conversation.Context,
-		}
-		
-		if err := a.handleToolResolution(resolver, initialState); err != nil {
+		if err := a.handleToolResolution(initialState); err != nil {
 			errChan <- err
 		}
 	}()
