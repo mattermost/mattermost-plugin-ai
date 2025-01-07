@@ -21,15 +21,14 @@ const (
 )
 
 type messageState struct {
-	posts       []ai.Post
-	toolResults []anthropicSDK.ContentBlockParamUnion
-	output      chan<- string
-	errChan     chan<- error
-	depth       int
-	config      ai.LLMConfig
-	tools       []ai.Tool
-	resolver    func(name string, argsGetter ai.ToolArgumentGetter, context ai.ConversationContext) (string, error)
-	context     ai.ConversationContext
+	messages []anthropicSDK.MessageParam
+	output   chan<- string
+	errChan  chan<- error
+	depth    int
+	config   ai.LLMConfig
+	tools    []ai.Tool
+	resolver func(name string, argsGetter ai.ToolArgumentGetter, context ai.ConversationContext) (string, error)
+	context  ai.ConversationContext
 }
 
 type Anthropic struct {
@@ -188,13 +187,10 @@ func (a *Anthropic) streamChatWithTools(state messageState) error {
 		return fmt.Errorf("max tool resolution depth (%d) exceeded", MaxToolResolutionDepth)
 	}
 
-	system, messages := conversationToMessages(state)
-
 	stream := a.client.Messages.NewStreaming(context.Background(), anthropicSDK.MessageNewParams{
 		Model:     anthropicSDK.F(state.config.Model),
 		MaxTokens: anthropicSDK.F(int64(state.config.MaxGeneratedTokens)),
-		Messages:  anthropicSDK.F(messages),
-		System:    anthropicSDK.F([]anthropicSDK.TextBlockParam{anthropicSDK.NewTextBlock(system)}),
+		Messages:  anthropicSDK.F(state.messages),
 		Tools:     anthropicSDK.F(convertTools(state.tools)),
 	})
 
@@ -268,16 +264,17 @@ func (a *Anthropic) ChatCompletion(conversation ai.BotConversation, opts ...ai.L
 
 	cfg := a.createConfig(opts)
 
+	system, messages := conversationToMessages(messageState{posts: conversation.Posts})
+
 	initialState := messageState{
-		posts:       conversation.Posts,
-		toolResults: nil,
-		output:      output,
-		errChan:     errChan,
-		depth:       0,
-		config:      cfg,
-		tools:       conversation.Tools.GetTools(),
-		resolver:    conversation.Tools.ResolveTool,
-		context:     conversation.Context,
+		messages: messages,
+		output:   output,
+		errChan:  errChan,
+		depth:    0,
+		config:   cfg,
+		tools:    conversation.Tools.GetTools(),
+		resolver: conversation.Tools.ResolveTool,
+		context:  conversation.Context,
 	}
 
 	go func() {
