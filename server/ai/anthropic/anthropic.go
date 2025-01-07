@@ -22,6 +22,7 @@ const (
 
 type messageState struct {
 	messages []anthropicSDK.MessageParam
+	system   string
 	output   chan<- string
 	errChan  chan<- error
 	depth    int
@@ -191,7 +192,11 @@ func (a *Anthropic) streamChatWithTools(state messageState) error {
 		Model:     anthropicSDK.F(state.config.Model),
 		MaxTokens: anthropicSDK.F(int64(state.config.MaxGeneratedTokens)),
 		Messages:  anthropicSDK.F(state.messages),
-		Tools:     anthropicSDK.F(convertTools(state.tools)),
+		System: anthropicSDK.F([]anthropicSDK.TextBlockParam{{
+			Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
+			Text: anthropicSDK.F(state.system),
+		}}),
+		Tools: anthropicSDK.F(convertTools(state.tools)),
 	})
 
 	go func() {
@@ -244,6 +249,7 @@ func (a *Anthropic) streamChatWithTools(state messageState) error {
 
 			newState := messageState{
 				messages: state.messages,
+				system:   state.system,
 				output:   state.output,
 				errChan:  state.errChan,
 				depth:    state.depth + 1,
@@ -275,6 +281,7 @@ func (a *Anthropic) ChatCompletion(conversation ai.BotConversation, opts ...ai.L
 
 	initialState := messageState{
 		messages: messages,
+		system:   system,
 		output:   output,
 		errChan:  errChan,
 		depth:    0,
