@@ -134,13 +134,6 @@ func (p *Plugin) handleThreadAnalysis(c *gin.Context) {
 		return
 	}
 
-	p.track(evThreadButton, map[string]any{
-		"channel_id":     channel.Id,
-		"post_id":        post.Id,
-		"user_actual_id": user.Id,
-		"preset_prompt":  data.AnalysisType,
-	})
-
 	createdPost, err := p.startNewAnalysisThread(bot, post.Id, data.AnalysisType, p.MakeConversationContext(bot, user, channel, nil))
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to perform analysis: %w", err))
@@ -223,12 +216,6 @@ func (p *Plugin) handleSummarizeTranscription(c *gin.Context) {
 		c.AbortWithError(http.StatusBadRequest, errors.New("not a calls or zoom bot post"))
 		return
 	}
-
-	p.track(evSummarizeTranscription, map[string]any{
-		"channel_id":     channel.Id,
-		"post_id":        post.Id,
-		"user_actual_id": user.Id,
-	})
 
 	createdPost, err := p.newCallTranscriptionSummaryThread(bot, user, post, channel)
 	if err != nil {
