@@ -101,7 +101,7 @@ func (p *Plugin) MigrateServicesToBots() error {
 		return fmt.Errorf("failed to save plugin configuration: %w", err)
 	}
 	p.setConfiguration(existingConfig)
-	_ = p.pluginAPI.KV.Set("migrate_services_to_bots_done", true)
+	_, _ = p.pluginAPI.KV.Set("migrate_services_to_bots_done", true)
 
 	return nil
 }
