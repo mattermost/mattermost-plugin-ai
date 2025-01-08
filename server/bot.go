@@ -46,7 +46,7 @@ func (p *Plugin) MigrateServicesToBots() error {
 	defer mtx.Unlock()
 
 	migrationDone := false
-	p.pluginAPI.KV.Get("migrate_services_to_bots_done", &migrationDone)
+	_ = p.pluginAPI.KV.Get("migrate_services_to_bots_done", &migrationDone)
 	if migrationDone {
 		return nil
 	}
@@ -56,7 +56,7 @@ func (p *Plugin) MigrateServicesToBots() error {
 	existingConfig := p.getConfiguration().Clone()
 
 	if len(existingConfig.Bots) != 0 {
-		p.pluginAPI.KV.Set("migrate_services_to_bots_done", true)
+		_ = p.pluginAPI.KV.Set("migrate_services_to_bots_done", true)
 		return nil
 	}
 
@@ -101,7 +101,7 @@ func (p *Plugin) MigrateServicesToBots() error {
 		return fmt.Errorf("failed to save plugin configuration: %w", err)
 	}
 	p.setConfiguration(existingConfig)
-	p.pluginAPI.KV.Set("migrate_services_to_bots_done", true)
+	_ = p.pluginAPI.KV.Set("migrate_services_to_bots_done", true)
 
 	return nil
 }

@@ -17,10 +17,13 @@ type AskSage struct {
 
 func New(llmService ai.ServiceConfig, httpClient *http.Client, metric metrics.LLMetrics) *AskSage {
 	client := NewClient("", httpClient)
-	client.Login(GetTokenParams{
+	if err := client.Login(GetTokenParams{
 		Email:    llmService.Username,
 		Password: llmService.Password,
-	})
+	}); err != nil {
+		// Just log the error since this is in a constructor
+		metric.IncrementHTTPErrors()
+	}
 	return &AskSage{
 		client:       client,
 		defaultModel: llmService.DefaultModel,

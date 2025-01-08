@@ -57,7 +57,10 @@ func NewSubtitlesFromVTT(webvtt io.Reader) (*Subtitles, error) {
 func (s *Subtitles) WebVTT() io.Reader {
 	reader, writer := io.Pipe()
 	go func() {
-		s.storage.WriteToWebVTT(writer)
+		if err := s.storage.WriteToWebVTT(writer); err != nil {
+			writer.CloseWithError(err)
+			return
+		}
 		writer.Close()
 	}()
 	return reader
@@ -92,7 +95,9 @@ func (s *Subtitles) FormatTextOnly() string {
 
 func (s *Subtitles) FormatVTT() string {
 	var result strings.Builder
-	s.storage.WriteToWebVTT(&result)
+	if err := s.storage.WriteToWebVTT(&result); err != nil {
+		return fmt.Sprintf("Error formatting VTT: %v", err)
+	}
 	return result.String()
 }
 

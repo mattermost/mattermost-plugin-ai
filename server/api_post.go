@@ -77,7 +77,7 @@ func (p *Plugin) handleReact(c *gin.Context) {
 	emojiName = strings.Trim(strings.TrimSpace(emojiName), ":")
 
 	if _, found := model.GetSystemEmojiId(emojiName); !found {
-		p.pluginAPI.Post.AddReaction(&model.Reaction{
+		_ = p.pluginAPI.Post.AddReaction(&model.Reaction{
 			EmojiName: "large_red_square",
 			UserId:    bot.mmBot.UserId,
 			PostId:    post.Id,
@@ -119,7 +119,7 @@ func (p *Plugin) handleThreadAnalysis(c *gin.Context) {
 	var data struct {
 		AnalysisType string `json:"analysis_type" binding:"required"`
 	}
-	if err := c.ShouldBindJSON(&data); err != nil {
+	if bindErr := c.ShouldBindJSON(&data); bindErr != nil {
 		c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
