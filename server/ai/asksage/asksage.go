@@ -21,9 +21,9 @@ func New(llmService ai.ServiceConfig, httpClient *http.Client, metric metrics.LL
 		Email:    llmService.Username,
 		Password: llmService.Password,
 	}); err != nil {
-		// Just log the error since this is in a constructor
-		metric.IncrementHTTPErrors()
+		return nil
 	}
+
 	return &AskSage{
 		client:       client,
 		defaultModel: llmService.DefaultModel,

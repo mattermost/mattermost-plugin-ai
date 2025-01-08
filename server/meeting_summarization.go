@@ -29,9 +29,7 @@ func getCaptionsFileIDFromProps(post *model.Post) (fileID string, err error) {
 		if r := recover(); r != nil {
 			err = errors.New("unable to parse captions on post")
 		}
-	}(); err != nil {
-		p.API.LogError("Error in deferred function", "error", err)
-	}
+	}()
 
 	captions, ok := post.GetProp("captions").([]interface{})
 	if !ok || len(captions) == 0 {
