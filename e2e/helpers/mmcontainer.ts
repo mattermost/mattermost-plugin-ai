@@ -97,15 +97,15 @@ export default class MattermostContainer {
         await this.container.exec(["mmctl", "--local", "plugin", "enable", pluginID])
     }
 
-    withEnv = (env: string, value: string): MattermostContainer => {
-        this.envs[env] = value
+    withEnv = async (env: string, value: string): Promise<MattermostContainer> => {
+        this.envs[env] = value;
+        try {
             // Verify health before returning
             const isHealthy = await this.checkHealth();
             if (!isHealthy) {
                 throw new Error('Container health check failed after startup');
             }
-
-            return this
+            return this;
         } catch (error) {
             console.error('Failed to start container:', error);
             throw error;
