@@ -16,9 +16,13 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-	await openAIMock.stop();
-	await mattermost.stop();
-})
+    try {
+        if (openAIMock) await openAIMock.stop();
+        if (mattermost) await mattermost.stop();
+    } catch (error) {
+        console.error('Error during cleanup:', error);
+    }
+}, {timeout: 30000}); // Explicit timeout for cleanup
 
 test('was installed', async ({ page }) => {
 	const url = mattermost.url()

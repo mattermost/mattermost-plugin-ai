@@ -99,7 +99,17 @@ export default class MattermostContainer {
 
     withEnv = (env: string, value: string): MattermostContainer => {
         this.envs[env] = value
-        return this
+            // Verify health before returning
+            const isHealthy = await this.checkHealth();
+            if (!isHealthy) {
+                throw new Error('Container health check failed after startup');
+            }
+
+            return this
+        } catch (error) {
+            console.error('Failed to start container:', error);
+            throw error;
+        }
     }
 
     withAdmin = (email: string, username: string, password: string): MattermostContainer => {
@@ -131,6 +141,16 @@ export default class MattermostContainer {
         return this
     }
 
+    async checkHealth(): Promise<boolean> {
+        try {
+            const client = await this.getAdminClient();
+            await client.getMe();
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
     constructor() {
         this.command = ["mattermost", "server"];
         const dbconn = `postgres://user:pass@db:5432/mattermost_test?sslmode=disable`;
@@ -156,7 +176,8 @@ export default class MattermostContainer {
     }
 
     start = async (): Promise<MattermostContainer> => {
-        this.network = await new Network().start()
+        try {
+            this.network = await new Network().start()
         this.pgContainer = await new PostgreSqlContainer("docker.io/postgres:15.2-alpine")
             .withExposedPorts(5432)
             .withDatabase("mattermost_test")
