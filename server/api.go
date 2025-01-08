@@ -57,7 +57,7 @@ func (p *Plugin) aiBotRequired(c *gin.Context) {
 	botUsername := c.DefaultQuery("botUsername", p.getConfiguration().DefaultBotName)
 	bot := p.GetBotByUsernameOrFirst(botUsername)
 	if bot == nil {
-		_ = c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to get bot: %s", botUsername))
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to get bot: %s", botUsername))
 		return
 	}
 	c.Set(ContextBotKey, bot)
@@ -88,13 +88,13 @@ func (p *Plugin) handleGetAIThreads(c *gin.Context) {
 	for _, bot := range p.bots {
 		botDMChannel, err := p.pluginAPI.Channel.GetDirect(userID, bot.mmBot.UserId)
 		if err != nil {
-			_ = c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to get DM with AI bot: %w", err))
+			c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to get DM with AI bot: %w", err))
 			return
 		}
 
 		// Extra permissions checks are not totally necessary since a user should always have permission to read their own DMs
 		if !p.pluginAPI.User.HasPermissionToChannel(userID, botDMChannel.Id, model.PermissionReadChannel) {
-			_ = c.AbortWithError(http.StatusForbidden, errors.New("user doesn't have permission to read channel"))
+			c.AbortWithError(http.StatusForbidden, errors.New("user doesn't have permission to read channel"))
 			return
 		}
 

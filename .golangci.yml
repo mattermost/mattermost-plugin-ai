@@ -48,3 +48,6 @@ issues:
     - linters:
         - revive
       text: unused-parameter
+    - linters:
+      - errcheck
+      text: c.Abort
