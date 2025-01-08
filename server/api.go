@@ -16,8 +16,6 @@ const (
 	ContextPostKey    = "post"
 	ContextChannelKey = "channel"
 	ContextBotKey     = "bot"
-
-	requestBodyMaxSizeBytes = 1024 * 1024 // 1MB
 )
 
 func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Request) {
