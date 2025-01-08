@@ -215,6 +215,24 @@ export default class MattermostContainer {
             await this.installPlugin(plugin.path, plugin.id, plugin.config)
         }
 
+        // Add explicit wait for plugin activation
+        const adminClient = await this.getAdminClient()
+        let retries = 0;
+        while (retries < 10) {
+            try {
+                const plugins = await adminClient.getPlugins();
+                const aiPlugin = plugins.active.find(p => p.id === "mattermost-ai");
+                if (aiPlugin) break;
+            } catch (error) {
+                console.error('Error checking plugin status:', error);
+            }
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            retries++;
+            if (retries >= 10) {
+                throw new Error('Timeout waiting for plugin activation');
+            }
+        }
+
         return this
     }
 }
