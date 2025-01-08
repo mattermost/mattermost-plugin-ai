@@ -418,5 +418,6 @@ e2e/node_modules: e2e/package.json
 
 ## Run e2e tests
 .PHONY: e2e
-e2e: e2e/node_modules dist
+e2e: e2e/node_modules
+	@MM_DEBUG= $(MAKE) dist
 	cd e2e && npx playwright test
