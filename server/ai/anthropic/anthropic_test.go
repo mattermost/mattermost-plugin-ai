@@ -342,7 +342,7 @@ func TestConversationToMessages(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotSystem, gotMessages := conversationToMessages(tt.conversation)
+			gotSystem, gotMessages := conversationToMessages(tt.conversation.Posts)
 			assert.Equal(t, tt.wantSystem, gotSystem)
 			assert.Equal(t, tt.wantMessages, gotMessages)
 		})
