@@ -56,7 +56,7 @@ func (p *Plugin) MigrateServicesToBots() error {
 	existingConfig := p.getConfiguration().Clone()
 
 	if len(existingConfig.Bots) != 0 {
-		_ = p.pluginAPI.KV.Set("migrate_services_to_bots_done", true)
+		_, _ = p.pluginAPI.KV.Set("migrate_services_to_bots_done", true)
 		return nil
 	}
 
