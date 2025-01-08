@@ -178,61 +178,72 @@ export default class MattermostContainer {
     start = async (): Promise<MattermostContainer> => {
         try {
             this.network = await new Network().start()
-        this.pgContainer = await new PostgreSqlContainer("docker.io/postgres:15.2-alpine")
-            .withExposedPorts(5432)
-            .withDatabase("mattermost_test")
-            .withUsername("user")
-            .withPassword("pass")
-            .withNetworkMode(this.network.getName())
-            .withWaitStrategy(Wait.forLogMessage("database system is ready to accept connections"))
-            .withNetworkAliases("db")
-            .start()
+            this.pgContainer = await new PostgreSqlContainer("docker.io/postgres:15.2-alpine")
+                .withExposedPorts(5432)
+                .withDatabase("mattermost_test")
+                .withUsername("user")
+                .withPassword("pass")
+                .withNetworkMode(this.network.getName())
+                .withWaitStrategy(Wait.forLogMessage("database system is ready to accept connections"))
+                .withNetworkAliases("db")
+                .start()
 
-        this.container = await new GenericContainer(defaultMattermostImage)
-            .withEnvironment(this.envs)
-            .withExposedPorts(8065)
-            .withNetwork(this.network)
-            .withNetworkAliases("mattermost")
-            .withCommand(this.command)
-            .withWaitStrategy(Wait.forLogMessage("Server is listening on"))
-            .withCopyFilesToContainer(this.configFile)
-			.withLogConsumer((stream) => {
-				stream.on('data', (data: string) => {
-					if (data.includes('"plugin_id":"mattermost-ai"')) {
-						console.log(data)
-					}
-				})
-			})
-            .start()
+            this.container = await new GenericContainer(defaultMattermostImage)
+                .withEnvironment(this.envs)
+                .withExposedPorts(8065)
+                .withNetwork(this.network)
+                .withNetworkAliases("mattermost")
+                .withCommand(this.command)
+                .withWaitStrategy(Wait.forLogMessage("Server is listening on"))
+                .withCopyFilesToContainer(this.configFile)
+                .withLogConsumer((stream) => {
+                    stream.on('data', (data: string) => {
+                        if (data.includes('"plugin_id":"mattermost-ai"')) {
+                            console.log(data)
+                        }
+                    })
+                })
+                .start()
 
+            await this.setSiteURL()
+            await this.createAdmin(this.email, this.username, this.password)
+            await this.createTeam(this.teamName, this.teamDisplayName)
+            await this.addUserToTeam(this.username, this.teamName)
 
-        await this.setSiteURL()
-        await this.createAdmin(this.email, this.username, this.password)
-        await this.createTeam(this.teamName, this.teamDisplayName)
-        await this.addUserToTeam(this.username, this.teamName)
+            for (const plugin of this.plugins) {
+                await this.installPlugin(plugin.path, plugin.id, plugin.config)
+            }
 
-        for (const plugin of this.plugins) {
-            await this.installPlugin(plugin.path, plugin.id, plugin.config)
-        }
+            // Add explicit wait for plugin activation
+            const adminClient = await this.getAdminClient()
+            let retries = 0;
+            while (retries < 10) {
+                try {
+                    const plugins = await adminClient.getPlugins();
+                    const aiPlugin = plugins.active.find(p => p.id === "mattermost-ai");
+                    if (aiPlugin) break;
+                } catch (error) {
+                    console.error('Error checking plugin status:', error);
+                }
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                retries++;
+                if (retries >= 10) {
+                    throw new Error('Timeout waiting for plugin activation');
+                }
+            }
 
-        // Add explicit wait for plugin activation
-        const adminClient = await this.getAdminClient()
-        let retries = 0;
-        while (retries < 10) {
+            return this
+        } catch (error) {
+            console.error('Failed to start containers:', error);
+            // Attempt cleanup if startup fails
             try {
-                const plugins = await adminClient.getPlugins();
-                const aiPlugin = plugins.active.find(p => p.id === "mattermost-ai");
-                if (aiPlugin) break;
-            } catch (error) {
-                console.error('Error checking plugin status:', error);
+                if (this.container) await this.container.stop();
+                if (this.pgContainer) await this.pgContainer.stop();
+                if (this.network) await this.network.stop();
+            } catch (cleanupError) {
+                console.error('Error during cleanup:', cleanupError);
             }
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            retries++;
-            if (retries >= 10) {
-                throw new Error('Timeout waiting for plugin activation');
-            }
+            throw error;
         }
-
-        return this
     }
 }
