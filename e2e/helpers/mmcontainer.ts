@@ -8,7 +8,7 @@ const defaultUsername        = "admin";
 const defaultPassword        = "admin";
 const defaultTeamName        = "test";
 const defaultTeamDisplayName = "Test";
-const defaultMattermostImage = "mattermost/mattermost-enterprise-edition";
+const defaultMattermostImage = "mattermost/mattermost-enterprise-edition:latest";
 
 // MattermostContainer represents the mattermost container type used in the module
 export default class MattermostContainer {
@@ -187,11 +187,11 @@ export default class MattermostContainer {
                     fs.mkdirSync(logDir);
                 }
                 this.logStream = fs.createWriteStream(`${logDir}/server-logs.log`, {flags: 'a'});
-                
+
                 stream.on('data', (data: string) => {
                     // Write all logs to file
                     this.logStream.write(data + '\n');
-                    
+
                     // Still maintain special console logging for AI plugin
                     if (data.includes('"plugin_id":"mattermost-ai"')) {
                         console.log(data);
