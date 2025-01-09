@@ -24,6 +24,7 @@ export default class MattermostContainer {
     command:    string[];
     configFile: any[];
     plugins: any[];
+    private logStream: any;
 
     url(): string {
         const containerPort = this.container.getMappedPort(8065)
@@ -53,6 +54,9 @@ export default class MattermostContainer {
     }
 
     stop = async () => {
+        if (this.logStream) {
+            this.logStream.end();
+        }
         await this.pgContainer.stop()
         await this.container.stop()
         await this.network.stop()
@@ -176,12 +180,25 @@ export default class MattermostContainer {
             .withWaitStrategy(Wait.forLogMessage("Server is listening on"))
             .withCopyFilesToContainer(this.configFile)
 			.withLogConsumer((stream) => {
-				stream.on('data', (data: string) => {
-					if (data.includes('"plugin_id":"mattermost-ai"')) {
-						console.log(data)
-					}
-				})
-			})
+                // Create log file with timestamp
+                const fs = require('fs');
+                const logDir = 'logs';
+                if (!fs.existsSync(logDir)){
+                    fs.mkdirSync(logDir);
+                }
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                this.logStream = fs.createWriteStream(`${logDir}/mattermost-${timestamp}.log`, {flags: 'a'});
+                
+                stream.on('data', (data: string) => {
+                    // Write all logs to file
+                    this.logStream.write(data + '\n');
+                    
+                    // Still maintain special console logging for AI plugin
+                    if (data.includes('"plugin_id":"mattermost-ai"')) {
+                        console.log(data);
+                    }
+                });
+            })
             .start()
 
 
