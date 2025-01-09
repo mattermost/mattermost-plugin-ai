@@ -1,4 +1,6 @@
 import {StartedTestContainer, GenericContainer, StartedNetwork, Network, Wait} from "testcontainers";
+import path from 'path';
+import fs from 'fs';
 import {StartedPostgreSqlContainer, PostgreSqlContainer} from "@testcontainers/postgresql";
 import {Client4} from "@mattermost/client";
 import { Client } from 'pg'
@@ -77,6 +79,20 @@ export default class MattermostContainer {
     getLogs = async (lines: number): Promise<string> => {
         const {output} = await this.container.exec(["mmctl", "--local", "logs", "--number", lines.toString()])
         return output
+    }
+
+    async captureContainerLogs() {
+        const debugDir = path.join(process.cwd(), 'debug-logs');
+        if (!fs.existsSync(debugDir)) {
+            fs.mkdirSync(debugDir);
+        }
+
+        const logs = await this.container.logs();
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        fs.writeFileSync(
+            path.join(debugDir, `container-logs-${timestamp}.txt`),
+            logs.toString()
+        );
     }
 
     setSiteURL = async () => {

@@ -34,6 +34,18 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
 
+  use: {
+    // Add video recording for CI
+    video: process.env.CI ? 'retain-on-failure' : 'off',
+    
+    // Add more detailed tracing
+    trace: process.env.CI ? 'retain-on-failure' : 'off',
+    
+    // Increase timeouts for CI
+    navigationTimeout: 30000,
+    actionTimeout: 30000,
+  },
+
   /* Configure projects for major browsers */
   projects: [
     {
@@ -45,26 +57,13 @@ export default defineConfig({
       name: 'firefox',
       use: { ...devices['Desktop Firefox'] },
     },
+  ],
 
-    /* Test against mobile viewports. */
-    // {
-    //   name: 'Mobile Chrome',
-    //   use: { ...devices['Pixel 5'] },
-    // },
-    // {
-    //   name: 'Mobile Safari',
-    //   use: { ...devices['iPhone 12'] },
-    // },
-
-    /* Test against branded browsers. */
-    // {
-    //   name: 'Microsoft Edge',
-    //   use: { ...devices['Desktop Edge'], channel: 'msedge' },
-    // },
-    // {
-    //   name: 'Google Chrome',
-    //   use: { ...devices['Desktop Chrome'], channel: 'chrome' },
-    // },
+  // Add reporter for better CI output
+  reporter: [
+    ['html'],
+    ['list'],
+    ['junit', { outputFile: 'test-results/junit.xml' }]
   ],
 
   /* Run your local dev server before starting the tests */
