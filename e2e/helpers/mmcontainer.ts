@@ -186,8 +186,7 @@ export default class MattermostContainer {
                 if (!fs.existsSync(logDir)){
                     fs.mkdirSync(logDir);
                 }
-                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-                this.logStream = fs.createWriteStream(`${logDir}/mattermost-${timestamp}.log`, {flags: 'a'});
+                this.logStream = fs.createWriteStream(`${logDir}/server-logs.log`, {flags: 'a'});
                 
                 stream.on('data', (data: string) => {
                     // Write all logs to file
