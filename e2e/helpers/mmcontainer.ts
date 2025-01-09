@@ -1,6 +1,4 @@
 import {StartedTestContainer, GenericContainer, StartedNetwork, Network, Wait} from "testcontainers";
-import path from 'path';
-import fs from 'fs';
 import {StartedPostgreSqlContainer, PostgreSqlContainer} from "@testcontainers/postgresql";
 import {Client4} from "@mattermost/client";
 import { Client } from 'pg'
@@ -81,20 +79,6 @@ export default class MattermostContainer {
         return output
     }
 
-    async captureContainerLogs() {
-        const debugDir = path.join(process.cwd(), 'debug-logs');
-        if (!fs.existsSync(debugDir)) {
-            fs.mkdirSync(debugDir);
-        }
-
-        const logs = await this.container.logs();
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        fs.writeFileSync(
-            path.join(debugDir, `container-logs-${timestamp}.txt`),
-            logs.toString()
-        );
-    }
-
     setSiteURL = async () => {
         const url = this.url()
         await this.container.exec(["mmctl", "--local", "config", "set", "ServiceSettings.SiteURL", url])
@@ -113,19 +97,9 @@ export default class MattermostContainer {
         await this.container.exec(["mmctl", "--local", "plugin", "enable", pluginID])
     }
 
-    withEnv = async (env: string, value: string): Promise<MattermostContainer> => {
-        this.envs[env] = value;
-        try {
-            // Verify health before returning
-            const isHealthy = await this.checkHealth();
-            if (!isHealthy) {
-                throw new Error('Container health check failed after startup');
-            }
-            return this;
-        } catch (error) {
-            console.error('Failed to start container:', error);
-            throw error;
-        }
+    withEnv = (env: string, value: string): MattermostContainer => {
+        this.envs[env] = value
+        return this
     }
 
     withAdmin = (email: string, username: string, password: string): MattermostContainer => {
@@ -157,16 +131,6 @@ export default class MattermostContainer {
         return this
     }
 
-    async checkHealth(): Promise<boolean> {
-        try {
-            const client = await this.getAdminClient();
-            await client.getMe();
-            return true;
-        } catch (error) {
-            return false;
-        }
-    }
-
     constructor() {
         this.command = ["mattermost", "server"];
         const dbconn = `postgres://user:pass@db:5432/mattermost_test?sslmode=disable`;
@@ -192,74 +156,44 @@ export default class MattermostContainer {
     }
 
     start = async (): Promise<MattermostContainer> => {
-        try {
-            this.network = await new Network().start()
-            this.pgContainer = await new PostgreSqlContainer("docker.io/postgres:15.2-alpine")
-                .withExposedPorts(5432)
-                .withDatabase("mattermost_test")
-                .withUsername("user")
-                .withPassword("pass")
-                .withNetworkMode(this.network.getName())
-                .withWaitStrategy(Wait.forLogMessage("database system is ready to accept connections"))
-                .withNetworkAliases("db")
-                .start()
+        this.network = await new Network().start()
+        this.pgContainer = await new PostgreSqlContainer("docker.io/postgres:15.2-alpine")
+            .withExposedPorts(5432)
+            .withDatabase("mattermost_test")
+            .withUsername("user")
+            .withPassword("pass")
+            .withNetworkMode(this.network.getName())
+            .withWaitStrategy(Wait.forLogMessage("database system is ready to accept connections"))
+            .withNetworkAliases("db")
+            .start()
 
-            this.container = await new GenericContainer(defaultMattermostImage)
-                .withEnvironment(this.envs)
-                .withExposedPorts(8065)
-                .withNetwork(this.network)
-                .withNetworkAliases("mattermost")
-                .withCommand(this.command)
-                .withWaitStrategy(Wait.forLogMessage("Server is listening on"))
-                .withCopyFilesToContainer(this.configFile)
-                .withLogConsumer((stream) => {
-                    stream.on('data', (data: string) => {
-                        if (data.includes('"plugin_id":"mattermost-ai"')) {
-                            console.log(data)
-                        }
-                    })
-                })
-                .start()
+        this.container = await new GenericContainer(defaultMattermostImage)
+            .withEnvironment(this.envs)
+            .withExposedPorts(8065)
+            .withNetwork(this.network)
+            .withNetworkAliases("mattermost")
+            .withCommand(this.command)
+            .withWaitStrategy(Wait.forLogMessage("Server is listening on"))
+            .withCopyFilesToContainer(this.configFile)
+			.withLogConsumer((stream) => {
+				stream.on('data', (data: string) => {
+					if (data.includes('"plugin_id":"mattermost-ai"')) {
+						console.log(data)
+					}
+				})
+			})
+            .start()
 
-            await this.setSiteURL()
-            await this.createAdmin(this.email, this.username, this.password)
-            await this.createTeam(this.teamName, this.teamDisplayName)
-            await this.addUserToTeam(this.username, this.teamName)
 
-            for (const plugin of this.plugins) {
-                await this.installPlugin(plugin.path, plugin.id, plugin.config)
-            }
+        await this.setSiteURL()
+        await this.createAdmin(this.email, this.username, this.password)
+        await this.createTeam(this.teamName, this.teamDisplayName)
+        await this.addUserToTeam(this.username, this.teamName)
 
-            // Add explicit wait for plugin activation
-            const adminClient = await this.getAdminClient()
-            let retries = 0;
-            while (retries < 10) {
-                try {
-                    const plugins = await adminClient.getPlugins();
-                    const aiPlugin = plugins.active.find(p => p.id === "mattermost-ai");
-                    if (aiPlugin) break;
-                } catch (error) {
-                    console.error('Error checking plugin status:', error);
-                }
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                retries++;
-                if (retries >= 10) {
-                    throw new Error('Timeout waiting for plugin activation');
-                }
-            }
-
-            return this
-        } catch (error) {
-            console.error('Failed to start containers:', error);
-            // Attempt cleanup if startup fails
-            try {
-                if (this.container) await this.container.stop();
-                if (this.pgContainer) await this.pgContainer.stop();
-                if (this.network) await this.network.stop();
-            } catch (cleanupError) {
-                console.error('Error during cleanup:', cleanupError);
-            }
-            throw error;
+        for (const plugin of this.plugins) {
+            await this.installPlugin(plugin.path, plugin.id, plugin.config)
         }
+
+        return this
     }
 }
