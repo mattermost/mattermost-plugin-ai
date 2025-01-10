@@ -56,7 +56,7 @@ export default class Plugin {
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-function
     public async initialize(registry: any, store: WebappStore) {
-        setupRedux(registry, store, this.postEventListener);
+        setupRedux(registry, store);
 
         registry.registerTranslations((locale: string) => {
             try {
