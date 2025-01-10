@@ -19,7 +19,6 @@ export const BotsHandler = manifest.id + '_bots';
 export async function setupRedux(registry: any, store: WebappStore, postEventListener: PostEventListener) {
     const reducer = combineReducers({
         callsPostButtonClickedTranscription,
-        aiStatusUpdateClicked,
         bots,
         botSelector,
         botsLoaderHook,
@@ -32,10 +31,7 @@ export async function setupRedux(registry: any, store: WebappStore, postEventLis
         type: CallsClickHandler as any,
         handler: makeCallsPostButtonClickedHandler(store.dispatch),
     });
-    store.dispatch({
-        type: PlaybooksRunStatusUpdateClickHandler as any,
-        handler: makePlaybookRunStatusUpdateHandler(store.dispatch, postEventListener),
-    });
+
     store.dispatch({
         type: AIBotSelectorComponent as any,
         component: DropdownBotSelector,
@@ -69,15 +65,6 @@ export async function setupRedux(registry: any, store: WebappStore, postEventLis
 function callsPostButtonClickedTranscription(state = false, action: any) {
     switch (action.type) {
     case CallsClickHandler:
-        return action.handler || false;
-    default:
-        return state;
-    }
-}
-
-function aiStatusUpdateClicked(state = false, action: any) {
-    switch (action.type) {
-    case PlaybooksRunStatusUpdateClickHandler:
         return action.handler || false;
     default:
         return state;
