@@ -120,7 +120,7 @@ func (p *Plugin) handleThreadAnalysis(c *gin.Context) {
 		AnalysisType string `json:"analysis_type" binding:"required"`
 	}
 	if bindErr := c.ShouldBindJSON(&data); bindErr != nil {
-		c.AbortWithError(http.StatusBadRequest, err)
+		c.AbortWithError(http.StatusBadRequest, bindErr)
 		return
 	}
 

@@ -392,10 +392,12 @@ ifneq ($(HAS_WEBAPP),)
 endif
 	rm -fr build/bin/
 
+## Fetches the logs for the plugin.
 .PHONY: logs
 logs:
 	./build/bin/pluginctl logs $(PLUGIN_ID)
 
+## Fetches the logs for the plugin and watches for new logs.
 .PHONY: logs-watch
 logs-watch:
 	./build/bin/pluginctl logs-watch $(PLUGIN_ID)
