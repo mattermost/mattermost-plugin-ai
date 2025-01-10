@@ -6,7 +6,7 @@ import {makePlaybookRunStatusUpdateHandler} from './playbooks_button';
 import PostEventListener from './websocket';
 import manifest from './manifest';
 import {useBotlist} from './bots';
-import {DropdownBotSelector} from './components/bot_slector'
+import {DropdownBotSelector} from './components/bot_slector';
 
 type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
 
