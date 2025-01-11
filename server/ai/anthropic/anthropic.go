@@ -160,20 +160,6 @@ func (a *Anthropic) createConfig(opts []ai.LanguageModelOption) ai.LLMConfig {
 	return cfg
 }
 
-func (a *Anthropic) createCompletionRequest(conversation ai.BotConversation, opts []ai.LanguageModelOption) anthropicSDK.MessageNewParams {
-	system, messages := conversationToMessages(conversation.Posts)
-	cfg := a.createConfig(opts)
-	return anthropicSDK.MessageNewParams{
-		Model:    anthropicSDK.F(cfg.Model),
-		Messages: anthropicSDK.F(messages),
-		System: anthropicSDK.F([]anthropicSDK.TextBlockParam{{
-			Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
-			Text: anthropicSDK.F(system),
-		}}),
-		MaxTokens: anthropicSDK.F(int64(cfg.MaxGeneratedTokens)),
-	}
-}
-
 func (a *Anthropic) streamChatWithTools(state messageState) error {
 	if state.depth >= MaxToolResolutionDepth {
 		return fmt.Errorf("max tool resolution depth (%d) exceeded", MaxToolResolutionDepth)
@@ -195,10 +181,12 @@ func (a *Anthropic) streamChatWithTools(state messageState) error {
 
 	for stream.Next() {
 		event := stream.Current()
-		message.Accumulate(event)
+		if err := message.Accumulate(event); err != nil {
+			return fmt.Errorf("error accumulating message: %w", err)
+		}
 
 		// Stream text content immediately
-		switch delta := event.Delta.(type) {
+		switch delta := event.Delta.(type) { // nolint: gocritic
 		case anthropicSDK.ContentBlockDeltaEventDelta:
 			if delta.Text != "" {
 				state.output <- delta.Text
@@ -207,7 +195,7 @@ func (a *Anthropic) streamChatWithTools(state messageState) error {
 	}
 
 	if err := stream.Err(); err != nil {
-		return fmt.Errorf("Error from anthropic stream: %w", err)
+		return fmt.Errorf("error from anthropic stream: %w", err)
 	}
 
 	// Check for tool usage after message is complete
