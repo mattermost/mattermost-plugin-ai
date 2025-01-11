@@ -9,5 +9,9 @@ server/manifest.go
 # Jetbrains
 .idea/
 
-# VS Code
-.vscode
+# VSCode
+.vscode/
+
+# Aider
+.aider*
+.env
