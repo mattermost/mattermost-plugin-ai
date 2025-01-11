@@ -57,6 +57,10 @@ func pluginctl() error {
 		return enablePlugin(ctx, client, os.Args[2])
 	case "reset":
 		return resetPlugin(ctx, client, os.Args[2])
+	case "logs":
+		return logs(ctx, client, os.Args[2])
+	case "logs-watch":
+		return watchLogs(context.WithoutCancel(ctx), client, os.Args[2]) // Keep watching forever
 	default:
 		return errors.New("invalid second argument")
 	}
