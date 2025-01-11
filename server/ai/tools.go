@@ -3,6 +3,7 @@ package ai
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 )
 
 type Tool struct {
@@ -67,16 +68,26 @@ func (s *ToolStore) GetTools() []Tool {
 
 func (s *ToolStore) TraceUnknown(name string, argsGetter ToolArgumentGetter) {
 	if s.log != nil && s.doTrace {
+		args := ""
 		var raw json.RawMessage
-		argsGetter(raw)
-		s.log.Info("unknown tool called", "name", name, "args", string(raw))
+		if err := argsGetter(raw); err != nil {
+			args = fmt.Sprintf("failed to get tool args: %v", err)
+		} else {
+			args = string(raw)
+		}
+		s.log.Info("unknown tool called", "name", name, "args", args)
 	}
 }
 
 func (s *ToolStore) TraceResolved(name string, argsGetter ToolArgumentGetter, result string) {
 	if s.log != nil && s.doTrace {
+		args := ""
 		var raw json.RawMessage
-		argsGetter(raw)
-		s.log.Info("tool resolved", "name", name, "args", string(raw), "result", result)
+		if err := argsGetter(raw); err != nil {
+			args = fmt.Sprintf("failed to get tool args: %v", err)
+		} else {
+			args = string(raw)
+		}
+		s.log.Info("tool resolved", "name", name, "args", args, "result", result)
 	}
 }

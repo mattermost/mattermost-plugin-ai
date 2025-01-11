@@ -16,8 +16,6 @@ const (
 	ContextChannelKey     = "channel"
 	ContextBotKey         = "bot"
 	ContextPlaybookRunKey = "playbookrun"
-
-	requestBodyMaxSizeBytes = 1024 * 1024 // 1MB
 )
 
 func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Request) {
@@ -28,7 +26,6 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 
 	router.GET("/ai_threads", p.handleGetAIThreads)
 	router.GET("/ai_bots", p.handleGetAIBots)
-	router.POST("/telemetry/track", p.handleTrackEvent)
 
 	botRequiredRouter := router.Group("")
 	botRequiredRouter.Use(p.aiBotRequired)
