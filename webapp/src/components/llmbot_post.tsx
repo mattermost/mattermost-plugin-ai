@@ -93,8 +93,8 @@ export interface PostUpdateWebsocketMessage {
 
 interface Props {
     post: any;
-    websocketRegister: (postID: string, handler: (msg: WebSocketMessage<PostUpdateWebsocketMessage>) => void) => void;
-    websocketUnregister: (postID: string) => void;
+    websocketRegister: (postID: string, listenerID: string, handler: (msg: WebSocketMessage<PostUpdateWebsocketMessage>) => void) => void;
+    websocketUnregister: (postID: string, listenerID: string) => void;
 }
 
 export const LLMBotPost = (props: Props) => {
@@ -114,7 +114,8 @@ export const LLMBotPost = (props: Props) => {
     const rootPost = useSelector<GlobalState, any>((state) => state.entities.posts.posts[props.post.root_id]);
 
     useEffect(() => {
-        props.websocketRegister(props.post.id, (msg: WebSocketMessage<PostUpdateWebsocketMessage>) => {
+        const listenerID = Math.random().toString(36).substring(7);
+        props.websocketRegister(props.post.id, listenerID, (msg: WebSocketMessage<PostUpdateWebsocketMessage>) => {
             const data = msg.data;
             if (!data.control && !stoppedRef.current) {
                 setGenerating(true);
@@ -128,7 +129,7 @@ export const LLMBotPost = (props: Props) => {
             }
         });
         return () => {
-            props.websocketUnregister(props.post.id);
+            props.websocketUnregister(props.post.id, listenerID);
         };
     }, []);
 
