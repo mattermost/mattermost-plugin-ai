@@ -8,7 +8,6 @@ linters-settings:
   goimports:
     local-prefixes: github.com/mattermost/mattermost-starter-template
   govet:
-    check-shadowing: true
     enable-all: true
     disable:
       - fieldalignment
@@ -19,11 +18,13 @@ linters:
   disable-all: true
   enable:
     - bodyclose
+    - errcheck
     - gocritic
     - gofmt
     - goimports
     - gosec
     - gosimple
+    - govet
     - ineffassign
     - misspell
     - nakedret
@@ -44,3 +45,9 @@ issues:
       linters:
         - bodyclose
         - scopelint # https://github.com/kyoh86/scopelint/issues/4
+    - linters:
+        - revive
+      text: unused-parameter
+    - linters:
+      - errcheck
+      text: c.Abort

@@ -40,7 +40,8 @@ func (p *Plugin) postAuthorizationRequired(c *gin.Context) {
 		return
 	}
 
-	if err := p.checkUsageRestrictions(userID, channel); err != nil {
+	bot := c.MustGet(ContextBotKey).(*Bot)
+	if err := p.checkUsageRestrictions(userID, bot, channel); err != nil {
 		c.AbortWithError(http.StatusForbidden, err)
 		return
 	}
@@ -76,7 +77,7 @@ func (p *Plugin) handleReact(c *gin.Context) {
 	emojiName = strings.Trim(strings.TrimSpace(emojiName), ":")
 
 	if _, found := model.GetSystemEmojiId(emojiName); !found {
-		p.pluginAPI.Post.AddReaction(&model.Reaction{
+		_ = p.pluginAPI.Post.AddReaction(&model.Reaction{
 			EmojiName: "large_red_square",
 			UserId:    bot.mmBot.UserId,
 			PostId:    post.Id,
@@ -118,8 +119,8 @@ func (p *Plugin) handleThreadAnalysis(c *gin.Context) {
 	var data struct {
 		AnalysisType string `json:"analysis_type" binding:"required"`
 	}
-	if err := c.ShouldBindJSON(&data); err != nil {
-		c.AbortWithError(http.StatusBadRequest, err)
+	if bindErr := c.ShouldBindJSON(&data); bindErr != nil {
+		c.AbortWithError(http.StatusBadRequest, bindErr)
 		return
 	}
 
@@ -132,13 +133,6 @@ func (p *Plugin) handleThreadAnalysis(c *gin.Context) {
 		c.AbortWithError(http.StatusBadRequest, fmt.Errorf("invalid analysis type: %s", data.AnalysisType))
 		return
 	}
-
-	p.track(evThreadButton, map[string]any{
-		"channel_id":     channel.Id,
-		"post_id":        post.Id,
-		"user_actual_id": user.Id,
-		"preset_prompt":  data.AnalysisType,
-	})
 
 	createdPost, err := p.startNewAnalysisThread(bot, post.Id, data.AnalysisType, p.MakeConversationContext(bot, user, channel, nil))
 	if err != nil {
@@ -222,12 +216,6 @@ func (p *Plugin) handleSummarizeTranscription(c *gin.Context) {
 		c.AbortWithError(http.StatusBadRequest, errors.New("not a calls or zoom bot post"))
 		return
 	}
-
-	p.track(evSummarizeTranscription, map[string]any{
-		"channel_id":     channel.Id,
-		"post_id":        post.Id,
-		"user_actual_id": user.Id,
-	})
 
 	createdPost, err := p.newCallTranscriptionSummaryThread(bot, user, post, channel)
 	if err != nil {

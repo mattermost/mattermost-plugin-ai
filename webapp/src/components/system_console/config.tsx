@@ -18,11 +18,6 @@ type Config = {
     transcriptBackend: string,
     enableLLMTrace: boolean,
     enableCallSummary: boolean,
-
-    enableUserRestrictions: boolean
-    allowPrivateChannels: boolean
-    allowedTeamIds: string
-    onlyUsersOnTeam: string
     allowedUpstreamHostnames: string
 }
 
@@ -38,8 +33,8 @@ type Props = {
     setByEnv: boolean
     onChange: (id: string, value: any) => void
     setSaveNeeded: () => void
-    registerSaveAction: (action: () => Promise<{error?: {message?: string}}>) => void
-    unRegisterSaveAction: (action: () => Promise<{error?: {message?: string}}>) => void
+    registerSaveAction: (action: () => Promise<{ error?: { message?: string } }>) => void
+    unRegisterSaveAction: (action: () => Promise<{ error?: { message?: string } }>) => void
 }
 
 const MessageContainer = styled.div`
@@ -64,10 +59,6 @@ const defaultConfig = {
     llmBackend: '',
     transcriptBackend: '',
     enableLLMTrace: false,
-    enableUserRestrictions: false,
-    allowPrivateChannels: false,
-    allowedTeamIds: '',
-    onlyUsersOnTeam: '',
 };
 
 const BetaMessage = () => (
@@ -75,15 +66,17 @@ const BetaMessage = () => (
         <span>
             <FormattedMessage
                 defaultMessage='To report a bug or to provide feedback, <link>create a new issue in the plugin repository</link>.'
-                values={{link: (chunks: any) => (
-                    <a
-                        target={'_blank'}
-                        rel={'noopener noreferrer'}
-                        href='http://github.com/mattermost/mattermost-plugin-ai/issues'
-                    >
-                        {chunks}
-                    </a>
-                )}}
+                values={{
+                    link: (chunks: any) => (
+                        <a
+                            target={'_blank'}
+                            rel={'noopener noreferrer'}
+                            href='http://github.com/mattermost/mattermost-plugin-ai/issues'
+                        >
+                            {chunks}
+                        </a>
+                    ),
+                }}
             />
         </span>
     </MessageContainer>
@@ -91,7 +84,7 @@ const BetaMessage = () => (
 
 const Config = (props: Props) => {
     const value = props.value || defaultConfig;
-    const [avatarUpdates, setAvatarUpdates] = useState<{[key: string]: File}>({});
+    const [avatarUpdates, setAvatarUpdates] = useState<{ [key: string]: File }>({});
     const intl = useIntl();
 
     useEffect(() => {
@@ -106,7 +99,7 @@ const Config = (props: Props) => {
     }, [avatarUpdates]);
 
     const botChangedAvatar = (bot: LLMBotConfig, image: File) => {
-        setAvatarUpdates((prev: {[key: string]: File}) => ({...prev, [bot.name]: image}));
+        setAvatarUpdates((prev: { [key: string]: File }) => ({...prev, [bot.name]: image}));
         props.setSaveNeeded();
     };
 
@@ -183,40 +176,6 @@ const Config = (props: Props) => {
                     />
                 </ItemList>
             </Panel>
-
-            <Panel
-                title={intl.formatMessage({defaultMessage: 'User restrictions (experimental)'})}
-                subtitle={intl.formatMessage({defaultMessage: 'Restrict where Copilot can be used.'})}
-            >
-                <ItemList>
-                    <BooleanItem
-                        label={intl.formatMessage({defaultMessage: 'Enable User Restrictions'})}
-                        value={value.enableUserRestrictions}
-                        onChange={(to) => props.onChange(props.id, {...value, enableUserRestrictions: to})}
-                        helpText={intl.formatMessage({defaultMessage: 'Global flag for all below settings.'})}
-                    />
-                    {value.enableUserRestrictions && (
-                        <>
-                            <BooleanItem
-                                label={intl.formatMessage({defaultMessage: 'Allow Private Channels'})}
-                                value={value.allowPrivateChannels}
-                                onChange={(to) => props.onChange(props.id, {...value, allowPrivateChannels: to})}
-                            />
-                            <TextItem
-                                label={intl.formatMessage({defaultMessage: 'Allow Team IDs (csv)'})}
-                                value={value.allowedTeamIds}
-                                onChange={(e) => props.onChange(props.id, {...value, allowedTeamIds: e.target.value})}
-                            />
-                            <TextItem
-                                label={intl.formatMessage({defaultMessage: 'Only Users on Team'})}
-                                value={value.onlyUsersOnTeam}
-                                onChange={(e) => props.onChange(props.id, {...value, onlyUsersOnTeam: e.target.value})}
-                            />
-                        </>
-                    )}
-                </ItemList>
-            </Panel>
-
             <Panel
                 title={intl.formatMessage({defaultMessage: 'Debug'})}
                 subtitle=''

@@ -8,17 +8,12 @@ import (
 )
 
 type Config struct {
-	Services            []ai.ServiceConfig `json:"services"`
-	Bots                []ai.BotConfig     `json:"bots"`
-	DefaultBotName      string             `json:"defaultBotName"`
-	TranscriptGenerator string             `json:"transcriptBackend"`
-	EnableLLMTrace      bool               `json:"enableLLMTrace"`
-
-	EnableUseRestrictions    bool   `json:"enableUserRestrictions"`
-	AllowPrivateChannels     bool   `json:"allowPrivateChannels"`
-	AllowedTeamIDs           string `json:"allowedTeamIDs"`
-	OnlyUsersOnTeam          string `json:"onlyUsersOnTeam"`
-	AllowedUpstreamHostnames string `json:"allowedUpstreamHostnames"`
+	Services                 []ai.ServiceConfig `json:"services"`
+	Bots                     []ai.BotConfig     `json:"bots"`
+	DefaultBotName           string             `json:"defaultBotName"`
+	TranscriptGenerator      string             `json:"transcriptBackend"`
+	EnableLLMTrace           bool               `json:"enableLLMTrace"`
+	AllowedUpstreamHostnames string             `json:"allowedUpstreamHostnames"`
 }
 
 // configuration captures the plugin's external configuration as exposed in the Mattermost server
@@ -86,15 +81,6 @@ func (p *Plugin) setConfiguration(configuration *configuration) {
 
 // OnConfigurationChange is invoked when configuration changes may have been made.
 func (p *Plugin) OnConfigurationChange() error {
-	serverConfig := p.API.GetConfig()
-	if serverConfig != nil {
-		if err := p.initTelemetry(serverConfig.LogSettings.EnableDiagnostics); err != nil {
-			p.API.LogError(err.Error())
-		}
-	} else {
-		p.API.LogError("OnConfigurationChange: failed to get server config")
-	}
-
 	var configuration = new(configuration)
 
 	// Load the public configuration fields from the Mattermost server configuration.

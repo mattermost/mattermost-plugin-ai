@@ -1,7 +1,7 @@
 import React from 'react';
 import {FormattedMessage} from 'react-intl';
-import styled from 'styled-components';
-import {LightbulbOutlineIcon} from '@mattermost/compass-icons/components';
+import styled, {css} from 'styled-components';
+import {LightbulbOutlineIcon, ExclamationThickIcon} from '@mattermost/compass-icons/components';
 
 const DropdownMenuItemInfo = styled.div`
 	display: flex;
@@ -17,7 +17,7 @@ const DropdownMenuItemInfo = styled.div`
 	padding: 8px 16px;
 `;
 
-const LightbulbOutlineIconStyled = styled(LightbulbOutlineIcon)`
+const iconStyling = css`
 	min-width: 22px;
 	min-height: 22px;
 
@@ -26,6 +26,14 @@ const LightbulbOutlineIconStyled = styled(LightbulbOutlineIcon)`
 	color: rgba(var(--center-channel-color-rgb), 0.56);
 	background: rgba(var(--center-channel-color-rgb), 0.08);
 	border-radius: 16px;
+`;
+
+const LightbulbOutlineIconStyled = styled(LightbulbOutlineIcon)`
+	${iconStyling}
+`;
+
+const ExclamationThickIconStyled = styled(ExclamationThickIcon)`
+	${iconStyling}
 `;
 
 export const Divider = styled.div`
@@ -39,6 +47,15 @@ export const DropdownInfoOnlyVisibleToYou = () => {
         <DropdownMenuItemInfo>
             <LightbulbOutlineIconStyled/>
             <FormattedMessage defaultMessage='Copilot posts responses in the right panel which will only be visible to you.'/>
+        </DropdownMenuItemInfo>
+    );
+};
+
+export const DropdownChannelBlocked = () => {
+    return (
+        <DropdownMenuItemInfo>
+            <ExclamationThickIconStyled/>
+            <FormattedMessage defaultMessage="Sorry, this channel has been blocked from Copilot's AI features"/>
         </DropdownMenuItemInfo>
     );
 };

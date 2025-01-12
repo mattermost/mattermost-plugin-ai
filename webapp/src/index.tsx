@@ -3,7 +3,7 @@ import {Store, Action} from 'redux';
 import styled from 'styled-components';
 import {FormattedMessage} from 'react-intl';
 
-import {GlobalState} from '@mattermost/types/lib/store';
+import {GlobalState} from '@mattermost/types/store';
 
 //@ts-ignore it exists
 import aiIcon from '../../assets/bot_icon.png';
@@ -16,9 +16,8 @@ import IconThreadSummarization from './components/assets/icon_thread_summarizati
 import IconReactForMe from './components/assets/icon_react_for_me';
 import RHS from './components/rhs/rhs';
 import Config from './components/system_console/config';
-import {doReaction, doThreadAnalysis, getAIDirectChannel, trackEvent} from './client';
+import {doReaction, doThreadAnalysis, getAIDirectChannel} from './client';
 import {setOpenRHSAction} from './redux_actions';
-import {BotUsername, TelemetryEvents, TelemetrySources} from './constants';
 import PostEventListener from './websocket';
 import {BotsHandler, setupRedux} from './redux';
 import UnreadsSummarize from './components/unreads_summarize';
@@ -121,7 +120,7 @@ export default class Plugin {
             registry.registerPostDropdownMenuAction(<><span className='icon'><IconThreadSummarization/></span><FormattedMessage defaultMessage='Summarize Thread'/></>, (postId: string) => {
                 const state = store.getState();
                 const team = state.entities.teams.teams[state.entities.teams.currentTeamId];
-                window.WebappUtils.browserHistory.push('/' + team.name + '/messages/@' + BotUsername);
+                window.WebappUtils.browserHistory.push('/' + team.name + '/messages/@ai');
                 doThreadAnalysis(postId, 'summarize_thread', '');
                 if (rhs) {
                     store.dispatch(rhs.showRHSPlugin);
@@ -133,9 +132,6 @@ export default class Plugin {
         registry.registerAdminConsoleCustomSetting('Config', Config);
         if (rhs) {
             registry.registerChannelHeaderButtonAction(<IconAIContainer src={aiIcon}/>, () => {
-                trackEvent(TelemetryEvents.CopilotAppsBarClicked, TelemetrySources.Widget, {
-                    user_id: store.getState().entities.users.currentUserId,
-                });
                 store.dispatch(rhs.toggleRHSPlugin);
             },
             'Copilot',
