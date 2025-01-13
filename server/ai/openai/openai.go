@@ -29,6 +29,7 @@ type OpenAI struct {
 	streamingTimeout time.Duration
 	metricsService   metrics.LLMetrics
 	sendUserID       bool
+	maxTokens        int
 }
 
 const StreamingTimeoutDefault = 10 * time.Second
@@ -96,6 +97,7 @@ func newOpenAI(
 		streamingTimeout: streamingTimeout,
 		metricsService:   metricsService,
 		sendUserID:       llmService.SendUserID,
+		maxTokens:        llmService.MaxTokens,
 	}
 }
 
@@ -376,7 +378,7 @@ func (s *OpenAI) streamResult(request openaiClient.ChatCompletionRequest, conver
 func (s *OpenAI) GetDefaultConfig() ai.LLMConfig {
 	return ai.LLMConfig{
 		Model:              s.defaultModel,
-		MaxGeneratedTokens: 0,
+		MaxGeneratedTokens: s.maxTokens,
 	}
 }
 
@@ -390,14 +392,17 @@ func (s *OpenAI) createConfig(opts []ai.LanguageModelOption) ai.LLMConfig {
 }
 
 func (s *OpenAI) completionRequestFromConfig(cfg ai.LLMConfig) openaiClient.ChatCompletionRequest {
-	return openaiClient.ChatCompletionRequest{
-		Model:            cfg.Model,
-		MaxTokens:        cfg.MaxGeneratedTokens,
-		Temperature:      1.0,
-		TopP:             1.0,
-		FrequencyPenalty: 0,
-		PresencePenalty:  0,
+	request := openaiClient.ChatCompletionRequest{
+		Model: cfg.Model,
 	}
+
+	if _, ok := openaiClient.O1SeriesModels[cfg.Model]; ok {
+		request.MaxCompletionTokens = cfg.MaxGeneratedTokens
+	} else {
+		request.MaxTokens = cfg.MaxGeneratedTokens
+	}
+
+	return request
 }
 
 func (s *OpenAI) ChatCompletion(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (*ai.TextStreamResult, error) {

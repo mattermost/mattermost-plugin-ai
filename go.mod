@@ -16,7 +16,7 @@ require (
 	github.com/prometheus/client_golang v1.20.3
 	github.com/r3labs/sse/v2 v2.10.0
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
-	github.com/sashabaranov/go-openai v1.29.2
+	github.com/sashabaranov/go-openai v1.36.1
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.9.0
 	golang.org/x/text v0.18.0

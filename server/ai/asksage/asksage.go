@@ -11,8 +11,9 @@ import (
 type AskSage struct {
 	client       *Client
 	defaultModel string
-	maxTokens    int
+	tokenLimit   int
 	metric       metrics.LLMetrics
+	maxTokens    int
 }
 
 func New(llmService ai.ServiceConfig, httpClient *http.Client, metric metrics.LLMetrics) *AskSage {
@@ -24,8 +25,9 @@ func New(llmService ai.ServiceConfig, httpClient *http.Client, metric metrics.LL
 	return &AskSage{
 		client:       client,
 		defaultModel: llmService.DefaultModel,
-		maxTokens:    llmService.TokenLimit,
+		tokenLimit:   llmService.TokenLimit,
 		metric:       metric,
+		maxTokens:    llmService.MaxTokens,
 	}
 }
 
@@ -51,7 +53,7 @@ func conversationToMessagesList(conversation ai.BotConversation) []Message {
 func (s *AskSage) GetDefaultConfig() ai.LLMConfig {
 	return ai.LLMConfig{
 		Model:              s.defaultModel,
-		MaxGeneratedTokens: 0,
+		MaxGeneratedTokens: s.maxTokens,
 	}
 }
 
@@ -104,5 +106,5 @@ func (s *AskSage) CountTokens(text string) int {
 
 // TODO: Figure out what the actual token limit is. For now just be conservative.
 func (s *AskSage) TokenLimit() int {
-	return s.maxTokens
+	return s.tokenLimit
 }

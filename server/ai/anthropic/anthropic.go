@@ -15,6 +15,7 @@ type Anthropic struct {
 	defaultModel   string
 	tokenLimit     int
 	metricsService metrics.LLMetrics
+	maxTokens      int
 }
 
 func New(llmService ai.ServiceConfig, httpClient *http.Client, metricsService metrics.LLMetrics) *Anthropic {
@@ -25,6 +26,7 @@ func New(llmService ai.ServiceConfig, httpClient *http.Client, metricsService me
 		defaultModel:   llmService.DefaultModel,
 		tokenLimit:     llmService.TokenLimit,
 		metricsService: metricsService,
+		maxTokens:      llmService.MaxTokens,
 	}
 }
 
@@ -72,10 +74,15 @@ func conversationToMessages(conversation ai.BotConversation) (string, []InputMes
 }
 
 func (a *Anthropic) GetDefaultConfig() ai.LLMConfig {
-	return ai.LLMConfig{
-		Model:              a.defaultModel,
-		MaxGeneratedTokens: DefaultMaxTokens,
+	config := ai.LLMConfig{
+		Model: a.defaultModel,
 	}
+	if a.maxTokens == 0 {
+		config.MaxGeneratedTokens = DefaultMaxTokens
+	} else {
+		config.MaxGeneratedTokens = a.maxTokens
+	}
+	return config
 }
 
 func (a *Anthropic) createConfig(opts []ai.LanguageModelOption) ai.LLMConfig {

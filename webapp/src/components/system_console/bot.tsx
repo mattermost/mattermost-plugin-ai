@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useCallback, useState} from 'react';
 import styled from 'styled-components';
 import {FormattedMessage, useIntl} from 'react-intl';
 
@@ -24,6 +24,7 @@ export type LLMService = {
     tokenLimit: number
     streamingTimeoutSeconds: number
     sendUserId: boolean
+    maxTokens: number
 }
 
 export enum ChannelAccessLevel {
@@ -84,6 +85,7 @@ const Bot = (props: Props) => {
 		((props.bot.service.type === 'openaicompatible' || props.bot.service.type === 'azure') && props.bot.service.apiURL === '');
 
     const invalidUsername = props.bot.name !== '' && (!(/^[a-z0-9.\-_]+$/).test(props.bot.name) || !(/[a-z]/).test(props.bot.name.charAt(0)));
+    const invalidMaxTokens = props.bot.service.type === 'anthropic' && props.bot.service?.maxTokens === 0;
     return (
         <BotContainer>
             <HeaderContainer onClick={() => setOpen((o) => !o)}>
@@ -110,6 +112,13 @@ const Bot = (props: Props) => {
                         <FormattedMessage defaultMessage='Invalid Username'/>
                     </DangerPill>
                 )}
+                {invalidMaxTokens && (
+                    <DangerPill>
+                        <AlertOutlineIcon/>
+                        <FormattedMessage defaultMessage='Max tokens must be greater than 0'/>
+                    </DangerPill>
+                )}
+
                 <ButtonIcon
                     onClick={props.onDelete}
                 >
@@ -221,6 +230,16 @@ const ServiceItem = (props: ServiceItemProps) => {
     const intl = useIntl();
     const hasAPIKey = type !== 'asksage';
     const isOpenAIType = type === 'openai' || type === 'openaicompatible' || type === 'azure';
+
+    const getDefaultMaxTokens = useCallback(() => {
+        switch (type) {
+        case 'anthropic':
+            return '4096';
+        default:
+            return '0';
+        }
+    }, [type]);
+
     return (
         <>
             {(type === 'openaicompatible' || type === 'azure') && (
@@ -276,6 +295,11 @@ const ServiceItem = (props: ServiceItemProps) => {
                 label={intl.formatMessage({defaultMessage: 'Token limit'})}
                 value={props.service.tokenLimit.toString()}
                 onChange={(e) => props.onChange({...props.service, tokenLimit: parseInt(e.target.value, 10)})}
+            />
+            <TextItem
+                label={intl.formatMessage({defaultMessage: 'Max tokens'})}
+                value={props.service.maxTokens?.toString() || getDefaultMaxTokens()}
+                onChange={(e) => props.onChange({...props.service, maxTokens: parseInt(e.target.value, 10)})}
             />
             {isOpenAIType && (
                 <TextItem

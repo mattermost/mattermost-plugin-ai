@@ -12,6 +12,7 @@ type ServiceConfig struct {
 	TokenLimit              int    `json:"tokenLimit"`
 	StreamingTimeoutSeconds int    `json:"streamingTimeoutSeconds"`
 	SendUserID              bool   `json:"sendUserID"`
+	MaxTokens               int    `json:"maxTokens"`
 }
 
 type ChannelAccessLevel int
