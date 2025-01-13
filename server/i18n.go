@@ -15,7 +15,7 @@ type TranslationFunc func(translationId string, defaultMessage string, params ..
 
 func i18nInit() *i18n.Bundle {
 	bundle := i18n.NewBundle(language.English)
-	bundle.LoadMessageFileFS(i18nFiles, "i18n/es.json")
+	_, _ = bundle.LoadMessageFileFS(i18nFiles, "i18n/es.json")
 
 	return bundle
 }
