@@ -68,7 +68,7 @@ func (p *Plugin) newConversation(bot *Bot, context ai.ConversationContext) error
 
 	go func() {
 		request := "Write a short title for the following request. Include only the title and nothing else, no quotations. Request:\n" + context.Post.Message
-		if err := p.generateTitle(bot, request, context.Post.Id); err != nil {
+		if err := p.generateTitle(bot, request, context); err != nil {
 			p.API.LogError("Failed to generate title", "error", err.Error())
 			return
 		}
@@ -77,9 +77,10 @@ func (p *Plugin) newConversation(bot *Bot, context ai.ConversationContext) error
 	return nil
 }
 
-func (p *Plugin) generateTitle(bot *Bot, request string, threadRootID string) error {
+func (p *Plugin) generateTitle(bot *Bot, request string, context ai.ConversationContext) error {
 	titleRequest := ai.BotConversation{
-		Posts: []ai.Post{{Role: ai.PostRoleUser, Message: request}},
+		Posts:   []ai.Post{{Role: ai.PostRoleUser, Message: request}},
+		Context: context,
 	}
 	conversationTitle, err := p.getLLM(bot.cfg).ChatCompletionNoStream(titleRequest, ai.WithMaxGeneratedTokens(25))
 	if err != nil {
@@ -88,7 +89,7 @@ func (p *Plugin) generateTitle(bot *Bot, request string, threadRootID string) er
 
 	conversationTitle = strings.Trim(conversationTitle, "\n \"'")
 
-	if err := p.saveTitle(threadRootID, conversationTitle); err != nil {
+	if err := p.saveTitle(context.Post.Id, conversationTitle); err != nil {
 		return fmt.Errorf("failed to save title: %w", err)
 	}
 
@@ -110,7 +111,7 @@ func (p *Plugin) continueConversation(bot *Bot, threadData *ThreadData, context 
 		}
 
 		if !p.pluginAPI.User.HasPermissionToChannel(context.Post.UserId, threadChannel.Id, model.PermissionReadChannel) ||
-			p.checkUsageRestrictions(context.Post.UserId, threadChannel) != nil {
+			p.checkUsageRestrictions(context.Post.UserId, bot, threadChannel) != nil {
 			T := i18nLocalizerFunc(p.i18n, context.RequestingUser.Locale)
 			responsePost := &model.Post{
 				ChannelId: context.Channel.Id,

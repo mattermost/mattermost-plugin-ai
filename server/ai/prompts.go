@@ -19,8 +19,6 @@ const UserSubTemplateName = ".user"
 
 //go:generate go run generate_prompt_vars.go
 
-// Convenience vars for the filenames in ai/prompts/
-
 func NewPrompts(input fs.FS) (*Prompts, error) {
 	templates, err := template.ParseFS(input, "ai/prompts/*")
 	if err != nil {

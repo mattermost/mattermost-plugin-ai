@@ -30,7 +30,8 @@ func (p *Plugin) channelAuthorizationRequired(c *gin.Context) {
 		return
 	}
 
-	if err := p.checkUsageRestrictions(userID, channel); err != nil {
+	bot := c.MustGet(ContextBotKey).(*Bot)
+	if err := p.checkUsageRestrictions(userID, bot, channel); err != nil {
 		c.AbortWithError(http.StatusForbidden, err)
 		return
 	}
@@ -102,13 +103,6 @@ func (p *Plugin) handleSince(c *gin.Context) {
 		c.AbortWithError(http.StatusBadRequest, errors.New("invalid preset prompt"))
 		return
 	}
-
-	p.track(evUnreadMessages, map[string]any{
-		"channel_id":     channel.Id,
-		"user_actual_id": user.Id,
-		"since":          data.Since,
-		"type":           promptPreset,
-	})
 
 	prompt, err := p.prompts.ChatCompletion(promptPreset, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
 	if err != nil {

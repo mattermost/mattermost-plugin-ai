@@ -19,7 +19,6 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/server/ai/openai"
 	"github.com/mattermost/mattermost-plugin-ai/server/enterprise"
 	"github.com/mattermost/mattermost-plugin-ai/server/metrics"
-	"github.com/mattermost/mattermost-plugin-ai/server/telemetry"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
@@ -52,9 +51,6 @@ type Plugin struct {
 	configuration *configuration
 
 	pluginAPI *pluginapi.Client
-
-	telemetry    *telemetry.Client
-	telemetryMut sync.RWMutex
 
 	ffmpegPath string
 
@@ -138,13 +134,6 @@ func (p *Plugin) OnActivate() error {
 	return nil
 }
 
-func (p *Plugin) OnDeactivate() error {
-	if err := p.uninitTelemetry(); err != nil {
-		p.API.LogError(err.Error())
-	}
-	return nil
-}
-
 func (p *Plugin) getLLM(llmBotConfig ai.BotConfig) ai.LanguageModel {
 	llmMetrics := p.metricsService.GetMetricsForAIService(llmBotConfig.Name)
 
@@ -213,9 +202,9 @@ const (
 	FromWebhookProp = "from_webhook"
 	FromBotProp     = "from_bot"
 	FromPluginProp  = "from_plugin"
+	WranglerProp    = "wrangler"
 )
 
-// handleMessages Handled messages posted. Returns true if a response was posted.
 func (p *Plugin) handleMessages(post *model.Post) error {
 	// Don't respond to ourselves
 	if p.IsAnyBot(post.UserId) {
@@ -225,6 +214,11 @@ func (p *Plugin) handleMessages(post *model.Post) error {
 	// Never respond to remote posts
 	if post.RemoteId != nil && *post.RemoteId != "" {
 		return fmt.Errorf("not responding to remote posts: %w", ErrNoResponse)
+	}
+
+	// Wranger posts should be ignored
+	if post.GetProp(WranglerProp) != nil {
+		return fmt.Errorf("not responding to wrangler posts: %w", ErrNoResponse)
 	}
 
 	// Don't respond to plugins unless they ask for it
@@ -266,15 +260,9 @@ func (p *Plugin) handleMessages(post *model.Post) error {
 }
 
 func (p *Plugin) handleMentions(bot *Bot, post *model.Post, postingUser *model.User, channel *model.Channel) error {
-	if err := p.checkUsageRestrictions(postingUser.Id, channel); err != nil {
+	if err := p.checkUsageRestrictions(postingUser.Id, bot, channel); err != nil {
 		return err
 	}
-
-	p.track(evAIBotMention, map[string]any{
-		"actual_user_id":   postingUser.Id,
-		"bot_id":           bot.mmBot.UserId,
-		"bot_service_type": bot.cfg.Service.Type,
-	})
 
 	if err := p.processUserRequestToBot(bot, p.MakeConversationContext(bot, postingUser, channel, post)); err != nil {
 		return fmt.Errorf("unable to process bot mention: %w", err)
@@ -284,22 +272,8 @@ func (p *Plugin) handleMentions(bot *Bot, post *model.Post, postingUser *model.U
 }
 
 func (p *Plugin) handleDMs(bot *Bot, channel *model.Channel, postingUser *model.User, post *model.Post) error {
-	if err := p.checkUsageRestrictionsForUser(postingUser.Id); err != nil {
+	if err := p.checkUsageRestrictionsForUser(bot, postingUser.Id); err != nil {
 		return err
-	}
-
-	if post.RootId == "" {
-		p.track(evUserStartedConversation, map[string]any{
-			"user_actual_id":   postingUser.Id,
-			"bot_id":           bot.mmBot.UserId,
-			"bot_service_type": bot.cfg.Service.Type,
-		})
-	} else {
-		p.track(evContinueConversation, map[string]any{
-			"user_actual_id":   postingUser.Id,
-			"bot_id":           bot.mmBot.UserId,
-			"bot_service_type": bot.cfg.Service.Type,
-		})
 	}
 
 	if err := p.processUserRequestToBot(bot, p.MakeConversationContext(bot, postingUser, channel, post)); err != nil {

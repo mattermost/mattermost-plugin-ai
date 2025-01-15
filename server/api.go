@@ -7,17 +7,15 @@ import (
 	"errors"
 
 	"github.com/gin-gonic/gin"
+	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
-	"github.com/mattermost/mattermost/server/public/pluginapi"
 )
 
 const (
 	ContextPostKey    = "post"
 	ContextChannelKey = "channel"
 	ContextBotKey     = "bot"
-
-	requestBodyMaxSizeBytes = 1024 * 1024 // 1MB
 )
 
 func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Request) {
@@ -28,7 +26,6 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 
 	router.GET("/ai_threads", p.handleGetAIThreads)
 	router.GET("/ai_bots", p.handleGetAIBots)
-	router.POST("/telemetry/track", p.handleTrackEvent)
 
 	botRequiredRouter := router.Group("")
 	botRequiredRouter.Use(p.aiBotRequired)
@@ -111,40 +108,49 @@ func (p *Plugin) handleGetAIThreads(c *gin.Context) {
 }
 
 type AIBotInfo struct {
-	ID             string `json:"id"`
-	DisplayName    string `json:"displayName"`
-	Username       string `json:"username"`
-	LastIconUpdate int64  `json:"lastIconUpdate"`
-	DMChannelID    string `json:"dmChannelID"`
+	ID                 string                `json:"id"`
+	DisplayName        string                `json:"displayName"`
+	Username           string                `json:"username"`
+	LastIconUpdate     int64                 `json:"lastIconUpdate"`
+	DMChannelID        string                `json:"dmChannelID"`
+	ChannelAccessLevel ai.ChannelAccessLevel `json:"channelAccessLevel"`
+	ChannelIDs         []string              `json:"channelIDs"`
+	UserAccessLevel    ai.UserAccessLevel    `json:"userAccessLevel"`
+	UserIDs            []string              `json:"userIDs"`
 }
 
 func (p *Plugin) handleGetAIBots(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 
-	ownedBots, err := p.pluginAPI.Bot.List(0, 1000, pluginapi.BotOwner("mattermost-ai"))
-	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to get bots: %w", err))
-		return
-	}
+	p.botsLock.RLock()
+	defer p.botsLock.RUnlock()
 
 	// Get the info from all the bots.
 	// Put the default bot first.
-	bots := make([]AIBotInfo, len(ownedBots))
+	bots := make([]AIBotInfo, 0, len(p.bots))
 	defaultBotName := p.getConfiguration().DefaultBotName
-	for i, bot := range ownedBots {
-		direct, err := p.pluginAPI.Channel.GetDirect(userID, bot.UserId)
+	for i, bot := range p.bots {
+		// Don't return bots the user is excluded from using.
+		if p.checkUsageRestrictionsForUser(bot, userID) != nil {
+			continue
+		}
+		direct, err := p.pluginAPI.Channel.GetDirect(userID, bot.mmBot.UserId)
 		if err != nil {
 			p.API.LogError("unable to get direct channel for bot", "error", err)
 			continue
 		}
-		bots[i] = AIBotInfo{
-			ID:             bot.UserId,
-			DisplayName:    bot.DisplayName,
-			Username:       bot.Username,
-			LastIconUpdate: bot.LastIconUpdate,
-			DMChannelID:    direct.Id,
-		}
-		if bot.Username == defaultBotName {
+		bots = append(bots, AIBotInfo{
+			ID:                 bot.mmBot.UserId,
+			DisplayName:        bot.mmBot.DisplayName,
+			Username:           bot.mmBot.Username,
+			LastIconUpdate:     bot.mmBot.LastIconUpdate,
+			DMChannelID:        direct.Id,
+			ChannelAccessLevel: bot.cfg.ChannelAccessLevel,
+			ChannelIDs:         bot.cfg.ChannelIDs,
+			UserAccessLevel:    bot.cfg.UserAccessLevel,
+			UserIDs:            bot.cfg.UserIDs,
+		})
+		if bot.mmBot.Username == defaultBotName {
 			bots[0], bots[i] = bots[i], bots[0]
 		}
 	}

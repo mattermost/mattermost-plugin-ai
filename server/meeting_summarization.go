@@ -194,7 +194,7 @@ func (p *Plugin) newCallTranscriptionSummaryThread(bot *Bot, requestingUser *mod
 		}
 
 		return nil
-	}()
+	}() //nolint:errcheck
 
 	return surePost, nil
 }
@@ -252,7 +252,7 @@ func (p *Plugin) summarizeCallRecording(bot *Bot, rootID string, requestingUser 
 		p.streamResultToPost(ctx, summaryStream, transcriptPost, requestingUser.Locale)
 
 		return nil
-	}()
+	}() //nolint:errcheck
 
 	return nil
 }

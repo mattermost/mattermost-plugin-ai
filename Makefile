@@ -9,13 +9,6 @@ MM_UTILITIES_DIR ?= ../mattermost-utilities
 DLV_DEBUG_PORT := 2346
 DEFAULT_GOOS := $(shell go env GOOS)
 DEFAULT_GOARCH := $(shell go env GOARCH)
-INCLUDE_FFMPEG ?=
-BUILD_HASH = $(shell git rev-parse HEAD)
-LDFLAGS += -X "main.buildHash=$(BUILD_HASH)"
-LDFLAGS += -X "main.isDebug=$(MM_DEBUG)"
-LDFLAGS += -X "main.rudderWriteKey=$(MM_RUDDER_PLUGIN_AI_PROD)"
-LDFLAGS += -X "main.rudderDataplaneURL=$(MM_RUDDER_DATAPLANE_URL)"
-GO_BUILD_FLAGS += -ldflags '$(LDFLAGS)'
 
 export GO111MODULE=on
 
@@ -45,6 +38,7 @@ ifneq ($(MM_DEBUG),)
 else
 	GO_BUILD_GCFLAGS =
 endif
+
 
 # ====================================================================================
 # Used for semver bumping
@@ -153,10 +147,14 @@ major-rc: ## to bump major release candidate version (semver)
 	git push origin v$(MAJOR).$(MINOR).$(PATCH)-rc$(RC)
 	@echo Bumped $(APP_NAME) to Major RC version $(MAJOR).$(MINOR).$(PATCH)-rc$(RC)
 
-
 ## Checks the code style, tests, builds and bundles the plugin.
 .PHONY: all
 all: check-style test dist
+
+## Ensures the plugin manifest is valid
+.PHONY: manifest-check
+manifest-check:
+	./build/bin/manifest check
 
 ## Propagates plugin manifest information into the server/ and webapp/ folders.
 .PHONY: apply
@@ -166,12 +164,12 @@ apply:
 ## Install go tools
 install-go-tools:
 	@echo Installing go tools
-	$(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.51.1
+	$(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.61.0
 	$(GO) install gotest.tools/gotestsum@v1.7.0
 
 ## Runs eslint and golangci-lint
 .PHONY: check-style
-check-style: apply webapp/node_modules install-go-tools
+check-style: manifest-check apply webapp/node_modules install-go-tools
 	@echo Checking for style guide compliance
 
 ifneq ($(HAS_WEBAPP),)
@@ -248,9 +246,6 @@ endif
 ifneq ($(HAS_WEBAPP),)
 	mkdir -p dist/$(PLUGIN_ID)/webapp
 	cp -r webapp/dist dist/$(PLUGIN_ID)/webapp/
-endif
-ifneq ($(INCLUDE_FFMPEG),)
-	cp $(INCLUDE_FFMPEG) dist/$(PLUGIN_ID)/server/dist
 endif
 	cd dist && tar -cvzf $(BUNDLE_NAME) $(PLUGIN_ID)
 
@@ -348,10 +343,9 @@ ifneq ($(HAS_SERVER),)
 	$(GO) tool cover -html=server/coverage.txt
 endif
 
-.PHONY: i18n-extract
+## Extract strings for translation from the source code.
 i18n-extract: i18n-extract-webapp i18n-extract-server
 
-## Extract strings for translation from the source code.
 .PHONY: i18n-extract-webapp
 i18n-extract-webapp:
 	cd webapp && $(NPM) run i18n-extract -- --out-file src/i18n/en.json --id-interpolation-pattern '[sha512:contenthash:base64:8]' --format simple src/index.tsx src/components/**/*.{ts,tsx}
@@ -360,17 +354,6 @@ i18n-extract-webapp:
 i18n-extract-server:
 	$(GO) install -modfile=go.tools.mod github.com/mattermost/mattermost-utilities/mmgotool
 	cd server && $(GOBIN)/mmgotool i18n extract --portal-dir="" --skip-dynamic
-
-
-## Install NPM dependencies for e2e tests
-e2e/node_modules: e2e/package.json
-	cd e2e && $(NPM) install
-	touch $@
-
-## Run E2E tests
-.PHONY: e2e
-e2e: e2e/node_modules dist
-	cd e2e && npx playwright test
 
 ## Disable the plugin.
 .PHONY: disable
@@ -412,6 +395,34 @@ ifneq ($(HAS_WEBAPP),)
 endif
 	rm -fr build/bin/
 
+## Fetches the logs for the plugin.
+.PHONY: logs
+logs:
+	./build/bin/pluginctl logs $(PLUGIN_ID)
+
+## Fetches the logs for the plugin and watches for new logs.
+.PHONY: logs-watch
+logs-watch:
+	./build/bin/pluginctl logs-watch $(PLUGIN_ID)
+
 # Help documentation à la https://marmelab.com/blog/2016/02/29/auto-documented-makefile.html
 help:
 	@cat Makefile build/*.mk | grep -v '\.PHONY' |  grep -v '\help:' | grep -B1 -E '^[a-zA-Z0-9_.-]+:.*' | sed -e "s/:.*//" | sed -e "s/^## //" |  grep -v '\-\-' | sed '1!G;h;$$!d' | awk 'NR%2{printf "\033[36m%-30s\033[0m",$$0;next;}1' | sort
+
+mock:
+ifneq ($(HAS_SERVER),)
+	go install github.com/golang/mock/mockgen@v1.6.0
+	mockgen -destination=server/command/mocks/mock_commands.go -package=mocks github.com/mattermost/mattermost-plugin-starter-template/server/command Command
+endif
+
+
+## Install NPM dependencies for 2e2 tests
+e2e/node_modules: e2e/package.json
+	cd e2e && $(NPM) install
+	touch $@
+
+## Run e2e tests
+.PHONY: e2e
+e2e: e2e/node_modules
+	@MM_DEBUG= $(MAKE) dist
+	cd e2e && npx playwright test

@@ -8,7 +8,7 @@ import {ServiceData} from './service';
 import Panel, {PanelFooterText} from './panel';
 import Bots, {firstNewBot} from './bots';
 import {LLMBotConfig} from './bot';
-import {ItemList, SelectionItem, SelectionItemOption} from './item';
+import {BooleanItem, ItemList, SelectionItem, SelectionItemOption, TextItem} from './item';
 import NoBotsPage from './no_bots_page';
 
 type Config = {
@@ -18,11 +18,7 @@ type Config = {
     transcriptBackend: string,
     enableLLMTrace: boolean,
     enableCallSummary: boolean,
-
-    enableUserRestrictions: boolean
-    allowPrivateChannels: boolean
-    allowedTeamIds: string
-    onlyUsersOnTeam: string
+    allowedUpstreamHostnames: string
 }
 
 type Props = {
@@ -37,8 +33,8 @@ type Props = {
     setByEnv: boolean
     onChange: (id: string, value: any) => void
     setSaveNeeded: () => void
-    registerSaveAction: (action: () => Promise<{error?: {message?: string}}>) => void
-    unRegisterSaveAction: (action: () => Promise<{error?: {message?: string}}>) => void
+    registerSaveAction: (action: () => Promise<{ error?: { message?: string } }>) => void
+    unRegisterSaveAction: (action: () => Promise<{ error?: { message?: string } }>) => void
 }
 
 const MessageContainer = styled.div`
@@ -63,10 +59,6 @@ const defaultConfig = {
     llmBackend: '',
     transcriptBackend: '',
     enableLLMTrace: false,
-    enableUserRestrictions: false,
-    allowPrivateChannels: false,
-    allowedTeamIds: '',
-    onlyUsersOnTeam: '',
 };
 
 const BetaMessage = () => (
@@ -74,15 +66,17 @@ const BetaMessage = () => (
         <span>
             <FormattedMessage
                 defaultMessage='To report a bug or to provide feedback, <link>create a new issue in the plugin repository</link>.'
-                values={{link: (chunks: any) => (
-                    <a
-                        target={'_blank'}
-                        rel={'noopener noreferrer'}
-                        href='http://github.com/mattermost/mattermost-plugin-ai/issues'
-                    >
-                        {chunks}
-                    </a>
-                )}}
+                values={{
+                    link: (chunks: any) => (
+                        <a
+                            target={'_blank'}
+                            rel={'noopener noreferrer'}
+                            href='http://github.com/mattermost/mattermost-plugin-ai/issues'
+                        >
+                            {chunks}
+                        </a>
+                    ),
+                }}
             />
         </span>
     </MessageContainer>
@@ -90,7 +84,7 @@ const BetaMessage = () => (
 
 const Config = (props: Props) => {
     const value = props.value || defaultConfig;
-    const [avatarUpdates, setAvatarUpdates] = useState<{[key: string]: File}>({});
+    const [avatarUpdates, setAvatarUpdates] = useState<{ [key: string]: File }>({});
     const intl = useIntl();
 
     useEffect(() => {
@@ -105,7 +99,7 @@ const Config = (props: Props) => {
     }, [avatarUpdates]);
 
     const botChangedAvatar = (bot: LLMBotConfig, image: File) => {
-        setAvatarUpdates((prev: {[key: string]: File}) => ({...prev, [bot.name]: image}));
+        setAvatarUpdates((prev: { [key: string]: File }) => ({...prev, [bot.name]: image}));
         props.setSaveNeeded();
     };
 
@@ -174,151 +168,26 @@ const Config = (props: Props) => {
                             </SelectionItemOption>
                         ))}
                     </SelectionItem>
+                    <TextItem
+                        label={intl.formatMessage({defaultMessage: 'Allowed Upstream Hostnames (csv)'})}
+                        value={value.allowedUpstreamHostnames}
+                        onChange={(e) => props.onChange(props.id, {...value, allowedUpstreamHostnames: e.target.value})}
+                        helptext={intl.formatMessage({defaultMessage: 'Comma separated list of hostnames that LLMs are allowed to contact when using tools. Supports wildcards like *.mydomain.com. For instance to allow JIRA tool use to the Mattermost JIRA instance use mattermost.atlassian.net'})}
+                    />
                 </ItemList>
             </Panel>
-
-            <Panel
-                title={intl.formatMessage({defaultMessage: 'User restrictions (experimental)'})}
-                subtitle={intl.formatMessage({defaultMessage: 'Restrict where Copilot can be used.'})}
-            >
-                <div className='form-group'>
-                    <label
-                        className='control-label col-sm-4'
-                    >
-                        <FormattedMessage defaultMessage='Enable User Restrictions:'/>
-                    </label>
-                    <div className='col-sm-8'>
-                        <label className='radio-inline'>
-                            <input
-                                type='radio'
-                                value='true'
-                                checked={value.enableUserRestrictions}
-                                onChange={() => props.onChange(props.id, {...value, enableUserRestrictions: true})}
-                            />
-                            <span><FormattedMessage defaultMessage='true'/></span>
-                        </label>
-                        <label className='radio-inline'>
-                            <input
-                                type='radio'
-                                value='false'
-                                checked={!value.enableUserRestrictions}
-                                onChange={() => props.onChange(props.id, {...value, enableUserRestrictions: false})}
-                            />
-                            <span><FormattedMessage defaultMessage='false'/></span>
-                        </label>
-                        <div className='help-text'>
-                            <span>
-                                <FormattedMessage defaultMessage='Global flag for all below settings.'/>
-                            </span>
-                        </div>
-                    </div>
-                </div>
-                {value.enableUserRestrictions && (
-                    <>
-                        <div className='form-group'>
-                            <label
-                                className='control-label col-sm-4'
-                            >
-                                <FormattedMessage defaultMessage='Allow Private Channels:'/>
-                            </label>
-                            <div className='col-sm-8'>
-                                <label className='radio-inline'>
-                                    <input
-                                        type='radio'
-                                        value='true'
-                                        checked={value.allowPrivateChannels}
-                                        onChange={() => props.onChange(props.id, {...value, allowPrivateChannels: true})}
-                                    />
-                                    <span><FormattedMessage defaultMessage='true'/></span>
-                                </label>
-                                <label className='radio-inline'>
-                                    <input
-                                        type='radio'
-                                        value='false'
-                                        checked={!value.allowPrivateChannels}
-                                        onChange={() => props.onChange(props.id, {...value, allowPrivateChannels: false})}
-                                    />
-                                    <span>
-                                        <FormattedMessage defaultMessage='false'/>
-                                    </span>
-                                </label>
-                            </div>
-                        </div>
-                        <div className='form-group'>
-                            <label
-                                className='control-label col-sm-4'
-                                htmlFor='ai-allow-team-ids'
-                            >
-                                <FormattedMessage defaultMessage='Allow Team IDs (csv):'/>
-                            </label>
-                            <div className='col-sm-8'>
-                                <input
-                                    id='ai-allow-team-ids'
-                                    className='form-control'
-                                    type='text'
-                                    value={value.allowedTeamIds}
-                                    onChange={(e) => props.onChange(props.id, {...value, allowedTeamIds: e.target.value})}
-                                />
-                            </div>
-                        </div>
-                        <div className='form-group'>
-                            <label
-                                className='control-label col-sm-4'
-                                htmlFor='ai-only-users-on-team'
-                            >
-                                <FormattedMessage defaultMessage='Only Users on Team:'/>
-                            </label>
-                            <div className='col-sm-8'>
-                                <input
-                                    id='ai-only-users-on-team'
-                                    className='form-control'
-                                    type='text'
-                                    value={value.onlyUsersOnTeam}
-                                    onChange={(e) => props.onChange(props.id, {...value, onlyUsersOnTeam: e.target.value})}
-                                />
-                            </div>
-                        </div>
-                    </>
-                )}
-            </Panel>
-
             <Panel
                 title={intl.formatMessage({defaultMessage: 'Debug'})}
                 subtitle=''
             >
-                <div className='form-group'>
-                    <label
-                        className='control-label col-sm-4'
-                        htmlFor='ai-service-name'
-                    >
-                        <FormattedMessage defaultMessage='Enable LLM Trace:'/>
-                    </label>
-                    <div className='col-sm-8'>
-                        <label className='radio-inline'>
-                            <input
-                                type='radio'
-                                value='true'
-                                checked={value.enableLLMTrace}
-                                onChange={() => props.onChange(props.id, {...value, enableLLMTrace: true})}
-                            />
-                            <span><FormattedMessage defaultMessage='true'/></span>
-                        </label>
-                        <label className='radio-inline'>
-                            <input
-                                type='radio'
-                                value='false'
-                                checked={!value.enableLLMTrace}
-                                onChange={() => props.onChange(props.id, {...value, enableLLMTrace: false})}
-                            />
-                            <span><FormattedMessage defaultMessage='false'/></span>
-                        </label>
-                        <div className='help-text'>
-                            <span>
-                                <FormattedMessage defaultMessage='Enable tracing of LLM requests. Outputs full conversation data to the logs.'/>
-                            </span>
-                        </div>
-                    </div>
-                </div>
+                <ItemList>
+                    <BooleanItem
+                        label={intl.formatMessage({defaultMessage: 'Enable LLM Trace'})}
+                        value={value.enableLLMTrace}
+                        onChange={(to) => props.onChange(props.id, {...value, enableLLMTrace: to})}
+                        helpText={intl.formatMessage({defaultMessage: 'Enable tracing of LLM requests. Outputs full conversation data to the logs.'})}
+                    />
+                </ItemList>
             </Panel>
         </ConfigContainer>
     );
