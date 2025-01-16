@@ -1,7 +1,5 @@
 package ai
 
-import "C"
-
 type ServiceConfig struct {
 	Name                    string `json:"name"`
 	Type                    string `json:"type"`
