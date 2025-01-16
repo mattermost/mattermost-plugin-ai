@@ -31,11 +31,11 @@ type OpenAI struct {
 	sendUserID       bool
 }
 
-const (
-	StreamingTimeoutDefault = 10 * time.Second
-	MaxFunctionCalls        = 10
-	OpenAIMaxImageSize      = 20 * 1024 * 1024 // 20 MB
-)
+const StreamingTimeoutDefault = 10 * time.Second
+
+const MaxFunctionCalls = 10
+
+const OpenAIMaxImageSize = 20 * 1024 * 1024 // 20 MB
 
 var ErrStreamingTimeout = errors.New("timeout streaming")
 
