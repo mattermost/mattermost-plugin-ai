@@ -1,8 +1,9 @@
 package ai
 
 import (
-	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestBotConfig_IsValid(t *testing.T) {
