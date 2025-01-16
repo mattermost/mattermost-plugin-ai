@@ -216,7 +216,7 @@ func (p *Plugin) handleMessages(post *model.Post) error {
 		return fmt.Errorf("not responding to remote posts: %w", ErrNoResponse)
 	}
 
-	// Wranger posts should be ignored
+	// Wrangler posts should be ignored
 	if post.GetProp(WranglerProp) != nil {
 		return fmt.Errorf("not responding to wrangler posts: %w", ErrNoResponse)
 	}
