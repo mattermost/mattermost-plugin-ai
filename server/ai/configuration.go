@@ -1,5 +1,7 @@
 package ai
 
+import "C"
+
 type ServiceConfig struct {
 	Name                    string `json:"name"`
 	Type                    string `json:"type"`
@@ -30,6 +32,14 @@ const (
 	UserAccessLevelAllow
 	UserAccessLevelBlock
 	UserAccessLevelNone
+)
+
+const (
+	ServiceTypeOpenAI           = "openai"
+	ServiceTypeOpenAICompatible = "openaicompatible"
+	ServiceTypeAzure            = "azure"
+	ServiceTypeAskSage          = "asksage"
+	ServiceTypeAnthropic        = "anthropic"
 )
 
 type BotConfig struct {
@@ -64,11 +74,13 @@ func (c *BotConfig) IsValid() bool {
 
 	// Service-specific validation
 	switch c.Service.Type {
-	case "openai", "anthropic":
+	case ServiceTypeOpenAI:
+		return c.Service.APIKey != "" && c.Service.OrgID != ""
+	case ServiceTypeOpenAICompatible, ServiceTypeAzure:
+		return c.Service.APIKey != "" && c.Service.APIURL != ""
+	case ServiceTypeAnthropic:
 		return c.Service.APIKey != ""
-	case "openaicompatible", "azure":
-		return c.Service.APIURL != ""
-	case "asksage":
+	case ServiceTypeAskSage:
 		return c.Service.Username != "" && c.Service.Password != ""
 	default:
 		return false
