@@ -49,10 +49,28 @@ type BotConfig struct {
 }
 
 func (c *BotConfig) IsValid() bool {
-	isInvalid := c.Name == "" ||
-		c.DisplayName == "" ||
-		c.Service.Type == "" ||
-		((c.Service.Type == "openaicompatible" || c.Service.Type == "azure") && c.Service.APIURL == "") ||
-		(c.Service.Type != "asksage" && c.Service.Type != "openaicompatible" && c.Service.Type != "azure" && c.Service.APIKey == "")
-	return !isInvalid
+	// Basic validation
+	if c.Name == "" || c.DisplayName == "" || c.Service.Type == "" {
+		return false
+	}
+
+	// Validate access levels are within bounds
+	if c.ChannelAccessLevel < ChannelAccessLevelAll || c.ChannelAccessLevel > ChannelAccessLevelNone {
+		return false
+	}
+	if c.UserAccessLevel < UserAccessLevelAll || c.UserAccessLevel > UserAccessLevelNone {
+		return false
+	}
+
+	// Service-specific validation
+	switch c.Service.Type {
+	case "openai", "anthropic":
+		return c.Service.APIKey != ""
+	case "openaicompatible", "azure":
+		return c.Service.APIURL != ""
+	case "asksage":
+		return c.Service.Username != "" && c.Service.Password != ""
+	default:
+		return false
+	}
 }
