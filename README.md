@@ -1,25 +1,60 @@
 # Mattermost Copilot Plugin [![Download Latest Master Build](https://img.shields.io/badge/Download-Latest%20Master%20Build-blue)](https://github.com/mattermost/mattermost-plugin-ai/releases/tag/latest-master)
 
-> Mattermost plugin for local and third-party LLMs
+The Mattermost Copilot Plugin integrates AI capabilities directly into your Mattermost workspace, supporting both local (self-hosted) and third-party (vendor-hosted) Large Language Models (LLMs). 
+
+**Note**: The latest master build is experimental and may contain unstable features.
 
 ![The Mattermost Copilot AI Plugin is an extension for mattermost that provides functionality for local and third-party LLMs](https://github.com/mattermost/mattermost-plugin-ai/assets/2040554/6a787ff6-013d-4492-90ce-54aa7a292a4a)
 
+## Features
 
+- Support for multiple LLM providers including OpenAI, Anthropic, and custom endpoints
+- AI-powered chat assistance in channels and threads
+- Context-aware responses based on conversation history
+- Customizable bot personas and system prompts
+- Enterprise features for team collaboration
 
-<!-- omit from toc -->
-## Table of Contents
+## Installation
 
-- [Background](#background)
-- [Contributing](#contributing)
-- [License](#license)
+1. Download the latest release from our [releases page](https://github.com/mattermost/mattermost-plugin-ai/releases)
+2. Upload the plugin through the Mattermost System Console
+3. Configure your desired LLM provider settings
+4. Enable the plugin to start using AI features
 
-## Background
+### System Requirements
 
-The Mattermost Copilot Plugin adds functionality for local (self-hosted) and third-party (vendor-hosted) LLMs within Mattermost v9.6 and above. This plugin is currently experimental. 
+- Mattermost Server versions:
+  - v9.6 or later (recommended)
+  - v9.5.2+ (ESR)
+  - v9.4.4+
+  - v9.3.3+
+  - v8.1.11+ (ESR)
+- PostgreSQL database
+- Network access to your chosen LLM provider
 
-Contributions and suggestions are welcome. See the [Contributing](#contributing) section for more details!
+## Development
 
-Join the discussion in the [~AI-Exchange channel](https://community.mattermost.com/core/channels/ai-exchange) and explore the [Discourse forum](https://forum.mattermost.com/c/openops-ai/40). 💬
+To set up a development environment:
+
+1. Clone the repository
+2. Install dependencies:
+   ```bash
+   make deps
+   ```
+3. Build the plugin:
+   ```bash
+   make dist
+   ```
+4. Deploy to your local Mattermost instance:
+   ```bash
+   make deploy
+   ```
+
+## Community & Support
+
+Join our active community:
+- [AI-Exchange Channel](https://community.mattermost.com/core/channels/ai-exchange) for discussions
+- [Discourse Forum](https://forum.mattermost.com/c/openops-ai/40) for questions and updates
 
 ## Install
 
