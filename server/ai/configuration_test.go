@@ -78,7 +78,7 @@ func TestBotConfig_IsValid(t *testing.T) {
 				CustomInstructions: "",
 				Service: ServiceConfig{
 					Name:                    "Copilot",
-					Type:                    "mattermostllm",
+					Type:                    "mattermostllm", // bad
 					APIKey:                  "sk-xyz",
 					OrgID:                   "org-xyz",
 					DefaultModel:            "gpt-40",
