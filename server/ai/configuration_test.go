@@ -28,7 +28,7 @@ func TestBotConfig_IsValid(t *testing.T) {
 		want   bool
 	}{
 		{
-			name: "Valid 0",
+			name: "Valid OpenAI configuration with minimal required fields",
 			fields: fields{
 				ID:                 "xxx",
 				Name:               "xxx",
@@ -49,7 +49,7 @@ func TestBotConfig_IsValid(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "Valid 1",
+			name: "Valid OpenAI configuration with ChannelAccessLevelNone",
 			fields: fields{
 				ID:                 "xxx",
 				Name:               "xxx",
@@ -70,7 +70,7 @@ func TestBotConfig_IsValid(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "Invalid name",
+			name: "Bot name cannot be empty",
 			fields: fields{
 				ID:                 "xxx",
 				Name:               "", // bad
@@ -91,7 +91,7 @@ func TestBotConfig_IsValid(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "Invalid display name",
+			name: "Bot display name cannot be empty",
 			fields: fields{
 				ID:                 "xxx",
 				Name:               "xxx",
@@ -112,7 +112,7 @@ func TestBotConfig_IsValid(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "Invalid service type",
+			name: "Service type must be one of the supported providers",
 			fields: fields{
 				ID:                 "xxx",
 				Name:               "xxx",
@@ -133,7 +133,7 @@ func TestBotConfig_IsValid(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "Invalid channel access level < ChannelAccessLevelAll",
+			name: "Channel access level cannot be less than ChannelAccessLevelAll (0)",
 			fields: fields{
 				ID:                 "xxx",
 				Name:               "xxx",
@@ -154,7 +154,7 @@ func TestBotConfig_IsValid(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "Invalid channel access level > ChannelAccessLevelNone",
+			name: "Channel access level cannot be greater than ChannelAccessLevelNone (3)",
 			fields: fields{
 				ID:                 "xxx",
 				Name:               "xxx",
@@ -175,7 +175,7 @@ func TestBotConfig_IsValid(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "Invalid user access level < UserAccessLevelAll",
+			name: "User access level cannot be less than UserAccessLevelAll (0)",
 			fields: fields{
 				ID:                 "xxx",
 				Name:               "xxx",
@@ -196,7 +196,7 @@ func TestBotConfig_IsValid(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "Invalid user access level > UserAccessLevelNone",
+			name: "User access level cannot be greater than UserAccessLevelNone (3)",
 			fields: fields{
 				ID:                 "xxx",
 				Name:               "xxx",
@@ -217,7 +217,7 @@ func TestBotConfig_IsValid(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "OpenAI compatible required API URL",
+			name: "OpenAI compatible service requires API URL to be set",
 			fields: fields{
 				ID:                 "xxx",
 				Name:               "xxx",
@@ -239,7 +239,7 @@ func TestBotConfig_IsValid(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "Ask Sage requires username",
+			name: "Ask Sage service requires username to be set",
 			fields: fields{
 				ID:                 "xxx",
 				Name:               "xxx",
@@ -260,7 +260,7 @@ func TestBotConfig_IsValid(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "Ask Sage requires password",
+			name: "Ask Sage service requires password to be set",
 			fields: fields{
 				ID:                 "xxx",
 				Name:               "xxx",
@@ -298,7 +298,7 @@ func TestBotConfig_IsValid(t *testing.T) {
 				TeamIDs:            tt.fields.TeamIDs,
 				MaxFileSize:        tt.fields.MaxFileSize,
 			}
-			assert.Equalf(t, tt.want, c.IsValid(), "IsValid()")
+			assert.Equalf(t, tt.want, c.IsValid(), "IsValid() for test case %q", tt.name)
 		})
 	}
 }
