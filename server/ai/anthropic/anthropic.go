@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	DefaultMaxTokens       = 4096
+	DefaultMaxTokens       = 8192
 	MaxToolResolutionDepth = 10
 )
 

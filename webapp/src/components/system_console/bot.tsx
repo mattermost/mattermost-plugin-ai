@@ -231,14 +231,14 @@ const ServiceItem = (props: ServiceItemProps) => {
     const hasAPIKey = type !== 'asksage';
     const isOpenAIType = type === 'openai' || type === 'openaicompatible' || type === 'azure';
 
-    const getDefaultMaxTokens = useCallback(() => {
+    const getDefaultMaxTokens = () => {
         switch (type) {
         case 'anthropic':
-            return '4096';
+            return '8192';
         default:
             return '0';
         }
-    }, [type]);
+    };
 
     return (
         <>
