@@ -11,7 +11,7 @@ import (
 	anthropicSDK "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/invopop/jsonschema"
-	"github.com/mattermost/mattermost-plugin-ai/server/ai"
+	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 	"github.com/mattermost/mattermost-plugin-ai/server/metrics"
 )
 
@@ -26,10 +26,10 @@ type messageState struct {
 	output   chan<- string
 	errChan  chan<- error
 	depth    int
-	config   ai.LLMConfig
-	tools    []ai.Tool
-	resolver func(name string, argsGetter ai.ToolArgumentGetter, context ai.ConversationContext) (string, error)
-	context  ai.ConversationContext
+	config   llm.LLMConfig
+	tools    []llm.Tool
+	resolver func(name string, argsGetter llm.ToolArgumentGetter, context llm.ConversationContext) (string, error)
+	context  llm.ConversationContext
 }
 
 type Anthropic struct {
@@ -39,7 +39,7 @@ type Anthropic struct {
 	metricsService metrics.LLMetrics
 }
 
-func New(llmService ai.ServiceConfig, httpClient *http.Client, metricsService metrics.LLMetrics) *Anthropic {
+func New(llmService llm.ServiceConfig, httpClient *http.Client, metricsService metrics.LLMetrics) *Anthropic {
 	client := anthropicSDK.NewClient(
 		option.WithAPIKey(llmService.APIKey),
 		option.WithHTTPClient(httpClient),
@@ -65,7 +65,7 @@ func isValidImageType(mimeType string) bool {
 }
 
 // conversationToMessages creates a system prompt and a slice of input messages from conversation posts.
-func conversationToMessages(posts []ai.Post) (string, []anthropicSDK.MessageParam) {
+func conversationToMessages(posts []llm.Post) (string, []anthropicSDK.MessageParam) {
 	systemMessage := ""
 	messages := make([]anthropicSDK.MessageParam, 0, len(posts))
 
@@ -84,15 +84,15 @@ func conversationToMessages(posts []ai.Post) (string, []anthropicSDK.MessagePara
 
 	for _, post := range posts {
 		switch post.Role {
-		case ai.PostRoleSystem:
+		case llm.PostRoleSystem:
 			systemMessage += post.Message
 			continue
-		case ai.PostRoleBot:
+		case llm.PostRoleBot:
 			if currentRole != "assistant" {
 				flushCurrentMessage()
 				currentRole = "assistant"
 			}
-		case ai.PostRoleUser:
+		case llm.PostRoleUser:
 			if currentRole != "user" {
 				flushCurrentMessage()
 				currentRole = "user"
@@ -145,14 +145,14 @@ func conversationToMessages(posts []ai.Post) (string, []anthropicSDK.MessagePara
 	return systemMessage, messages
 }
 
-func (a *Anthropic) GetDefaultConfig() ai.LLMConfig {
-	return ai.LLMConfig{
+func (a *Anthropic) GetDefaultConfig() llm.LLMConfig {
+	return llm.LLMConfig{
 		Model:              a.defaultModel,
 		MaxGeneratedTokens: DefaultMaxTokens,
 	}
 }
 
-func (a *Anthropic) createConfig(opts []ai.LanguageModelOption) ai.LLMConfig {
+func (a *Anthropic) createConfig(opts []llm.LanguageModelOption) llm.LLMConfig {
 	cfg := a.GetDefaultConfig()
 	for _, opt := range opts {
 		opt(&cfg)
@@ -246,7 +246,7 @@ func (a *Anthropic) streamChatWithTools(state messageState) error {
 	return nil
 }
 
-func (a *Anthropic) ChatCompletion(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (*ai.TextStreamResult, error) {
+func (a *Anthropic) ChatCompletion(conversation llm.BotConversation, opts ...llm.LanguageModelOption) (*llm.TextStreamResult, error) {
 	a.metricsService.IncrementLLMRequests()
 
 	output := make(chan string)
@@ -277,10 +277,10 @@ func (a *Anthropic) ChatCompletion(conversation ai.BotConversation, opts ...ai.L
 		}
 	}()
 
-	return &ai.TextStreamResult{Stream: output, Err: errChan}, nil
+	return &llm.TextStreamResult{Stream: output, Err: errChan}, nil
 }
 
-func (a *Anthropic) ChatCompletionNoStream(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (string, error) {
+func (a *Anthropic) ChatCompletionNoStream(conversation llm.BotConversation, opts ...llm.LanguageModelOption) (string, error) {
 	// This could perform better if we didn't use the streaming API here, but the complexity is not worth it.
 	result, err := a.ChatCompletion(conversation, opts...)
 	if err != nil {
@@ -294,7 +294,7 @@ func (a *Anthropic) CountTokens(text string) int {
 }
 
 // convertTools converts from ai.Tool to anthropicSDK.Tool format
-func convertTools(tools []ai.Tool) []anthropicSDK.ToolParam {
+func convertTools(tools []llm.Tool) []anthropicSDK.ToolParam {
 	converted := make([]anthropicSDK.ToolParam, len(tools))
 	for i, tool := range tools {
 		reflector := jsonschema.Reflector{

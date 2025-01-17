@@ -14,7 +14,7 @@ import (
 
 	"github.com/andygrunwald/go-jira"
 	"github.com/google/go-github/v41/github"
-	"github.com/mattermost/mattermost-plugin-ai/server/ai"
+	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 )
@@ -23,7 +23,7 @@ type LookupMattermostUserArgs struct {
 	Username string `jsonschema_description:"The username of the user to lookup without a leading '@'. Example: 'firstname.lastname'"`
 }
 
-func (p *Plugin) toolResolveLookupMattermostUser(context ai.ConversationContext, argsGetter ai.ToolArgumentGetter) (string, error) {
+func (p *Plugin) toolResolveLookupMattermostUser(context llm.ConversationContext, argsGetter llm.ToolArgumentGetter) (string, error) {
 	var args LookupMattermostUserArgs
 	err := argsGetter(&args)
 	if err != nil {
@@ -85,7 +85,7 @@ type GetChannelPosts struct {
 	NumberPosts int    `jsonschema_description:"The number of most recent posts to get. Example: '30'"`
 }
 
-func (p *Plugin) toolResolveGetChannelPosts(context ai.ConversationContext, argsGetter ai.ToolArgumentGetter, bot *Bot) (string, error) {
+func (p *Plugin) toolResolveGetChannelPosts(context llm.ConversationContext, argsGetter llm.ToolArgumentGetter, bot *Bot) (string, error) {
 	var args GetChannelPosts
 	err := argsGetter(&args)
 	if err != nil {
@@ -143,7 +143,7 @@ func formatGithubIssue(issue *github.Issue) string {
 
 var validGithubRepoName = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
 
-func (p *Plugin) toolGetGithubIssue(context ai.ConversationContext, argsGetter ai.ToolArgumentGetter) (string, error) {
+func (p *Plugin) toolGetGithubIssue(context llm.ConversationContext, argsGetter llm.ToolArgumentGetter) (string, error) {
 	var args GetGithubIssueArgs
 	err := argsGetter(&args)
 	if err != nil {
@@ -366,7 +366,7 @@ func (p *Plugin) getPublicJiraIssues(instanceURL string, issueKeys []string) ([]
 	return &issue, nil
 }*/
 
-func (p *Plugin) toolGetJiraIssue(context ai.ConversationContext, argsGetter ai.ToolArgumentGetter) (string, error) {
+func (p *Plugin) toolGetJiraIssue(context llm.ConversationContext, argsGetter llm.ToolArgumentGetter) (string, error) {
 	var args GetJiraIssueArgs
 	err := argsGetter(&args)
 	if err != nil {
@@ -396,20 +396,20 @@ func (p *Plugin) toolGetJiraIssue(context ai.ConversationContext, argsGetter ai.
 
 // getBuiltInTools returns the built-in tools that are available to all users.
 // isDM is true if the response will be in a DM with the user. More tools are available in DMs because of security properties.
-func (p *Plugin) getBuiltInTools(isDM bool, bot *Bot) []ai.Tool {
-	builtInTools := []ai.Tool{}
+func (p *Plugin) getBuiltInTools(isDM bool, bot *Bot) []llm.Tool {
+	builtInTools := []llm.Tool{}
 
 	if isDM {
-		builtInTools = append(builtInTools, ai.Tool{
+		builtInTools = append(builtInTools, llm.Tool{
 			Name:        "GetChannelPosts",
 			Description: "Get the most recent posts from a Mattermost channel. Returns posts in the format 'username: message'",
 			Schema:      GetChannelPosts{},
-			Resolver: func(context ai.ConversationContext, argsGetter ai.ToolArgumentGetter) (string, error) {
+			Resolver: func(context llm.ConversationContext, argsGetter llm.ToolArgumentGetter) (string, error) {
 				return p.toolResolveGetChannelPosts(context, argsGetter, bot)
 			},
 		})
 
-		builtInTools = append(builtInTools, ai.Tool{
+		builtInTools = append(builtInTools, llm.Tool{
 			Name:        "LookupMattermostUser",
 			Description: "Lookup a Mattermost user by their username. Available information includes: username, full name, email, nickname, position, locale, timezone, last activity, and status.",
 			Schema:      LookupMattermostUserArgs{},
@@ -421,7 +421,7 @@ func (p *Plugin) getBuiltInTools(isDM bool, bot *Bot) []ai.Tool {
 		if err != nil && !errors.Is(err, pluginapi.ErrNotFound) {
 			p.API.LogError("failed to get github plugin status", "error", err.Error())
 		} else if status != nil && status.State == model.PluginStateRunning {
-			builtInTools = append(builtInTools, ai.Tool{
+			builtInTools = append(builtInTools, llm.Tool{
 				Name:        "GetGithubIssue",
 				Description: "Retrieve a single GitHub issue by owner, repo, and issue number.",
 				Schema:      GetGithubIssueArgs{},
@@ -430,7 +430,7 @@ func (p *Plugin) getBuiltInTools(isDM bool, bot *Bot) []ai.Tool {
 		}
 
 		// Jira plugin tools
-		builtInTools = append(builtInTools, ai.Tool{
+		builtInTools = append(builtInTools, llm.Tool{
 			Name:        "GetJiraIssue",
 			Description: "Retrieve a single Jira issue by issue key.",
 			Schema:      GetJiraIssueArgs{},
@@ -441,11 +441,11 @@ func (p *Plugin) getBuiltInTools(isDM bool, bot *Bot) []ai.Tool {
 	return builtInTools
 }
 
-func (p *Plugin) getDefaultToolsStore(bot *Bot, isDM bool) ai.ToolStore {
+func (p *Plugin) getDefaultToolsStore(bot *Bot, isDM bool) llm.ToolStore {
 	if bot == nil || bot.cfg.DisableTools {
-		return ai.NewNoTools()
+		return llm.NewNoTools()
 	}
-	store := ai.NewToolStore(&p.pluginAPI.Log, p.getConfiguration().EnableLLMTrace)
+	store := llm.NewToolStore(&p.pluginAPI.Log, p.getConfiguration().EnableLLMTrace)
 	store.AddTools(p.getBuiltInTools(isDM, bot))
 	return store
 }

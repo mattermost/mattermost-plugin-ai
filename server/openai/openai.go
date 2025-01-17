@@ -16,8 +16,8 @@ import (
 	"errors"
 
 	"github.com/invopop/jsonschema"
-	"github.com/mattermost/mattermost-plugin-ai/server/ai"
-	"github.com/mattermost/mattermost-plugin-ai/server/ai/subtitles"
+	"github.com/mattermost/mattermost-plugin-ai/server/llm"
+	"github.com/mattermost/mattermost-plugin-ai/server/llm/subtitles"
 	"github.com/mattermost/mattermost-plugin-ai/server/metrics"
 	openaiClient "github.com/sashabaranov/go-openai"
 )
@@ -39,7 +39,7 @@ const OpenAIMaxImageSize = 20 * 1024 * 1024 // 20 MB
 
 var ErrStreamingTimeout = errors.New("timeout streaming")
 
-func NewAzure(llmService ai.ServiceConfig, httpClient *http.Client, metricsService metrics.LLMetrics) *OpenAI {
+func NewAzure(llmService llm.ServiceConfig, httpClient *http.Client, metricsService metrics.LLMetrics) *OpenAI {
 	return newOpenAI(llmService, httpClient, metricsService,
 		func(apiKey string) openaiClient.ClientConfig {
 			config := openaiClient.DefaultAzureConfig(apiKey, strings.TrimSuffix(llmService.APIURL, "/"))
@@ -49,7 +49,7 @@ func NewAzure(llmService ai.ServiceConfig, httpClient *http.Client, metricsServi
 	)
 }
 
-func NewCompatible(llmService ai.ServiceConfig, httpClient *http.Client, metricsService metrics.LLMetrics) *OpenAI {
+func NewCompatible(llmService llm.ServiceConfig, httpClient *http.Client, metricsService metrics.LLMetrics) *OpenAI {
 	return newOpenAI(llmService, httpClient, metricsService,
 		func(apiKey string) openaiClient.ClientConfig {
 			config := openaiClient.DefaultConfig(apiKey)
@@ -59,7 +59,7 @@ func NewCompatible(llmService ai.ServiceConfig, httpClient *http.Client, metrics
 	)
 }
 
-func New(llmService ai.ServiceConfig, httpClient *http.Client, metricsService metrics.LLMetrics) *OpenAI {
+func New(llmService llm.ServiceConfig, httpClient *http.Client, metricsService metrics.LLMetrics) *OpenAI {
 	return newOpenAI(llmService, httpClient, metricsService,
 		func(apiKey string) openaiClient.ClientConfig {
 			config := openaiClient.DefaultConfig(apiKey)
@@ -70,7 +70,7 @@ func New(llmService ai.ServiceConfig, httpClient *http.Client, metricsService me
 }
 
 func newOpenAI(
-	llmService ai.ServiceConfig,
+	llmService llm.ServiceConfig,
 	httpClient *http.Client,
 	metricsService metrics.LLMetrics,
 	baseConfigFunc func(apiKey string) openaiClient.ClientConfig,
@@ -99,13 +99,13 @@ func newOpenAI(
 	}
 }
 
-func modifyCompletionRequestWithConversation(request openaiClient.ChatCompletionRequest, conversation ai.BotConversation) openaiClient.ChatCompletionRequest {
+func modifyCompletionRequestWithConversation(request openaiClient.ChatCompletionRequest, conversation llm.BotConversation) openaiClient.ChatCompletionRequest {
 	request.Messages = postsToChatCompletionMessages(conversation.Posts)
 	request.Tools = toolsToOpenAITools(conversation.Tools.GetTools())
 	return request
 }
 
-func toolsToOpenAITools(tools []ai.Tool) []openaiClient.Tool {
+func toolsToOpenAITools(tools []llm.Tool) []openaiClient.Tool {
 	result := make([]openaiClient.Tool, 0, len(tools))
 
 	schemaMaker := jsonschema.Reflector{
@@ -128,14 +128,14 @@ func toolsToOpenAITools(tools []ai.Tool) []openaiClient.Tool {
 	return result
 }
 
-func postsToChatCompletionMessages(posts []ai.Post) []openaiClient.ChatCompletionMessage {
+func postsToChatCompletionMessages(posts []llm.Post) []openaiClient.ChatCompletionMessage {
 	result := make([]openaiClient.ChatCompletionMessage, 0, len(posts))
 
 	for _, post := range posts {
 		role := openaiClient.ChatMessageRoleUser
-		if post.Role == ai.PostRoleBot {
+		if post.Role == llm.PostRoleBot {
 			role = openaiClient.ChatMessageRoleAssistant
-		} else if post.Role == ai.PostRoleSystem {
+		} else if post.Role == llm.PostRoleSystem {
 			role = openaiClient.ChatMessageRoleSystem
 		}
 		completionMessage := openaiClient.ChatCompletionMessage{
@@ -193,7 +193,7 @@ func postsToChatCompletionMessages(posts []ai.Post) []openaiClient.ChatCompletio
 }
 
 // createFunctionArrgmentResolver Creates a resolver for the json arguments of an openai function call. Unmarshaling the json into the supplied struct.
-func createFunctionArrgmentResolver(jsonArgs string) ai.ToolArgumentGetter {
+func createFunctionArrgmentResolver(jsonArgs string) llm.ToolArgumentGetter {
 	return func(args any) error {
 		return json.Unmarshal([]byte(jsonArgs), args)
 	}
@@ -205,7 +205,7 @@ type ToolBufferElement struct {
 	args strings.Builder
 }
 
-func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionRequest, conversation ai.BotConversation, output chan<- string, errChan chan<- error) {
+func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionRequest, conversation llm.BotConversation, output chan<- string, errChan chan<- error) {
 	request.Stream = true
 
 	ctx, cancel := context.WithCancelCause(context.Background())
@@ -361,7 +361,7 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 	}
 }
 
-func (s *OpenAI) streamResult(request openaiClient.ChatCompletionRequest, conversation ai.BotConversation) (*ai.TextStreamResult, error) {
+func (s *OpenAI) streamResult(request openaiClient.ChatCompletionRequest, conversation llm.BotConversation) (*llm.TextStreamResult, error) {
 	output := make(chan string)
 	errChan := make(chan error)
 	go func() {
@@ -370,17 +370,17 @@ func (s *OpenAI) streamResult(request openaiClient.ChatCompletionRequest, conver
 		s.streamResultToChannels(request, conversation, output, errChan)
 	}()
 
-	return &ai.TextStreamResult{Stream: output, Err: errChan}, nil
+	return &llm.TextStreamResult{Stream: output, Err: errChan}, nil
 }
 
-func (s *OpenAI) GetDefaultConfig() ai.LLMConfig {
-	return ai.LLMConfig{
+func (s *OpenAI) GetDefaultConfig() llm.LLMConfig {
+	return llm.LLMConfig{
 		Model:              s.defaultModel,
 		MaxGeneratedTokens: 0,
 	}
 }
 
-func (s *OpenAI) createConfig(opts []ai.LanguageModelOption) ai.LLMConfig {
+func (s *OpenAI) createConfig(opts []llm.LanguageModelOption) llm.LLMConfig {
 	cfg := s.GetDefaultConfig()
 	for _, opt := range opts {
 		opt(&cfg)
@@ -389,7 +389,7 @@ func (s *OpenAI) createConfig(opts []ai.LanguageModelOption) ai.LLMConfig {
 	return cfg
 }
 
-func (s *OpenAI) completionRequestFromConfig(cfg ai.LLMConfig) openaiClient.ChatCompletionRequest {
+func (s *OpenAI) completionRequestFromConfig(cfg llm.LLMConfig) openaiClient.ChatCompletionRequest {
 	return openaiClient.ChatCompletionRequest{
 		Model:            cfg.Model,
 		MaxTokens:        cfg.MaxGeneratedTokens,
@@ -400,7 +400,7 @@ func (s *OpenAI) completionRequestFromConfig(cfg ai.LLMConfig) openaiClient.Chat
 	}
 }
 
-func (s *OpenAI) ChatCompletion(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (*ai.TextStreamResult, error) {
+func (s *OpenAI) ChatCompletion(conversation llm.BotConversation, opts ...llm.LanguageModelOption) (*llm.TextStreamResult, error) {
 	s.metricsService.IncrementLLMRequests()
 
 	request := s.completionRequestFromConfig(s.createConfig(opts))
@@ -412,7 +412,7 @@ func (s *OpenAI) ChatCompletion(conversation ai.BotConversation, opts ...ai.Lang
 	return s.streamResult(request, conversation)
 }
 
-func (s *OpenAI) ChatCompletionNoStream(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (string, error) {
+func (s *OpenAI) ChatCompletionNoStream(conversation llm.BotConversation, opts ...llm.LanguageModelOption) (string, error) {
 	// This could perform better if we didn't use the streaming API here, but the complexity is not worth it.
 	result, err := s.ChatCompletion(conversation, opts...)
 	if err != nil {

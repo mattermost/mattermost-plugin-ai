@@ -1,6 +1,6 @@
-package ai
+package llm
 
-// Automatically generated convenience vars for the filenames in ai/prompts/
+// Automatically generated convenience vars for the filenames in llm/prompts/
 const (
 	PromptDirectMessageQuestion            = "direct_message_question"
 	PromptEmojiSelect                      = "emoji_select"

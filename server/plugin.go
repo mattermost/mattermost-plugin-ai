@@ -13,12 +13,12 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
-	"github.com/mattermost/mattermost-plugin-ai/server/ai"
-	"github.com/mattermost/mattermost-plugin-ai/server/ai/anthropic"
-	"github.com/mattermost/mattermost-plugin-ai/server/ai/asksage"
-	"github.com/mattermost/mattermost-plugin-ai/server/ai/openai"
+	"github.com/mattermost/mattermost-plugin-ai/server/anthropic"
+	"github.com/mattermost/mattermost-plugin-ai/server/asksage"
 	"github.com/mattermost/mattermost-plugin-ai/server/enterprise"
+	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 	"github.com/mattermost/mattermost-plugin-ai/server/metrics"
+	"github.com/mattermost/mattermost-plugin-ai/server/openai"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
@@ -36,7 +36,7 @@ const (
 	ffmpegPluginPath = "./plugins/mattermost-ai/server/dist/ffmpeg"
 )
 
-//go:embed ai/prompts
+//go:embed llm/prompts
 var promptsFolder embed.FS
 
 // Plugin implements the interface expected by the Mattermost server to communicate between the server and plugin processes.
@@ -57,7 +57,7 @@ type Plugin struct {
 	db      *sqlx.DB
 	builder sq.StatementBuilderType
 
-	prompts *ai.Prompts
+	prompts *llm.Prompts
 
 	streamingContexts      map[string]PostStreamContext
 	streamingContextsMutex sync.Mutex
@@ -119,7 +119,7 @@ func (p *Plugin) OnActivate() error {
 	}
 
 	var err error
-	p.prompts, err = ai.NewPrompts(promptsFolder)
+	p.prompts, err = llm.NewPrompts(promptsFolder)
 	if err != nil {
 		return err
 	}
@@ -134,10 +134,10 @@ func (p *Plugin) OnActivate() error {
 	return nil
 }
 
-func (p *Plugin) getLLM(llmBotConfig ai.BotConfig) ai.LanguageModel {
+func (p *Plugin) getLLM(llmBotConfig llm.BotConfig) llm.LanguageModel {
 	llmMetrics := p.metricsService.GetMetricsForAIService(llmBotConfig.Name)
 
-	var llm ai.LanguageModel
+	var llm llm.LanguageModel
 	switch llmBotConfig.Service.Type {
 	case "openai":
 		llm = openai.New(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
@@ -161,9 +161,9 @@ func (p *Plugin) getLLM(llmBotConfig ai.BotConfig) ai.LanguageModel {
 	return llm
 }
 
-func (p *Plugin) getTranscribe() ai.Transcriber {
+func (p *Plugin) getTranscribe() llm.Transcriber {
 	cfg := p.getConfiguration()
-	var botConfig ai.BotConfig
+	var botConfig llm.BotConfig
 	for _, bot := range cfg.Bots {
 		if bot.Name == cfg.TranscriptGenerator {
 			botConfig = bot

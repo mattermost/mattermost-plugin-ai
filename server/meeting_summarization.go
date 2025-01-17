@@ -11,8 +11,8 @@ import (
 
 	"errors"
 
-	"github.com/mattermost/mattermost-plugin-ai/server/ai"
-	"github.com/mattermost/mattermost-plugin-ai/server/ai/subtitles"
+	"github.com/mattermost/mattermost-plugin-ai/server/llm"
+	"github.com/mattermost/mattermost-plugin-ai/server/llm/subtitles"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
@@ -257,7 +257,7 @@ func (p *Plugin) summarizeCallRecording(bot *Bot, rootID string, requestingUser 
 	return nil
 }
 
-func (p *Plugin) summarizeTranscription(bot *Bot, transcription *subtitles.Subtitles, context ai.ConversationContext) (*ai.TextStreamResult, error) {
+func (p *Plugin) summarizeTranscription(bot *Bot, transcription *subtitles.Subtitles, context llm.ConversationContext) (*llm.TextStreamResult, error) {
 	llmFormattedTranscription := transcription.FormatForLLM()
 	tokens := p.getLLM(bot.cfg).CountTokens(llmFormattedTranscription)
 	tokenLimitWithMargin := int(float64(p.getLLM(bot.cfg).TokenLimit())*0.75) - ContextTokenMargin
@@ -272,7 +272,7 @@ func (p *Plugin) summarizeTranscription(bot *Bot, transcription *subtitles.Subti
 		p.pluginAPI.Log.Debug("Split into chunks", "chunks", len(chunks))
 		for _, chunk := range chunks {
 			context.PromptParameters = map[string]string{"TranscriptionChunk": chunk}
-			summarizeChunkPrompt, err := p.prompts.ChatCompletion(ai.PromptSummarizeChunk, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
+			summarizeChunkPrompt, err := p.prompts.ChatCompletion(llm.PromptSummarizeChunk, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
 			if err != nil {
 				return nil, fmt.Errorf("unable to get summarize chunk prompt: %w", err)
 			}
@@ -291,7 +291,7 @@ func (p *Plugin) summarizeTranscription(bot *Bot, transcription *subtitles.Subti
 	}
 
 	context.PromptParameters = map[string]string{"Transcription": llmFormattedTranscription, "IsChunked": fmt.Sprintf("%t", isChunked)}
-	summaryPrompt, err := p.prompts.ChatCompletion(ai.PromptMeetingSummary, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
+	summaryPrompt, err := p.prompts.ChatCompletion(llm.PromptMeetingSummary, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
 	if err != nil {
 		return nil, fmt.Errorf("unable to get meeting summary prompt: %w", err)
 	}

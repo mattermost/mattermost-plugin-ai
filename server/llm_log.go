@@ -3,33 +3,33 @@ package main
 import (
 	"fmt"
 
-	"github.com/mattermost/mattermost-plugin-ai/server/ai"
+	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 )
 
 type LanguageModelLogWrapper struct {
 	log     pluginapi.LogService
-	wrapped ai.LanguageModel
+	wrapped llm.LanguageModel
 }
 
-func NewLanguageModelLogWrapper(log pluginapi.LogService, wrapped ai.LanguageModel) *LanguageModelLogWrapper {
+func NewLanguageModelLogWrapper(log pluginapi.LogService, wrapped llm.LanguageModel) *LanguageModelLogWrapper {
 	return &LanguageModelLogWrapper{
 		log:     log,
 		wrapped: wrapped,
 	}
 }
 
-func (w *LanguageModelLogWrapper) logInput(conversation ai.BotConversation, opts ...ai.LanguageModelOption) {
+func (w *LanguageModelLogWrapper) logInput(conversation llm.BotConversation, opts ...llm.LanguageModelOption) {
 	prompt := fmt.Sprintf("\n%v", conversation)
 	w.log.Info("LLM Call", "prompt", prompt)
 }
 
-func (w *LanguageModelLogWrapper) ChatCompletion(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (*ai.TextStreamResult, error) {
+func (w *LanguageModelLogWrapper) ChatCompletion(conversation llm.BotConversation, opts ...llm.LanguageModelOption) (*llm.TextStreamResult, error) {
 	w.logInput(conversation, opts...)
 	return w.wrapped.ChatCompletion(conversation, opts...)
 }
 
-func (w *LanguageModelLogWrapper) ChatCompletionNoStream(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (string, error) {
+func (w *LanguageModelLogWrapper) ChatCompletionNoStream(conversation llm.BotConversation, opts ...llm.LanguageModelOption) (string, error) {
 	w.logInput(conversation, opts...)
 	return w.wrapped.ChatCompletionNoStream(conversation, opts...)
 }

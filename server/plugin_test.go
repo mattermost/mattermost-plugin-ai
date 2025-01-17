@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/mattermost/mattermost-plugin-ai/server/ai"
+	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin/plugintest"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
@@ -24,7 +24,7 @@ func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 
 	p.bots = []*Bot{
 		{
-			cfg: ai.BotConfig{
+			cfg: llm.BotConfig{
 				Name: "ai",
 			},
 			mmBot: &model.Bot{
@@ -35,7 +35,7 @@ func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 	}
 
 	var promptErr error
-	p.prompts, promptErr = ai.NewPrompts(promptsFolder)
+	p.prompts, promptErr = llm.NewPrompts(promptsFolder)
 	require.NoError(t, promptErr)
 
 	p.ffmpegPath = ""
@@ -79,9 +79,9 @@ func TestUsageRestrictions(t *testing.T) {
 		{
 			name: "All allowed",
 			bot: &Bot{
-				cfg: ai.BotConfig{
-					ChannelAccessLevel: ai.ChannelAccessLevelAll,
-					UserAccessLevel:    ai.UserAccessLevelAll,
+				cfg: llm.BotConfig{
+					ChannelAccessLevel: llm.ChannelAccessLevelAll,
+					UserAccessLevel:    llm.UserAccessLevelAll,
 				},
 			},
 			channel:        &model.Channel{Id: "channel1"},
@@ -91,10 +91,10 @@ func TestUsageRestrictions(t *testing.T) {
 		{
 			name: "Channel blocked",
 			bot: &Bot{
-				cfg: ai.BotConfig{
-					ChannelAccessLevel: ai.ChannelAccessLevelBlock,
+				cfg: llm.BotConfig{
+					ChannelAccessLevel: llm.ChannelAccessLevelBlock,
 					ChannelIDs:         []string{"channel1"},
-					UserAccessLevel:    ai.UserAccessLevelAll,
+					UserAccessLevel:    llm.UserAccessLevelAll,
 				},
 			},
 			channel:        &model.Channel{Id: "channel1"},
@@ -104,9 +104,9 @@ func TestUsageRestrictions(t *testing.T) {
 		{
 			name: "User blocked",
 			bot: &Bot{
-				cfg: ai.BotConfig{
-					ChannelAccessLevel: ai.ChannelAccessLevelAll,
-					UserAccessLevel:    ai.UserAccessLevelBlock,
+				cfg: llm.BotConfig{
+					ChannelAccessLevel: llm.ChannelAccessLevelAll,
+					UserAccessLevel:    llm.UserAccessLevelBlock,
 					UserIDs:            []string{"user1"},
 				},
 			},
@@ -117,10 +117,10 @@ func TestUsageRestrictions(t *testing.T) {
 		{
 			name: "Channel allowed",
 			bot: &Bot{
-				cfg: ai.BotConfig{
-					ChannelAccessLevel: ai.ChannelAccessLevelAllow,
+				cfg: llm.BotConfig{
+					ChannelAccessLevel: llm.ChannelAccessLevelAllow,
 					ChannelIDs:         []string{"channel1"},
-					UserAccessLevel:    ai.UserAccessLevelAll,
+					UserAccessLevel:    llm.UserAccessLevelAll,
 				},
 			},
 			channel:        &model.Channel{Id: "channel1"},
@@ -130,9 +130,9 @@ func TestUsageRestrictions(t *testing.T) {
 		{
 			name: "User allowed",
 			bot: &Bot{
-				cfg: ai.BotConfig{
-					ChannelAccessLevel: ai.ChannelAccessLevelAll,
-					UserAccessLevel:    ai.UserAccessLevelAllow,
+				cfg: llm.BotConfig{
+					ChannelAccessLevel: llm.ChannelAccessLevelAll,
+					UserAccessLevel:    llm.UserAccessLevelAllow,
 					UserIDs:            []string{"user1"},
 				},
 			},
@@ -143,10 +143,10 @@ func TestUsageRestrictions(t *testing.T) {
 		{
 			name: "Channel not allowed",
 			bot: &Bot{
-				cfg: ai.BotConfig{
-					ChannelAccessLevel: ai.ChannelAccessLevelAllow,
+				cfg: llm.BotConfig{
+					ChannelAccessLevel: llm.ChannelAccessLevelAllow,
 					ChannelIDs:         []string{"channel2"},
-					UserAccessLevel:    ai.UserAccessLevelAll,
+					UserAccessLevel:    llm.UserAccessLevelAll,
 				},
 			},
 			channel:        &model.Channel{Id: "channel1"},
@@ -156,9 +156,9 @@ func TestUsageRestrictions(t *testing.T) {
 		{
 			name: "User not allowed",
 			bot: &Bot{
-				cfg: ai.BotConfig{
-					ChannelAccessLevel: ai.ChannelAccessLevelAll,
-					UserAccessLevel:    ai.UserAccessLevelAllow,
+				cfg: llm.BotConfig{
+					ChannelAccessLevel: llm.ChannelAccessLevelAll,
+					UserAccessLevel:    llm.UserAccessLevelAllow,
 					UserIDs:            []string{"user2"},
 				},
 			},
@@ -169,9 +169,9 @@ func TestUsageRestrictions(t *testing.T) {
 		{
 			name: "Channel none",
 			bot: &Bot{
-				cfg: ai.BotConfig{
-					ChannelAccessLevel: ai.ChannelAccessLevelNone,
-					UserAccessLevel:    ai.UserAccessLevelAll,
+				cfg: llm.BotConfig{
+					ChannelAccessLevel: llm.ChannelAccessLevelNone,
+					UserAccessLevel:    llm.UserAccessLevelAll,
 				},
 			},
 			channel:        &model.Channel{Id: "channel1"},
@@ -181,9 +181,9 @@ func TestUsageRestrictions(t *testing.T) {
 		{
 			name: "User none",
 			bot: &Bot{
-				cfg: ai.BotConfig{
-					ChannelAccessLevel: ai.ChannelAccessLevelAll,
-					UserAccessLevel:    ai.UserAccessLevelNone,
+				cfg: llm.BotConfig{
+					ChannelAccessLevel: llm.ChannelAccessLevelAll,
+					UserAccessLevel:    llm.UserAccessLevelNone,
 				},
 			},
 			channel:        &model.Channel{Id: "channel1"},
@@ -193,10 +193,10 @@ func TestUsageRestrictions(t *testing.T) {
 		{
 			name: "Channel block but not in list",
 			bot: &Bot{
-				cfg: ai.BotConfig{
-					ChannelAccessLevel: ai.ChannelAccessLevelBlock,
+				cfg: llm.BotConfig{
+					ChannelAccessLevel: llm.ChannelAccessLevelBlock,
 					ChannelIDs:         []string{"channel2"},
-					UserAccessLevel:    ai.UserAccessLevelAll,
+					UserAccessLevel:    llm.UserAccessLevelAll,
 				},
 			},
 			channel:        &model.Channel{Id: "channel1"},
@@ -206,9 +206,9 @@ func TestUsageRestrictions(t *testing.T) {
 		{
 			name: "User block but not in list",
 			bot: &Bot{
-				cfg: ai.BotConfig{
-					ChannelAccessLevel: ai.ChannelAccessLevelAll,
-					UserAccessLevel:    ai.UserAccessLevelBlock,
+				cfg: llm.BotConfig{
+					ChannelAccessLevel: llm.ChannelAccessLevelAll,
+					UserAccessLevel:    llm.UserAccessLevelBlock,
 					UserIDs:            []string{"user2"},
 				},
 			},
@@ -219,10 +219,10 @@ func TestUsageRestrictions(t *testing.T) {
 		{
 			name: "Channel allow and user allow",
 			bot: &Bot{
-				cfg: ai.BotConfig{
-					ChannelAccessLevel: ai.ChannelAccessLevelAllow,
+				cfg: llm.BotConfig{
+					ChannelAccessLevel: llm.ChannelAccessLevelAllow,
 					ChannelIDs:         []string{"channel1"},
-					UserAccessLevel:    ai.UserAccessLevelAllow,
+					UserAccessLevel:    llm.UserAccessLevelAllow,
 					UserIDs:            []string{"user1"},
 				},
 			},
@@ -233,10 +233,10 @@ func TestUsageRestrictions(t *testing.T) {
 		{
 			name: "Channel allow but user not allowed",
 			bot: &Bot{
-				cfg: ai.BotConfig{
-					ChannelAccessLevel: ai.ChannelAccessLevelAllow,
+				cfg: llm.BotConfig{
+					ChannelAccessLevel: llm.ChannelAccessLevelAllow,
 					ChannelIDs:         []string{"channel1"},
-					UserAccessLevel:    ai.UserAccessLevelAllow,
+					UserAccessLevel:    llm.UserAccessLevelAllow,
 					UserIDs:            []string{"user2"},
 				},
 			},
@@ -247,9 +247,9 @@ func TestUsageRestrictions(t *testing.T) {
 		{
 			name: "User allowed via team membership",
 			bot: &Bot{
-				cfg: ai.BotConfig{
-					ChannelAccessLevel: ai.ChannelAccessLevelAll,
-					UserAccessLevel:    ai.UserAccessLevelAllow,
+				cfg: llm.BotConfig{
+					ChannelAccessLevel: llm.ChannelAccessLevelAll,
+					UserAccessLevel:    llm.UserAccessLevelAllow,
 					TeamIDs:            []string{"team1"},
 				},
 			},
@@ -260,9 +260,9 @@ func TestUsageRestrictions(t *testing.T) {
 		{
 			name: "User blocked via team membership",
 			bot: &Bot{
-				cfg: ai.BotConfig{
-					ChannelAccessLevel: ai.ChannelAccessLevelAll,
-					UserAccessLevel:    ai.UserAccessLevelBlock,
+				cfg: llm.BotConfig{
+					ChannelAccessLevel: llm.ChannelAccessLevelAll,
+					UserAccessLevel:    llm.UserAccessLevelBlock,
 					TeamIDs:            []string{"team1"},
 				},
 			},
@@ -273,9 +273,9 @@ func TestUsageRestrictions(t *testing.T) {
 		{
 			name: "User not in allowed team",
 			bot: &Bot{
-				cfg: ai.BotConfig{
-					ChannelAccessLevel: ai.ChannelAccessLevelAll,
-					UserAccessLevel:    ai.UserAccessLevelAllow,
+				cfg: llm.BotConfig{
+					ChannelAccessLevel: llm.ChannelAccessLevelAll,
+					UserAccessLevel:    llm.UserAccessLevelAllow,
 					TeamIDs:            []string{"team2"},
 				},
 			},
@@ -286,9 +286,9 @@ func TestUsageRestrictions(t *testing.T) {
 		{
 			name: "User allowed via direct ID even if not in team",
 			bot: &Bot{
-				cfg: ai.BotConfig{
-					ChannelAccessLevel: ai.ChannelAccessLevelAll,
-					UserAccessLevel:    ai.UserAccessLevelAllow,
+				cfg: llm.BotConfig{
+					ChannelAccessLevel: llm.ChannelAccessLevelAll,
+					UserAccessLevel:    llm.UserAccessLevelAllow,
 					UserIDs:            []string{"user1"},
 					TeamIDs:            []string{"team2"},
 				},
@@ -300,9 +300,9 @@ func TestUsageRestrictions(t *testing.T) {
 		{
 			name: "User blocked via direct ID even if in allowed team",
 			bot: &Bot{
-				cfg: ai.BotConfig{
-					ChannelAccessLevel: ai.ChannelAccessLevelAll,
-					UserAccessLevel:    ai.UserAccessLevelBlock,
+				cfg: llm.BotConfig{
+					ChannelAccessLevel: llm.ChannelAccessLevelAll,
+					UserAccessLevel:    llm.UserAccessLevelBlock,
 					UserIDs:            []string{"user1"},
 					TeamIDs:            []string{"team1"},
 				},

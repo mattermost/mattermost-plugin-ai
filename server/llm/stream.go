@@ -1,4 +1,4 @@
-package ai
+package llm
 
 type TextStreamResult struct {
 	Stream <-chan string

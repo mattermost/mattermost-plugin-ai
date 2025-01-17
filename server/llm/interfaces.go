@@ -1,10 +1,10 @@
-package ai
+package llm
 
 import (
 	"image"
 	"io"
 
-	"github.com/mattermost/mattermost-plugin-ai/server/ai/subtitles"
+	"github.com/mattermost/mattermost-plugin-ai/server/llm/subtitles"
 )
 
 type LLMConfig struct {

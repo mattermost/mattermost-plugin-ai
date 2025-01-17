@@ -9,8 +9,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/render"
-	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-plugin-ai/server/enterprise"
+	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
@@ -92,11 +92,11 @@ func (p *Plugin) handleSince(c *gin.Context) {
 	promptPreset := ""
 	switch data.PresetPrompt {
 	case "summarize":
-		promptPreset = ai.PromptSummarizeChannelSince
+		promptPreset = llm.PromptSummarizeChannelSince
 	case "action_items":
-		promptPreset = ai.PromptFindActionItemsSince
+		promptPreset = llm.PromptFindActionItemsSince
 	case "open_questions":
-		promptPreset = ai.PromptFindOpenQuestionsSince
+		promptPreset = llm.PromptFindOpenQuestionsSince
 	}
 
 	if promptPreset == "" {

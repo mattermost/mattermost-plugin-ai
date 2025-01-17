@@ -7,7 +7,7 @@ import (
 	"errors"
 
 	"github.com/gin-gonic/gin"
-	"github.com/mattermost/mattermost-plugin-ai/server/ai"
+	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
 )
@@ -108,15 +108,15 @@ func (p *Plugin) handleGetAIThreads(c *gin.Context) {
 }
 
 type AIBotInfo struct {
-	ID                 string                `json:"id"`
-	DisplayName        string                `json:"displayName"`
-	Username           string                `json:"username"`
-	LastIconUpdate     int64                 `json:"lastIconUpdate"`
-	DMChannelID        string                `json:"dmChannelID"`
-	ChannelAccessLevel ai.ChannelAccessLevel `json:"channelAccessLevel"`
-	ChannelIDs         []string              `json:"channelIDs"`
-	UserAccessLevel    ai.UserAccessLevel    `json:"userAccessLevel"`
-	UserIDs            []string              `json:"userIDs"`
+	ID                 string                 `json:"id"`
+	DisplayName        string                 `json:"displayName"`
+	Username           string                 `json:"username"`
+	LastIconUpdate     int64                  `json:"lastIconUpdate"`
+	DMChannelID        string                 `json:"dmChannelID"`
+	ChannelAccessLevel llm.ChannelAccessLevel `json:"channelAccessLevel"`
+	ChannelIDs         []string               `json:"channelIDs"`
+	UserAccessLevel    llm.UserAccessLevel    `json:"userAccessLevel"`
+	UserIDs            []string               `json:"userIDs"`
 }
 
 func (p *Plugin) handleGetAIBots(c *gin.Context) {

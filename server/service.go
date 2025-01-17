@@ -6,7 +6,7 @@ import (
 
 	"errors"
 
-	"github.com/mattermost/mattermost-plugin-ai/server/ai"
+	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
@@ -16,7 +16,7 @@ const (
 	RespondingToProp   = "responding_to"
 )
 
-func (p *Plugin) processUserRequestToBot(bot *Bot, context ai.ConversationContext) error {
+func (p *Plugin) processUserRequestToBot(bot *Bot, context llm.ConversationContext) error {
 	if context.Post.RootId == "" {
 		return p.newConversation(bot, context)
 	}
@@ -46,8 +46,8 @@ func (p *Plugin) processUserRequestToBot(bot *Bot, context ai.ConversationContex
 	return nil
 }
 
-func (p *Plugin) newConversation(bot *Bot, context ai.ConversationContext) error {
-	conversation, err := p.prompts.ChatCompletion(ai.PromptDirectMessageQuestion, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
+func (p *Plugin) newConversation(bot *Bot, context llm.ConversationContext) error {
+	conversation, err := p.prompts.ChatCompletion(llm.PromptDirectMessageQuestion, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
 	if err != nil {
 		return err
 	}
@@ -77,12 +77,12 @@ func (p *Plugin) newConversation(bot *Bot, context ai.ConversationContext) error
 	return nil
 }
 
-func (p *Plugin) generateTitle(bot *Bot, request string, context ai.ConversationContext) error {
-	titleRequest := ai.BotConversation{
-		Posts:   []ai.Post{{Role: ai.PostRoleUser, Message: request}},
+func (p *Plugin) generateTitle(bot *Bot, request string, context llm.ConversationContext) error {
+	titleRequest := llm.BotConversation{
+		Posts:   []llm.Post{{Role: llm.PostRoleUser, Message: request}},
 		Context: context,
 	}
-	conversationTitle, err := p.getLLM(bot.cfg).ChatCompletionNoStream(titleRequest, ai.WithMaxGeneratedTokens(25))
+	conversationTitle, err := p.getLLM(bot.cfg).ChatCompletionNoStream(titleRequest, llm.WithMaxGeneratedTokens(25))
 	if err != nil {
 		return fmt.Errorf("failed to get title: %w", err)
 	}
@@ -96,9 +96,9 @@ func (p *Plugin) generateTitle(bot *Bot, request string, context ai.Conversation
 	return nil
 }
 
-func (p *Plugin) continueConversation(bot *Bot, threadData *ThreadData, context ai.ConversationContext) (*ai.TextStreamResult, error) {
+func (p *Plugin) continueConversation(bot *Bot, threadData *ThreadData, context llm.ConversationContext) (*llm.TextStreamResult, error) {
 	// Special handing for threads started by the bot in response to a summarization request.
-	var result *ai.TextStreamResult
+	var result *llm.TextStreamResult
 	originalThreadID, ok := threadData.Posts[0].GetProp(ThreadIDProp).(string)
 	if ok && originalThreadID != "" && threadData.Posts[0].UserId == bot.mmBot.UserId {
 		threadPost, err := p.pluginAPI.Post.GetPost(originalThreadID)
@@ -129,7 +129,7 @@ func (p *Plugin) continueConversation(bot *Bot, threadData *ThreadData, context 
 			return nil, err
 		}
 	} else {
-		prompt, err := p.prompts.ChatCompletion(ai.PromptDirectMessageQuestion, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
+		prompt, err := p.prompts.ChatCompletion(llm.PromptDirectMessageQuestion, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
 		if err != nil {
 			return nil, err
 		}
@@ -144,7 +144,7 @@ func (p *Plugin) continueConversation(bot *Bot, threadData *ThreadData, context 
 	return result, nil
 }
 
-func (p *Plugin) continueThreadConversation(bot *Bot, questionThreadData *ThreadData, originalThreadID string, context ai.ConversationContext) (*ai.TextStreamResult, error) {
+func (p *Plugin) continueThreadConversation(bot *Bot, questionThreadData *ThreadData, originalThreadID string, context llm.ConversationContext) (*llm.TextStreamResult, error) {
 	originalThreadData, err := p.getThreadAndMeta(originalThreadID)
 	if err != nil {
 		return nil, err
@@ -152,7 +152,7 @@ func (p *Plugin) continueThreadConversation(bot *Bot, questionThreadData *Thread
 	originalThread := formatThread(originalThreadData)
 
 	context.PromptParameters = map[string]string{"Thread": originalThread}
-	prompt, err := p.prompts.ChatCompletion(ai.PromptSummarizeThread, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
+	prompt, err := p.prompts.ChatCompletion(llm.PromptSummarizeThread, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +170,7 @@ const ThreadIDProp = "referenced_thread"
 const AnalysisTypeProp = "prompt_type"
 
 // DM the user with a standard message. Run the inferance
-func (p *Plugin) analyzeThread(bot *Bot, postIDToAnalyze string, analysisType string, context ai.ConversationContext) (*ai.TextStreamResult, error) {
+func (p *Plugin) analyzeThread(bot *Bot, postIDToAnalyze string, analysisType string, context llm.ConversationContext) (*llm.TextStreamResult, error) {
 	threadData, err := p.getThreadAndMeta(postIDToAnalyze)
 	if err != nil {
 		return nil, err
@@ -182,11 +182,11 @@ func (p *Plugin) analyzeThread(bot *Bot, postIDToAnalyze string, analysisType st
 	var promptType string
 	switch analysisType {
 	case "summarize_thread":
-		promptType = ai.PromptSummarizeThread
+		promptType = llm.PromptSummarizeThread
 	case "action_items":
-		promptType = ai.PromptFindActionItems
+		promptType = llm.PromptFindActionItems
 	case "open_questions":
-		promptType = ai.PromptFindOpenQuestions
+		promptType = llm.PromptFindOpenQuestions
 	default:
 		return nil, fmt.Errorf("invalid analysis type: %s", analysisType)
 	}
@@ -228,7 +228,7 @@ func (p *Plugin) analysisPostMessage(locale string, postIDToAnalyze string, anal
 	}
 }
 
-func (p *Plugin) startNewAnalysisThread(bot *Bot, postIDToAnalyze string, analysisType string, context ai.ConversationContext) (*model.Post, error) {
+func (p *Plugin) startNewAnalysisThread(bot *Bot, postIDToAnalyze string, analysisType string, context llm.ConversationContext) (*model.Post, error) {
 	analysisStream, err := p.analyzeThread(bot, postIDToAnalyze, analysisType, context)
 	if err != nil {
 		return nil, err
