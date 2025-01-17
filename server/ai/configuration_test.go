@@ -28,6 +28,48 @@ func TestBotConfig_IsValid(t *testing.T) {
 		want   bool
 	}{
 		{
+			name: "Valid 0",
+			fields: fields{
+				ID:                 "xxx",
+				Name:               "xxx",
+				DisplayName:        "xxx",
+				CustomInstructions: "",
+				Service: ServiceConfig{
+					Name:                    "Copilot",
+					Type:                    "openai",
+					APIKey:                  "sk-xyz",
+					OrgID:                   "org-xyz",
+					DefaultModel:            "gpt-40",
+					TokenLimit:              100,
+					StreamingTimeoutSeconds: 60,
+				},
+				ChannelAccessLevel: ChannelAccessLevelAll,
+				UserAccessLevel:    UserAccessLevelAll,
+			},
+			want: true,
+		},
+		{
+			name: "Valid 1",
+			fields: fields{
+				ID:                 "xxx",
+				Name:               "xxx",
+				DisplayName:        "xxx",
+				CustomInstructions: "",
+				Service: ServiceConfig{
+					Name:                    "Copilot",
+					Type:                    "openai",
+					APIKey:                  "sk-xyz",
+					OrgID:                   "org-xyz",
+					DefaultModel:            "gpt-40",
+					TokenLimit:              100,
+					StreamingTimeoutSeconds: 60,
+				},
+				ChannelAccessLevel: ChannelAccessLevelNone,
+				UserAccessLevel:    UserAccessLevelAll,
+			},
+			want: true,
+		},
+		{
 			name: "Invalid name",
 			fields: fields{
 				ID:                 "xxx",
