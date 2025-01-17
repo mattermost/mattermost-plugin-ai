@@ -7,10 +7,11 @@ import (
 )
 
 // Tool represents a function that can be called by the language model during a conversation.
-// Each tool has a name, description, and schema that defines its parameters, along with
-// a Resolver function that implements the actual functionality.
 //
-// The Schema field should contain a struct that defines the expected JSON structure of the tool's arguments. The Resolver function receives the conversation context and a way to access the parsed arguments, and returns either a result string or an error.
+// Each tool has a name, description, and schema that defines its parameters. These are passed to the LLM for it to understand what capabilities it has.
+// It is the Resolver function that implements the actual functionality.
+//
+// The Schema field should contain a struct that defines the expected JSON structure of the tool's arguments. The Resolver function receives the conversation context and a way to access the parsed arguments, and returns either a result that will be passed to the LLM or an error.
 type Tool struct {
 	Name        string
 	Description string
