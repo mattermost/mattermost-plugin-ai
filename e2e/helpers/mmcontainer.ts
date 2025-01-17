@@ -149,6 +149,7 @@ export default class MattermostContainer {
                 "MM_LOGSETTINGS_FILELEVEL":           "DEBUG",
                 "MM_SERVICESETTINGS_ENABLEDEVELOPER": "true",
                 "MM_SERVICESETTINGS_ENABLETESTING":   "true",
+				"MM_PLUGINSETTINGS_AUTOMATICPREPACKAGEDPLUGINS": "false",
         };
         this.email = defaultEmail;
         this.username = defaultUsername;
