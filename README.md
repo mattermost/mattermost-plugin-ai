@@ -56,64 +56,82 @@ Join our active community:
 - [AI-Exchange Channel](https://community.mattermost.com/core/channels/ai-exchange) for discussions
 - [Discourse Forum](https://forum.mattermost.com/c/openops-ai/40) for questions and updates
 
-## Install
+## Configuration
 
-We recommend using Mattermost Server v9.6 or later for the best experience. Compatible Mattermost server versions include:
+After installation, you'll need to configure the plugin through the System Console:
 
-- v9.6 or later
-- v9.5.2+ ([ESR](https://docs.mattermost.com/deploy/mattermost-changelog.html#release-v9-5-extended-support-release))
-- v9.4.4+
-- v9.3.3+
-- v8.1.11+ ([ESR](https://docs.mattermost.com/deploy/mattermost-changelog.html))
+1. Navigate to **System Console > Plugins > Mattermost Copilot**
+2. Configure your LLM provider settings:
+   - API keys
+   - Model selection
+   - Token limits
+   - Custom instructions
+3. Set up access controls:
+   - Channel access levels
+   - User permissions
+   - Team configurations
 
-See the [Mattermost Product Documentation](https://docs.mattermost.com/configure/enable-copilot.html) for details on installing, configuring, enabling, and using this Mattermost integration.
+For detailed configuration instructions, see the [Mattermost Product Documentation](https://docs.mattermost.com/configure/enable-copilot.html).
 
-**Note**: Installation instructions assume you already have [Mattermost Server](https://mattermost.com/download/) installed and configured with [PostgreSQL](https://www.postgresql.org/).
+## Development
 
-## How to Release
+### Prerequisites
 
-To trigger a release, follow these steps:
+- Go 1.20+
+- Node.js 16.x+
+- Make
+- [Mattermost Server](https://mattermost.com/download/) with PostgreSQL
+- Access to an LLM provider (OpenAI, Anthropic, etc.)
 
-1. **For Patch Release:** Run the following command:
-    ```
-    make patch
-    ```
-   This will release a patch change.
+### Local Setup
 
-2. **For Minor Release:** Run the following command:
-    ```
-    make minor
-    ```
-   This will release a minor change.
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/mattermost/mattermost-plugin-ai.git
+   cd mattermost-plugin-ai
+   ```
 
-3. **For Major Release:** Run the following command:
-    ```
-    make major
-    ```
-   This will release a major change.
+2. Install dependencies:
+   ```bash
+   make deps
+   ```
 
-4. **For Patch Release Candidate (RC):** Run the following command:
-    ```
-    make patch-rc
-    ```
-   This will release a patch release candidate.
+3. Build the plugin:
+   ```bash
+   make dist
+   ```
 
-5. **For Minor Release Candidate (RC):** Run the following command:
-    ```
-    make minor-rc
-    ```
-   This will release a minor release candidate.
+4. Deploy to your local Mattermost instance:
+   ```bash
+   make deploy
+   ```
 
-6. **For Major Release Candidate (RC):** Run the following command:
-    ```
-    make major-rc
-    ```
-   This will release a major release candidate.
+5. Enable the plugin in System Console and configure your LLM provider settings
 
+### Development Tips
+
+- Use `make watch` for hot reloading during development
+- Run `make check-style` to verify code style
+- Execute `make test` to run the test suite
 
 ## Contributing
 
-Interested in contributing to our open source project? Start by reviewing the [contributor guidelines](./.github/CONTRIBUTING.md) for this repository. See the [Developer Setup Guide](docs/developer-setup-guide.md) for details on setting up a Mattermost instance for development.
+We welcome contributions! To get started:
+
+1. Review our [contributor guidelines](./.github/CONTRIBUTING.md)
+2. Fork the repository and create a feature branch
+3. Make your changes following our coding standards
+4. Submit a pull request with a clear description of your changes
+
+## Release Process
+
+To create a new release:
+
+- Patch: `make patch`
+- Minor: `make minor`
+- Major: `make major`
+
+For release candidates, append `-rc` to the commands (e.g., `make patch-rc`).
 
 ## License
 
