@@ -187,13 +187,11 @@ const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
                         <FormattedMessage defaultMessage='To-do list'/>
                     </OptionButton>
                 </QuestionOptions>
-                <div
+                <CreatePostContainer
                     data-testid='rhs-new-tab-create-post'
                 >
-                    <CreatePostContainer >
-                        {editorComponent}
-                    </CreatePostContainer>
-                </div>
+                    {editorComponent}
+                </CreatePostContainer>
             </ReverseScroll>
         </RHSPaddingContainer>
     );
