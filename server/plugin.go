@@ -161,7 +161,7 @@ func (p *Plugin) getLLM(llmBotConfig llm.BotConfig) llm.LanguageModel {
 	return llm
 }
 
-func (p *Plugin) getTranscribe() llm.Transcriber {
+func (p *Plugin) getTranscribe() Transcriber {
 	cfg := p.getConfiguration()
 	var botConfig llm.BotConfig
 	for _, bot := range cfg.Bots {

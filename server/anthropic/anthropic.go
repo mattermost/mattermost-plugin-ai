@@ -26,7 +26,7 @@ type messageState struct {
 	output   chan<- string
 	errChan  chan<- error
 	depth    int
-	config   llm.LLMConfig
+	config   llm.LanguageModelConfig
 	tools    []llm.Tool
 	resolver func(name string, argsGetter llm.ToolArgumentGetter, context llm.ConversationContext) (string, error)
 	context  llm.ConversationContext
@@ -145,14 +145,14 @@ func conversationToMessages(posts []llm.Post) (string, []anthropicSDK.MessagePar
 	return systemMessage, messages
 }
 
-func (a *Anthropic) GetDefaultConfig() llm.LLMConfig {
-	return llm.LLMConfig{
+func (a *Anthropic) GetDefaultConfig() llm.LanguageModelConfig {
+	return llm.LanguageModelConfig{
 		Model:              a.defaultModel,
 		MaxGeneratedTokens: DefaultMaxTokens,
 	}
 }
 
-func (a *Anthropic) createConfig(opts []llm.LanguageModelOption) llm.LLMConfig {
+func (a *Anthropic) createConfig(opts []llm.LanguageModelOption) llm.LanguageModelConfig {
 	cfg := a.GetDefaultConfig()
 	for _, opt := range opts {
 		opt(&cfg)

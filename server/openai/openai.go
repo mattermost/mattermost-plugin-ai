@@ -373,14 +373,14 @@ func (s *OpenAI) streamResult(request openaiClient.ChatCompletionRequest, conver
 	return &llm.TextStreamResult{Stream: output, Err: errChan}, nil
 }
 
-func (s *OpenAI) GetDefaultConfig() llm.LLMConfig {
-	return llm.LLMConfig{
+func (s *OpenAI) GetDefaultConfig() llm.LanguageModelConfig {
+	return llm.LanguageModelConfig{
 		Model:              s.defaultModel,
 		MaxGeneratedTokens: 0,
 	}
 }
 
-func (s *OpenAI) createConfig(opts []llm.LanguageModelOption) llm.LLMConfig {
+func (s *OpenAI) createConfig(opts []llm.LanguageModelOption) llm.LanguageModelConfig {
 	cfg := s.GetDefaultConfig()
 	for _, opt := range opts {
 		opt(&cfg)
@@ -389,7 +389,7 @@ func (s *OpenAI) createConfig(opts []llm.LanguageModelOption) llm.LLMConfig {
 	return cfg
 }
 
-func (s *OpenAI) completionRequestFromConfig(cfg llm.LLMConfig) openaiClient.ChatCompletionRequest {
+func (s *OpenAI) completionRequestFromConfig(cfg llm.LanguageModelConfig) openaiClient.ChatCompletionRequest {
 	return openaiClient.ChatCompletionRequest{
 		Model:            cfg.Model,
 		MaxTokens:        cfg.MaxGeneratedTokens,

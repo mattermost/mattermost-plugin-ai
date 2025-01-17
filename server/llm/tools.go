@@ -10,9 +10,7 @@ import (
 // Each tool has a name, description, and schema that defines its parameters, along with
 // a Resolver function that implements the actual functionality.
 //
-// The Schema field should contain a struct that defines the expected JSON structure of the
-// tool's arguments. The Resolver function receives the conversation context and a way to
-// access the parsed arguments, and returns either a result string or an error.
+// The Schema field should contain a struct that defines the expected JSON structure of the tool's arguments. The Resolver function receives the conversation context and a way to access the parsed arguments, and returns either a result string or an error.
 type Tool struct {
 	Name        string
 	Description string

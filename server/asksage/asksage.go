@@ -51,14 +51,14 @@ func conversationToMessagesList(conversation llm.BotConversation) []Message {
 	return result
 }
 
-func (s *AskSage) GetDefaultConfig() llm.LLMConfig {
-	return llm.LLMConfig{
+func (s *AskSage) GetDefaultConfig() llm.LanguageModelConfig {
+	return llm.LanguageModelConfig{
 		Model:              s.defaultModel,
 		MaxGeneratedTokens: 0,
 	}
 }
 
-func (s *AskSage) createConfig(opts []llm.LanguageModelOption) llm.LLMConfig {
+func (s *AskSage) createConfig(opts []llm.LanguageModelOption) llm.LanguageModelConfig {
 	cfg := s.GetDefaultConfig()
 	for _, opt := range opts {
 		opt(&cfg)
@@ -66,7 +66,7 @@ func (s *AskSage) createConfig(opts []llm.LanguageModelOption) llm.LLMConfig {
 	return cfg
 }
 
-func (s *AskSage) queryParamsFromConfig(cfg llm.LLMConfig) QueryParams {
+func (s *AskSage) queryParamsFromConfig(cfg llm.LanguageModelConfig) QueryParams {
 	return QueryParams{
 		Model: cfg.Model,
 	}
