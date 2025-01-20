@@ -72,12 +72,12 @@ func (p *Plugin) MigrateServicesToBots() error {
 			DisplayName: service.Name,
 			ID:          service.Name,
 			Service: ai.ServiceConfig{
-				Type:         service.ServiceName,
-				DefaultModel: service.DefaultModel,
-				OrgID:        service.OrgID,
-				APIURL:       service.URL,
-				APIKey:       service.APIKey,
-				TokenLimit:   service.TokenLimit,
+				Type:            service.ServiceName,
+				DefaultModel:    service.DefaultModel,
+				OrgID:           service.OrgID,
+				APIURL:          service.URL,
+				APIKey:          service.APIKey,
+				InputTokenLimit: service.TokenLimit,
 			},
 		})
 	}

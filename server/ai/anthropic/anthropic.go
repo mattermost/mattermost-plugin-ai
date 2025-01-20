@@ -33,11 +33,11 @@ type messageState struct {
 }
 
 type Anthropic struct {
-	client         *anthropicSDK.Client
-	defaultModel   string
-	tokenLimit     int
-	metricsService metrics.LLMetrics
-	maxTokens      int
+	client           *anthropicSDK.Client
+	defaultModel     string
+	inputTokenLimit  int
+	metricsService   metrics.LLMetrics
+	outputTokenLimit int
 }
 
 func New(llmService ai.ServiceConfig, httpClient *http.Client, metricsService metrics.LLMetrics) *Anthropic {
@@ -47,11 +47,11 @@ func New(llmService ai.ServiceConfig, httpClient *http.Client, metricsService me
 	)
 
 	return &Anthropic{
-		client:         client,
-		defaultModel:   llmService.DefaultModel,
-		tokenLimit:     llmService.TokenLimit,
-		metricsService: metricsService,
-		maxTokens:      llmService.MaxTokens,
+		client:           client,
+		defaultModel:     llmService.DefaultModel,
+		inputTokenLimit:  llmService.InputTokenLimit,
+		metricsService:   metricsService,
+		outputTokenLimit: llmService.OutputTokenLimit,
 	}
 }
 
@@ -151,10 +151,10 @@ func (a *Anthropic) GetDefaultConfig() ai.LLMConfig {
 	config := ai.LLMConfig{
 		Model: a.defaultModel,
 	}
-	if a.maxTokens == 0 {
+	if a.outputTokenLimit == 0 {
 		config.MaxGeneratedTokens = DefaultMaxTokens
 	} else {
-		config.MaxGeneratedTokens = a.maxTokens
+		config.MaxGeneratedTokens = a.outputTokenLimit
 	}
 	return config
 }
@@ -318,9 +318,9 @@ func convertTools(tools []ai.Tool) []anthropicSDK.ToolParam {
 	return converted
 }
 
-func (a *Anthropic) TokenLimit() int {
-	if a.tokenLimit > 0 {
-		return a.tokenLimit
+func (a *Anthropic) InputTokenLimit() int {
+	if a.inputTokenLimit > 0 {
+		return a.inputTokenLimit
 	}
 	return 100000
 }

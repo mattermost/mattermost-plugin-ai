@@ -25,11 +25,11 @@ import (
 type OpenAI struct {
 	client           *openaiClient.Client
 	defaultModel     string
-	tokenLimit       int
+	inputTokenLimit  int
 	streamingTimeout time.Duration
 	metricsService   metrics.LLMetrics
 	sendUserID       bool
-	maxTokens        int
+	outputTokenLimit int
 }
 
 const StreamingTimeoutDefault = 10 * time.Second
@@ -93,11 +93,11 @@ func newOpenAI(
 	return &OpenAI{
 		client:           openaiClient.NewClientWithConfig(config),
 		defaultModel:     defaultModel,
-		tokenLimit:       llmService.TokenLimit,
+		inputTokenLimit:  llmService.InputTokenLimit,
 		streamingTimeout: streamingTimeout,
 		metricsService:   metricsService,
 		sendUserID:       llmService.SendUserID,
-		maxTokens:        llmService.MaxTokens,
+		outputTokenLimit: llmService.OutputTokenLimit,
 	}
 }
 
@@ -378,7 +378,7 @@ func (s *OpenAI) streamResult(request openaiClient.ChatCompletionRequest, conver
 func (s *OpenAI) GetDefaultConfig() ai.LLMConfig {
 	return ai.LLMConfig{
 		Model:              s.defaultModel,
-		MaxGeneratedTokens: s.maxTokens,
+		MaxGeneratedTokens: s.outputTokenLimit,
 	}
 }
 
@@ -481,9 +481,9 @@ func (s *OpenAI) CountTokens(text string) int {
 	return int((charCount + wordCount) / 2.0)
 }
 
-func (s *OpenAI) TokenLimit() int {
-	if s.tokenLimit > 0 {
-		return s.tokenLimit
+func (s *OpenAI) InputTokenLimit() int {
+	if s.inputTokenLimit > 0 {
+		return s.inputTokenLimit
 	}
 
 	switch {

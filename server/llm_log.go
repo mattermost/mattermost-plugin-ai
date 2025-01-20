@@ -38,6 +38,6 @@ func (w *LanguageModelLogWrapper) CountTokens(text string) int {
 	return w.wrapped.CountTokens(text)
 }
 
-func (w *LanguageModelLogWrapper) TokenLimit() int {
-	return w.wrapped.TokenLimit()
+func (w *LanguageModelLogWrapper) InputTokenLimit() int {
+	return w.wrapped.InputTokenLimit()
 }

@@ -21,13 +21,13 @@ func NewLLMTruncationWrapper(llm ai.LanguageModel) *LLMTruncationWrapper {
 }
 
 func (w *LLMTruncationWrapper) ChatCompletion(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (*ai.TextStreamResult, error) {
-	tokenLimit := int(math.Max(math.Floor(float64(w.wrapped.TokenLimit()-FunctionsTokenBudget)*TokenLimitBufferSize), MinTokens))
+	tokenLimit := int(math.Max(math.Floor(float64(w.wrapped.InputTokenLimit()-FunctionsTokenBudget)*TokenLimitBufferSize), MinTokens))
 	conversation.Truncate(tokenLimit, w.wrapped.CountTokens)
 	return w.wrapped.ChatCompletion(conversation, opts...)
 }
 
 func (w *LLMTruncationWrapper) ChatCompletionNoStream(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (string, error) {
-	tokenLimit := int(math.Max(math.Floor(float64(w.wrapped.TokenLimit()-FunctionsTokenBudget)*TokenLimitBufferSize), MinTokens))
+	tokenLimit := int(math.Max(math.Floor(float64(w.wrapped.InputTokenLimit()-FunctionsTokenBudget)*TokenLimitBufferSize), MinTokens))
 	conversation.Truncate(tokenLimit, w.wrapped.CountTokens)
 	return w.wrapped.ChatCompletionNoStream(conversation, opts...)
 }
@@ -36,6 +36,6 @@ func (w *LLMTruncationWrapper) CountTokens(text string) int {
 	return w.wrapped.CountTokens(text)
 }
 
-func (w *LLMTruncationWrapper) TokenLimit() int {
-	return w.wrapped.TokenLimit()
+func (w *LLMTruncationWrapper) InputTokenLimit() int {
+	return w.wrapped.InputTokenLimit()
 }

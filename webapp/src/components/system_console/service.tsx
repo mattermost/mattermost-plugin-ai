@@ -11,5 +11,5 @@ export type ServiceData = {
     tokenLimit: number
     streamingTimeoutSeconds: number
     sendUserId: boolean
-    maxTokens: number
+    outputTokenLimit: number
 }
