@@ -6,11 +6,11 @@ The Mattermost Copilot Plugin integrates AI capabilities directly into your [Mat
 
 </div>
 
-![The Mattermost Copilot AI Plugin is an extension for mattermost that provides functionality for self-hosted and vendor-hosted LLMs](../img/mattermost-ai-llm-access.webp)
+![The Mattermost Copilot AI Plugin is an extension for mattermost that provides functionality for self-hosted and vendor-hosted LLMs](img/mattermost-ai-llm-access.webp)
 
 ## Installation
 
-1. Download the latest release from the [releases page](https://github.com/mattermost/mattermost-plugin-ai/releases). You can also download the **experimental** [latest master](https://github.com/mattermost/mattermost-plugin-ai/releases/tag/latest-master
+1. Download the latest release from the [releases page](https://github.com/mattermost/mattermost-plugin-ai/releases). You can also download the **experimental** [latest master](https://github.com/mattermost/mattermost-plugin-ai/releases/tag/latest-master)
 2. Upload and enable the plugin through the Mattermost System Console
 3. Configure your desired LLM provider settings
 
