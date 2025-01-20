@@ -137,28 +137,28 @@ func (p *Plugin) OnActivate() error {
 func (p *Plugin) getLLM(llmBotConfig llm.BotConfig) llm.LanguageModel {
 	llmMetrics := p.metricsService.GetMetricsForAIService(llmBotConfig.Name)
 
-	var llm llm.LanguageModel
+	var result llm.LanguageModel
 	switch llmBotConfig.Service.Type {
-	case ai.ServiceTypeOpenAI:
-		llm = openai.New(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
-	case ai.ServiceTypeOpenAICompatible:
-		llm = openai.NewCompatible(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
-	case ai.ServiceTypeAzure:
-		llm = openai.NewAzure(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
-	case ai.ServiceTypeAnthropic:
-		llm = anthropic.New(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
-	case ai.ServiceTypeAskSage:
-		llm = asksage.New(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
+	case llm.ServiceTypeOpenAI:
+		result = openai.New(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
+	case llm.ServiceTypeOpenAICompatible:
+		result = openai.NewCompatible(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
+	case llm.ServiceTypeAzure:
+		result = openai.NewAzure(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
+	case llm.ServiceTypeAnthropic:
+		result = anthropic.New(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
+	case llm.ServiceTypeAskSage:
+		result = asksage.New(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
 	}
 
 	cfg := p.getConfiguration()
 	if cfg.EnableLLMTrace {
-		llm = NewLanguageModelLogWrapper(p.pluginAPI.Log, llm)
+		result = NewLanguageModelLogWrapper(p.pluginAPI.Log, result)
 	}
 
-	llm = NewLLMTruncationWrapper(llm)
+	result = NewLLMTruncationWrapper(result)
 
-	return llm
+	return result
 }
 
 func (p *Plugin) getTranscribe() Transcriber {
