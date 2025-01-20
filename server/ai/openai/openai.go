@@ -194,8 +194,8 @@ func postsToChatCompletionMessages(posts []ai.Post) []openaiClient.ChatCompletio
 	return result
 }
 
-// createFunctionArrgmentResolver Creates a resolver for the json arguments of an openai function call. Unmarshaling the json into the supplied struct.
-func createFunctionArrgmentResolver(jsonArgs string) ai.ToolArgumentGetter {
+// createFunctionArgumentResolver Creates a resolver for the json arguments of an openai function call. Unmarshalling the json into the supplied struct.
+func createFunctionArgumentResolver(jsonArgs string) ai.ToolArgumentGetter {
 	return func(args any) error {
 		return json.Unmarshal([]byte(jsonArgs), args)
 	}
@@ -319,7 +319,7 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 				name := tool.Function.Name
 				arguments := tool.Function.Arguments
 				toolID := tool.ID
-				toolResult, err := conversation.Tools.ResolveTool(name, createFunctionArrgmentResolver(arguments), conversation.Context)
+				toolResult, err := conversation.Tools.ResolveTool(name, createFunctionArgumentResolver(arguments), conversation.Context)
 				if err != nil {
 					fmt.Printf("Error resolving function %s: %s", name, err)
 				}

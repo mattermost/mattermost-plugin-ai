@@ -37,6 +37,14 @@ const (
 	UserAccessLevelNone
 )
 
+const (
+	ServiceTypeOpenAI           = "openai"
+	ServiceTypeOpenAICompatible = "openaicompatible"
+	ServiceTypeAzure            = "azure"
+	ServiceTypeAskSage          = "asksage"
+	ServiceTypeAnthropic        = "anthropic"
+)
+
 type BotConfig struct {
 	ID                 string             `json:"id"`
 	Name               string             `json:"name"`
@@ -54,10 +62,30 @@ type BotConfig struct {
 }
 
 func (c *BotConfig) IsValid() bool {
-	isInvalid := c.Name == "" ||
-		c.DisplayName == "" ||
-		c.Service.Type == "" ||
-		((c.Service.Type == "openaicompatible" || c.Service.Type == "azure") && c.Service.APIURL == "") ||
-		(c.Service.Type != "asksage" && c.Service.Type != "openaicompatible" && c.Service.Type != "azure" && c.Service.APIKey == "")
-	return !isInvalid
+	// Basic validation
+	if c.Name == "" || c.DisplayName == "" || c.Service.Type == "" {
+		return false
+	}
+
+	// Validate access levels are within bounds
+	if c.ChannelAccessLevel < ChannelAccessLevelAll || c.ChannelAccessLevel > ChannelAccessLevelNone {
+		return false
+	}
+	if c.UserAccessLevel < UserAccessLevelAll || c.UserAccessLevel > UserAccessLevelNone {
+		return false
+	}
+
+	// Service-specific validation
+	switch c.Service.Type {
+	case ServiceTypeOpenAI:
+		return c.Service.APIKey != ""
+	case ServiceTypeOpenAICompatible, ServiceTypeAzure:
+		return c.Service.APIKey != "" && c.Service.APIURL != ""
+	case ServiceTypeAnthropic:
+		return c.Service.APIKey != ""
+	case ServiceTypeAskSage:
+		return c.Service.Username != "" && c.Service.Password != ""
+	default:
+		return false
+	}
 }
