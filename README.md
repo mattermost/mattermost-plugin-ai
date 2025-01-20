@@ -19,8 +19,8 @@ More details on the [Mattermost documentation site](https://docs.mattermost.com/
 ### System Requirements
 
 - Mattermost Server versions:
-  - v9.6 or later (recommended)
-  - v9.5.2+ (ESR)
+  - v10.0 or later recommended
+  - v9.11+ (ESR)
 - PostgreSQL database
 - Network access to your chosen LLM provider
 
@@ -39,8 +39,8 @@ For detailed configuration instructions, see the [Mattermost Product Documentati
 
 ### Prerequisites
 
-- Go 1.20+
-- Node.js 16.x+
+- Go 1.22+
+- Node.js 20.11+
 - Access to an LLM provider (OpenAI, Anthropic, etc.)
 
 ### Local Setup
