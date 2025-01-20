@@ -33,7 +33,7 @@ test('rhs bot interaction', async ({ page }) => {
 	await openRHS(page);
 
 	await openAIMock.addCompletionMock(responseTest);
-	await page.getByTestId('reply_textbox').fill('Hello!');
+	await page.getByTestId('rhs-new-tab-create-post').locator("textarea").fill('Hello!');
 	await page.locator('#rhsContainer').getByTestId('SendMessageButton').click()
 	await expect(page.getByText("Hello! How can I assist you today?")).toBeVisible();
 })
@@ -45,16 +45,16 @@ test('rhs prompt templates', async ({ page }) => {
 
 	// Clicking prompt template adds message
 	await page.getByRole('button', { name: 'Brainstorm ideas' }).click();
-	await expect(page.getByTestId('reply_textbox')).toHaveText("Brainstorm ideas about ");
+	await expect(page.getByTestId('rhs-new-tab-create-post').locator("textarea")).toHaveText("Brainstorm ideas about ");
 
 	// Clicking without editing replaces the text
 	await page.getByRole('button', { name: 'To-do list' }).click();
-	await expect(page.getByTestId('reply_textbox')).toHaveText("Write a todo list about ");
+	await expect(page.getByTestId('rhs-new-tab-create-post').locator("textarea")).toHaveText("Write a todo list about ");
 
 	// If text has been edited, clicking will not replace the text
-	/*await page.getByTestId('reply_textbox').fill('Edited text');
+	/*await page.getByTestId('rhs-new-tab-create-post').locator("textarea").fill('Edited text');
 	await page.getByRole('button', { name: 'Pros and Cons' }).click();
-	await expect(page.getByTestId('reply_textbox')).toHaveText("Edited text");*/
+	await expect(page.getByTestId('rhs-new-tab-create-post').locator("textarea")).toHaveText("Edited text");*/
 })
 
 test ('regenerate button', async ({ page }) => {
@@ -63,7 +63,7 @@ test ('regenerate button', async ({ page }) => {
 	await openRHS(page);
 	await openAIMock.addCompletionMock(responseTest);
 
-	await page.getByTestId('reply_textbox').fill('Hello!');
+	await page.getByTestId('rhs-new-tab-create-post').locator("textarea").fill('Hello!');
 	await page.locator('#rhsContainer').getByTestId('SendMessageButton').click()
 	await expect(page.getByText(responseTestText)).toBeVisible();
 
@@ -83,7 +83,7 @@ test ('switching bots', async ({ page }) => {
 	await page.getByTestId('menuButtonMock Bot').click();
 	await page.getByRole('button', { name: 'Second Bot' }).click();
 
-	await page.getByTestId('reply_textbox').fill('Hello!');
+	await page.getByTestId('rhs-new-tab-create-post').locator("textarea").fill('Hello!');
 	await page.locator('#rhsContainer').getByTestId('SendMessageButton').click()
 
 	// Second bot responds
@@ -99,14 +99,14 @@ test('bot mention', async ({ page }) => {
 
 	await page.getByTestId('post_textbox').click();
 	await page.getByTestId('post_textbox').fill('`@mock` TestBotMention1');
-	await page.getByTestId('post_textbox').press('Enter');
+	await page.getByTestId('channel_view').getByTestId('SendMessageButton').press('Enter');
 	await expect(page.getByText("reply")).not.toBeVisible();
 
 	await page.getByTestId('post_textbox').fill('```\n@mock\n``` TestBotMention2');
-	await page.getByTestId('post_textbox').press('Enter');
+	await page.getByTestId('channel_view').getByTestId('SendMessageButton').press('Enter');
 	await expect(page.getByText("reply")).not.toBeVisible();
 
 	await page.getByTestId('post_textbox').fill('@mock TestBotMention3');
-	await page.getByTestId('post_textbox').press('Enter');
+	await page.getByTestId('channel_view').getByTestId('SendMessageButton').press('Enter');
 	await expect(page.getByText("1 reply")).toBeVisible();
 })

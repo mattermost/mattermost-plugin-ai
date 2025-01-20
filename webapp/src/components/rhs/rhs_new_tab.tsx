@@ -110,7 +110,6 @@ const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
     if (AdvancedTextEditor) {
         editorComponent = (
             <AdvancedTextEditor
-                data-testid='rhs-new-tab-create-post'
                 channelId={botChannelId}
                 placeholder={intl.formatMessage({defaultMessage: 'Ask Copilot anything...'})}
                 isThreadView={true}
@@ -126,7 +125,6 @@ const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
     } else {
         editorComponent = (
             <CreatePost
-                data-testid='rhs-new-tab-create-post'
                 channelId={botChannelId}
                 placeholder={intl.formatMessage({defaultMessage: 'Ask Copilot anything...'})}
                 rootId={'ai_copilot'}
@@ -189,7 +187,9 @@ const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
                         <FormattedMessage defaultMessage='To-do list'/>
                     </OptionButton>
                 </QuestionOptions>
-                <CreatePostContainer>
+                <CreatePostContainer
+                    data-testid='rhs-new-tab-create-post'
+                >
                     {editorComponent}
                 </CreatePostContainer>
             </ReverseScroll>

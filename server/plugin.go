@@ -139,15 +139,15 @@ func (p *Plugin) getLLM(llmBotConfig llm.BotConfig) llm.LanguageModel {
 
 	var llm llm.LanguageModel
 	switch llmBotConfig.Service.Type {
-	case "openai":
+	case ai.ServiceTypeOpenAI:
 		llm = openai.New(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
-	case "openaicompatible":
+	case ai.ServiceTypeOpenAICompatible:
 		llm = openai.NewCompatible(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
-	case "azure":
+	case ai.ServiceTypeAzure:
 		llm = openai.NewAzure(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
-	case "anthropic":
+	case ai.ServiceTypeAnthropic:
 		llm = anthropic.New(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
-	case "asksage":
+	case ai.ServiceTypeAskSage:
 		llm = asksage.New(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
 	}
 
