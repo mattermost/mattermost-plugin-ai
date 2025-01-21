@@ -32,7 +32,7 @@ type LanguageModel interface {
 	ChatCompletionNoStream(conversation BotConversation, opts ...LanguageModelOption) (string, error)
 
 	CountTokens(text string) int
-	TokenLimit() int
+	InputTokenLimit() int
 }
 
 type Transcriber interface {
