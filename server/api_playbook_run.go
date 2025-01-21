@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/mattermost/mattermost-plugin-ai/server/ai"
+	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/pkg/errors"
 )
@@ -113,7 +113,7 @@ func (p *Plugin) handleGenerateStatus(c *gin.Context) {
 		"PreviousMessages": strings.TrimSpace(strings.Join(generateRequest.Messages, "\n-----\n")),
 	}
 
-	prompt, err := p.prompts.ChatCompletion("playbook_run_status", ccontext, ai.NewNoTools())
+	prompt, err := p.prompts.ChatCompletion("playbook_run_status", ccontext, llm.NewNoTools())
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, errors.Wrap(err, "failed to generate prompt"))
 		return
