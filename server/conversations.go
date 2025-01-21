@@ -77,8 +77,8 @@ func (p *Plugin) newConversationWithPost(bot *Bot, context llm.ConversationConte
 	return responsePost, nil
 }
 
-func (p *Plugin) newConversationForSearch(bot *Bot, context ai.ConversationContext) (*model.Post, error) {
-	conversation, err := p.prompts.ChatCompletion(ai.PromptDirectMessageQuestion, context)
+func (p *Plugin) newConversationForSearch(bot *Bot, context llm.ConversationContext) (*model.Post, error) {
+	conversation, err := p.prompts.ChatCompletion(llm.PromptDirectMessageQuestion, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
 	if err != nil {
 		return nil, err
 	}

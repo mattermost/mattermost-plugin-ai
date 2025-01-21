@@ -129,7 +129,7 @@ export default class Plugin {
                 if (rhs) {
                     store.dispatch(rhs.showRHSPlugin);
                 }
-            }
+            },
         });
         if (registry.registerPostActionComponent) {
             registry.registerPostActionComponent(PostMenu);
