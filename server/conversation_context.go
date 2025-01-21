@@ -1,12 +1,12 @@
 package main
 
 import (
-	"github.com/mattermost/mattermost-plugin-ai/server/ai"
+	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
-func (p *Plugin) MakeConversationContext(bot *Bot, user *model.User, channel *model.Channel, post *model.Post) ai.ConversationContext {
-	context := ai.NewConversationContext(bot.mmBot.UserId, user, channel, post)
+func (p *Plugin) MakeConversationContext(bot *Bot, user *model.User, channel *model.Channel, post *model.Post) llm.ConversationContext {
+	context := llm.NewConversationContext(bot.mmBot.UserId, user, channel, post)
 	if p.pluginAPI.Configuration.GetConfig().TeamSettings.SiteName != nil {
 		context.ServerName = *p.pluginAPI.Configuration.GetConfig().TeamSettings.SiteName
 	}

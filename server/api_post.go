@@ -11,9 +11,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/render"
-	"github.com/mattermost/mattermost-plugin-ai/server/ai"
-	"github.com/mattermost/mattermost-plugin-ai/server/ai/subtitles"
 	"github.com/mattermost/mattermost-plugin-ai/server/enterprise"
+	"github.com/mattermost/mattermost-plugin-ai/server/llm"
+	"github.com/mattermost/mattermost-plugin-ai/server/llm/subtitles"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
@@ -61,13 +61,13 @@ func (p *Plugin) handleReact(c *gin.Context) {
 
 	conversationContext := p.MakeConversationContext(bot, user, channel, post)
 	conversationContext.PromptParameters = map[string]string{"Message": post.Message}
-	prompt, err := p.prompts.ChatCompletion(ai.PromptEmojiSelect, conversationContext, ai.NewNoTools())
+	prompt, err := p.prompts.ChatCompletion(llm.PromptEmojiSelect, conversationContext, llm.NewNoTools())
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 
-	emojiName, err := p.getLLM(bot.cfg).ChatCompletionNoStream(prompt, ai.WithMaxGeneratedTokens(25))
+	emojiName, err := p.getLLM(bot.cfg).ChatCompletionNoStream(prompt, llm.WithMaxGeneratedTokens(25))
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
@@ -296,7 +296,7 @@ func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, ch
 	analysisTypeProp := post.GetProp(AnalysisTypeProp)
 	referenceRecordingFileIDProp := post.GetProp(ReferencedRecordingFileID)
 	referencedTranscriptPostProp := post.GetProp(ReferencedTranscriptPostID)
-	var result *ai.TextStreamResult
+	var result *llm.TextStreamResult
 	switch {
 	case threadIDProp != nil:
 		threadID := threadIDProp.(string)

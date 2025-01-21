@@ -1,4 +1,4 @@
-package ai
+package llm
 
 type ServiceConfig struct {
 	Name         string `json:"name"`

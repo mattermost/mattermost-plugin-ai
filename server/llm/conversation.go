@@ -1,4 +1,4 @@
-package ai
+package llm
 
 import (
 	"encoding/json"

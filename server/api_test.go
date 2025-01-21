@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/mattermost/mattermost-plugin-ai/server/ai"
+	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/stretchr/testify/mock"
@@ -32,7 +32,7 @@ func TestPostRouter(t *testing.T) {
 			request        *http.Request
 			expectedStatus int
 			config         Config
-			botconfig      ai.BotConfig
+			botconfig      llm.BotConfig
 			envSetup       func(e *TestEnvironment)
 		}{
 			"no permission to channel": {
@@ -51,8 +51,8 @@ func TestPostRouter(t *testing.T) {
 			"user not allowed": {
 				request:        httptest.NewRequest(http.MethodPost, url, nil),
 				expectedStatus: http.StatusForbidden,
-				botconfig: ai.BotConfig{
-					UserAccessLevel: ai.UserAccessLevelBlock,
+				botconfig: llm.BotConfig{
+					UserAccessLevel: llm.UserAccessLevelBlock,
 					UserIDs:         []string{"userid"},
 				},
 				envSetup: func(e *TestEnvironment) {
@@ -146,7 +146,7 @@ func TestChannelRouter(t *testing.T) {
 			request        *http.Request
 			expectedStatus int
 			config         Config
-			botconfig      ai.BotConfig
+			botconfig      llm.BotConfig
 			envSetup       func(e *TestEnvironment)
 		}{
 			"test no permission to channel": {
@@ -165,8 +165,8 @@ func TestChannelRouter(t *testing.T) {
 			"test user not allowed": {
 				request:        httptest.NewRequest(http.MethodPost, url, nil),
 				expectedStatus: http.StatusForbidden,
-				botconfig: ai.BotConfig{
-					UserAccessLevel: ai.UserAccessLevelBlock,
+				botconfig: llm.BotConfig{
+					UserAccessLevel: llm.UserAccessLevelBlock,
 					UserIDs:         []string{"userid"},
 				},
 				envSetup: func(e *TestEnvironment) {

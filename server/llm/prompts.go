@@ -1,4 +1,4 @@
-package ai
+package llm
 
 import (
 	"fmt"
@@ -20,7 +20,7 @@ const UserSubTemplateName = ".user"
 //go:generate go run generate_prompt_vars.go
 
 func NewPrompts(input fs.FS) (*Prompts, error) {
-	templates, err := template.ParseFS(input, "ai/prompts/*")
+	templates, err := template.ParseFS(input, "llm/prompts/*")
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse prompt templates: %w", err)
 	}

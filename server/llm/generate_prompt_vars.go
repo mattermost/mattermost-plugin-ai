@@ -20,7 +20,7 @@ func main() {
 	}
 
 	var output bytes.Buffer
-	output.WriteString("package ai\n\n// Automatically generated convenience vars for the filenames in ai/prompts/\nconst (\n")
+	output.WriteString("package llm\n\n// Automatically generated convenience vars for the filenames in llm/prompts/\nconst (\n")
 
 	for _, entry := range entries {
 		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".tmpl" {

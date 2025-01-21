@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/mattermost/mattermost-plugin-ai/server/ai"
+	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 	"github.com/mattermost/mattermost-plugin-ai/server/metrics"
 )
 
@@ -16,7 +16,7 @@ type AskSage struct {
 	outputTokenLimit int
 }
 
-func New(llmService ai.ServiceConfig, httpClient *http.Client, metric metrics.LLMetrics) *AskSage {
+func New(llmService llm.ServiceConfig, httpClient *http.Client, metric metrics.LLMetrics) *AskSage {
 	client := NewClient("", httpClient)
 	if err := client.Login(GetTokenParams{
 		Email:    llmService.Username,
@@ -34,14 +34,14 @@ func New(llmService ai.ServiceConfig, httpClient *http.Client, metric metrics.LL
 	}
 }
 
-func conversationToMessagesList(conversation ai.BotConversation) []Message {
+func conversationToMessagesList(conversation llm.BotConversation) []Message {
 	result := make([]Message, 0, len(conversation.Posts))
 
 	for _, post := range conversation.Posts {
 		role := RoleUser
-		if post.Role == ai.PostRoleBot {
+		if post.Role == llm.PostRoleBot {
 			role = RoleGPT
-		} else if post.Role == ai.PostRoleSystem {
+		} else if post.Role == llm.PostRoleSystem {
 			continue // Ask Sage doesn't support this
 		}
 		result = append(result, Message{
@@ -53,14 +53,14 @@ func conversationToMessagesList(conversation ai.BotConversation) []Message {
 	return result
 }
 
-func (s *AskSage) GetDefaultConfig() ai.LLMConfig {
-	return ai.LLMConfig{
+func (s *AskSage) GetDefaultConfig() llm.LanguageModelConfig {
+	return llm.LanguageModelConfig{
 		Model:              s.defaultModel,
 		MaxGeneratedTokens: s.outputTokenLimit,
 	}
 }
 
-func (s *AskSage) createConfig(opts []ai.LanguageModelOption) ai.LLMConfig {
+func (s *AskSage) createConfig(opts []llm.LanguageModelOption) llm.LanguageModelConfig {
 	cfg := s.GetDefaultConfig()
 	for _, opt := range opts {
 		opt(&cfg)
@@ -68,22 +68,22 @@ func (s *AskSage) createConfig(opts []ai.LanguageModelOption) ai.LLMConfig {
 	return cfg
 }
 
-func (s *AskSage) queryParamsFromConfig(cfg ai.LLMConfig) QueryParams {
+func (s *AskSage) queryParamsFromConfig(cfg llm.LanguageModelConfig) QueryParams {
 	return QueryParams{
 		Model: cfg.Model,
 	}
 }
 
-func (s *AskSage) ChatCompletion(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (*ai.TextStreamResult, error) {
+func (s *AskSage) ChatCompletion(conversation llm.BotConversation, opts ...llm.LanguageModelOption) (*llm.TextStreamResult, error) {
 	// Ask Sage does not support streaming.
 	result, err := s.ChatCompletionNoStream(conversation, opts...)
 	if err != nil {
 		return nil, err
 	}
-	return ai.NewStreamFromString(result), nil
+	return llm.NewStreamFromString(result), nil
 }
 
-func (s *AskSage) ChatCompletionNoStream(conversation ai.BotConversation, opts ...ai.LanguageModelOption) (string, error) {
+func (s *AskSage) ChatCompletionNoStream(conversation llm.BotConversation, opts ...llm.LanguageModelOption) (string, error) {
 	s.metric.IncrementLLMRequests()
 
 	params := s.queryParamsFromConfig(s.createConfig(opts))
