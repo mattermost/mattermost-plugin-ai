@@ -5,24 +5,24 @@ import (
 	"testing"
 
 	anthropicSDK "github.com/anthropics/anthropic-sdk-go"
-	"github.com/mattermost/mattermost-plugin-ai/server/ai"
+	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestConversationToMessages(t *testing.T) {
 	tests := []struct {
 		name         string
-		conversation ai.BotConversation
+		conversation llm.BotConversation
 		wantSystem   string
 		wantMessages []anthropicSDK.MessageParam
 	}{
 		{
 			name: "basic conversation with system message",
-			conversation: ai.BotConversation{
-				Posts: []ai.Post{
-					{Role: ai.PostRoleSystem, Message: "You are a helpful assistant"},
-					{Role: ai.PostRoleUser, Message: "Hello"},
-					{Role: ai.PostRoleBot, Message: "Hi there!"},
+			conversation: llm.BotConversation{
+				Posts: []llm.Post{
+					{Role: llm.PostRoleSystem, Message: "You are a helpful assistant"},
+					{Role: llm.PostRoleUser, Message: "Hello"},
+					{Role: llm.PostRoleBot, Message: "Hi there!"},
 				},
 			},
 			wantSystem: "You are a helpful assistant",
@@ -49,12 +49,12 @@ func TestConversationToMessages(t *testing.T) {
 		},
 		{
 			name: "multiple messages from same role",
-			conversation: ai.BotConversation{
-				Posts: []ai.Post{
-					{Role: ai.PostRoleUser, Message: "First message"},
-					{Role: ai.PostRoleUser, Message: "Second message"},
-					{Role: ai.PostRoleBot, Message: "First response"},
-					{Role: ai.PostRoleBot, Message: "Second response"},
+			conversation: llm.BotConversation{
+				Posts: []llm.Post{
+					{Role: llm.PostRoleUser, Message: "First message"},
+					{Role: llm.PostRoleUser, Message: "Second message"},
+					{Role: llm.PostRoleBot, Message: "First response"},
+					{Role: llm.PostRoleBot, Message: "Second response"},
 				},
 			},
 			wantSystem: "",
@@ -89,16 +89,16 @@ func TestConversationToMessages(t *testing.T) {
 		},
 		{
 			name: "conversation with image",
-			conversation: ai.BotConversation{
-				Posts: []ai.Post{
-					{Role: ai.PostRoleUser, Message: "Look at this:",
-						Files: []ai.File{
+			conversation: llm.BotConversation{
+				Posts: []llm.Post{
+					{Role: llm.PostRoleUser, Message: "Look at this:",
+						Files: []llm.File{
 							{
 								MimeType: "image/jpeg",
 								Reader:   bytes.NewReader([]byte("fake-image-data")),
 							},
 						}},
-					{Role: ai.PostRoleBot, Message: "I see the image"},
+					{Role: llm.PostRoleBot, Message: "I see the image"},
 				},
 			},
 			wantSystem: "",
@@ -133,9 +133,9 @@ func TestConversationToMessages(t *testing.T) {
 		},
 		{
 			name: "unsupported image type",
-			conversation: ai.BotConversation{
-				Posts: []ai.Post{
-					{Role: ai.PostRoleUser, Files: []ai.File{
+			conversation: llm.BotConversation{
+				Posts: []llm.Post{
+					{Role: llm.PostRoleUser, Files: []llm.File{
 						{
 							MimeType: "image/tiff",
 							Reader:   bytes.NewReader([]byte("fake-tiff-data")),
@@ -158,17 +158,17 @@ func TestConversationToMessages(t *testing.T) {
 		},
 		{
 			name: "complex back and forth with repeated roles",
-			conversation: ai.BotConversation{
-				Posts: []ai.Post{
-					{Role: ai.PostRoleUser, Message: "First question"},
-					{Role: ai.PostRoleBot, Message: "First answer"},
-					{Role: ai.PostRoleUser, Message: "Follow up 1"},
-					{Role: ai.PostRoleUser, Message: "Follow up 2"},
-					{Role: ai.PostRoleUser, Message: "Follow up 3"},
-					{Role: ai.PostRoleBot, Message: "Response 1"},
-					{Role: ai.PostRoleBot, Message: "Response 2"},
-					{Role: ai.PostRoleBot, Message: "Response 3"},
-					{Role: ai.PostRoleUser, Message: "Final question"},
+			conversation: llm.BotConversation{
+				Posts: []llm.Post{
+					{Role: llm.PostRoleUser, Message: "First question"},
+					{Role: llm.PostRoleBot, Message: "First answer"},
+					{Role: llm.PostRoleUser, Message: "Follow up 1"},
+					{Role: llm.PostRoleUser, Message: "Follow up 2"},
+					{Role: llm.PostRoleUser, Message: "Follow up 3"},
+					{Role: llm.PostRoleBot, Message: "Response 1"},
+					{Role: llm.PostRoleBot, Message: "Response 2"},
+					{Role: llm.PostRoleBot, Message: "Response 3"},
+					{Role: llm.PostRoleUser, Message: "Final question"},
 				},
 			},
 			wantSystem: "",
@@ -238,10 +238,10 @@ func TestConversationToMessages(t *testing.T) {
 		},
 		{
 			name: "multiple roles with multiple images",
-			conversation: ai.BotConversation{
-				Posts: []ai.Post{
-					{Role: ai.PostRoleUser, Message: "Look at these images:",
-						Files: []ai.File{
+			conversation: llm.BotConversation{
+				Posts: []llm.Post{
+					{Role: llm.PostRoleUser, Message: "Look at these images:",
+						Files: []llm.File{
 							{
 								MimeType: "image/jpeg",
 								Reader:   bytes.NewReader([]byte("image-1")),
@@ -252,9 +252,9 @@ func TestConversationToMessages(t *testing.T) {
 							},
 						},
 					},
-					{Role: ai.PostRoleBot, Message: "I see them"},
-					{Role: ai.PostRoleUser, Message: "Here are more:",
-						Files: []ai.File{
+					{Role: llm.PostRoleBot, Message: "I see them"},
+					{Role: llm.PostRoleUser, Message: "Here are more:",
+						Files: []llm.File{
 							{
 								MimeType: "image/webp",
 								Reader:   bytes.NewReader([]byte("image-3")),

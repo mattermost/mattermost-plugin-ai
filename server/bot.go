@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/mattermost/mattermost-plugin-ai/server/ai"
+	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 	"github.com/mattermost/mattermost-plugin-ai/server/mmapi"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
@@ -12,11 +12,11 @@ import (
 )
 
 type Bot struct {
-	cfg   ai.BotConfig
+	cfg   llm.BotConfig
 	mmBot *model.Bot
 }
 
-func NewBot(cfg ai.BotConfig, bot *model.Bot) *Bot {
+func NewBot(cfg llm.BotConfig, bot *model.Bot) *Bot {
 	return &Bot{
 		cfg:   cfg,
 		mmBot: bot,
@@ -66,18 +66,18 @@ func (p *Plugin) MigrateServicesToBots() error {
 		return fmt.Errorf("failed to load plugin configuration for migration: %w", err)
 	}
 
-	existingConfig.Bots = make([]ai.BotConfig, 0, len(oldConfig.Config.Services))
+	existingConfig.Bots = make([]llm.BotConfig, 0, len(oldConfig.Config.Services))
 	for _, service := range oldConfig.Config.Services {
-		existingConfig.Bots = append(existingConfig.Bots, ai.BotConfig{
+		existingConfig.Bots = append(existingConfig.Bots, llm.BotConfig{
 			DisplayName: service.Name,
 			ID:          service.Name,
-			Service: ai.ServiceConfig{
-				Type:         service.ServiceName,
-				DefaultModel: service.DefaultModel,
-				OrgID:        service.OrgID,
-				APIURL:       service.URL,
-				APIKey:       service.APIKey,
-				TokenLimit:   service.TokenLimit,
+			Service: llm.ServiceConfig{
+				Type:            service.ServiceName,
+				DefaultModel:    service.DefaultModel,
+				OrgID:           service.OrgID,
+				APIURL:          service.URL,
+				APIKey:          service.APIKey,
+				InputTokenLimit: service.TokenLimit,
 			},
 		})
 	}
@@ -126,7 +126,7 @@ func (p *Plugin) EnsureBots() error {
 		cfgBots = cfgBots[:1]
 	}
 
-	aiBotConfigsByUsername := make(map[string]ai.BotConfig)
+	aiBotConfigsByUsername := make(map[string]llm.BotConfig)
 	for _, bot := range cfgBots {
 		if !bot.IsValid() {
 			p.pluginAPI.Log.Error("Configured bot is not valid", "bot_name", bot.Name, "bot_display_name", bot.DisplayName)
@@ -216,10 +216,10 @@ func (p *Plugin) UpdateBotsCache() error {
 	return nil
 }
 
-func (p *Plugin) GetBotConfig(botUsername string) (ai.BotConfig, error) {
+func (p *Plugin) GetBotConfig(botUsername string) (llm.BotConfig, error) {
 	bot := p.GetBotByUsername(botUsername)
 	if bot == nil {
-		return ai.BotConfig{}, fmt.Errorf("bot not found")
+		return llm.BotConfig{}, fmt.Errorf("bot not found")
 	}
 
 	return bot.cfg, nil

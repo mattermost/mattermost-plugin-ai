@@ -1,4 +1,3 @@
-//go:generate mockery --name=Metrics
 package metrics
 
 import (

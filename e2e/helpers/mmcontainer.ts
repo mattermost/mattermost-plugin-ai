@@ -8,7 +8,7 @@ const defaultUsername        = "admin";
 const defaultPassword        = "admin";
 const defaultTeamName        = "test";
 const defaultTeamDisplayName = "Test";
-const defaultMattermostImage = "mattermost/mattermost-enterprise-edition";
+const defaultMattermostImage = "mattermost/mattermost-enterprise-edition:latest";
 
 // MattermostContainer represents the mattermost container type used in the module
 export default class MattermostContainer {
@@ -24,6 +24,7 @@ export default class MattermostContainer {
     command:    string[];
     configFile: any[];
     plugins: any[];
+    private logStream: any;
 
     url(): string {
         const containerPort = this.container.getMappedPort(8065)
@@ -53,6 +54,9 @@ export default class MattermostContainer {
     }
 
     stop = async () => {
+        if (this.logStream) {
+            this.logStream.end();
+        }
         await this.pgContainer.stop()
         await this.container.stop()
         await this.network.stop()
@@ -145,6 +149,7 @@ export default class MattermostContainer {
                 "MM_LOGSETTINGS_FILELEVEL":           "DEBUG",
                 "MM_SERVICESETTINGS_ENABLEDEVELOPER": "true",
                 "MM_SERVICESETTINGS_ENABLETESTING":   "true",
+				"MM_PLUGINSETTINGS_AUTOMATICPREPACKAGEDPLUGINS": "false",
         };
         this.email = defaultEmail;
         this.username = defaultUsername;
@@ -176,12 +181,24 @@ export default class MattermostContainer {
             .withWaitStrategy(Wait.forLogMessage("Server is listening on"))
             .withCopyFilesToContainer(this.configFile)
 			.withLogConsumer((stream) => {
-				stream.on('data', (data: string) => {
-					if (data.includes('"plugin_id":"mattermost-ai"')) {
-						console.log(data)
-					}
-				})
-			})
+                // Create log file with timestamp
+                const fs = require('fs');
+                const logDir = 'logs';
+                if (!fs.existsSync(logDir)){
+                    fs.mkdirSync(logDir);
+                }
+                this.logStream = fs.createWriteStream(`${logDir}/server-logs.log`, {flags: 'a'});
+
+                stream.on('data', (data: string) => {
+                    // Write all logs to file
+                    this.logStream.write(data + '\n');
+
+                    // Still maintain special console logging for AI plugin
+                    if (data.includes('"plugin_id":"mattermost-ai"')) {
+                        console.log(data);
+                    }
+                });
+            })
             .start()
 
 

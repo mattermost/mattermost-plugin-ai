@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/mattermost/mattermost-plugin-ai/server/ai"
+	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
@@ -93,7 +93,7 @@ func (p *Plugin) getMetadataForPosts(posts *model.PostList) (*ThreadData, error)
 func formatThread(data *ThreadData) string {
 	result := ""
 	for _, post := range data.Posts {
-		result += fmt.Sprintf("%s: %s\n\n", data.UsersByID[post.UserId].Username, ai.FormatPostBody(post))
+		result += fmt.Sprintf("%s: %s\n\n", data.UsersByID[post.UserId].Username, llm.FormatPostBody(post))
 	}
 
 	return result
@@ -133,7 +133,7 @@ func (p *Plugin) botDM(botid string, userID string, post *model.Post) error {
 	return nil
 }
 
-func (p *Plugin) streamResultToNewPost(botid string, requesterUserID string, stream *ai.TextStreamResult, post *model.Post) error {
+func (p *Plugin) streamResultToNewPost(botid string, requesterUserID string, stream *llm.TextStreamResult, post *model.Post) error {
 	if err := p.botCreatePost(botid, requesterUserID, post); err != nil {
 		return fmt.Errorf("unable to create post: %w", err)
 	}
@@ -170,7 +170,7 @@ func (p *Plugin) streamResultToNewPost(botid string, requesterUserID string, str
 	return nil
 }
 
-func (p *Plugin) streamResultToNewDM(botid string, stream *ai.TextStreamResult, userID string, post *model.Post) error {
+func (p *Plugin) streamResultToNewDM(botid string, stream *llm.TextStreamResult, userID string, post *model.Post) error {
 	if err := p.botDM(botid, userID, post); err != nil {
 		return err
 	}
@@ -271,7 +271,7 @@ func (p *Plugin) finishPostStreaming(postID string) {
 
 // streamResultToPost streams the result of a TextStreamResult to a post.
 // it will internally handle logging needs and updating the post.
-func (p *Plugin) streamResultToPost(ctx context.Context, stream *ai.TextStreamResult, post *model.Post, userLocale string) {
+func (p *Plugin) streamResultToPost(ctx context.Context, stream *llm.TextStreamResult, post *model.Post, userLocale string) {
 	T := i18nLocalizerFunc(p.i18n, userLocale)
 	p.sendPostStreamingControlEvent(post, PostStreamingControlStart)
 	defer func() {
@@ -398,9 +398,9 @@ func isImageMimeType(mimeType string) bool {
 	return strings.HasPrefix(mimeType, "image/")
 }
 
-func (p *Plugin) PostToAIPost(bot *Bot, post *model.Post) ai.Post {
-	var filesForUpstream []ai.File
-	message := ai.FormatPostBody(post)
+func (p *Plugin) PostToAIPost(bot *Bot, post *model.Post) llm.Post {
+	var filesForUpstream []llm.File
+	message := llm.FormatPostBody(post)
 	var extractedFileContents []string
 
 	maxFileSize := defaultMaxFileSize
@@ -447,7 +447,7 @@ func (p *Plugin) PostToAIPost(bot *Bot, post *model.Post) ai.Post {
 				p.API.LogError("Error getting file", "error", err)
 				continue
 			}
-			filesForUpstream = append(filesForUpstream, ai.File{
+			filesForUpstream = append(filesForUpstream, llm.File{
 				Reader:   file,
 				MimeType: fileInfo.MimeType,
 				Size:     fileInfo.Size,
@@ -460,21 +460,21 @@ func (p *Plugin) PostToAIPost(bot *Bot, post *model.Post) ai.Post {
 		message += "\nAttached File Contents:\n" + strings.Join(extractedFileContents, "\n\n")
 	}
 
-	role := ai.PostRoleUser
+	role := llm.PostRoleUser
 	if p.IsAnyBot(post.UserId) {
-		role = ai.PostRoleBot
+		role = llm.PostRoleBot
 	}
 
-	return ai.Post{
+	return llm.Post{
 		Role:    role,
 		Message: message,
 		Files:   filesForUpstream,
 	}
 }
 
-func (p *Plugin) ThreadToBotConversation(bot *Bot, posts []*model.Post) ai.BotConversation {
-	result := ai.BotConversation{
-		Posts: make([]ai.Post, 0, len(posts)),
+func (p *Plugin) ThreadToBotConversation(bot *Bot, posts []*model.Post) llm.BotConversation {
+	result := llm.BotConversation{
+		Posts: make([]llm.Post, 0, len(posts)),
 	}
 
 	for _, post := range posts {

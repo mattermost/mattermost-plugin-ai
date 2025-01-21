@@ -86,7 +86,7 @@ export const HelpText = styled.div`
 `;
 
 export const StyledInput = styled.input<{ as?: string }>`
-	apperance: none;
+	appearance: none;
 	display: flex;
 	padding: 7px 12px;
 	align-items: flex-start;
