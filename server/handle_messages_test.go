@@ -1,9 +1,10 @@
 package main
 
 import (
+	"testing"
+
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func TestHandleMessages(t *testing.T) {
@@ -46,4 +47,3 @@ func TestHandleMessages(t *testing.T) {
 		require.ErrorIs(t, err, ErrNoResponse)
 	})
 }
-

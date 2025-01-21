@@ -11,7 +11,6 @@ import (
 	anthropicSDK "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/invopop/jsonschema"
-	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 	"github.com/mattermost/mattermost-plugin-ai/server/metrics"
 )
@@ -149,7 +148,7 @@ func conversationToMessages(posts []llm.Post) (string, []anthropicSDK.MessagePar
 }
 
 func (a *Anthropic) GetDefaultConfig() llm.LanguageModelConfig {
-	config := ai.LLMConfig{
+	config := llm.LanguageModelConfig{
 		Model: a.defaultModel,
 	}
 	if a.outputTokenLimit == 0 {
@@ -301,7 +300,7 @@ func (a *Anthropic) CountTokens(text string) int {
 	return 0
 }
 
-// convertTools converts from ai.Tool to anthropicSDK.Tool format
+// convertTools converts from llm.Tool to anthropicSDK.Tool format
 func convertTools(tools []llm.Tool) []anthropicSDK.ToolParam {
 	converted := make([]anthropicSDK.ToolParam, len(tools))
 	for i, tool := range tools {
