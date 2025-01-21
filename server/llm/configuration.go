@@ -1,17 +1,22 @@
 package llm
 
 type ServiceConfig struct {
-	Name                    string `json:"name"`
-	Type                    string `json:"type"`
-	APIKey                  string `json:"apiKey"`
-	OrgID                   string `json:"orgId"`
-	DefaultModel            string `json:"defaultModel"`
-	APIURL                  string `json:"apiURL"`
-	Username                string `json:"username"`
-	Password                string `json:"password"`
-	TokenLimit              int    `json:"tokenLimit"`
-	StreamingTimeoutSeconds int    `json:"streamingTimeoutSeconds"`
-	SendUserID              bool   `json:"sendUserID"`
+	Name         string `json:"name"`
+	Type         string `json:"type"`
+	APIKey       string `json:"apiKey"`
+	OrgID        string `json:"orgId"`
+	DefaultModel string `json:"defaultModel"`
+	APIURL       string `json:"apiURL"`
+	Username     string `json:"username"`
+	Password     string `json:"password"`
+
+	// Renaming the JSON field to inputTokenLimit would require a migration, leaving as is for now.
+	InputTokenLimit         int  `json:"tokenLimit"`
+	StreamingTimeoutSeconds int  `json:"streamingTimeoutSeconds"`
+	SendUserID              bool `json:"sendUserID"`
+
+	// Otherwise known as maxTokens
+	OutputTokenLimit int `json:"outputTokenLimit"`
 }
 
 type ChannelAccessLevel int

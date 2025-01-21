@@ -11,12 +11,13 @@ import (
 	anthropicSDK "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/invopop/jsonschema"
+	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 	"github.com/mattermost/mattermost-plugin-ai/server/metrics"
 )
 
 const (
-	DefaultMaxTokens       = 4096
+	DefaultMaxTokens       = 8192
 	MaxToolResolutionDepth = 10
 )
 
@@ -33,10 +34,11 @@ type messageState struct {
 }
 
 type Anthropic struct {
-	client         *anthropicSDK.Client
-	defaultModel   string
-	tokenLimit     int
-	metricsService metrics.LLMetrics
+	client           *anthropicSDK.Client
+	defaultModel     string
+	inputTokenLimit  int
+	metricsService   metrics.LLMetrics
+	outputTokenLimit int
 }
 
 func New(llmService llm.ServiceConfig, httpClient *http.Client, metricsService metrics.LLMetrics) *Anthropic {
@@ -46,10 +48,11 @@ func New(llmService llm.ServiceConfig, httpClient *http.Client, metricsService m
 	)
 
 	return &Anthropic{
-		client:         client,
-		defaultModel:   llmService.DefaultModel,
-		tokenLimit:     llmService.TokenLimit,
-		metricsService: metricsService,
+		client:           client,
+		defaultModel:     llmService.DefaultModel,
+		inputTokenLimit:  llmService.InputTokenLimit,
+		metricsService:   metricsService,
+		outputTokenLimit: llmService.OutputTokenLimit,
 	}
 }
 
@@ -146,10 +149,15 @@ func conversationToMessages(posts []llm.Post) (string, []anthropicSDK.MessagePar
 }
 
 func (a *Anthropic) GetDefaultConfig() llm.LanguageModelConfig {
-	return llm.LanguageModelConfig{
-		Model:              a.defaultModel,
-		MaxGeneratedTokens: DefaultMaxTokens,
+	config := ai.LLMConfig{
+		Model: a.defaultModel,
 	}
+	if a.outputTokenLimit == 0 {
+		config.MaxGeneratedTokens = DefaultMaxTokens
+	} else {
+		config.MaxGeneratedTokens = a.outputTokenLimit
+	}
+	return config
 }
 
 func (a *Anthropic) createConfig(opts []llm.LanguageModelOption) llm.LanguageModelConfig {
@@ -311,9 +319,9 @@ func convertTools(tools []llm.Tool) []anthropicSDK.ToolParam {
 	return converted
 }
 
-func (a *Anthropic) TokenLimit() int {
-	if a.tokenLimit > 0 {
-		return a.tokenLimit
+func (a *Anthropic) InputTokenLimit() int {
+	if a.inputTokenLimit > 0 {
+		return a.inputTokenLimit
 	}
 	return 100000
 }
