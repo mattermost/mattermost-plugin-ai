@@ -16,6 +16,8 @@ import (
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
+const ContextTokenMargin = 1000
+const WhisperAPILimit = 25 * 1000 * 1000 // 25 MB
 const ReferencedRecordingFileID = "referenced_recording_file_id"
 const ReferencedTranscriptPostID = "referenced_transcript_post_id"
 const NoRegen = "no_regen"
