@@ -11,9 +11,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/render"
-	"github.com/mattermost/mattermost-plugin-ai/server/ai"
-	"github.com/mattermost/mattermost-plugin-ai/server/ai/subtitles"
 	"github.com/mattermost/mattermost-plugin-ai/server/enterprise"
+	"github.com/mattermost/mattermost-plugin-ai/server/llm"
+	"github.com/mattermost/mattermost-plugin-ai/server/llm/subtitles"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
@@ -40,7 +40,8 @@ func (p *Plugin) postAuthorizationRequired(c *gin.Context) {
 		return
 	}
 
-	if err := p.checkUsageRestrictions(userID, channel); err != nil {
+	bot := c.MustGet(ContextBotKey).(*Bot)
+	if err := p.checkUsageRestrictions(userID, bot, channel); err != nil {
 		c.AbortWithError(http.StatusForbidden, err)
 		return
 	}
@@ -58,25 +59,25 @@ func (p *Plugin) handleReact(c *gin.Context) {
 		return
 	}
 
-	context := p.MakeConversationContext(bot, user, channel, post)
-	context.PromptParameters = map[string]string{"Message": post.Message}
-	prompt, err := p.prompts.ChatCompletion(ai.PromptEmojiSelect, context)
+	conversationContext := p.MakeConversationContext(bot, user, channel, post)
+	conversationContext.PromptParameters = map[string]string{"Message": post.Message}
+	prompt, err := p.prompts.ChatCompletion(llm.PromptEmojiSelect, conversationContext, llm.NewNoTools())
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 
-	emojiName, err := p.getLLM(bot.cfg).ChatCompletionNoStream(prompt, ai.WithMaxGeneratedTokens(25))
+	emojiName, err := p.getLLM(bot.cfg).ChatCompletionNoStream(prompt, llm.WithMaxGeneratedTokens(25))
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 
-	// Do some emoji post processing to hopefully make this an actual emoji.
+	// Do some emoji post-processing to hopefully make this an actual emoji.
 	emojiName = strings.Trim(strings.TrimSpace(emojiName), ":")
 
 	if _, found := model.GetSystemEmojiId(emojiName); !found {
-		p.pluginAPI.Post.AddReaction(&model.Reaction{
+		_ = p.pluginAPI.Post.AddReaction(&model.Reaction{
 			EmojiName: "large_red_square",
 			UserId:    bot.mmBot.UserId,
 			PostId:    post.Id,
@@ -98,7 +99,7 @@ func (p *Plugin) handleReact(c *gin.Context) {
 	c.Status(http.StatusOK)
 }
 
-func (p *Plugin) handleSummarize(c *gin.Context) {
+func (p *Plugin) handleThreadAnalysis(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
@@ -115,20 +116,38 @@ func (p *Plugin) handleSummarize(c *gin.Context) {
 		return
 	}
 
-	createdPost, err := p.startNewSummaryThread(bot, post.Id, p.MakeConversationContext(bot, user, channel, nil))
-	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to produce summary: %w", err))
+	var data struct {
+		AnalysisType string `json:"analysis_type" binding:"required"`
+	}
+	if bindErr := c.ShouldBindJSON(&data); bindErr != nil {
+		c.AbortWithError(http.StatusBadRequest, bindErr)
 		return
 	}
 
-	data := struct {
+	switch data.AnalysisType {
+	case "summarize_thread":
+	case "action_items":
+	case "open_questions":
+		break
+	default:
+		c.AbortWithError(http.StatusBadRequest, fmt.Errorf("invalid analysis type: %s", data.AnalysisType))
+		return
+	}
+
+	createdPost, err := p.startNewAnalysisThread(bot, post.Id, data.AnalysisType, p.MakeConversationContext(bot, user, channel, nil))
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to perform analysis: %w", err))
+		return
+	}
+
+	result := struct {
 		PostID    string `json:"postid"`
 		ChannelID string `json:"channelid"`
 	}{
 		PostID:    createdPost.Id,
 		ChannelID: createdPost.ChannelId,
 	}
-	c.Render(http.StatusOK, render.JSON{Data: data})
+	c.JSON(http.StatusOK, result)
 }
 
 func (p *Plugin) handleTranscribeFile(c *gin.Context) {
@@ -273,18 +292,20 @@ func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, ch
 	}
 	defer p.finishPostStreaming(post.Id)
 
-	summaryPostIDProp := post.GetProp(ThreadIDProp)
+	threadIDProp := post.GetProp(ThreadIDProp)
+	analysisTypeProp := post.GetProp(AnalysisTypeProp)
 	referenceRecordingFileIDProp := post.GetProp(ReferencedRecordingFileID)
 	referencedTranscriptPostProp := post.GetProp(ReferencedTranscriptPostID)
-	var result *ai.TextStreamResult
+	var result *llm.TextStreamResult
 	switch {
-	case summaryPostIDProp != nil:
-		summaryPostID := summaryPostIDProp.(string)
+	case threadIDProp != nil:
+		threadID := threadIDProp.(string)
+		analysisType := analysisTypeProp.(string)
 		siteURL := p.API.GetConfig().ServiceSettings.SiteURL
-		post.Message = p.summaryPostMessage(user.Locale, summaryPostID, *siteURL)
+		post.Message = p.analysisPostMessage(user.Locale, threadID, analysisType, *siteURL)
 
 		var err error
-		result, err = p.summarizePost(bot, summaryPostID, p.MakeConversationContext(bot, user, channel, nil))
+		result, err = p.analyzeThread(bot, threadID, analysisType, p.MakeConversationContext(bot, user, channel, nil))
 		if err != nil {
 			return fmt.Errorf("could not summarize post on regen: %w", err)
 		}

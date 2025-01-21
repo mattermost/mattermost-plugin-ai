@@ -3,7 +3,7 @@ import {Store, Action} from 'redux';
 import styled from 'styled-components';
 import {FormattedMessage} from 'react-intl';
 
-import {GlobalState} from '@mattermost/types/lib/store';
+import {GlobalState} from '@mattermost/types/store';
 
 //@ts-ignore it exists
 import aiIcon from '../../assets/bot_icon.png';
@@ -17,14 +17,13 @@ import IconThreadSummarization from './components/assets/icon_thread_summarizati
 import IconReactForMe from './components/assets/icon_react_for_me';
 import RHS from './components/rhs/rhs';
 import Config from './components/system_console/config';
-import {doReaction, doSummarize, getAIDirectChannel, doSearch} from './client';
+import {doReaction, doThreadAnalysis, getAIDirectChannel, doSearch} from './client';
 import {setOpenRHSAction} from './redux_actions';
-import {BotUsername} from './constants';
 import PostEventListener from './websocket';
-import {setupRedux} from './redux';
-import UnreadsSumarize from './components/unreads_summarize';
-import {Pill} from './components/pill';
+import {BotsHandler, setupRedux} from './redux';
+import UnreadsSummarize from './components/unreads_summarize';
 import {PostbackPost} from './components/postback_post';
+import {isRHSCompatable} from './mm_webapp';
 
 import SearchButton from './components/search/searchButton';
 import SearchSuggestions from './components/search/searchSuggestions';
@@ -52,25 +51,8 @@ const RHSTitle = () => {
         <RHSTitleContainer>
             <IconAIContainer src={aiIcon}/>
             {'Copilot'}
-            <Pill>
-                {'BETA'}
-            </Pill>
         </RHSTitleContainer>
     );
-};
-
-const isProcessableAudio = (fileInfo: any) => {
-    const acceptedExtensions = [
-        'mp3',
-        'mp4',
-        'mpeg',
-        'mpga',
-        'm4a',
-        'wav',
-        'webm',
-    ];
-
-    return acceptedExtensions.includes(fileInfo.extension);
 };
 
 export default class Plugin {
@@ -90,26 +72,9 @@ export default class Plugin {
         });
 
         let rhs: any = null;
-        if ((window as any).Components.CreatePost) {
+        if (isRHSCompatable()) {
             rhs = registry.registerRightHandSidebarComponent(RHS, RHSTitle);
             setOpenRHSAction(rhs.showRHSPlugin);
-
-            registry.registerReducer((state = {}, action: any) => {
-                switch (action.type) {
-                case 'SET_AI_BOT_CHANNEL':
-                    return {
-                        ...state,
-                        botChannelId: action.botChannelId,
-                    };
-                case 'SELECT_AI_POST':
-                    return {
-                        ...state,
-                        selectedPostId: action.postId,
-                    };
-                default:
-                    return state;
-                }
-            });
         }
 
         let currentUserId = store.getState().entities.users.currentUserId;
@@ -145,6 +110,13 @@ export default class Plugin {
             ;
         };
 
+        registry.registerWebSocketEventHandler('config_changed', () => {
+            store.dispatch({
+                type: BotsHandler,
+                bots: null,
+            } as any);
+        });
+
         registry.registerPostTypeComponent('custom_llmbot', LLMBotPostWithWebsockets);
         registry.registerPostTypeComponent('custom_llm_postback', PostbackPost);
         registry.registerSearchComponents({
@@ -165,8 +137,8 @@ export default class Plugin {
             registry.registerPostDropdownMenuAction(<><span className='icon'><IconThreadSummarization/></span><FormattedMessage defaultMessage='Summarize Thread'/></>, (postId: string) => {
                 const state = store.getState();
                 const team = state.entities.teams.teams[state.entities.teams.currentTeamId];
-                window.WebappUtils.browserHistory.push('/' + team.name + '/messages/@' + BotUsername);
-                doSummarize(postId, '');
+                window.WebappUtils.browserHistory.push('/' + team.name + '/messages/@ai');
+                doThreadAnalysis(postId, 'summarize_thread', '');
                 if (rhs) {
                     store.dispatch(rhs.showRHSPlugin);
                 }
@@ -185,7 +157,7 @@ export default class Plugin {
         }
 
         if (registry.registerNewMessagesSeparatorActionComponent) {
-            registry.registerNewMessagesSeparatorActionComponent(UnreadsSumarize);
+            registry.registerNewMessagesSeparatorActionComponent(UnreadsSummarize);
         }
     }
 }

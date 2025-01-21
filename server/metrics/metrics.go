@@ -1,4 +1,3 @@
-//go:generate mockery --name=Metrics
 package metrics
 
 import (
@@ -25,7 +24,7 @@ type Metrics interface {
 	IncrementHTTPRequests()
 	IncrementHTTPErrors()
 
-	IncrementLLMRequests(llmName string)
+	GetMetricsForAIService(llmName string) *llmMetrics
 }
 
 type InstanceInfo struct {
@@ -152,8 +151,26 @@ func (m *metrics) IncrementHTTPErrors() {
 	}
 }
 
-func (m *metrics) IncrementLLMRequests(llmName string) {
+func (m *metrics) GetMetricsForAIService(llmName string) *llmMetrics {
+	if m == nil {
+		return nil
+	}
+
+	return &llmMetrics{
+		llmRequestsTotal: m.llmRequestsTotal.MustCurryWith(prometheus.Labels{"llm_name": llmName}),
+	}
+}
+
+type LLMetrics interface {
+	IncrementLLMRequests()
+}
+
+type llmMetrics struct {
+	llmRequestsTotal *prometheus.CounterVec
+}
+
+func (m *llmMetrics) IncrementLLMRequests() {
 	if m != nil {
-		m.llmRequestsTotal.With(prometheus.Labels{"llm_name": llmName}).Inc()
+		m.llmRequestsTotal.With(prometheus.Labels{}).Inc()
 	}
 }

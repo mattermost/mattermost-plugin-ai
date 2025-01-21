@@ -1,7 +1,7 @@
-import React, {MouseEvent, useEffect, useRef, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {FormattedMessage} from 'react-intl';
 import {useSelector} from 'react-redux';
-import styled, {css, createGlobalStyle} from 'styled-components';
+import styled from 'styled-components';
 
 import {WebSocketMessage} from '@mattermost/client';
 import {GlobalState} from '@mattermost/types/store';
@@ -10,37 +10,15 @@ import {SendIcon} from '@mattermost/compass-icons/components';
 
 import {doPostbackSummary, doRegenerate, doStopGenerating} from '@/client';
 
-import {useSelectNotAIPost, useSelectPost} from '@/hooks';
+import {useSelectNotAIPost} from '@/hooks';
+
+import {PostMessagePreview} from '@/mm_webapp';
 
 import PostText from './post_text';
 import IconRegenerate from './assets/icon_regenerate';
 import IconCancel from './assets/icon_cancel';
 
-const PostMessagePreview = (window as any).Components.PostMessagePreview;
-
-const FixPostHover = createGlobalStyle<{disableHover?: string}>`
-	${(props) => props.disableHover && css`
-	&&&& {
-		[data-testid="post-menu-${props.disableHover}"] {
-			display: none !important;
-		}
-		[data-testid="post-menu-${props.disableHover}"]:hover {
-			display: none !important;
-		}
-	}`}
-`;
-
-const PostBody = styled.div<{disableHover?: boolean}>`
-	${(props) => props.disableHover && css`
-	::before {
-		content: '';
-		position: absolute;
-		width: 110%;
-		height: 110%;
-		left: 50%;
-		top: 50%;
-		transform: translate(-50%, -50%);
-	}`}
+const PostBody = styled.div`
 `;
 
 const ControlsBar = styled.div`
@@ -92,27 +70,7 @@ const PostSummaryButton = styled(GenerationButton)`
 	}
 `;
 
-const StopGeneratingButton = styled.button`
-	display: flex;
-	padding: 5px 12px;
-	align-items: center;
-	justify-content: center;
-	gap: 6px;
-	border-radius: 4px;
-	border: 1px solid rgba(var(--center-channel-color,0.12));
-	background: var(--center-channel-bg);
-
-	box-shadow: 0px 4px 6px 0px rgba(0, 0, 0, 0.12);
-
-	position: absolute;
-	left: 50%;
-	top: -5px;
-	transform: translateX(-50%);
-
-	color: var(--button-bg);
-
-	font-size: 12px;
-	font-weight: 600;
+const StopGeneratingButton = styled(GenerationButton)`
 `;
 
 const QuestionAnswerMark = styled.div`
@@ -160,8 +118,8 @@ export interface PostUpdateWebsocketMessage {
 
 interface Props {
     post: any;
-    websocketRegister: (postID: string, handler: (msg: WebSocketMessage<PostUpdateWebsocketMessage>) => void) => void;
-    websocketUnregister: (postID: string) => void;
+    websocketRegister: (postID: string, listenerID: string, handler: (msg: WebSocketMessage<PostUpdateWebsocketMessage>) => void) => void;
+    websocketUnregister: (postID: string, listenerID: string) => void;
 }
 
 export const LLMBotPost = (props: Props) => {
@@ -181,7 +139,8 @@ export const LLMBotPost = (props: Props) => {
     const rootPost = useSelector<GlobalState, any>((state) => state.entities.posts.posts[props.post.root_id]);
 
     useEffect(() => {
-        props.websocketRegister(props.post.id, (msg: WebSocketMessage<PostUpdateWebsocketMessage>) => {
+        const listenerID = Math.random().toString(36).substring(7);
+        props.websocketRegister(props.post.id, listenerID, (msg: WebSocketMessage<PostUpdateWebsocketMessage>) => {
             const data = msg.data;
             if (!data.control && !stoppedRef.current) {
                 setGenerating(true);
@@ -195,7 +154,7 @@ export const LLMBotPost = (props: Props) => {
             }
         });
         return () => {
-            props.websocketUnregister(props.post.id);
+            props.websocketUnregister(props.post.id, listenerID);
         };
     }, []);
 
@@ -210,12 +169,6 @@ export const LLMBotPost = (props: Props) => {
         setStopped(true);
         setGenerating(false);
         doStopGenerating(props.post.id);
-    };
-
-    const stopPropagationIfGenerating = (e: MouseEvent) => {
-        if (generating) {
-            e.stopPropagation();
-        }
     };
 
     const postSummary = async () => {
@@ -244,15 +197,12 @@ export const LLMBotPost = (props: Props) => {
 
     const showRegenerate = !generating && requesterIsCurrentUser && !isNoShowRegen;
     const showPostbackButton = !generating && requesterIsCurrentUser && isTranscriptionResult;
-    const showControlsBar = (showRegenerate || showPostbackButton) && message !== '';
+    const showStopGeneratingButton = generating && requesterIsCurrentUser;
+    const showControlsBar = (showRegenerate || showPostbackButton || showStopGeneratingButton) && message !== '';
 
     return (
         <PostBody
             data-testid='llm-bot-post'
-            disableHover={generating}
-            onMouseOver={stopPropagationIfGenerating}
-            onMouseEnter={stopPropagationIfGenerating}
-            onMouseMove={stopPropagationIfGenerating}
         >
             {isSearchResult && (
                 <QuestionAnswerMark>
@@ -267,7 +217,6 @@ export const LLMBotPost = (props: Props) => {
                 </QuestionAnswerMark>
             )}
 
-            <FixPostHover disableHover={generating ? props.post.id : ''}/>
             {isThreadSummaryPost && permalinkView &&
             <>
                 {permalinkView}
@@ -279,15 +228,6 @@ export const LLMBotPost = (props: Props) => {
                 postID={props.post.id}
                 showCursor={generating}
             />
-            { generating && requesterIsCurrentUser &&
-            <StopGeneratingButton
-                data-testid='stop-generating-button'
-                onClick={stopGenerating}
-            >
-                <IconCancel/>
-                <FormattedMessage defaultMessage='Stop Generating'/>
-            </StopGeneratingButton>
-            }
             { showPostbackButton &&
             <PostSummaryHelpMessage>
                 <FormattedMessage defaultMessage='Would you like to post this summary to the original call thread? You can also ask Copilot to make changes.'/>
@@ -295,6 +235,15 @@ export const LLMBotPost = (props: Props) => {
             }
             { showControlsBar &&
             <ControlsBar>
+                { showStopGeneratingButton &&
+                <StopGeneratingButton
+                    data-testid='stop-generating-button'
+                    onClick={stopGenerating}
+                >
+                    <IconCancel/>
+                    <FormattedMessage defaultMessage='Stop Generating'/>
+                </StopGeneratingButton>
+                }
                 {showPostbackButton &&
                 <PostSummaryButton
                     data-testid='llm-bot-post-summary'

@@ -8,7 +8,7 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   e2e:
@@ -37,9 +37,72 @@ jobs:
         name: playwright-report
         path: ./e2e/playwright-report/
         retention-days: 30
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: server-logs
+        path: ./e2e/logs/server-logs.log
+        retention-days: 30
   plugin-ci:
     uses: mattermost/actions-workflows/.github/workflows/plugin-ci.yml@main
     with:
       golangci-lint-version: "v1.54.2"
       golang-version: "1.21"
     secrets: inherit
+
+  deploy:
+    needs: [plugin-ci, e2e]
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build plugin
+        run: make dist
+
+      - name: Update latest-master release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PLUGIN_FILE=$(ls dist/*.tar.gz)
+          # Get the commit message and hash
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          COMMIT_HASH=$(git rev-parse --short HEAD)
+
+          # Delete the old release if it exists
+          gh release delete latest-master --yes || true
+
+          # Delete the old tag if it exists
+          git tag -d latest-master || true
+          git push origin :refs/tags/latest-master || true
+
+          # Create new tag and release
+          git tag latest-master
+          git push origin latest-master
+
+          gh release create latest-master \
+            --title "Latest Master Build" \
+            --notes "Latest build from master branch - ${COMMIT_HASH}" \
+            --prerelease \
+            $PLUGIN_FILE
+
+      - name: Deploy to Mattermost instances
+        env:
+          MM_SERVERS_CONFIG: ${{ secrets.MM_SERVERS_CONFIG }}
+        run: |
+          PLUGIN_FILE=$(ls dist/*.tar.gz)
+          echo "Found plugin bundle: $PLUGIN_FILE"
+
+          echo "$MM_SERVERS_CONFIG" | jq -c '.[]' | while read -r server; do
+            url=$(echo "$server" | jq -r '.url')
+            token=$(echo "$server" | jq -r '.token')
+
+            echo "Deploying to $url"
+            curl -H "Authorization: Bearer $token" \
+                 -X POST \
+                 -F "plugin=@$PLUGIN_FILE" \
+                 -F "force=true" \
+                 "$url/api/v4/plugins"
+          done

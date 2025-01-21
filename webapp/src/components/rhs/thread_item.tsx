@@ -1,6 +1,8 @@
 import React from 'react';
 import styled from 'styled-components';
 
+import {Timestamp} from '@/mm_webapp';
+
 import {GrayPill} from '../pill';
 
 const ThreadItemContainer = styled.div`
@@ -8,8 +10,6 @@ const ThreadItemContainer = styled.div`
     cursor: pointer;
     border-bottom: 1px solid rgba(var(--center-channel-color-rgb), 0.12)
 `;
-
-const Timestamp = (window as any).Components.Timestamp;
 
 const Title = styled.div`
     color: var(--center-channel-color);

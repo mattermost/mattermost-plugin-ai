@@ -328,12 +328,6 @@
       ],
       "no-self-compare": 2,
       "no-sequences": 2,
-      "no-shadow": [
-         2,
-         {
-            "hoist": "functions"
-         }
-      ],
       "no-shadow-restricted-names": 2,
       "no-spaced-func": 2,
       "no-tabs": 0,
@@ -643,6 +637,7 @@
             "@typescript-eslint/prefer-interface": 0,
             "@typescript-eslint/explicit-function-return-type": 0,
             "@typescript-eslint/explicit-module-boundary-types": 0,
+            "@typescript-eslint/no-explicit-any": 0,
             "@typescript-eslint/indent": [
                2,
                4,

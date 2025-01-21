@@ -19,12 +19,12 @@ func (p *Plugin) GetMetrics() metrics.Metrics {
 }
 
 func (p *Plugin) metricsMiddleware(c *gin.Context) {
-	metrics := p.GetMetrics()
-	if metrics == nil {
+	llmMetrics := p.GetMetrics()
+	if llmMetrics == nil {
 		c.Next()
 		return
 	}
-	p.GetMetrics().IncrementHTTPRequests()
+	llmMetrics.IncrementHTTPRequests()
 	now := time.Now()
 
 	c.Next()
@@ -34,9 +34,9 @@ func (p *Plugin) metricsMiddleware(c *gin.Context) {
 	status := c.Writer.Status()
 
 	if status < 200 || status > 299 {
-		p.GetMetrics().IncrementHTTPErrors()
+		llmMetrics.IncrementHTTPErrors()
 	}
 
 	endpoint := c.HandlerName()
-	p.GetMetrics().ObserveAPIEndpointDuration(endpoint, c.Request.Method, strconv.Itoa(status), elapsed)
+	llmMetrics.ObserveAPIEndpointDuration(endpoint, c.Request.Method, strconv.Itoa(status), elapsed)
 }

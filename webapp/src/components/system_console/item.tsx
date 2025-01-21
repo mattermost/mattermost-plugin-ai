@@ -16,6 +16,7 @@ type TextItemProps = {
     helptext?: string,
     multiline?: boolean,
     placeholder?: string,
+    maxLength?: number,
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => void
 };
 
@@ -30,6 +31,7 @@ export const TextItem = (props: TextItemProps) => {
                     type={props.type ? props.type : 'text'}
                     placeholder={props.placeholder ? props.placeholder : props.label}
                     onChange={props.onChange}
+                    maxLength={props.maxLength}
                 />
                 {props.helptext &&
                 <HelpText>{props.helptext}</HelpText>
@@ -76,15 +78,15 @@ const TextFieldContainer = styled.div`
 	gap: 8px;
 `;
 
-const HelpText = styled.div`
+export const HelpText = styled.div`
 	font-size: 12px;
 	font-weight: 400;
 	line-height: 16px;
 	color: rgba(var(--center-channel-color-rgb), 0.72);
 `;
 
-export const StyledInput = styled.input<{as?: string}>`
-	apperance: none;
+export const StyledInput = styled.input<{ as?: string }>`
+	appearance: none;
 	display: flex;
 	padding: 7px 12px;
 	align-items: flex-start;
@@ -110,8 +112,39 @@ export const StyledInput = styled.input<{as?: string}>`
 	}
 `;
 
+export const StyledRadio = styled.input`
+	appearance: none;
+	display: grid;
+	color: rgba(var(--center-channel-color-rgb), 0.24);
+	width: 1.6rem;
+	height: 1.6rem;
+	border: 1px solid rgba(var(--center-channel-color-rgb),0.24);
+	border-radius: 50%;
+	margin: 0;
+	cursor: pointer;
+	place-content: center;
+
+	&:checked {
+		border-color: var(--button-bg);
+		&:before {
+			transform: scale(1);
+		}
+	}
+
+	&:before {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--button-bg);
+		content: '';
+		transform: scale(0);
+		transform-origin: center center;
+		transition: 200ms transform ease-in-out;
+	}
+`;
+
 type BooleanItemProps = {
-    label: string
+    label: React.ReactNode
     value: boolean
     onChange: (to: boolean) => void
     helpText?: string
@@ -123,14 +156,14 @@ export const BooleanItem = (props: BooleanItemProps) => {
             <ItemLabel>{props.label}</ItemLabel>
             <TextFieldContainer>
                 <BooleanItemRow>
-                    <input
+                    <StyledRadio
                         type='radio'
                         value='true'
                         checked={props.value}
                         onChange={() => props.onChange(true)}
                     />
                     <FormattedMessage defaultMessage='true'/>
-                    <input
+                    <StyledRadio
                         type='radio'
                         value='false'
                         checked={!props.value}

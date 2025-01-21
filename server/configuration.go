@@ -4,20 +4,16 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/mattermost/mattermost-plugin-ai/server/ai"
+	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 )
 
 type Config struct {
-	Services            []ai.ServiceConfig `json:"services"`
-	Bots                []ai.BotConfig     `json:"bots"`
-	DefaultBotName      string             `json:"defaultBotName"`
-	TranscriptGenerator string             `json:"transcriptBackend"`
-	EnableLLMTrace      bool               `json:"enableLLMTrace"`
-
-	EnableUseRestrictions bool   `json:"enableUserRestrictions"`
-	AllowPrivateChannels  bool   `json:"allowPrivateChannels"`
-	AllowedTeamIDs        string `json:"allowedTeamIDs"`
-	OnlyUsersOnTeam       string `json:"onlyUsersOnTeam"`
+	Services                 []llm.ServiceConfig `json:"services"`
+	Bots                     []llm.BotConfig     `json:"bots"`
+	DefaultBotName           string              `json:"defaultBotName"`
+	TranscriptGenerator      string              `json:"transcriptBackend"`
+	EnableLLMTrace           bool                `json:"enableLLMTrace"`
+	AllowedUpstreamHostnames string              `json:"allowedUpstreamHostnames"`
 }
 
 // configuration captures the plugin's external configuration as exposed in the Mattermost server

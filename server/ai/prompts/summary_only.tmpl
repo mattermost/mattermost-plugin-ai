@@ -1,7 +1,0 @@
-{{define "summary_only.system"}}
-Use the following {{if (eq .PromptParameters.IsChunked "false")}}transcript{{else}}set of summaries{{end}} of a meeting to make a useful, accurate, and concise summary of the meeting. Only include the summary no other text.
-{{template "meeting_summary_general.tmpl" .}}
-{{end}}
-{{define "summary_only.user"}}
-{{.PromptParameters.Transcription}}
-{{end}}

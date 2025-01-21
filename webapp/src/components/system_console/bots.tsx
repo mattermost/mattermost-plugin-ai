@@ -7,16 +7,15 @@ import {TertiaryButton} from '../assets/buttons';
 
 import {useIsMultiLLMLicensed} from '@/license';
 
-import Bot, {LLMBotConfig} from './bot';
+import Bot, {ChannelAccessLevel, LLMBotConfig, UserAccessLevel} from './bot';
 import EnterpriseChip from './enterprise_chip';
 
-const defaultNewBot = {
+const defaultNewBot: LLMBotConfig = {
     id: '',
     name: '',
     displayName: '',
     customInstructions: '',
     service: {
-        id: '',
         type: 'openai',
         apiKey: '',
         apiURL: '',
@@ -26,8 +25,16 @@ const defaultNewBot = {
         password: '',
         tokenLimit: 0,
         streamingTimeoutSeconds: 0,
+        sendUserId: false,
+        outputTokenLimit: 0,
     },
     enableVision: false,
+    disableTools: false,
+    channelAccessLevel: ChannelAccessLevel.All,
+    channelIDs: [],
+    userAccessLevel: UserAccessLevel.All,
+    userIDs: [],
+    teamIDs: [],
 };
 
 export const firstNewBot = {

@@ -1,82 +1,79 @@
-# Mattermost Copilot Plugin
+<div align="center">
 
-> Mattermost plugin for local and third-party LLMs
+# Mattermost Copilot Plugin [![Download Latest Master Build](https://img.shields.io/badge/Download-Latest%20Master%20Build-blue)](https://github.com/mattermost/mattermost-plugin-ai/releases/tag/latest-master)
 
-![The Mattermost Copilot AI Plugin is an extension for mattermost that provides functionality for local and third-party LLMs](https://github.com/mattermost/openops/assets/7295363/37cc5337-16a0-4d88-971f-71cd0cdc52e9)
+The Mattermost Copilot Plugin integrates AI capabilities directly into your [Mattermost](https://github.com/mattermost/mattermost) workspace, supporting both self-hosted and vendor-hosted Large Language Models (LLMs).
 
-<!-- omit from toc -->
-## Table of Contents
+</div>
 
-- [Background](#background)
-- [Contributing](#contributing)
-- [License](#license)
+![The Mattermost Copilot AI Plugin is an extension for mattermost that provides functionality for self-hosted and vendor-hosted LLMs](img/mattermost-ai-llm-access.webp)
 
-## Background
+## Installation
 
-The Mattermost Copilot Plugin adds functionality for local (self-hosted) and third-party (vendor-hosted) LLMs within Mattermost v9.6 and above. This plugin is currently experimental. 
+1. Download the latest release from the [releases page](https://github.com/mattermost/mattermost-plugin-ai/releases). You can also download the **experimental** [latest master](https://github.com/mattermost/mattermost-plugin-ai/releases/tag/latest-master)
+2. Upload and enable the plugin through the Mattermost System Console
+3. Configure your desired LLM provider settings
 
-Contributions and suggestions are welcome. See the [Contributing](#contributing) section for more details!
+More details on the [Mattermost documentation site](https://docs.mattermost.com/configure/enable-copilot.html)
 
-Join the discussion in the [~AI-Exchange channel](https://community.mattermost.com/core/channels/ai-exchange) and explore the [Discourse forum](https://forum.mattermost.com/c/openops-ai/40). 💬
+### System Requirements
 
-## Install
+- Mattermost Server versions:
+  - v10.0 or later recommended
+  - v9.11+ (ESR)
+- PostgreSQL database
+- Network access to your chosen LLM provider
 
-We recommend using Mattermost Server v9.6 or later for the best experience. Compatible Mattermost server versions include:
+## Configuration
 
-- v9.6 or later
-- v9.5.2+ ([ESR](https://docs.mattermost.com/deploy/mattermost-changelog.html#release-v9-5-extended-support-release))
-- v9.4.4+
-- v9.3.3+
-- v8.1.11+ ([ESR](https://docs.mattermost.com/deploy/mattermost-changelog.html))
+After installation, you'll need to configure the plugin through the System Console:
 
-See the [Mattermost Product Documentation](https://docs.mattermost.com/configure/enable-ai-copilot.html) for details on installing, configuring, enabling, and using this Mattermost integration.
+1. Navigate to **System Console > Plugins > Copilot**
+2. Create a bot
+3. Select and setup an upstream provider
+4. Check it's working in the copilot RHS
 
-**Note**: Installation instructions assume you already have [Mattermost Server](https://mattermost.com/download/) installed and configured with [PostgreSQL](https://www.postgresql.org/).
+For detailed configuration instructions, see the [Mattermost Product Documentation](https://docs.mattermost.com/configure/enable-copilot.html#mattermost-configuration).
 
-## How to Release
+## Development
 
-To trigger a release, follow these steps:
+### Prerequisites
 
-1. **For Patch Release:** Run the following command:
-    ```
-    make patch
-    ```
-   This will release a patch change.
+- Go 1.22+
+- Node.js 20.11+
+- Access to an LLM provider (OpenAI, Anthropic, etc.)
 
-2. **For Minor Release:** Run the following command:
-    ```
-    make minor
-    ```
-   This will release a minor change.
+### Local Setup
 
-3. **For Major Release:** Run the following command:
-    ```
-    make major
-    ```
-   This will release a major change.
+1. Setup your Mattermost development environment by following the [Mattermost developer setup guide](https://developers.mattermost.com/contribute/server/developer-setup/). If you have a remote mattermost server you want to develop to you can skip this step. 
 
-4. **For Patch Release Candidate (RC):** Run the following command:
-    ```
-    make patch-rc
-    ```
-   This will release a patch release candidate.
+2. Setup your Mattermost plugin development environment by following the [Plugin Developer setup guide](https://developers.mattermost.com/integrate/plugins/developer-setup/).
 
-5. **For Minor Release Candidate (RC):** Run the following command:
-    ```
-    make minor-rc
-    ```
-   This will release a minor release candidate.
+3. Clone the repository:
+```bash
+git clone https://github.com/mattermost/mattermost-plugin-ai.git
+cd mattermost-plugin-ai
+```
 
-6. **For Major Release Candidate (RC):** Run the following command:
-    ```
-    make major-rc
-    ```
-   This will release a major release candidate.
+4. **Optional**. If you are developing to a remote server, setup environment variables to deploy:
+```bash
+MM_SERVICESETTINGS_SITEURL=http://localhost:8065
+MM_ADMIN_USERNAME=<YOUR_USERNAME>
+MM_ADMIN_PASSWORD=<YOUR_PASSWORD>
+```
 
+5. Run deploy to build the plugin
+```bash
+make deploy
+```
 
-## Contributing
+### Other make commands
 
-Interested in contributing to our open source project? Start by reviewing the [contributor guidelines](./.github/CONTRIBUTING.md) for this repository. See the [Developer Setup Guide](docs/developer-setup-guide.md) for details on setting up a Mattermost instance for development.
+- Run `make help` for a list of all make commands
+- Run `make check-style` to verify code style
+- Run `make test` to run the test suite
+- Run `make e2e` to run the e2e tests
+
 
 ## License
 

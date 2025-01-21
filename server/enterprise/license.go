@@ -34,7 +34,7 @@ func (e *LicenseChecker) isAtLeastE10Licensed() bool { //nolint:unused
 	return pluginapi.IsE10LicensedOrDevelopment(config, license)
 }
 
-// isMultiLLMLicensed returns true when the server either has a multi-LLM license or is configured for development.
+// IsMultiLLMLicensed returns true when the server either has a multi-LLM license or is configured for development.
 func (e *LicenseChecker) IsMultiLLMLicensed() bool {
 	return e.isAtLeastE20Licensed()
 }

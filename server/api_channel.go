@@ -9,8 +9,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/render"
-	"github.com/mattermost/mattermost-plugin-ai/server/ai"
 	"github.com/mattermost/mattermost-plugin-ai/server/enterprise"
+	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
@@ -30,7 +30,8 @@ func (p *Plugin) channelAuthorizationRequired(c *gin.Context) {
 		return
 	}
 
-	if err := p.checkUsageRestrictions(userID, channel); err != nil {
+	bot := c.MustGet(ContextBotKey).(*Bot)
+	if err := p.checkUsageRestrictions(userID, bot, channel); err != nil {
 		c.AbortWithError(http.StatusForbidden, err)
 		return
 	}
@@ -91,11 +92,11 @@ func (p *Plugin) handleSince(c *gin.Context) {
 	promptPreset := ""
 	switch data.PresetPrompt {
 	case "summarize":
-		promptPreset = ai.PromptSummarizeChannelSince
+		promptPreset = llm.PromptSummarizeChannelSince
 	case "action_items":
-		promptPreset = ai.PromptFindActionItemsSince
+		promptPreset = llm.PromptFindActionItemsSince
 	case "open_questions":
-		promptPreset = ai.PromptFindOpenQuestionsSince
+		promptPreset = llm.PromptFindOpenQuestionsSince
 	}
 
 	if promptPreset == "" {
@@ -103,7 +104,7 @@ func (p *Plugin) handleSince(c *gin.Context) {
 		return
 	}
 
-	prompt, err := p.prompts.ChatCompletion(promptPreset, context)
+	prompt, err := p.prompts.ChatCompletion(promptPreset, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return

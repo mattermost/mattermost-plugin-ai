@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -13,17 +14,16 @@ import (
 
 	"github.com/andygrunwald/go-jira"
 	"github.com/google/go-github/v41/github"
-	"github.com/mattermost/mattermost-plugin-ai/server/ai"
+	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
-	"github.com/mattermost/mattermost/server/public/shared/httpservice"
 )
 
 type LookupMattermostUserArgs struct {
 	Username string `jsonschema_description:"The username of the user to lookup without a leading '@'. Example: 'firstname.lastname'"`
 }
 
-func (p *Plugin) toolResolveLookupMattermostUser(context ai.ConversationContext, argsGetter ai.ToolArgumentGetter) (string, error) {
+func (p *Plugin) toolResolveLookupMattermostUser(context llm.ConversationContext, argsGetter llm.ToolArgumentGetter) (string, error) {
 	var args LookupMattermostUserArgs
 	err := argsGetter(&args)
 	if err != nil {
@@ -85,7 +85,7 @@ type GetChannelPosts struct {
 	NumberPosts int    `jsonschema_description:"The number of most recent posts to get. Example: '30'"`
 }
 
-func (p *Plugin) toolResolveGetChannelPosts(context ai.ConversationContext, argsGetter ai.ToolArgumentGetter) (string, error) {
+func (p *Plugin) toolResolveGetChannelPosts(context llm.ConversationContext, argsGetter llm.ToolArgumentGetter, bot *Bot) (string, error) {
 	var args GetChannelPosts
 	err := argsGetter(&args)
 	if err != nil {
@@ -101,7 +101,7 @@ func (p *Plugin) toolResolveGetChannelPosts(context ai.ConversationContext, args
 	}
 
 	if context.Channel == nil || context.Channel.TeamId == "" {
-		//TODO: support DMs. This will require some way to disabiguate between channels with the same name on different teams.
+		//TODO: support DMs. This will require some way to disambiguate between channels with the same name on different teams.
 		return "Error: Ambiguous channel lookup. Unable to what channel the user is referring to because DMs do not belong to specific teams. Tell the user to ask outside a DM channel.", errors.New("ambiguous channel lookup")
 	}
 
@@ -110,7 +110,7 @@ func (p *Plugin) toolResolveGetChannelPosts(context ai.ConversationContext, args
 		return "internal failure", fmt.Errorf("failed to lookup channel by name, may not exist: %w", err)
 	}
 
-	if err = p.checkUsageRestrictionsForChannel(channel); err != nil {
+	if err = p.checkUsageRestrictionsForChannel(bot, channel); err != nil {
 		return "user asked for a channel that is blocked by usage restrictions", fmt.Errorf("usage restrictions during channel lookup: %w", err)
 	}
 
@@ -143,19 +143,19 @@ func formatGithubIssue(issue *github.Issue) string {
 
 var validGithubRepoName = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
 
-func (p *Plugin) toolGetGithubIssue(context ai.ConversationContext, argsGetter ai.ToolArgumentGetter) (string, error) {
+func (p *Plugin) toolGetGithubIssue(context llm.ConversationContext, argsGetter llm.ToolArgumentGetter) (string, error) {
 	var args GetGithubIssueArgs
 	err := argsGetter(&args)
 	if err != nil {
 		return "invalid parameters to function", fmt.Errorf("failed to get arguments for tool GetGithubIssues: %w", err)
 	}
 
-	// Fail for over lengh repo ownder or name.
+	// Fail for over length repo owner or name.
 	if len(args.RepoOwner) > 39 || len(args.RepoName) > 100 {
 		return "invalid parameters to function", errors.New("invalid repo owner or repo name")
 	}
 
-	// Fail if repo ownder or repo name contain invalid characters.
+	// Fail if repo owner or repo name contain invalid characters.
 	if !validGithubRepoName.MatchString(args.RepoOwner) || !validGithubRepoName.MatchString(args.RepoName) {
 		return "invalid parameters to function", errors.New("invalid repo owner or repo name")
 	}
@@ -165,7 +165,14 @@ func (p *Plugin) toolGetGithubIssue(context ai.ConversationContext, argsGetter a
 		return "invalid parameters to function", errors.New("invalid issue number")
 	}
 
-	req, err := http.NewRequest("GET", fmt.Sprintf("/github/api/v1/issue?owner=%s&repo=%s&number=%d", args.RepoOwner, args.RepoName, args.Number), nil)
+	req, err := http.NewRequest(http.MethodGet,
+		fmt.Sprintf("/github/api/v1/issue?owner=%s&repo=%s&number=%d",
+			url.QueryEscape(args.RepoOwner),
+			url.QueryEscape(args.RepoName),
+			args.Number,
+		),
+		nil,
+	)
 	if err != nil {
 		return "internal failure", fmt.Errorf("failed to create request: %w", err)
 	}
@@ -316,7 +323,7 @@ var fetchedFields = []string{
 }
 
 func (p *Plugin) getPublicJiraIssues(instanceURL string, issueKeys []string) ([]jira.Issue, error) {
-	httpClient := httpservice.MakeHTTPServicePlugin(p.API).MakeClient(false)
+	httpClient := p.createExternalHTTPClient()
 	client, err := jira.NewClient(httpClient, instanceURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Jira client: %w", err)
@@ -359,7 +366,7 @@ func (p *Plugin) getPublicJiraIssues(instanceURL string, issueKeys []string) ([]
 	return &issue, nil
 }*/
 
-func (p *Plugin) toolGetJiraIssue(context ai.ConversationContext, argsGetter ai.ToolArgumentGetter) (string, error) {
+func (p *Plugin) toolGetJiraIssue(context llm.ConversationContext, argsGetter llm.ToolArgumentGetter) (string, error) {
 	var args GetJiraIssueArgs
 	err := argsGetter(&args)
 	if err != nil {
@@ -389,30 +396,32 @@ func (p *Plugin) toolGetJiraIssue(context ai.ConversationContext, argsGetter ai.
 
 // getBuiltInTools returns the built-in tools that are available to all users.
 // isDM is true if the response will be in a DM with the user. More tools are available in DMs because of security properties.
-func (p *Plugin) getBuiltInTools(isDM bool) []ai.Tool {
-	builtInTools := []ai.Tool{}
+func (p *Plugin) getBuiltInTools(isDM bool, bot *Bot) []llm.Tool {
+	builtInTools := []llm.Tool{}
 
 	if isDM {
-		builtInTools = append(builtInTools, ai.Tool{
+		builtInTools = append(builtInTools, llm.Tool{
 			Name:        "GetChannelPosts",
 			Description: "Get the most recent posts from a Mattermost channel. Returns posts in the format 'username: message'",
 			Schema:      GetChannelPosts{},
-			Resolver:    p.toolResolveGetChannelPosts,
+			Resolver: func(context llm.ConversationContext, argsGetter llm.ToolArgumentGetter) (string, error) {
+				return p.toolResolveGetChannelPosts(context, argsGetter, bot)
+			},
 		})
 
-		builtInTools = append(builtInTools, ai.Tool{
+		builtInTools = append(builtInTools, llm.Tool{
 			Name:        "LookupMattermostUser",
 			Description: "Lookup a Mattermost user by their username. Available information includes: username, full name, email, nickname, position, locale, timezone, last activity, and status.",
 			Schema:      LookupMattermostUserArgs{},
 			Resolver:    p.toolResolveLookupMattermostUser,
 		})
 
-		// Github plugin tools
+		// GitHub plugin tools
 		status, err := p.pluginAPI.Plugin.GetPluginStatus("github")
 		if err != nil && !errors.Is(err, pluginapi.ErrNotFound) {
 			p.API.LogError("failed to get github plugin status", "error", err.Error())
 		} else if status != nil && status.State == model.PluginStateRunning {
-			builtInTools = append(builtInTools, ai.Tool{
+			builtInTools = append(builtInTools, llm.Tool{
 				Name:        "GetGithubIssue",
 				Description: "Retrieve a single GitHub issue by owner, repo, and issue number.",
 				Schema:      GetGithubIssueArgs{},
@@ -421,7 +430,7 @@ func (p *Plugin) getBuiltInTools(isDM bool) []ai.Tool {
 		}
 
 		// Jira plugin tools
-		builtInTools = append(builtInTools, ai.Tool{
+		builtInTools = append(builtInTools, llm.Tool{
 			Name:        "GetJiraIssue",
 			Description: "Retrieve a single Jira issue by issue key.",
 			Schema:      GetJiraIssueArgs{},
@@ -430,4 +439,13 @@ func (p *Plugin) getBuiltInTools(isDM bool) []ai.Tool {
 	}
 
 	return builtInTools
+}
+
+func (p *Plugin) getDefaultToolsStore(bot *Bot, isDM bool) llm.ToolStore {
+	if bot == nil || bot.cfg.DisableTools {
+		return llm.NewNoTools()
+	}
+	store := llm.NewToolStore(&p.pluginAPI.Log, p.getConfiguration().EnableLLMTrace)
+	store.AddTools(p.getBuiltInTools(isDM, bot))
+	return store
 }

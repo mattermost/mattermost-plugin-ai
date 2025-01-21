@@ -5,12 +5,13 @@ import {FormattedMessage, useIntl} from 'react-intl';
 import {TrashCanOutlineIcon, ChevronDownIcon, AlertOutlineIcon, ChevronUpIcon} from '@mattermost/compass-icons/components';
 
 import IconAI from '../assets/icon_ai';
-import {DangerPill} from '../pill';
+import {DangerPill, Pill} from '../pill';
 
 import {ButtonIcon} from '../assets/buttons';
 
 import {BooleanItem, ItemList, SelectionItem, SelectionItemOption, TextItem} from './item';
 import AvatarItem from './avatar';
+import {ChannelAccessLevelItem, UserAccessLevelItem} from './llm_access';
 
 export type LLMService = {
     type: string
@@ -22,6 +23,22 @@ export type LLMService = {
     password: string
     tokenLimit: number
     streamingTimeoutSeconds: number
+    sendUserId: boolean
+    outputTokenLimit: number
+}
+
+export enum ChannelAccessLevel {
+    All = 0,
+    Allow,
+    Block,
+    None,
+}
+
+export enum UserAccessLevel {
+    All = 0,
+    Allow,
+    Block,
+    None,
 }
 
 export type LLMBotConfig = {
@@ -31,6 +48,12 @@ export type LLMBotConfig = {
     service: LLMService
     customInstructions: string
     enableVision: boolean
+    disableTools: boolean
+    channelAccessLevel: ChannelAccessLevel
+    channelIDs: string[]
+    userAccessLevel: UserAccessLevel
+    userIDs: string[]
+    teamIDs: string[]
 }
 
 type Props = {
@@ -43,6 +66,7 @@ type Props = {
 const mapServiceTypeToDisplayName = new Map<string, string>([
     ['openai', 'OpenAI'],
     ['openaicompatible', 'OpenAI Compatible'],
+    ['azure', 'Azure'],
     ['anthropic', 'Anthropic'],
     ['asksage', 'Ask Sage'],
 ]);
@@ -57,8 +81,11 @@ const Bot = (props: Props) => {
     const missingInfo = props.bot.name === '' ||
 		props.bot.displayName === '' ||
 		props.bot.service.type === '' ||
-		(props.bot.service.type !== 'asksage' && props.bot.service.apiKey === '') ||
-		(props.bot.service.type === 'openaicompatible' && props.bot.service.apiURL === '');
+		(props.bot.service.type !== 'asksage' && props.bot.service.type !== 'openaicompatible' && props.bot.service.type !== 'azure' && props.bot.service.apiKey === '') ||
+		((props.bot.service.type === 'openaicompatible' || props.bot.service.type === 'azure') && props.bot.service.apiURL === '');
+
+    const invalidUsername = props.bot.name !== '' && (!(/^[a-z0-9.\-_]+$/).test(props.bot.name) || !(/[a-z]/).test(props.bot.name.charAt(0)));
+    const invalidMaxTokens = props.bot.service.type === 'anthropic' && props.bot.service?.outputTokenLimit === 0;
     return (
         <BotContainer>
             <HeaderContainer onClick={() => setOpen((o) => !o)}>
@@ -79,6 +106,19 @@ const Bot = (props: Props) => {
                         <FormattedMessage defaultMessage='Missing information'/>
                     </DangerPill>
                 )}
+                {invalidUsername && (
+                    <DangerPill>
+                        <AlertOutlineIcon/>
+                        <FormattedMessage defaultMessage='Invalid Username'/>
+                    </DangerPill>
+                )}
+                {invalidMaxTokens && (
+                    <DangerPill>
+                        <AlertOutlineIcon/>
+                        <FormattedMessage defaultMessage='Output token limit must be greater than 0'/>
+                    </DangerPill>
+                )}
+
                 <ButtonIcon
                     onClick={props.onDelete}
                 >
@@ -97,6 +137,7 @@ const Bot = (props: Props) => {
                         <TextItem
                             label={intl.formatMessage({defaultMessage: 'Bot Username'})}
                             helptext={intl.formatMessage({defaultMessage: 'Team members can mention this bot with this username'})}
+                            maxLength={22}
                             value={props.bot.name}
                             onChange={(e) => props.onChange({...props.bot, name: e.target.value})}
                         />
@@ -111,8 +152,9 @@ const Bot = (props: Props) => {
                         >
                             <SelectionItemOption value='openai'>{'OpenAI'}</SelectionItemOption>
                             <SelectionItemOption value='openaicompatible'>{'OpenAI Compatible'}</SelectionItemOption>
+                            <SelectionItemOption value='azure'>{'Azure'}</SelectionItemOption>
                             <SelectionItemOption value='anthropic'>{'Anthropic'}</SelectionItemOption>
-                            <SelectionItemOption value='asksage'>{'Ask Sage'}</SelectionItemOption>
+                            <SelectionItemOption value='asksage'>{'Ask Sage (Experimental)'}</SelectionItemOption>
                         </SelectionItem>
                         <ServiceItem
                             service={props.bot.service}
@@ -125,20 +167,58 @@ const Bot = (props: Props) => {
                             value={props.bot.customInstructions}
                             onChange={(e) => props.onChange({...props.bot, customInstructions: e.target.value})}
                         />
-                        { (props.bot.service.type === 'openai' || props.bot.service.type === 'openaicompatible') && (
-                            <BooleanItem
-                                label={intl.formatMessage({defaultMessage: 'Enable Vision'})}
-                                value={props.bot.enableVision}
-                                onChange={(to: boolean) => props.onChange({...props.bot, enableVision: to})}
-                                helpText={intl.formatMessage({defaultMessage: 'Enable Vision to allow the bot to process images. Requires a compatible model.'})}
-                            />
+                        {(props.bot.service.type === 'openai' || props.bot.service.type === 'openaicompatible' || props.bot.service.type === 'azure' || props.bot.service.type === 'anthropic') && (
+                            <>
+                                <BooleanItem
+                                    label={
+                                        <Horizontal>
+                                            <FormattedMessage defaultMessage='Enable Vision'/>
+                                            <Pill><FormattedMessage defaultMessage='BETA'/></Pill>
+                                        </Horizontal>
+                                    }
+                                    value={props.bot.enableVision}
+                                    onChange={(to: boolean) => props.onChange({...props.bot, enableVision: to})}
+                                    helpText={intl.formatMessage({defaultMessage: 'Enable Vision to allow the bot to process images. Requires a compatible model.'})}
+                                />
+                                <BooleanItem
+                                    label={
+                                        <FormattedMessage defaultMessage='Enable Tools'/>
+                                    }
+                                    value={!props.bot.disableTools}
+                                    onChange={(to: boolean) => props.onChange({...props.bot, disableTools: !to})}
+                                    helpText={intl.formatMessage({defaultMessage: 'By default some tool use is enabled to allow for features such as integrations with JIRA. Disabling this allows use of models that do not support or are not very good at tool use. Some features will not work without tools.'})}
+                                />
+                            </>
                         )}
+                        <ChannelAccessLevelItem
+                            label={intl.formatMessage({defaultMessage: 'Channel access'})}
+                            level={props.bot.channelAccessLevel ?? ChannelAccessLevel.All}
+                            onChangeLevel={(to: ChannelAccessLevel) => props.onChange({...props.bot, channelAccessLevel: to})}
+                            channelIDs={props.bot.channelIDs ?? []}
+                            onChangeChannelIDs={(channels: string[]) => props.onChange({...props.bot, channelIDs: channels})}
+                        />
+                        <UserAccessLevelItem
+                            label={intl.formatMessage({defaultMessage: 'User access'})}
+                            level={props.bot.userAccessLevel ?? ChannelAccessLevel.All}
+                            onChangeLevel={(to: UserAccessLevel) => props.onChange({...props.bot, userAccessLevel: to})}
+                            userIDs={props.bot.userIDs ?? []}
+                            teamIDs={props.bot.teamIDs ?? []}
+                            onChangeIDs={(userIds: string[], teamIds: string[]) => props.onChange({...props.bot, userIDs: userIds, teamIDs: teamIds})}
+                        />
+
                     </ItemList>
                 </ItemListContainer>
             )}
         </BotContainer>
     );
 };
+
+const Horizontal = styled.div`
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 8px;
+`;
 
 type ServiceItemProps = {
     service: LLMService
@@ -149,10 +229,20 @@ const ServiceItem = (props: ServiceItemProps) => {
     const type = props.service.type;
     const intl = useIntl();
     const hasAPIKey = type !== 'asksage';
-    const isOpenAIType = type === 'openai' || type === 'openaicompatible';
+    const isOpenAIType = type === 'openai' || type === 'openaicompatible' || type === 'azure';
+
+    const getDefaultOutputTokenLimit = () => {
+        switch (type) {
+        case 'anthropic':
+            return '8192';
+        default:
+            return '0';
+        }
+    };
+
     return (
         <>
-            {type === 'openaicompatible' && (
+            {(type === 'openaicompatible' || type === 'azure') && (
                 <TextItem
                     label={intl.formatMessage({defaultMessage: 'API URL'})}
                     value={props.service.apiURL}
@@ -168,11 +258,19 @@ const ServiceItem = (props: ServiceItemProps) => {
                 />
             )}
             {isOpenAIType && (
-                <TextItem
-                    label={intl.formatMessage({defaultMessage: 'Organization ID'})}
-                    value={props.service.orgId}
-                    onChange={(e) => props.onChange({...props.service, orgId: e.target.value})}
-                />
+                <>
+                    <TextItem
+                        label={intl.formatMessage({defaultMessage: 'Organization ID'})}
+                        value={props.service.orgId}
+                        onChange={(e) => props.onChange({...props.service, orgId: e.target.value})}
+                    />
+                    <BooleanItem
+                        label={intl.formatMessage({defaultMessage: 'Send User ID'})}
+                        value={props.service.sendUserId}
+                        onChange={(to: boolean) => props.onChange({...props.service, sendUserId: to})}
+                        helpText={intl.formatMessage({defaultMessage: 'Sends the Mattermost user ID to the upstream LLM.'})}
+                    />
+                </>
             )}
             {type === 'asksage' && (
                 <>
@@ -194,9 +292,14 @@ const ServiceItem = (props: ServiceItemProps) => {
                 onChange={(e) => props.onChange({...props.service, defaultModel: e.target.value})}
             />
             <TextItem
-                label={intl.formatMessage({defaultMessage: 'Token limit'})}
+                label={intl.formatMessage({defaultMessage: 'Input token limit'})}
                 value={props.service.tokenLimit.toString()}
                 onChange={(e) => props.onChange({...props.service, tokenLimit: parseInt(e.target.value, 10)})}
+            />
+            <TextItem
+                label={intl.formatMessage({defaultMessage: 'Output token limit'})}
+                value={props.service.outputTokenLimit?.toString() || getDefaultOutputTokenLimit()}
+                onChange={(e) => props.onChange({...props.service, outputTokenLimit: parseInt(e.target.value, 10)})}
             />
             {isOpenAIType && (
                 <TextItem
