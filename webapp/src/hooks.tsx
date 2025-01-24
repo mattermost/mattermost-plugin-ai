@@ -1,3 +1,6 @@
+// Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
+
 import {useDispatch} from 'react-redux';
 
 import {selectPost, openRHS, selectRegularPost} from 'src/redux_actions';

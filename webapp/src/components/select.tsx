@@ -1,3 +1,6 @@
+// Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
+
 import React, {useState, useEffect, useCallback} from 'react';
 import styled from 'styled-components';
 import AsyncSelect from 'react-select/async';

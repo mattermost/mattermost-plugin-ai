@@ -22,7 +22,8 @@
       "babel",
       "cypress",
       "no-only-tests",
-      "@typescript-eslint"
+      "@typescript-eslint",
+      "header"
    ],
    "parserOptions": {
       "ecmaVersion": "latest",
@@ -122,6 +123,12 @@
          {
             "allowArrowFunctions": true
          }
+      ],
+      "header/header": [
+        2,
+        "line",
+        " Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.\n See LICENSE.txt for license information.",
+        2
       ],
       "generator-star-spacing": [
          2,
