@@ -1,0 +1,9 @@
+---
+title: "Mattermost Copilot Plugin"
+copyright: "©2023-present Mattermost, Inc. All Rights Reserved. See LICENSE.txt for license information."
+description: "This document includes a list of open source components used in the plugin, including those that have been modified."
+search:
+  - "go.mod"
+  - "webapp/package.json"
+dependencies: []
+devDependencies: []
