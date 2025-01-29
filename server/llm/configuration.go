@@ -82,7 +82,9 @@ func (c *BotConfig) IsValid() bool {
 	switch c.Service.Type {
 	case ServiceTypeOpenAI:
 		return c.Service.APIKey != ""
-	case ServiceTypeOpenAICompatible, ServiceTypeAzure:
+	case ServiceTypeOpenAICompatible:
+		return c.Service.APIURL != ""
+	case ServiceTypeAzure:
 		return c.Service.APIKey != "" && c.Service.APIURL != ""
 	case ServiceTypeAnthropic:
 		return c.Service.APIKey != ""
