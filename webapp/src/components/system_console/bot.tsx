@@ -296,19 +296,34 @@ const ServiceItem = (props: ServiceItemProps) => {
             />
             <TextItem
                 label={intl.formatMessage({defaultMessage: 'Input token limit'})}
+                type='number'
                 value={props.service.tokenLimit.toString()}
-                onChange={(e) => props.onChange({...props.service, tokenLimit: parseInt(e.target.value, 10)})}
+                onChange={(e) => {
+                    const value = parseInt(e.target.value, 10);
+                    const tokenLimit = isNaN(value) ? 0 : value;
+                    props.onChange({...props.service, tokenLimit});
+                }}
             />
             <TextItem
                 label={intl.formatMessage({defaultMessage: 'Output token limit'})}
+                type='number'
                 value={props.service.outputTokenLimit?.toString() || getDefaultOutputTokenLimit()}
-                onChange={(e) => props.onChange({...props.service, outputTokenLimit: parseInt(e.target.value, 10)})}
+                onChange={(e) => {
+                    const value = parseInt(e.target.value, 10);
+                    const outputTokenLimit = isNaN(value) ? 0 : value;
+                    props.onChange({...props.service, outputTokenLimit});
+                }}
             />
             {isOpenAIType && (
                 <TextItem
                     label={intl.formatMessage({defaultMessage: 'Streaming Timeout Seconds'})}
+                    type='number'
                     value={props.service.streamingTimeoutSeconds?.toString() || '0'}
-                    onChange={(e) => props.onChange({...props.service, streamingTimeoutSeconds: parseInt(e.target.value, 10)})}
+                    onChange={(e) => {
+                        const value = parseInt(e.target.value, 10);
+                        const streamingTimeoutSeconds = isNaN(value) ? 0 : value;
+                        props.onChange({...props.service, streamingTimeoutSeconds});
+                    }}
                 />
             )}
         </>
