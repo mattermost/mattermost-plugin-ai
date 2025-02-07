@@ -71,7 +71,6 @@ const mapServiceTypeToDisplayName = new Map<string, string>([
     ['openaicompatible', 'OpenAI Compatible'],
     ['azure', 'Azure'],
     ['anthropic', 'Anthropic'],
-    ['asksage', 'Ask Sage'],
 ]);
 
 function serviceTypeToDisplayName(serviceType: string): string {
@@ -84,7 +83,7 @@ const Bot = (props: Props) => {
     const missingInfo = props.bot.name === '' ||
 		props.bot.displayName === '' ||
 		props.bot.service.type === '' ||
-		(props.bot.service.type !== 'asksage' && props.bot.service.type !== 'openaicompatible' && props.bot.service.type !== 'azure' && props.bot.service.apiKey === '') ||
+		(props.bot.service.type !== 'openaicompatible' && props.bot.service.type !== 'azure' && props.bot.service.apiKey === '') ||
 		((props.bot.service.type === 'openaicompatible' || props.bot.service.type === 'azure') && props.bot.service.apiURL === '');
 
     const invalidUsername = props.bot.name !== '' && (!(/^[a-z0-9.\-_]+$/).test(props.bot.name) || !(/[a-z]/).test(props.bot.name.charAt(0)));
@@ -157,7 +156,6 @@ const Bot = (props: Props) => {
                             <SelectionItemOption value='openaicompatible'>{'OpenAI Compatible'}</SelectionItemOption>
                             <SelectionItemOption value='azure'>{'Azure'}</SelectionItemOption>
                             <SelectionItemOption value='anthropic'>{'Anthropic'}</SelectionItemOption>
-                            <SelectionItemOption value='asksage'>{'Ask Sage (Experimental)'}</SelectionItemOption>
                         </SelectionItem>
                         <ServiceItem
                             service={props.bot.service}
@@ -231,7 +229,6 @@ type ServiceItemProps = {
 const ServiceItem = (props: ServiceItemProps) => {
     const type = props.service.type;
     const intl = useIntl();
-    const hasAPIKey = type !== 'asksage';
     const isOpenAIType = type === 'openai' || type === 'openaicompatible' || type === 'azure';
 
     const getDefaultOutputTokenLimit = () => {
@@ -252,14 +249,12 @@ const ServiceItem = (props: ServiceItemProps) => {
                     onChange={(e) => props.onChange({...props.service, apiURL: e.target.value})}
                 />
             )}
-            {hasAPIKey && (
-                <TextItem
-                    label={intl.formatMessage({defaultMessage: 'API Key'})}
-                    type='password'
-                    value={props.service.apiKey}
-                    onChange={(e) => props.onChange({...props.service, apiKey: e.target.value})}
-                />
-            )}
+            <TextItem
+                label={intl.formatMessage({defaultMessage: 'API Key'})}
+                type='password'
+                value={props.service.apiKey}
+                onChange={(e) => props.onChange({...props.service, apiKey: e.target.value})}
+            />
             {isOpenAIType && (
                 <>
                     <TextItem
@@ -272,20 +267,6 @@ const ServiceItem = (props: ServiceItemProps) => {
                         value={props.service.sendUserId}
                         onChange={(to: boolean) => props.onChange({...props.service, sendUserId: to})}
                         helpText={intl.formatMessage({defaultMessage: 'Sends the Mattermost user ID to the upstream LLM.'})}
-                    />
-                </>
-            )}
-            {type === 'asksage' && (
-                <>
-                    <TextItem
-                        label={intl.formatMessage({defaultMessage: 'Username'})}
-                        value={props.service.username}
-                        onChange={(e) => props.onChange({...props.service, username: e.target.value})}
-                    />
-                    <TextItem
-                        label={intl.formatMessage({defaultMessage: 'Password'})}
-                        value={props.service.password}
-                        onChange={(e) => props.onChange({...props.service, password: e.target.value})}
                     />
                 </>
             )}

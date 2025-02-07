@@ -1,6 +1,3 @@
-// Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
-// See LICENSE.txt for license information.
-
 package llm
 
 // Automatically generated convenience vars for the filenames in llm/prompts/
