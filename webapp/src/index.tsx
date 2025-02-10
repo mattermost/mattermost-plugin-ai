@@ -12,6 +12,7 @@ import {GlobalState} from '@mattermost/types/store';
 import aiIcon from '../../assets/bot_icon.png';
 
 import manifest from '@/manifest';
+import {doSelectPost} from '@/hooks';
 
 import {LLMBotPost} from './components/llmbot_post';
 import PostMenu from './components/post_menu';
@@ -19,13 +20,17 @@ import IconThreadSummarization from './components/assets/icon_thread_summarizati
 import IconReactForMe from './components/assets/icon_react_for_me';
 import RHS from './components/rhs/rhs';
 import Config from './components/system_console/config';
-import {doReaction, doThreadAnalysis, getAIDirectChannel} from './client';
+import {doReaction, doThreadAnalysis, getAIDirectChannel, doSearch} from './client';
 import {setOpenRHSAction} from './redux_actions';
 import PostEventListener from './websocket';
 import {BotsHandler, setupRedux} from './redux';
 import UnreadsSummarize from './components/unreads_summarize';
 import {PostbackPost} from './components/postback_post';
 import {isRHSCompatable} from './mm_webapp';
+
+import SearchButton from './components/search/searchButton';
+import SearchSuggestions from './components/search/searchSuggestions';
+import SearchHints from './components/search/searchHints';
 
 type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
 
@@ -117,6 +122,18 @@ export default class Plugin {
 
         registry.registerPostTypeComponent('custom_llmbot', LLMBotPostWithWebsockets);
         registry.registerPostTypeComponent('custom_llm_postback', PostbackPost);
+        registry.registerSearchComponents({
+            buttonComponent: SearchButton,
+            suggestionsComponent: SearchSuggestions,
+            hintsComponent: SearchHints,
+            action: async (searchTerms: string) => {
+                const result = await doSearch(searchTerms, '');
+                doSelectPost(result.postid, result.channelid, store.dispatch);
+                if (rhs) {
+                    store.dispatch(rhs.showRHSPlugin);
+                }
+            },
+        });
         if (registry.registerPostActionComponent) {
             registry.registerPostActionComponent(PostMenu);
         } else {

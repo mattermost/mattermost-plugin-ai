@@ -16,8 +16,7 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-	await openAIMock.stop();
-	await mattermost.stop();
+	await Promise.all([openAIMock.stop(), mattermost.stop()]);
 })
 
 test('was installed', async ({ page }) => {

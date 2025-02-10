@@ -58,6 +58,26 @@ export async function doThreadAnalysis(postid: string, analysisType: string, bot
     });
 }
 
+export async function doSearch(searchTerms: string, botUsername: string) {
+    const url = `${baseRoute()}/search?botUsername=${botUsername}`;
+    const response = await fetch(url, Client4.getOptions({
+        method: 'POST',
+        body: JSON.stringify({
+            search_terms: searchTerms,
+        }),
+    }));
+
+    if (response.ok) {
+        return response.json();
+    }
+
+    throw new ClientError(Client4.url, {
+        message: '',
+        status_code: response.status,
+        url,
+    });
+}
+
 export async function doTranscribe(postid: string, fileID: string) {
     const url = `${postRoute(postid)}/transcribe/file/${fileID}`;
     const response = await fetch(url, Client4.getOptions({

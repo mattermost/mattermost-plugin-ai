@@ -4,6 +4,10 @@
     "translation": "Lo siento, ya no tiene acceso al hilo original."
   },
   {
+    "id": "copilot.search_conversation_title",
+    "translation": "Búsqueda: %s"
+  },
+  {
     "id": "copilot.stream_to_post_access_llm_error",
     "translation": "Lo siento, ha ocurrido un error mientras se accedía al LLM. Vea los logs del servidor para más detalles."
   },

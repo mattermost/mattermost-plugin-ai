@@ -76,6 +76,24 @@ const PostSummaryButton = styled(GenerationButton)`
 const StopGeneratingButton = styled(GenerationButton)`
 `;
 
+const QuestionAnswerMark = styled.div`
+    margin-top: 8px;
+	display: inline-flex;
+	border: none;
+	height: 24px;
+	padding: 4px 10px;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	border-radius: 4px;
+	background: rgba(var(--center-channel-color-rgb), 0.08);
+    color: rgba(var(--center-channel-color-rgb), 0.64);
+
+	font-size: 12px;
+	line-height: 16px;
+	font-weight: 600;
+`;
+
 const PostSummaryHelpMessage = styled.div`
 	font-size: 14px;
 	font-style: italic;
@@ -86,6 +104,13 @@ const PostSummaryHelpMessage = styled.div`
 	padding-top: 8px;
 	padding-bottom: 8px;
 	margin-top: 16px;
+`;
+
+const Question = styled.div`
+	font-size: 20px;
+	font-style: normal;
+	font-weight: 600;
+	line-height: 28px;
 `;
 
 export interface PostUpdateWebsocketMessage {
@@ -154,6 +179,7 @@ export const LLMBotPost = (props: Props) => {
         selectPost(result.rootid, result.channelid);
     };
 
+    const isSearchResult = Boolean(props.post.props?.search_query);
     const requesterIsCurrentUser = (props.post.props?.llm_requester_user_id === currentUserId);
     const isThreadSummaryPost = (props.post.props?.referenced_thread && props.post.props?.referenced_thread !== '');
     const isNoShowRegen = (props.post.props?.no_regen && props.post.props?.no_regen !== '');
@@ -181,6 +207,19 @@ export const LLMBotPost = (props: Props) => {
         <PostBody
             data-testid='llm-bot-post'
         >
+            {isSearchResult && (
+                <QuestionAnswerMark>
+                    <FormattedMessage defaultMessage='Question'/>
+                </QuestionAnswerMark>
+            )}
+            {isSearchResult && (<Question>{props.post.props?.search_query}</Question>)}
+
+            {isSearchResult && (
+                <QuestionAnswerMark>
+                    <FormattedMessage defaultMessage='Answer'/>
+                </QuestionAnswerMark>
+            )}
+
             {isThreadSummaryPost && permalinkView &&
             <>
                 {permalinkView}

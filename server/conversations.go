@@ -45,15 +45,20 @@ func (p *Plugin) processUserRequestToBot(bot *Bot, context llm.ConversationConte
 }
 
 func (p *Plugin) newConversation(bot *Bot, context llm.ConversationContext) error {
+	_, err := p.newConversationWithPost(bot, context)
+	return err
+}
+
+func (p *Plugin) newConversationWithPost(bot *Bot, context llm.ConversationContext) (*model.Post, error) {
 	conversation, err := p.prompts.ChatCompletion(llm.PromptDirectMessageQuestion, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	conversation.AddPost(p.PostToAIPost(bot, context.Post))
 
 	result, err := p.getLLM(bot.cfg).ChatCompletion(conversation)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	responsePost := &model.Post{
@@ -61,7 +66,7 @@ func (p *Plugin) newConversation(bot *Bot, context llm.ConversationContext) erro
 		RootId:    context.Post.Id,
 	}
 	if err := p.streamResultToNewPost(bot.mmBot.UserId, context.RequestingUser.Id, result, responsePost); err != nil {
-		return err
+		return nil, err
 	}
 
 	go func() {
@@ -72,7 +77,34 @@ func (p *Plugin) newConversation(bot *Bot, context llm.ConversationContext) erro
 		}
 	}()
 
-	return nil
+	return responsePost, nil
+}
+
+func (p *Plugin) newConversationForSearch(bot *Bot, context llm.ConversationContext) (*model.Post, error) {
+	conversation, err := p.prompts.ChatCompletion(llm.PromptDirectMessageQuestion, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
+	if err != nil {
+		return nil, err
+	}
+	conversation.AddPost(p.PostToAIPost(bot, context.Post))
+
+	result, err := p.getLLM(bot.cfg).ChatCompletion(conversation)
+	if err != nil {
+		return nil, err
+	}
+
+	responsePost := &model.Post{
+		ChannelId: context.Channel.Id,
+		RootId:    context.Post.Id,
+	}
+	responsePost.AddProp("search_query", context.Post.Message)
+	if err := p.streamResultToNewPost(bot.mmBot.UserId, context.RequestingUser.Id, result, responsePost); err != nil {
+		return nil, err
+	}
+
+	T := i18nLocalizerFunc(p.i18n, context.RequestingUser.Locale)
+	p.saveTitleAsync(responsePost.Id, fmt.Sprintf(T("copilot.search_conversation_title", "Search: %s"), context.Post.Message))
+
+	return responsePost, nil
 }
 
 func (p *Plugin) generateTitle(bot *Bot, request string, context llm.ConversationContext) error {
