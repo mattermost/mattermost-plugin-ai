@@ -4,10 +4,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
-
-	"errors"
 
 	"github.com/gin-gonic/gin"
 	"github.com/mattermost/mattermost-plugin-ai/server/llm"
@@ -16,9 +15,10 @@ import (
 )
 
 const (
-	ContextPostKey    = "post"
-	ContextChannelKey = "channel"
-	ContextBotKey     = "bot"
+	ContextPostKey        = "post"
+	ContextChannelKey     = "channel"
+	ContextBotKey         = "bot"
+	ContextPlaybookRunKey = "playbookrun"
 )
 
 func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Request) {
@@ -46,6 +46,10 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	channelRouter := botRequiredRouter.Group("/channel/:channelid")
 	channelRouter.Use(p.channelAuthorizationRequired)
 	channelRouter.POST("/since", p.handleSince)
+
+	playbookRunRouter := botRequiredRouter.Group("/playbook_run/:playbookrunid")
+	playbookRunRouter.Use(p.playbookRunAuthorizationRequired)
+	playbookRunRouter.POST("/generate_status", p.handleGenerateStatus)
 
 	adminRouter := router.Group("/admin")
 	adminRouter.Use(p.mattermostAdminAuthorizationRequired)

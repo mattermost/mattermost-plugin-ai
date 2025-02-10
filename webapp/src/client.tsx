@@ -21,6 +21,10 @@ function channelRoute(channelid: string): string {
     return `${baseRoute()}/channel/${channelid}`;
 }
 
+function playbookRunRoute(playbookRunID: string): string {
+    return `${baseRoute()}/playbook_run/${playbookRunID}`;
+}
+
 export async function doReaction(postid: string) {
     const url = `${postRoute(postid)}/react`;
     const response = await fetch(url, Client4.getOptions({
@@ -187,6 +191,23 @@ export async function getAIThreads() {
 
     if (response.ok) {
         return response.json();
+    }
+
+    throw new ClientError(Client4.url, {
+        message: '',
+        status_code: response.status,
+        url,
+    });
+}
+
+export async function generateStatusUpdate(playbookRunID: string) {
+    const url = `${playbookRunRoute(playbookRunID)}/generate_status`;
+    const response = await fetch(url, Client4.getOptions({
+        method: 'GET',
+    }));
+
+    if (response.ok) {
+        return;
     }
 
     throw new ClientError(Client4.url, {
