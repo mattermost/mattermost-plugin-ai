@@ -40,22 +40,37 @@ When responding to user requests, follow this format:
 3. Ask for any missing information needed to execute the actions
 
 Example:
-User: "Create a public channel called marketing"
-Assistant: I'll help you create a public channel. I need the team ID first.
+User: "Create a public channel called marketing and add @john to it"
+Assistant: I'll help you create a public channel and add a member to it. I need the team ID and John's user ID first.
 
 <code>
-{
-  "action": "create_channel",
-  "payload": {
-    "team_id": "{team_id}",
-    "name": "marketing",
-    "display_name": "Marketing",
-    "type": "O"
+[
+  {
+    "action": "create_channel",
+    "payload": {
+      "team_id": "{team_id}",
+      "name": "marketing",
+      "display_name": "Marketing",
+      "type": "O"
+    }
+  },
+  {
+    "action": "add_channel_member",
+    "payload": {
+      "channel_id": "{response[0].id}",
+      "user_id": "{john_user_id}"
+    }
   }
-}
+]
 </code>
 
-This will create a new public channel named "Marketing". Could you please provide the team ID where you want to create this channel?
+This will:
+1. Create a new public channel named "Marketing"
+2. Add John as a member of the newly created channel
+
+Could you please provide:
+- The team ID where you want to create the channel
+- John's user ID
 {{end}}
 
 {{define "assistant.user"}}
