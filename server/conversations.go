@@ -50,6 +50,58 @@ func (p *Plugin) processUserRequestToBot(bot *Bot, context llm.ConversationConte
 }
 
 func (p *Plugin) processUserRequestToAssistant(bot *Bot, context llm.ConversationContext) error {
+	conversation, err := p.prompts.ChatCompletion("assistant", context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
+	if err != nil {
+		return fmt.Errorf("failed to create conversation: %w", err)
+	}
+	conversation.AddPost(p.PostToAIPost(bot, context.Post))
+
+	result, err := p.getLLM(bot.cfg).ChatCompletionNoStream(conversation)
+	if err != nil {
+		return fmt.Errorf("failed to get completion: %w", err)
+	}
+
+	// Extract code block and description
+	var code, description string
+	parts := strings.Split(result, "<code>")
+	if len(parts) > 1 {
+		description = strings.TrimSpace(parts[0])
+		codeParts := strings.Split(parts[1], "</code>")
+		if len(codeParts) > 0 {
+			code = strings.TrimSpace(codeParts[0])
+			if len(codeParts) > 1 {
+				description += "\n\n" + strings.TrimSpace(codeParts[1])
+			}
+		}
+	} else {
+		description = result
+	}
+
+	// Create description post
+	descriptionPost := &model.Post{
+		ChannelId: context.Channel.Id,
+		RootId:    context.Post.Id,
+		Message:   description,
+	}
+	descriptionPost.AddProp(RespondingToProp, context.Post.Id)
+	if err := p.botCreatePost(bot.mmBot.UserId, context.RequestingUser.Id, descriptionPost); err != nil {
+		return fmt.Errorf("failed to create description post: %w", err)
+	}
+
+	// If there's code, create code post
+	if code != "" {
+		codePost := &model.Post{
+			ChannelId: context.Channel.Id,
+			RootId:    context.Post.Id,
+			Message:   "```json\n" + code + "\n```",
+		}
+		codePost.AddProp(RespondingToProp, context.Post.Id)
+		if err := p.botCreatePost(bot.mmBot.UserId, context.RequestingUser.Id, codePost); err != nil {
+			return fmt.Errorf("failed to create code post: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func (p *Plugin) newConversation(bot *Bot, context llm.ConversationContext) error {
