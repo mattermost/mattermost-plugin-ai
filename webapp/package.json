@@ -57,7 +57,7 @@
   "dependencies": {
     "@floating-ui/react-dom-interactions": "0.13.3",
     "@mattermost/client": "10.0.0",
-    "@mattermost/compass-icons": "0.1.38",
+    "@mattermost/compass-icons": "0.1.48",
     "@mattermost/eslint-plugin": "1.1.0-0",
     "core-js": "3.38.1",
     "debounce": "2.1.1",
