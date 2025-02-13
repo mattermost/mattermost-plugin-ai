@@ -193,7 +193,116 @@ func (p *Plugin) registerChannelActions(service *microactions.Service) error {
 		return err
 	}
 
+	// Execute Slash Command Action
+	if err := service.RegisterAction(
+		"execute_slash_command",
+		"Executes a slash command",
+		p.executeSlashCommandAction,
+		map[string]any{
+			"type": "object",
+			"required": []string{"channel_id", "command"},
+			"properties": map[string]any{
+				"channel_id": {
+					"type": "string",
+				},
+				"command": {
+					"type": "string",
+				},
+				"team_id": {
+					"type": "string",
+				},
+				"root_id": {
+					"type": "string",
+				},
+				"parent_id": {
+					"type": "string",
+				},
+			},
+		},
+		map[string]any{
+			"type": "object",
+			"required": []string{"response_type", "text"},
+			"properties": map[string]any{
+				"response_type": {
+					"type": "string",
+					"enum": []string{"in_channel", "ephemeral"},
+				},
+				"text": {
+					"type": "string",
+				},
+				"username": {
+					"type": "string",
+				},
+				"icon_url": {
+					"type": "string",
+				},
+				"goto_location": {
+					"type": "string",
+				},
+				"attachments": {
+					"type": "array",
+					"items": {
+						"type": "object",
+					},
+				},
+			},
+		},
+		[]string{"execute_slash_commands"},
+	); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func (p *Plugin) executeSlashCommandAction(ctx context.Context, payload map[string]any) (map[string]any, error) {
+	userID, ok := ctx.Value("user_id").(string)
+	if !ok {
+		return nil, fmt.Errorf("user_id not found in context")
+	}
+
+	args := &model.CommandArgs{
+		Command:    payload["command"].(string),
+		ChannelId: payload["channel_id"].(string),
+		UserId:    userID,
+	}
+
+	// Optional fields
+	if teamID, ok := payload["team_id"].(string); ok {
+		args.TeamId = teamID
+	}
+	if rootID, ok := payload["root_id"].(string); ok {
+		args.RootId = rootID
+	}
+	if parentID, ok := payload["parent_id"].(string); ok {
+		args.ParentId = parentID
+	}
+
+	response, err := p.API.ExecuteSlashCommand(args)
+	if err != nil {
+		return nil, err
+	}
+
+	result := map[string]any{
+		"response_type": response.ResponseType,
+		"text":         response.Text,
+	}
+
+	// Add optional fields if they exist
+	if response.Username != "" {
+		result["username"] = response.Username
+	}
+	if response.IconURL != "" {
+		result["icon_url"] = response.IconURL
+	}
+	if response.GotoLocation != "" {
+		result["goto_location"] = response.GotoLocation
+	}
+	if len(response.Attachments) > 0 {
+		result["attachments"] = response.Attachments
+	}
+
+	return result, nil
 }
 
 func (p *Plugin) createPostAction(ctx context.Context, payload map[string]any) (map[string]any, error) {
