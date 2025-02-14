@@ -393,15 +393,12 @@ func (p *Plugin) registerChannelActions(service *microactions.Service) error {
 		p.addTeamMemberAction,
 		map[string]any{
 			"type":     "object",
-			"required": []string{"team_id", "user_id", "requestor_id"},
+			"required": []string{"team_id", "user_id"},
 			"properties": map[string]any{
 				"team_id": map[string]string{
 					"type": "string",
 				},
 				"user_id": map[string]string{
-					"type": "string",
-				},
-				"requestor_id": map[string]string{
 					"type": "string",
 				},
 			},
@@ -430,12 +427,15 @@ func (p *Plugin) registerChannelActions(service *microactions.Service) error {
 		p.removeTeamMemberAction,
 		map[string]any{
 			"type":     "object",
-			"required": []string{"team_id", "user_id"},
+			"required": []string{"team_id", "user_id", "requestor_id"},
 			"properties": map[string]any{
 				"team_id": map[string]string{
 					"type": "string",
 				},
 				"user_id": map[string]string{
+					"type": "string",
+				},
+				"requestor_id": map[string]string{
 					"type": "string",
 				},
 			},

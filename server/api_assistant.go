@@ -14,11 +14,6 @@ type Action struct {
 	Payload map[string]any `json:"payload"`
 }
 
-type ExecuteActionsRequest struct {
-	Actions []Action          `json:"actions"`
-	Context map[string]string `json:"context"`
-}
-
 func (p *Plugin) handleExecuteActions(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	if userID == "" {
@@ -26,14 +21,14 @@ func (p *Plugin) handleExecuteActions(c *gin.Context) {
 		return
 	}
 
-	var req ExecuteActionsRequest
+	var req []Action
 	if err := c.BindJSON(&req); err != nil {
 		c.AbortWithError(http.StatusBadRequest, fmt.Errorf("invalid request: %w", err))
 		return
 	}
 
-	results := make([]map[string]any, 0, len(req.Actions))
-	for i, action := range req.Actions {
+	results := make([]map[string]any, 0, len(req))
+	for i, action := range req {
 		result, err := p.microactions.ExecuteAction(c.Request.Context(), action.Action, action.Payload, userID)
 		if err != nil {
 			c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to execute action %d (%s): %w", i, action.Action, err))
@@ -44,9 +39,9 @@ func (p *Plugin) handleExecuteActions(c *gin.Context) {
 		results = append(results, result)
 
 		// Process any response references in subsequent actions
-		if i < len(req.Actions)-1 {
-			for j := i + 1; j < len(req.Actions); j++ {
-				payload, err := json.Marshal(req.Actions[j].Payload)
+		if i < len(req)-1 {
+			for j := i + 1; j < len(req); j++ {
+				payload, err := json.Marshal(req[j].Payload)
 				if err != nil {
 					continue
 				}
@@ -68,7 +63,7 @@ func (p *Plugin) handleExecuteActions(c *gin.Context) {
 				if err := json.Unmarshal([]byte(payloadStr), &updatedPayload); err != nil {
 					continue
 				}
-				req.Actions[j].Payload = updatedPayload
+				req[j].Payload = updatedPayload
 			}
 		}
 	}
