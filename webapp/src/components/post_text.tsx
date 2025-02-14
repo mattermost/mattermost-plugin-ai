@@ -67,32 +67,32 @@ const PostText = (props: Props) => {
     useEffect(() => {
         const blocks: {[key: string]: string} = {};
         const incomplete = new Set<string>();
-        
+
         // Find all action blocks in the message
         const regex = /<actions>([\s\S]*?)<\/actions>/g;
         const openRegex = /<actions>/g;
         const closeRegex = /<\/actions>/g;
-        
+
         let match;
         let index = 0;
-        
+
         // Count opening and closing tags
         const openMatches = props.message.match(openRegex)?.length || 0;
         const closeMatches = props.message.match(closeRegex)?.length || 0;
-        
+
         // Process complete blocks
         while ((match = regex.exec(props.message)) !== null) {
             const blockId = `block-${index}`;
             blocks[blockId] = match[1];
             index++;
         }
-        
+
         // Mark incomplete blocks
         if (openMatches > closeMatches) {
             const lastBlockId = `block-${index}`;
             incomplete.add(lastBlockId);
         }
-        
+
         setActionBlocks(blocks);
         setIncompleteBlocks(incomplete);
     }, [props.message]);
@@ -138,15 +138,10 @@ const PostText = (props: Props) => {
         const parts = [];
         let lastIndex = 0;
         const regex = /<actions>([\s\S]*?)<\/actions>/g;
-        
+
         let match;
         let index = 0;
         while ((match = regex.exec(text)) !== null) {
-            // Add text before the block
-            if (match.index > lastIndex) {
-                parts.push(text.slice(lastIndex, match.index));
-            }
-
             const blockId = `block-${index}`;
             if (incompleteBlocks.has(blockId)) {
                 parts.push(<Spinner key={blockId}/>);
@@ -163,12 +158,6 @@ const PostText = (props: Props) => {
             lastIndex = match.index + match[0].length;
             index++;
         }
-
-        // Add remaining text
-        if (lastIndex < text.length) {
-            parts.push(text.slice(lastIndex));
-        }
-
         return parts;
     };
 
@@ -181,7 +170,9 @@ const PostText = (props: Props) => {
             data-testid='posttext'
             showCursor={props.showCursor}
         >
-            {processText(text)}
+            {preText(text)}
+            {processText(props.message)}
+            {postText(text)}
         </TextContainer>
     );
 };
