@@ -125,6 +125,22 @@ const PostText = (props: Props) => {
         postId: props.postID,
     };
 
+    const preText = (text: string): string => {
+        const actionsStart = text.indexOf('<actions>');
+        if (actionsStart === -1) {
+            return text;
+        }
+        return text.substring(0, actionsStart);
+    };
+
+    const postText = (text: string): string => {
+        const lastActionsEnd = text.lastIndexOf('</actions>');
+        if (lastActionsEnd === -1) {
+            return '';
+        }
+        return text.substring(lastActionsEnd + '</actions>'.length);
+    };
+
     const preTextString = messageHtmlToComponent(
         formatText(preText(props.message), markdownOptions),
         messageHtmlToComponentOptions,
