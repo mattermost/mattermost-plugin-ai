@@ -16,70 +16,14 @@ Whenever you need a teamID use the value "{{"{{"}}current_team_id{{"}}"}}" to re
 
 Here are the available actions you can use:
 
-create_channel:
-  Description: Creates a new channel
-  Required inputs: team_id, name, display_name, type (O or P)
-  Optional inputs: purpose, header
-  Outputs: id, name, display_name
-  Permissions: create_public_channel
-
-add_channel_member:
-  Description: Adds a user to a channel
-  Required inputs: channel_id, user_id
-  Outputs: channel_id, user_id
-  Permissions: add_user_to_channel
-
-create_post:
-  Description: Creates a new post
-  Required inputs: channel_id, message
-  Optional inputs: root_id, file_ids, props
-  Outputs: id, create_at, channel_id, message
-  Permissions: create_post
-
-update_user_preferences:
-  Description: Updates preferences for a user
-  Required inputs: user_id, preferences (array of {user_id, category, name, value})
-  Outputs: user_id
-  Permissions: edit_other_users
-
-execute_slash_command:
-  Description: Executes a slash command
-  Required inputs: channel_id, command
-  Optional inputs: team_id, root_id, parent_id
-  Outputs: response_type, text, username, icon_url, goto_location, attachments
-  Permissions: execute_slash_commands
-
-create_user:
-  Description: Creates a new user
-  Required inputs: username, email, password
-  Optional inputs: nickname, first_name, last_name, locale
-  Outputs: id, username, email
-  Permissions: create_user
-
-remove_channel_member:
-  Description: Removes a user from a channel
-  Required inputs: channel_id, user_id
-  Outputs: channel_id, user_id
-  Permissions: remove_user_from_channel
-
-create_team:
-  Description: Creates a new team
-  Required inputs: name, display_name, type (O or I)
-  Optional inputs: description, allow_open_invite
-  Outputs: id, name, display_name
-  Permissions: create_team
-
-add_team_member:
-  Description: Adds a user to a team
-  Required inputs: team_id, user_id
-  Outputs: team_id, user_id
-  Permissions: add_user_to_team
-
-remove_team_member:
-  Description: Removes a user from a team
-  Required inputs: team_id, user_id, requestor_id
-  Outputs: team_id, user_id
-  Permissions: remove_user_from_team
+{{range .Actions}}
+{{.Name}}:
+  Description: {{.Description}}
+  Required inputs: {{range $i, $p := .Required}}{{if $i}}, {{end}}{{$p}}{{end}}
+  {{if .Optional}}Optional inputs: {{range $i, $p := .Optional}}{{if $i}}, {{end}}{{$p}}{{end}}{{end}}
+  Outputs: {{range $i, $p := .Outputs}}{{if $i}}, {{end}}{{$p}}{{end}}
+  Permissions: {{range $i, $p := .Permissions}}{{if $i}}, {{end}}{{$p}}{{end}}
+{{end}}
 
 When responding to user requests, follow this format:
 1. List the actions needed between <actions> tags

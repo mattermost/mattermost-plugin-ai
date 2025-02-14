@@ -52,12 +52,83 @@ func (p *Plugin) processUserRequestToBot(bot *Bot, context llm.ConversationConte
 	return nil
 }
 
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
+
 func (p *Plugin) processUserRequestToAssistantStream(bot *Bot, context llm.ConversationContext, threadData *ThreadData) (*llm.TextStreamResult, error) {
 	if threadData != nil {
 		threadDataInfoString := formatThread(threadData)
 		context.PromptParameters = map[string]string{"Thread": threadDataInfoString}
 	}
 
+	// Get all registered actions
+	actions := p.microactions.ListActions()
+	
+	// Extract schema information for each action
+	actionDocs := make([]struct {
+		Name        string
+		Description string
+		Required    []string
+		Optional    []string
+		Outputs     []string
+		Permissions []string
+	}, len(actions))
+	
+	for i, action := range actions {
+		// Extract required fields from input schema
+		required := []string{}
+		if props, ok := action.InputSchema["properties"].(map[string]any); ok {
+			for field := range props {
+				if contains(action.InputSchema["required"].([]string), field) {
+					required = append(required, field)
+				}
+			}
+		}
+
+		// Extract optional fields from input schema
+		optional := []string{}
+		if props, ok := action.InputSchema["properties"].(map[string]any); ok {
+			for field := range props {
+				if !contains(action.InputSchema["required"].([]string), field) {
+					optional = append(optional, field)
+				}
+			}
+		}
+
+		// Extract output fields from output schema
+		outputs := []string{}
+		if props, ok := action.OutputSchema["properties"].(map[string]any); ok {
+			for field := range props {
+				if contains(action.OutputSchema["required"].([]string), field) {
+					outputs = append(outputs, field)
+				}
+			}
+		}
+
+		actionDocs[i] = struct {
+			Name        string
+			Description string
+			Required    []string
+			Optional    []string
+			Outputs     []string
+			Permissions []string
+		}{
+			Name:        action.Name,
+			Description: action.Description,
+			Required:    required,
+			Optional:    optional,
+			Outputs:     outputs,
+			Permissions: action.Permissions,
+		}
+	}
+
+	context.PromptParameters["Actions"] = actionDocs
 	conversation, err := p.prompts.ChatCompletion("assistant", context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create conversation: %w", err)
