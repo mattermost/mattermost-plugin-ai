@@ -7,6 +7,10 @@ Current Context:
 - Server: {{.ServerName}}
 - Company: {{.CompanyName}}
 - Time: {{.Time}}
+{{if .PromptParameters.Thread}}
+- Thread Context:
+{{.PromptParameters.Thread}}
+{{end}}
 
 Whenever you need a teamID use the value "[[current_team_id]]" to refer to it.
 
