@@ -3,7 +3,6 @@ import styled from 'styled-components';
 
 const ActionContainer = styled.div`
     margin-bottom: 12px;
-    padding: 12px;
     background: var(--center-channel-bg);
     border-radius: 4px;
     border: 1px solid rgba(var(--center-channel-color-rgb), 0.08);
@@ -13,10 +12,32 @@ const ActionContainer = styled.div`
     }
 `;
 
-const ActionHeader = styled.div`
+const ActionHeader = styled.div<{isExpanded: boolean}>`
     display: flex;
     align-items: center;
-    margin-bottom: 8px;
+    padding: 12px;
+    cursor: pointer;
+    border-bottom: ${props => props.isExpanded ? '1px solid rgba(var(--center-channel-color-rgb), 0.08)' : 'none'};
+
+    &:hover {
+        background: rgba(var(--center-channel-color-rgb), 0.04);
+    }
+`;
+
+const ExpandIcon = styled.span<{isExpanded: boolean}>`
+    margin-right: 8px;
+    transform: ${props => props.isExpanded ? 'rotate(90deg)' : 'none'};
+    transition: transform 0.15s ease-in-out;
+`;
+
+const PrimaryField = styled.div`
+    color: rgba(var(--center-channel-color-rgb), 0.72);
+    font-size: 13px;
+    margin-left: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 300px;
 `;
 
 const ActionName = styled.div`
@@ -67,29 +88,35 @@ const getActionMetadata = (actionName: string) => {
         description: string;
         required: string[];
         optional?: string[];
+        primaryField?: string;
     }> = {
         create_channel: {
             description: 'Creates a new channel',
             required: ['team_id', 'name', 'display_name', 'type'],
             optional: ['purpose', 'header'],
+            primaryField: 'display_name',
         },
         add_channel_member: {
             description: 'Adds a user to a channel',
             required: ['channel_id', 'user_id'],
+            primaryField: 'user_id',
         },
         create_post: {
             description: 'Creates a new post',
             required: ['channel_id', 'message'],
             optional: ['root_id', 'file_ids', 'props'],
+            primaryField: 'message',
         },
         update_user_preferences: {
             description: 'Updates preferences for a user',
             required: ['user_id', 'preferences'],
+            primaryField: 'user_id',
         },
         execute_slash_command: {
             description: 'Executes a slash command',
             required: ['channel_id', 'command'],
             optional: ['team_id', 'root_id', 'parent_id'],
+            primaryField: 'command',
         },
     };
 
@@ -100,38 +127,54 @@ const getActionMetadata = (actionName: string) => {
 };
 
 const MicroactionDisplay: React.FC<MicroactionDisplayProps> = ({action}) => {
+    const [isExpanded, setIsExpanded] = useState(false);
     const metadata = getActionMetadata(action.action);
     const allFields = [...metadata.required, ...(metadata.optional || [])];
+    const primaryValue = metadata.primaryField ? action.payload[metadata.primaryField] : null;
 
     return (
         <ActionContainer>
-            <ActionHeader>
+            <ActionHeader 
+                onClick={() => setIsExpanded(!isExpanded)}
+                isExpanded={isExpanded}
+            >
+                <ExpandIcon isExpanded={isExpanded}>▶</ExpandIcon>
                 <ActionName>{action.action}</ActionName>
                 <ActionDescription>{metadata.description}</ActionDescription>
+                {primaryValue && (
+                    <PrimaryField>
+                        {typeof primaryValue === 'object' 
+                            ? JSON.stringify(primaryValue)
+                            : String(primaryValue)
+                        }
+                    </PrimaryField>
+                )}
             </ActionHeader>
-            <FieldsContainer>
-                {allFields.map((field) => {
-                    const value = action.payload[field];
-                    if (value === undefined) {
-                        return null;
-                    }
+            {isExpanded && (
+                <FieldsContainer>
+                    {allFields.map((field) => {
+                        const value = action.payload[field];
+                        if (value === undefined) {
+                            return null;
+                        }
 
-                    return (
-                        <FieldGroup key={field}>
-                            <FieldLabel>
-                                {field}
-                                {metadata.required.includes(field) && ' *'}
-                            </FieldLabel>
-                            <FieldValue>
-                                {typeof value === 'object' 
-                                    ? JSON.stringify(value, null, 2)
-                                    : String(value)
-                                }
-                            </FieldValue>
-                        </FieldGroup>
-                    );
-                })}
-            </FieldsContainer>
+                        return (
+                            <FieldGroup key={field}>
+                                <FieldLabel>
+                                    {field}
+                                    {metadata.required.includes(field) && ' *'}
+                                </FieldLabel>
+                                <FieldValue>
+                                    {typeof value === 'object' 
+                                        ? JSON.stringify(value, null, 2)
+                                        : String(value)
+                                    }
+                                </FieldValue>
+                            </FieldGroup>
+                        );
+                    })}
+                </FieldsContainer>
+            )}
         </ActionContainer>
     );
 };
