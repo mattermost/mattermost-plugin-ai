@@ -142,7 +142,7 @@ const getActionMetadata = (actionName: string) => {
         },
         remove_team_member: {
             description: 'Removes a user from a team',
-            required: ['team_id', 'user_id'],
+            required: ['team_id', 'user_id', 'requestor_id'],
             primaryField: 'user_id',
         },
     };

@@ -393,12 +393,15 @@ func (p *Plugin) registerChannelActions(service *microactions.Service) error {
 		p.addTeamMemberAction,
 		map[string]any{
 			"type":     "object",
-			"required": []string{"team_id", "user_id"},
+			"required": []string{"team_id", "user_id", "requestor_id"},
 			"properties": map[string]any{
 				"team_id": map[string]string{
 					"type": "string",
 				},
 				"user_id": map[string]string{
+					"type": "string",
+				},
+				"requestor_id": map[string]string{
 					"type": "string",
 				},
 			},
@@ -687,8 +690,9 @@ func (p *Plugin) addTeamMemberAction(ctx context.Context, payload map[string]any
 func (p *Plugin) removeTeamMemberAction(ctx context.Context, payload map[string]any) (map[string]any, error) {
 	teamId := payload["team_id"].(string)
 	userId := payload["user_id"].(string)
+	requestorId := payload["requestor_id"].(string)
 
-	if appErr := p.API.DeleteTeamMember(teamId, userId); appErr != nil {
+	if appErr := p.API.DeleteTeamMember(teamId, userId, requestorId); appErr != nil {
 		return nil, appErr
 	}
 
