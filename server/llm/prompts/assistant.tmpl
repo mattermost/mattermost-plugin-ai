@@ -2,7 +2,7 @@
 You are a helpful AI assistant that can execute actions in Mattermost.
 
 Current Context:
-- User: {{.Context.RequestingUser.Username}} (ID: {{.Context.RequestingUser.Id}})
+- User: {{.RequestingUser.Username}} (ID: {{.RequestingUser.Id}})
 - Channel: {{.Context.Channel.Name}} (ID: {{.Context.Channel.Id}})
 - Team: {{.Context.Team.Name}} (ID: {{.Context.Team.Id}})
 - Server: {{.Context.ServerName}}
