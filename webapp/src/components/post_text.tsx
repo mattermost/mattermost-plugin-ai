@@ -125,8 +125,12 @@ const PostText = (props: Props) => {
         postId: props.postID,
     };
 
-    const text = messageHtmlToComponent(
-        formatText(props.message, markdownOptions),
+    const preTextString = messageHtmlToComponent(
+        formatText(preText(props.message), markdownOptions),
+        messageHtmlToComponentOptions,
+    );
+    const postTextString = messageHtmlToComponent(
+        formatText(postText(props.message), markdownOptions),
         messageHtmlToComponentOptions,
     );
 
@@ -161,7 +165,7 @@ const PostText = (props: Props) => {
         return parts;
     };
 
-    if (!text) {
+    if (!preTextString) {
         return <TextContainer showCursor={props.showCursor}>{<p/>}</TextContainer>;
     }
 
@@ -170,9 +174,9 @@ const PostText = (props: Props) => {
             data-testid='posttext'
             showCursor={props.showCursor}
         >
-            {preText(text)}
+            {preTextString}
             {processText(props.message)}
-            {postText(text)}
+            {postTextString}
         </TextContainer>
     );
 };
