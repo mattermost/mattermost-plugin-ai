@@ -16,7 +16,7 @@ const RespondingToProp = "responding_to"
 
 func (p *Plugin) processUserRequestToBot(bot *Bot, context llm.ConversationContext) error {
 	// TODO: Change this to an attribute of the Bot
-	if bot.Name == "assistant" {
+	if bot.cfg.Name == "assistant" {
 		return p.processUserRequestToAssistant(bot, context)
 	}
 

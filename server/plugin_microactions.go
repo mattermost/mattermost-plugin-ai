@@ -2,8 +2,9 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"fmt"
 
+	"github.com/mattermost/mattermost-plugin-ai/server/microactions"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
@@ -14,41 +15,41 @@ func (p *Plugin) registerChannelActions(service *microactions.Service) error {
 		"Creates a new channel",
 		p.createChannelAction,
 		map[string]any{
-			"type": "object",
+			"type":     "object",
 			"required": []string{"team_id", "name", "display_name", "type"},
 			"properties": map[string]any{
-				"team_id": {
+				"team_id": map[string]string{
 					"type": "string",
 				},
-				"name": {
+				"name": map[string]string{
 					"type": "string",
 				},
-				"display_name": {
+				"display_name": map[string]string{
 					"type": "string",
 				},
-				"type": {
+				"type": map[string]any{
 					"type": "string",
 					"enum": []string{"O", "P"},
 				},
-				"purpose": {
+				"purpose": map[string]string{
 					"type": "string",
 				},
-				"header": {
+				"header": map[string]string{
 					"type": "string",
 				},
 			},
 		},
 		map[string]any{
-			"type": "object",
+			"type":     "object",
 			"required": []string{"id", "name", "display_name"},
 			"properties": map[string]any{
-				"id": {
+				"id": map[string]string{
 					"type": "string",
 				},
-				"name": {
+				"name": map[string]string{
 					"type": "string",
 				},
-				"display_name": {
+				"display_name": map[string]string{
 					"type": "string",
 				},
 			},
@@ -64,25 +65,25 @@ func (p *Plugin) registerChannelActions(service *microactions.Service) error {
 		"Adds a user to a channel",
 		p.addChannelMemberAction,
 		map[string]any{
-			"type": "object",
+			"type":     "object",
 			"required": []string{"channel_id", "user_id"},
 			"properties": map[string]any{
-				"channel_id": {
+				"channel_id": map[string]string{
 					"type": "string",
 				},
-				"user_id": {
+				"user_id": map[string]string{
 					"type": "string",
 				},
 			},
 		},
 		map[string]any{
-			"type": "object",
+			"type":     "object",
 			"required": []string{"channel_id", "user_id"},
 			"properties": map[string]any{
-				"channel_id": {
+				"channel_id": map[string]string{
 					"type": "string",
 				},
-				"user_id": {
+				"user_id": map[string]string{
 					"type": "string",
 				},
 			},
@@ -98,43 +99,43 @@ func (p *Plugin) registerChannelActions(service *microactions.Service) error {
 		"Creates a new post",
 		p.createPostAction,
 		map[string]any{
-			"type": "object",
+			"type":     "object",
 			"required": []string{"channel_id", "message"},
 			"properties": map[string]any{
-				"channel_id": {
+				"channel_id": map[string]string{
 					"type": "string",
 				},
-				"message": {
+				"message": map[string]string{
 					"type": "string",
 				},
-				"root_id": {
+				"root_id": map[string]string{
 					"type": "string",
 				},
-				"file_ids": {
+				"file_ids": map[string]any{
 					"type": "array",
-					"items": {
+					"items": map[string]string{
 						"type": "string",
 					},
 				},
-				"props": {
+				"props": map[string]string{
 					"type": "object",
 				},
 			},
 		},
 		map[string]any{
-			"type": "object",
+			"type":     "object",
 			"required": []string{"id", "create_at", "channel_id", "message"},
 			"properties": map[string]any{
-				"id": {
+				"id": map[string]string{
 					"type": "string",
 				},
-				"create_at": {
+				"create_at": map[string]string{
 					"type": "integer",
 				},
-				"channel_id": {
+				"channel_id": map[string]string{
 					"type": "string",
 				},
-				"message": {
+				"message": map[string]string{
 					"type": "string",
 				},
 			},
@@ -150,28 +151,28 @@ func (p *Plugin) registerChannelActions(service *microactions.Service) error {
 		"Updates preferences for a user",
 		p.updateUserPreferencesAction,
 		map[string]any{
-			"type": "object",
+			"type":     "object",
 			"required": []string{"user_id", "preferences"},
 			"properties": map[string]any{
-				"user_id": {
+				"user_id": map[string]string{
 					"type": "string",
 				},
-				"preferences": {
+				"preferences": map[string]any{
 					"type": "array",
-					"items": {
-						"type": "object",
+					"items": map[string]any{
+						"type":     "object",
 						"required": []string{"user_id", "category", "name", "value"},
 						"properties": map[string]any{
-							"user_id": {
+							"user_id": map[string]any{
 								"type": "string",
 							},
-							"category": {
+							"category": map[string]any{
 								"type": "string",
 							},
-							"name": {
+							"name": map[string]any{
 								"type": "string",
 							},
-							"value": {
+							"value": map[string]any{
 								"type": "string",
 							},
 						},
@@ -180,10 +181,10 @@ func (p *Plugin) registerChannelActions(service *microactions.Service) error {
 			},
 		},
 		map[string]any{
-			"type": "object",
+			"type":     "object",
 			"required": []string{"user_id"},
 			"properties": map[string]any{
-				"user_id": {
+				"user_id": map[string]any{
 					"type": "string",
 				},
 			},
@@ -199,49 +200,49 @@ func (p *Plugin) registerChannelActions(service *microactions.Service) error {
 		"Executes a slash command",
 		p.executeSlashCommandAction,
 		map[string]any{
-			"type": "object",
+			"type":     "object",
 			"required": []string{"channel_id", "command"},
 			"properties": map[string]any{
-				"channel_id": {
+				"channel_id": map[string]any{
 					"type": "string",
 				},
-				"command": {
+				"command": map[string]any{
 					"type": "string",
 				},
-				"team_id": {
+				"team_id": map[string]any{
 					"type": "string",
 				},
-				"root_id": {
+				"root_id": map[string]any{
 					"type": "string",
 				},
-				"parent_id": {
+				"parent_id": map[string]any{
 					"type": "string",
 				},
 			},
 		},
 		map[string]any{
-			"type": "object",
+			"type":     "object",
 			"required": []string{"response_type", "text"},
 			"properties": map[string]any{
-				"response_type": {
+				"response_type": map[string]any{
 					"type": "string",
 					"enum": []string{"in_channel", "ephemeral"},
 				},
-				"text": {
+				"text": map[string]any{
 					"type": "string",
 				},
-				"username": {
+				"username": map[string]any{
 					"type": "string",
 				},
-				"icon_url": {
+				"icon_url": map[string]any{
 					"type": "string",
 				},
-				"goto_location": {
+				"goto_location": map[string]any{
 					"type": "string",
 				},
-				"attachments": {
+				"attachments": map[string]any{
 					"type": "array",
-					"items": {
+					"items": map[string]any{
 						"type": "object",
 					},
 				},
@@ -262,7 +263,7 @@ func (p *Plugin) executeSlashCommandAction(ctx context.Context, payload map[stri
 	}
 
 	args := &model.CommandArgs{
-		Command:    payload["command"].(string),
+		Command:   payload["command"].(string),
 		ChannelId: payload["channel_id"].(string),
 		UserId:    userID,
 	}
@@ -285,7 +286,7 @@ func (p *Plugin) executeSlashCommandAction(ctx context.Context, payload map[stri
 
 	result := map[string]any{
 		"response_type": response.ResponseType,
-		"text":         response.Text,
+		"text":          response.Text,
 	}
 
 	// Add optional fields if they exist
@@ -347,15 +348,15 @@ func (p *Plugin) createPostAction(ctx context.Context, payload map[string]any) (
 func (p *Plugin) updateUserPreferencesAction(ctx context.Context, payload map[string]any) (map[string]any, error) {
 	userID := payload["user_id"].(string)
 	preferencesRaw := payload["preferences"].([]any)
-	
+
 	preferences := make([]model.Preference, len(preferencesRaw))
 	for i, prefRaw := range preferencesRaw {
 		pref := prefRaw.(map[string]any)
 		preferences[i] = model.Preference{
-			UserId:    pref["user_id"].(string),
-			Category:  pref["category"].(string),
-			Name:      pref["name"].(string),
-			Value:     pref["value"].(string),
+			UserId:   pref["user_id"].(string),
+			Category: pref["category"].(string),
+			Name:     pref["name"].(string),
+			Value:    pref["value"].(string),
 		}
 	}
 

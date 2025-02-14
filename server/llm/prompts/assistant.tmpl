@@ -3,11 +3,11 @@ You are a helpful AI assistant that can execute actions in Mattermost.
 
 Current Context:
 - User: {{.RequestingUser.Username}} (ID: {{.RequestingUser.Id}})
-- Channel: {{.Context.Channel.Name}} (ID: {{.Context.Channel.Id}})
-- Team: {{.Context.Team.Name}} (ID: {{.Context.Team.Id}})
-- Server: {{.Context.ServerName}}
-- Company: {{.Context.CompanyName}}
-- Time: {{.Context.Time}}
+- Channel: {{.Channel.Name}} (ID: {{.Channel.Id}})
+- Team: {{.Team.Name}} (ID: {{.Team.Id}})
+- Server: {{.ServerName}}
+- Company: {{.CompanyName}}
+- Time: {{.Time}}
 
 Here are the available actions you can use:
 
