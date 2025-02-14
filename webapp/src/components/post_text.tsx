@@ -1,13 +1,16 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import React from 'react';
+import React, {useState, useEffect} from 'react';
 import {useSelector} from 'react-redux';
 import styled, {keyframes, css} from 'styled-components';
 
 import {GlobalState} from '@mattermost/types/store';
 import {Channel} from '@mattermost/types/channels';
 import {Team} from '@mattermost/types/teams';
+
+import ActionBlock from './action_block';
+import Spinner from './spinner';
 
 export type ChannelNamesMap = {
     [name: string]: {
@@ -58,6 +61,46 @@ const TextContainer = styled.div<{showCursor?: boolean}>`
 `;
 
 const PostText = (props: Props) => {
+    const [actionBlocks, setActionBlocks] = useState<{[key: string]: string}>({});
+    const [incompleteBlocks, setIncompleteBlocks] = useState<Set<string>>(new Set());
+
+    useEffect(() => {
+        const blocks: {[key: string]: string} = {};
+        const incomplete = new Set<string>();
+        
+        // Find all action blocks in the message
+        const regex = /<actions>([\s\S]*?)<\/actions>/g;
+        const openRegex = /<actions>/g;
+        const closeRegex = /<\/actions>/g;
+        
+        let match;
+        let index = 0;
+        
+        // Count opening and closing tags
+        const openMatches = props.message.match(openRegex)?.length || 0;
+        const closeMatches = props.message.match(closeRegex)?.length || 0;
+        
+        // Process complete blocks
+        while ((match = regex.exec(props.message)) !== null) {
+            const blockId = `block-${index}`;
+            blocks[blockId] = match[1];
+            index++;
+        }
+        
+        // Mark incomplete blocks
+        if (openMatches > closeMatches) {
+            const lastBlockId = `block-${index}`;
+            incomplete.add(lastBlockId);
+        }
+        
+        setActionBlocks(blocks);
+        setIncompleteBlocks(incomplete);
+    }, [props.message]);
+
+    const handleExecute = (blockId: string) => {
+        // TODO: Implement action execution
+        console.log('Executing block:', actionBlocks[blockId]);
+    };
     const channel = useSelector<GlobalState, Channel>((state) => state.entities.channels.channels[props.channelID]);
     const team = useSelector<GlobalState, Team>((state) => state.entities.teams.teams[channel?.team_id]);
     const siteURL = useSelector<GlobalState, string | undefined>((state) => state.entities.general.config.SiteURL);
@@ -87,6 +130,48 @@ const PostText = (props: Props) => {
         messageHtmlToComponentOptions,
     );
 
+    const processText = (text: React.ReactNode): React.ReactNode => {
+        if (typeof text !== 'string') {
+            return text;
+        }
+
+        const parts = [];
+        let lastIndex = 0;
+        const regex = /<actions>([\s\S]*?)<\/actions>/g;
+        
+        let match;
+        let index = 0;
+        while ((match = regex.exec(text)) !== null) {
+            // Add text before the block
+            if (match.index > lastIndex) {
+                parts.push(text.slice(lastIndex, match.index));
+            }
+
+            const blockId = `block-${index}`;
+            if (incompleteBlocks.has(blockId)) {
+                parts.push(<Spinner key={blockId}/>);
+            } else {
+                parts.push(
+                    <ActionBlock
+                        key={blockId}
+                        content={actionBlocks[blockId]}
+                        onExecute={() => handleExecute(blockId)}
+                    />
+                );
+            }
+
+            lastIndex = match.index + match[0].length;
+            index++;
+        }
+
+        // Add remaining text
+        if (lastIndex < text.length) {
+            parts.push(text.slice(lastIndex));
+        }
+
+        return parts;
+    };
+
     if (!text) {
         return <TextContainer showCursor={props.showCursor}>{<p/>}</TextContainer>;
     }
@@ -96,7 +181,7 @@ const PostText = (props: Props) => {
             data-testid='posttext'
             showCursor={props.showCursor}
         >
-            {text}
+            {processText(text)}
         </TextContainer>
     );
 };
