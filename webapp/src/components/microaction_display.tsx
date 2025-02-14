@@ -1,4 +1,4 @@
-import React from 'react';
+import React, {useState} from 'react';
 import styled from 'styled-components';
 
 const ActionContainer = styled.div`
@@ -134,7 +134,7 @@ const MicroactionDisplay: React.FC<MicroactionDisplayProps> = ({action}) => {
 
     return (
         <ActionContainer>
-            <ActionHeader 
+            <ActionHeader
                 onClick={() => setIsExpanded(!isExpanded)}
                 isExpanded={isExpanded}
             >
@@ -143,7 +143,7 @@ const MicroactionDisplay: React.FC<MicroactionDisplayProps> = ({action}) => {
                 <ActionDescription>{metadata.description}</ActionDescription>
                 {primaryValue && (
                     <PrimaryField>
-                        {typeof primaryValue === 'object' 
+                        {typeof primaryValue === 'object'
                             ? JSON.stringify(primaryValue)
                             : String(primaryValue)
                         }
@@ -165,7 +165,7 @@ const MicroactionDisplay: React.FC<MicroactionDisplayProps> = ({action}) => {
                                     {metadata.required.includes(field) && ' *'}
                                 </FieldLabel>
                                 <FieldValue>
-                                    {typeof value === 'object' 
+                                    {typeof value === 'object'
                                         ? JSON.stringify(value, null, 2)
                                         : String(value)
                                     }
