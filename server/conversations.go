@@ -15,12 +15,12 @@ import (
 const RespondingToProp = "responding_to"
 
 func (p *Plugin) processUserRequestToBot(bot *Bot, context llm.ConversationContext) error {
-	// TODO: Change this to an attribute of the Bot
-	if bot.cfg.Name == "assistant" {
-		return p.processUserRequestToAssistant(bot, context)
-	}
 
 	if context.Post.RootId == "" {
+		// TODO: Change this to an attribute of the Bot
+		if bot.cfg.Name == "assistant" {
+			return p.processUserRequestToAssistant(bot, context)
+		}
 		return p.newConversation(bot, context)
 	}
 
@@ -32,9 +32,12 @@ func (p *Plugin) processUserRequestToBot(bot *Bot, context llm.ConversationConte
 	// Cutoff the thread at the post we are responding to avoid races.
 	threadData.cutoffAtPostID(context.Post.Id)
 
-	result, err := p.continueConversation(bot, threadData, context)
-	if err != nil {
-		return err
+	var result *llm.TextStreamResult
+	// TODO: Change this to an attribute of the Bot
+	if bot.cfg.Name == "assistant" {
+		result, err = p.processUserRequestToAssistantStream(bot, context, threadData)
+	} else {
+		result, err = p.continueConversation(bot, threadData, context)
 	}
 
 	responsePost := &model.Post{
@@ -49,56 +52,45 @@ func (p *Plugin) processUserRequestToBot(bot *Bot, context llm.ConversationConte
 	return nil
 }
 
-func (p *Plugin) processUserRequestToAssistant(bot *Bot, context llm.ConversationContext) error {
+func (p *Plugin) processUserRequestToAssistantStream(bot *Bot, context llm.ConversationContext, threadData *ThreadData) (*llm.TextStreamResult, error) {
 	conversation, err := p.prompts.ChatCompletion("assistant", context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
 	if err != nil {
-		return fmt.Errorf("failed to create conversation: %w", err)
+		return nil, fmt.Errorf("failed to create conversation: %w", err)
 	}
 	conversation.AddPost(p.PostToAIPost(bot, context.Post))
+	if threadData != nil {
+		threadDataInfo, err := p.getThreadAndMeta(context.Post.RootId)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get metadata for posts: %w", err)
+		}
+		threadDataInfoString := formatThread(threadDataInfo)
+		context.PromptParameters = map[string]string{"Thread": threadDataInfoString}
+	}
 
-	result, err := p.getLLM(bot.cfg).ChatCompletionNoStream(conversation)
+	result, err := p.getLLM(bot.cfg).ChatCompletion(conversation)
 	if err != nil {
-		return fmt.Errorf("failed to get completion: %w", err)
+		return nil, fmt.Errorf("failed to get completion: %w", err)
+	}
+	return result, nil
+}
+
+func (p *Plugin) processUserRequestToAssistant(bot *Bot, context llm.ConversationContext) error {
+	result, err := p.processUserRequestToAssistantStream(bot, context, nil)
+	if err != nil {
+		return err
 	}
 
-	// Extract code block and description
-	var code, description string
-	parts := strings.Split(result, "<code>")
-	if len(parts) > 1 {
-		description = strings.TrimSpace(parts[0])
-		codeParts := strings.Split(parts[1], "</code>")
-		if len(codeParts) > 0 {
-			code = strings.TrimSpace(codeParts[0])
-			if len(codeParts) > 1 {
-				description += "\n\n" + strings.TrimSpace(codeParts[1])
-			}
-		}
-	} else {
-		description = result
+	rootID := context.Post.RootId
+	if rootID == "" {
+		rootID = context.Post.Id
 	}
 
-	// Create description post
-	descriptionPost := &model.Post{
+	responsePost := &model.Post{
 		ChannelId: context.Channel.Id,
-		RootId:    context.Post.Id,
-		Message:   description,
+		RootId:    rootID,
 	}
-	descriptionPost.AddProp(RespondingToProp, context.Post.Id)
-	if err := p.botCreatePost(bot.mmBot.UserId, context.RequestingUser.Id, descriptionPost); err != nil {
-		return fmt.Errorf("failed to create description post: %w", err)
-	}
-
-	// If there's code, create code post
-	if code != "" {
-		codePost := &model.Post{
-			ChannelId: context.Channel.Id,
-			RootId:    context.Post.Id,
-			Message:   "```json\n" + code + "\n```",
-		}
-		codePost.AddProp(RespondingToProp, context.Post.Id)
-		if err := p.botCreatePost(bot.mmBot.UserId, context.RequestingUser.Id, codePost); err != nil {
-			return fmt.Errorf("failed to create code post: %w", err)
-		}
+	if err := p.streamResultToNewPost(bot.mmBot.UserId, context.RequestingUser.Id, result, responsePost); err != nil {
+		return err
 	}
 
 	return nil
