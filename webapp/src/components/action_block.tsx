@@ -1,7 +1,8 @@
-import React from 'react';
+import React, {useState} from 'react';
 import styled from 'styled-components';
 
 import MicroactionDisplay from './microaction_display';
+import {client} from '../client/client';
 
 const ActionBlockContainer = styled.div`
     border: 1px solid rgba(var(--center-channel-color-rgb), 0.16);
@@ -23,18 +24,31 @@ const ActionTitle = styled.span`
     color: var(--center-channel-color);
 `;
 
-const ExecuteButton = styled.button`
+const ExecuteButton = styled.button<{isExecuting?: boolean}>`
     background: var(--button-bg);
     color: var(--button-color);
     border: none;
     border-radius: 4px;
     padding: 8px 16px;
-    cursor: pointer;
+    cursor: ${props => props.isExecuting ? 'wait' : 'pointer'};
     font-weight: 600;
+    opacity: ${props => props.isExecuting ? 0.7 : 1};
+    position: relative;
 
     &:hover {
-        background: var(--button-bg-hover);
+        background: ${props => props.isExecuting ? 'var(--button-bg)' : 'var(--button-bg-hover)'};
     }
+
+    &:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+    }
+`;
+
+const ErrorMessage = styled.div`
+    color: var(--error-text);
+    font-size: 12px;
+    margin-top: 4px;
 `;
 
 const ActionContent = styled.div`
@@ -77,9 +91,16 @@ const ActionBlock: React.FC<Props> = ({content, onExecute}) => {
         <ActionBlockContainer>
             <ActionHeader>
                 <ActionTitle>{`Actions (${actions.length})`}</ActionTitle>
-                <ExecuteButton onClick={onExecute}>
-                    Execute
-                </ExecuteButton>
+                <div>
+                    <ExecuteButton 
+                        onClick={handleExecute}
+                        disabled={isExecuting}
+                        isExecuting={isExecuting}
+                    >
+                        {isExecuting ? 'Executing...' : 'Execute'}
+                    </ExecuteButton>
+                    {error && <ErrorMessage>{error}</ErrorMessage>}
+                </div>
             </ActionHeader>
             <ActionContent>
                 {actions.map((action, index) => (

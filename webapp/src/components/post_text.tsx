@@ -97,9 +97,20 @@ const PostText = (props: Props) => {
         setIncompleteBlocks(incomplete);
     }, [props.message]);
 
-    const handleExecute = (blockId: string) => {
-        // TODO: Implement action execution
-        console.log('Executing block:', actionBlocks[blockId]);
+    const [isExecuting, setIsExecuting] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const handleExecute = async () => {
+        try {
+            setIsExecuting(true);
+            setError(null);
+            await client.executeActions(actions);
+        } catch (err) {
+            setError(err.message || 'Failed to execute actions');
+            console.error('Failed to execute actions:', err);
+        } finally {
+            setIsExecuting(false);
+        }
     };
     const channel = useSelector<GlobalState, Channel>((state) => state.entities.channels.channels[props.channelID]);
     const team = useSelector<GlobalState, Team>((state) => state.entities.teams.teams[channel?.team_id]);
