@@ -72,6 +72,7 @@ type Plugin struct {
 	i18n *i18n.Bundle
 
 	llmUpstreamHTTPClient *http.Client
+	microactions          *microactions.Service
 }
 
 func resolveffmpegPath() string {
@@ -130,6 +131,12 @@ func (p *Plugin) OnActivate() error {
 	}
 
 	p.streamingContexts = map[string]PostStreamContext{}
+
+	// Initialize microactions service
+	p.microactions = microactions.New()
+	if err := p.registerChannelActions(p.microactions); err != nil {
+		return fmt.Errorf("failed to register channel actions: %w", err)
+	}
 
 	return nil
 }

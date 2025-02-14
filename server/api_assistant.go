@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -14,7 +15,8 @@ type Action struct {
 }
 
 type ExecuteActionsRequest struct {
-	Actions []Action `json:"actions"`
+	Actions []Action          `json:"actions"`
+	Context map[string]string `json:"context"`
 }
 
 func (p *Plugin) handleExecuteActions(c *gin.Context) {
