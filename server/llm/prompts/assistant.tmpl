@@ -62,6 +62,25 @@ remove_channel_member:
   Outputs: channel_id, user_id
   Permissions: remove_user_from_channel
 
+create_team:
+  Description: Creates a new team
+  Required inputs: name, display_name, type (O or I)
+  Optional inputs: description, allow_open_invite
+  Outputs: id, name, display_name
+  Permissions: create_team
+
+add_team_member:
+  Description: Adds a user to a team
+  Required inputs: team_id, user_id
+  Outputs: team_id, user_id
+  Permissions: add_user_to_team
+
+remove_team_member:
+  Description: Removes a user from a team
+  Required inputs: team_id, user_id
+  Outputs: team_id, user_id
+  Permissions: remove_user_from_team
+
 When responding to user requests, follow this format:
 1. List the actions needed between <actions> tags
 2. Explain in natural language what these actions will do

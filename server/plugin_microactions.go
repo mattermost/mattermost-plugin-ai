@@ -339,6 +339,121 @@ func (p *Plugin) registerChannelActions(service *microactions.Service) error {
 		return err
 	}
 
+	// Create Team Action
+	if err := service.RegisterAction(
+		"create_team",
+		"Creates a new team",
+		p.createTeamAction,
+		map[string]any{
+			"type": "object",
+			"required": []string{"name", "display_name", "type"},
+			"properties": map[string]any{
+				"name": map[string]string{
+					"type": "string",
+				},
+				"display_name": map[string]string{
+					"type": "string",
+				},
+				"type": map[string]string{
+					"type": "string",
+					"enum": []string{"O", "I"},
+				},
+				"description": map[string]string{
+					"type": "string",
+				},
+				"allow_open_invite": map[string]string{
+					"type": "boolean",
+				},
+			},
+		},
+		map[string]any{
+			"type": "object",
+			"required": []string{"id", "name", "display_name"},
+			"properties": map[string]any{
+				"id": map[string]string{
+					"type": "string",
+				},
+				"name": map[string]string{
+					"type": "string",
+				},
+				"display_name": map[string]string{
+					"type": "string",
+				},
+			},
+		},
+		[]string{"create_team"},
+	); err != nil {
+		return err
+	}
+
+	// Add Team Member Action
+	if err := service.RegisterAction(
+		"add_team_member",
+		"Adds a user to a team",
+		p.addTeamMemberAction,
+		map[string]any{
+			"type": "object",
+			"required": []string{"team_id", "user_id"},
+			"properties": map[string]any{
+				"team_id": map[string]string{
+					"type": "string",
+				},
+				"user_id": map[string]string{
+					"type": "string",
+				},
+			},
+		},
+		map[string]any{
+			"type": "object",
+			"required": []string{"team_id", "user_id"},
+			"properties": map[string]any{
+				"team_id": map[string]string{
+					"type": "string",
+				},
+				"user_id": map[string]string{
+					"type": "string",
+				},
+			},
+		},
+		[]string{"add_user_to_team"},
+	); err != nil {
+		return err
+	}
+
+	// Remove Team Member Action
+	if err := service.RegisterAction(
+		"remove_team_member",
+		"Removes a user from a team",
+		p.removeTeamMemberAction,
+		map[string]any{
+			"type": "object",
+			"required": []string{"team_id", "user_id"},
+			"properties": map[string]any{
+				"team_id": map[string]string{
+					"type": "string",
+				},
+				"user_id": map[string]string{
+					"type": "string",
+				},
+			},
+		},
+		map[string]any{
+			"type": "object",
+			"required": []string{"team_id", "user_id"},
+			"properties": map[string]any{
+				"team_id": map[string]string{
+					"type": "string",
+				},
+				"user_id": map[string]string{
+					"type": "string",
+				},
+			},
+		},
+		[]string{"remove_user_from_team"},
+	); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -525,6 +640,61 @@ func (p *Plugin) createChannelAction(ctx context.Context, payload map[string]any
 		"id":           createdChannel.Id,
 		"name":         createdChannel.Name,
 		"display_name": createdChannel.DisplayName,
+	}, nil
+}
+
+func (p *Plugin) createTeamAction(ctx context.Context, payload map[string]any) (map[string]any, error) {
+	team := &model.Team{
+		Name:        payload["name"].(string),
+		DisplayName: payload["display_name"].(string),
+		Type:        model.TeamType(payload["type"].(string)),
+	}
+
+	if description, ok := payload["description"].(string); ok {
+		team.Description = description
+	}
+	if allowOpenInvite, ok := payload["allow_open_invite"].(bool); ok {
+		team.AllowOpenInvite = allowOpenInvite
+	}
+
+	createdTeam, appErr := p.API.CreateTeam(team)
+	if appErr != nil {
+		return nil, appErr
+	}
+
+	return map[string]any{
+		"id":           createdTeam.Id,
+		"name":         createdTeam.Name,
+		"display_name": createdTeam.DisplayName,
+	}, nil
+}
+
+func (p *Plugin) addTeamMemberAction(ctx context.Context, payload map[string]any) (map[string]any, error) {
+	teamId := payload["team_id"].(string)
+	userId := payload["user_id"].(string)
+
+	_, appErr := p.API.AddTeamMember(teamId, userId)
+	if appErr != nil {
+		return nil, appErr
+	}
+
+	return map[string]any{
+		"team_id": teamId,
+		"user_id": userId,
+	}, nil
+}
+
+func (p *Plugin) removeTeamMemberAction(ctx context.Context, payload map[string]any) (map[string]any, error) {
+	teamId := payload["team_id"].(string)
+	userId := payload["user_id"].(string)
+
+	if appErr := p.API.RemoveTeamMember(teamId, userId); appErr != nil {
+		return nil, appErr
+	}
+
+	return map[string]any{
+		"team_id": teamId,
+		"user_id": userId,
 	}, nil
 }
 

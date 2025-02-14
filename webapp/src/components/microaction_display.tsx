@@ -129,6 +129,22 @@ const getActionMetadata = (actionName: string) => {
             required: ['channel_id', 'user_id'],
             primaryField: 'user_id',
         },
+        create_team: {
+            description: 'Creates a new team',
+            required: ['name', 'display_name', 'type'],
+            optional: ['description', 'allow_open_invite'],
+            primaryField: 'display_name',
+        },
+        add_team_member: {
+            description: 'Adds a user to a team',
+            required: ['team_id', 'user_id'],
+            primaryField: 'user_id',
+        },
+        remove_team_member: {
+            description: 'Removes a user from a team',
+            required: ['team_id', 'user_id'],
+            primaryField: 'user_id',
+        },
     };
 
     return metadata[actionName] || {
