@@ -1,6 +1,8 @@
 import React from 'react';
 import styled from 'styled-components';
 
+import MicroactionDisplay from './microaction_display';
+
 const ActionBlockContainer = styled.div`
     border: 1px solid rgba(var(--center-channel-color-rgb), 0.16);
     border-radius: 4px;
@@ -43,32 +45,6 @@ const ActionContent = styled.div`
     overflow-x: auto;
 `;
 
-const ActionItem = styled.div`
-    margin-bottom: 12px;
-    padding: 8px;
-    background: var(--center-channel-bg);
-    border-radius: 4px;
-    border: 1px solid rgba(var(--center-channel-color-rgb), 0.08);
-
-    &:last-child {
-        margin-bottom: 0;
-    }
-`;
-
-const ActionName = styled.div`
-    font-weight: 600;
-    color: var(--center-channel-color);
-    margin-bottom: 8px;
-`;
-
-const PayloadContent = styled.pre`
-    margin: 0;
-    padding: 8px;
-    background: rgba(var(--center-channel-color-rgb), 0.04);
-    border-radius: 4px;
-    overflow-x: auto;
-`;
-
 interface Props {
     content: string;
     onExecute: () => void;
@@ -107,12 +83,10 @@ const ActionBlock: React.FC<Props> = ({content, onExecute}) => {
             </ActionHeader>
             <ActionContent>
                 {actions.map((action, index) => (
-                    <ActionItem key={index}>
-                        <ActionName>{action.action}</ActionName>
-                        <PayloadContent>
-                            {JSON.stringify(action.payload, null, 2)}
-                        </PayloadContent>
-                    </ActionItem>
+                    <MicroactionDisplay 
+                        key={index}
+                        action={action}
+                    />
                 ))}
             </ActionContent>
         </ActionBlockContainer>
