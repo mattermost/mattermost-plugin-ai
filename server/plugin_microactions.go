@@ -253,7 +253,139 @@ func (p *Plugin) registerChannelActions(service *microactions.Service) error {
 		return err
 	}
 
+	// Create User Action
+	if err := service.RegisterAction(
+		"create_user",
+		"Creates a new user",
+		p.createUserAction,
+		map[string]any{
+			"type": "object",
+			"required": []string{"username", "email", "password"},
+			"properties": map[string]any{
+				"username": map[string]string{
+					"type": "string",
+				},
+				"email": map[string]string{
+					"type": "string",
+				},
+				"password": map[string]string{
+					"type": "string",
+				},
+				"nickname": map[string]string{
+					"type": "string",
+				},
+				"first_name": map[string]string{
+					"type": "string",
+				},
+				"last_name": map[string]string{
+					"type": "string",
+				},
+				"locale": map[string]string{
+					"type": "string",
+				},
+			},
+		},
+		map[string]any{
+			"type": "object",
+			"required": []string{"id", "username", "email"},
+			"properties": map[string]any{
+				"id": map[string]string{
+					"type": "string",
+				},
+				"username": map[string]string{
+					"type": "string",
+				},
+				"email": map[string]string{
+					"type": "string",
+				},
+			},
+		},
+		[]string{"create_user"},
+	); err != nil {
+		return err
+	}
+
+	// Remove Channel Member Action
+	if err := service.RegisterAction(
+		"remove_channel_member",
+		"Removes a user from a channel",
+		p.removeChannelMemberAction,
+		map[string]any{
+			"type": "object",
+			"required": []string{"channel_id", "user_id"},
+			"properties": map[string]any{
+				"channel_id": map[string]string{
+					"type": "string",
+				},
+				"user_id": map[string]string{
+					"type": "string",
+				},
+			},
+		},
+		map[string]any{
+			"type": "object",
+			"required": []string{"channel_id", "user_id"},
+			"properties": map[string]any{
+				"channel_id": map[string]string{
+					"type": "string",
+				},
+				"user_id": map[string]string{
+					"type": "string",
+				},
+			},
+		},
+		[]string{"remove_user_from_channel"},
+	); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func (p *Plugin) createUserAction(ctx context.Context, payload map[string]any) (map[string]any, error) {
+	user := &model.User{
+		Username:  payload["username"].(string),
+		Email:     payload["email"].(string),
+		Password:  payload["password"].(string),
+	}
+
+	if nickname, ok := payload["nickname"].(string); ok {
+		user.Nickname = nickname
+	}
+	if firstName, ok := payload["first_name"].(string); ok {
+		user.FirstName = firstName
+	}
+	if lastName, ok := payload["last_name"].(string); ok {
+		user.LastName = lastName
+	}
+	if locale, ok := payload["locale"].(string); ok {
+		user.Locale = locale
+	}
+
+	createdUser, appErr := p.API.CreateUser(user)
+	if appErr != nil {
+		return nil, appErr
+	}
+
+	return map[string]any{
+		"id":       createdUser.Id,
+		"username": createdUser.Username,
+		"email":    createdUser.Email,
+	}, nil
+}
+
+func (p *Plugin) removeChannelMemberAction(ctx context.Context, payload map[string]any) (map[string]any, error) {
+	channelId := payload["channel_id"].(string)
+	userId := payload["user_id"].(string)
+
+	if appErr := p.API.RemoveUserFromChannel(channelId, userId); appErr != nil {
+		return nil, appErr
+	}
+
+	return map[string]any{
+		"channel_id": channelId,
+		"user_id":    userId,
+	}, nil
 }
 
 func (p *Plugin) executeSlashCommandAction(ctx context.Context, payload map[string]any) (map[string]any, error) {

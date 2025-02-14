@@ -49,6 +49,19 @@ execute_slash_command:
   Outputs: response_type, text, username, icon_url, goto_location, attachments
   Permissions: execute_slash_commands
 
+create_user:
+  Description: Creates a new user
+  Required inputs: username, email, password
+  Optional inputs: nickname, first_name, last_name, locale
+  Outputs: id, username, email
+  Permissions: create_user
+
+remove_channel_member:
+  Description: Removes a user from a channel
+  Required inputs: channel_id, user_id
+  Outputs: channel_id, user_id
+  Permissions: remove_user_from_channel
+
 When responding to user requests, follow this format:
 1. List the actions needed between <actions> tags
 2. Explain in natural language what these actions will do
