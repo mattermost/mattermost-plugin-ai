@@ -62,17 +62,37 @@ const ActionContent = styled.div`
 interface Props {
     content: string;
     onExecute: () => void;
+    channelId: string;
 }
 
 const ActionBlock: React.FC<Props> = ({content, onExecute}) => {
+    const channel = useSelector<GlobalState, Channel>((state) => state.entities.channels.channels[props.channelId]);
+    const team = useSelector<GlobalState, Team>((state) => state.entities.teams.teams[channel?.team_id]);
+
     const actions = React.useMemo(() => {
         try {
-            return JSON.parse(content);
+            const parsedActions = JSON.parse(content);
+            if (!Array.isArray(parsedActions)) {
+                return [];
+            }
+
+            // Replace placeholders in each action's payload
+            return parsedActions.map(action => {
+                const payloadStr = JSON.stringify(action.payload);
+                const updatedPayloadStr = payloadStr
+                    .replace(/"?\[\[current_team_id\]\]"?/g, `"${team?.id || ''}"`)
+                    .replace(/"?\[\[current_channel_id\]\]"?/g, `"${props.channelId || ''}"`)
+                
+                return {
+                    ...action,
+                    payload: JSON.parse(updatedPayloadStr)
+                };
+            });
         } catch (e) {
             console.error('Failed to parse actions:', e);
             return [];
         }
-    }, [content]);
+    }, [content, team?.id, props.channelId]);
 
     if (!Array.isArray(actions)) {
         return (
