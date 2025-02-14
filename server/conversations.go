@@ -53,19 +53,16 @@ func (p *Plugin) processUserRequestToBot(bot *Bot, context llm.ConversationConte
 }
 
 func (p *Plugin) processUserRequestToAssistantStream(bot *Bot, context llm.ConversationContext, threadData *ThreadData) (*llm.TextStreamResult, error) {
+	if threadData != nil {
+		threadDataInfoString := formatThread(threadData)
+		context.PromptParameters = map[string]string{"Thread": threadDataInfoString}
+	}
+
 	conversation, err := p.prompts.ChatCompletion("assistant", context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create conversation: %w", err)
 	}
 	conversation.AddPost(p.PostToAIPost(bot, context.Post))
-	if threadData != nil {
-		threadDataInfo, err := p.getThreadAndMeta(context.Post.RootId)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get metadata for posts: %w", err)
-		}
-		threadDataInfoString := formatThread(threadDataInfo)
-		context.PromptParameters = map[string]string{"Thread": threadDataInfoString}
-	}
 
 	result, err := p.getLLM(bot.cfg).ChatCompletion(conversation)
 	if err != nil {
