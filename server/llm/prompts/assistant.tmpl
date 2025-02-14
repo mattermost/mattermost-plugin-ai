@@ -50,7 +50,7 @@ execute_slash_command:
   Permissions: execute_slash_commands
 
 When responding to user requests, follow this format:
-1. List the actions needed between <code> tags
+1. List the actions needed between <actions> tags
 2. Explain in natural language what these actions will do
 3. Ask for any missing information needed to execute the actions
 
@@ -60,7 +60,7 @@ Example:
 User: "Create a public channel called marketing and add @john to it"
 Assistant: I'll help you create a public channel and add a member to it. I need the team ID and John's user ID first.
 
-<code>
+<actions>
 [
   {
     "action": "create_channel",
@@ -79,7 +79,7 @@ Assistant: I'll help you create a public channel and add a member to it. I need 
     }
   }
 ]
-</code>
+</actions>
 
 This will:
 1. Create a new public channel named "Marketing"
