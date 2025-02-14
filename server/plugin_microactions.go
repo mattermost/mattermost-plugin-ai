@@ -259,7 +259,7 @@ func (p *Plugin) registerChannelActions(service *microactions.Service) error {
 		"Creates a new user",
 		p.createUserAction,
 		map[string]any{
-			"type": "object",
+			"type":     "object",
 			"required": []string{"username", "email", "password"},
 			"properties": map[string]any{
 				"username": map[string]string{
@@ -286,7 +286,7 @@ func (p *Plugin) registerChannelActions(service *microactions.Service) error {
 			},
 		},
 		map[string]any{
-			"type": "object",
+			"type":     "object",
 			"required": []string{"id", "username", "email"},
 			"properties": map[string]any{
 				"id": map[string]string{
@@ -311,7 +311,7 @@ func (p *Plugin) registerChannelActions(service *microactions.Service) error {
 		"Removes a user from a channel",
 		p.removeChannelMemberAction,
 		map[string]any{
-			"type": "object",
+			"type":     "object",
 			"required": []string{"channel_id", "user_id"},
 			"properties": map[string]any{
 				"channel_id": map[string]string{
@@ -323,7 +323,7 @@ func (p *Plugin) registerChannelActions(service *microactions.Service) error {
 			},
 		},
 		map[string]any{
-			"type": "object",
+			"type":     "object",
 			"required": []string{"channel_id", "user_id"},
 			"properties": map[string]any{
 				"channel_id": map[string]string{
@@ -345,7 +345,7 @@ func (p *Plugin) registerChannelActions(service *microactions.Service) error {
 		"Creates a new team",
 		p.createTeamAction,
 		map[string]any{
-			"type": "object",
+			"type":     "object",
 			"required": []string{"name", "display_name", "type"},
 			"properties": map[string]any{
 				"name": map[string]string{
@@ -354,7 +354,7 @@ func (p *Plugin) registerChannelActions(service *microactions.Service) error {
 				"display_name": map[string]string{
 					"type": "string",
 				},
-				"type": map[string]string{
+				"type": map[string]any{
 					"type": "string",
 					"enum": []string{"O", "I"},
 				},
@@ -367,7 +367,7 @@ func (p *Plugin) registerChannelActions(service *microactions.Service) error {
 			},
 		},
 		map[string]any{
-			"type": "object",
+			"type":     "object",
 			"required": []string{"id", "name", "display_name"},
 			"properties": map[string]any{
 				"id": map[string]string{
@@ -392,7 +392,7 @@ func (p *Plugin) registerChannelActions(service *microactions.Service) error {
 		"Adds a user to a team",
 		p.addTeamMemberAction,
 		map[string]any{
-			"type": "object",
+			"type":     "object",
 			"required": []string{"team_id", "user_id"},
 			"properties": map[string]any{
 				"team_id": map[string]string{
@@ -404,7 +404,7 @@ func (p *Plugin) registerChannelActions(service *microactions.Service) error {
 			},
 		},
 		map[string]any{
-			"type": "object",
+			"type":     "object",
 			"required": []string{"team_id", "user_id"},
 			"properties": map[string]any{
 				"team_id": map[string]string{
@@ -426,7 +426,7 @@ func (p *Plugin) registerChannelActions(service *microactions.Service) error {
 		"Removes a user from a team",
 		p.removeTeamMemberAction,
 		map[string]any{
-			"type": "object",
+			"type":     "object",
 			"required": []string{"team_id", "user_id"},
 			"properties": map[string]any{
 				"team_id": map[string]string{
@@ -438,7 +438,7 @@ func (p *Plugin) registerChannelActions(service *microactions.Service) error {
 			},
 		},
 		map[string]any{
-			"type": "object",
+			"type":     "object",
 			"required": []string{"team_id", "user_id"},
 			"properties": map[string]any{
 				"team_id": map[string]string{
@@ -459,9 +459,9 @@ func (p *Plugin) registerChannelActions(service *microactions.Service) error {
 
 func (p *Plugin) createUserAction(ctx context.Context, payload map[string]any) (map[string]any, error) {
 	user := &model.User{
-		Username:  payload["username"].(string),
-		Email:     payload["email"].(string),
-		Password:  payload["password"].(string),
+		Username: payload["username"].(string),
+		Email:    payload["email"].(string),
+		Password: payload["password"].(string),
 	}
 
 	if nickname, ok := payload["nickname"].(string); ok {
@@ -493,7 +493,7 @@ func (p *Plugin) removeChannelMemberAction(ctx context.Context, payload map[stri
 	channelId := payload["channel_id"].(string)
 	userId := payload["user_id"].(string)
 
-	if appErr := p.API.RemoveUserFromChannel(channelId, userId); appErr != nil {
+	if appErr := p.API.DeleteChannelMember(channelId, userId); appErr != nil {
 		return nil, appErr
 	}
 
@@ -647,7 +647,7 @@ func (p *Plugin) createTeamAction(ctx context.Context, payload map[string]any) (
 	team := &model.Team{
 		Name:        payload["name"].(string),
 		DisplayName: payload["display_name"].(string),
-		Type:        model.TeamType(payload["type"].(string)),
+		Type:        payload["type"].(string),
 	}
 
 	if description, ok := payload["description"].(string); ok {
@@ -673,7 +673,7 @@ func (p *Plugin) addTeamMemberAction(ctx context.Context, payload map[string]any
 	teamId := payload["team_id"].(string)
 	userId := payload["user_id"].(string)
 
-	_, appErr := p.API.AddTeamMember(teamId, userId)
+	_, appErr := p.API.CreateTeamMember(teamId, userId)
 	if appErr != nil {
 		return nil, appErr
 	}
@@ -688,7 +688,7 @@ func (p *Plugin) removeTeamMemberAction(ctx context.Context, payload map[string]
 	teamId := payload["team_id"].(string)
 	userId := payload["user_id"].(string)
 
-	if appErr := p.API.RemoveTeamMember(teamId, userId); appErr != nil {
+	if appErr := p.API.DeleteTeamMember(teamId, userId); appErr != nil {
 		return nil, appErr
 	}
 
