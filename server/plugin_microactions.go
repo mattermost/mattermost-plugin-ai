@@ -753,13 +753,27 @@ func (p *Plugin) removeTeamMemberAction(ctx context.Context, payload map[string]
 }
 
 func (p *Plugin) updateChannelAction(ctx context.Context, payload map[string]any) (map[string]any, error) {
-	channel := &model.Channel{
-		Id:          payload["id"].(string),
-		Name:        payload["name"].(string),
-		DisplayName: payload["display_name"].(string),
-		Type:        model.ChannelType(payload["type"].(string)),
+	channelId := payload["id"].(string)
+	
+	// Fetch the original channel
+	originalChannel, appErr := p.API.GetChannel(channelId)
+	if appErr != nil {
+		return nil, appErr
 	}
 
+	// Create update with original values
+	channel := originalChannel.Clone()
+
+	// Update only the fields that were provided
+	if name, ok := payload["name"].(string); ok {
+		channel.Name = name
+	}
+	if displayName, ok := payload["display_name"].(string); ok {
+		channel.DisplayName = displayName
+	}
+	if channelType, ok := payload["type"].(string); ok {
+		channel.Type = model.ChannelType(channelType)
+	}
 	if purpose, ok := payload["purpose"].(string); ok {
 		channel.Purpose = purpose
 	}
