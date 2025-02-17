@@ -420,6 +420,56 @@ func (p *Plugin) registerChannelActions(service *microactions.Service) error {
 		return err
 	}
 
+	// Update Channel Action
+	if err := service.RegisterAction(
+		"update_channel",
+		"Updates an existing channel",
+		p.updateChannelAction,
+		map[string]any{
+			"type":     "object",
+			"required": []string{"id", "name", "display_name", "type"},
+			"properties": map[string]any{
+				"id": map[string]string{
+					"type": "string",
+				},
+				"name": map[string]string{
+					"type": "string",
+				},
+				"display_name": map[string]string{
+					"type": "string",
+				},
+				"type": map[string]any{
+					"type": "string",
+					"enum": []string{"O", "P"},
+				},
+				"purpose": map[string]string{
+					"type": "string",
+				},
+				"header": map[string]string{
+					"type": "string",
+				},
+			},
+		},
+		map[string]any{
+			"type":     "object",
+			"required": []string{"id", "name", "display_name"},
+			"properties": map[string]any{
+				"id": map[string]string{
+					"type": "string",
+				},
+				"name": map[string]string{
+					"type": "string",
+				},
+				"display_name": map[string]string{
+					"type": "string",
+				},
+			},
+		},
+		[]string{"manage_public_channel_properties"},
+	); err != nil {
+		return err
+	}
+
 	// Remove Team Member Action
 	if err := service.RegisterAction(
 		"remove_team_member",
@@ -699,6 +749,33 @@ func (p *Plugin) removeTeamMemberAction(ctx context.Context, payload map[string]
 	return map[string]any{
 		"team_id": teamId,
 		"user_id": userId,
+	}, nil
+}
+
+func (p *Plugin) updateChannelAction(ctx context.Context, payload map[string]any) (map[string]any, error) {
+	channel := &model.Channel{
+		Id:          payload["id"].(string),
+		Name:        payload["name"].(string),
+		DisplayName: payload["display_name"].(string),
+		Type:        model.ChannelType(payload["type"].(string)),
+	}
+
+	if purpose, ok := payload["purpose"].(string); ok {
+		channel.Purpose = purpose
+	}
+	if header, ok := payload["header"].(string); ok {
+		channel.Header = header
+	}
+
+	updatedChannel, appErr := p.API.UpdateChannel(channel)
+	if appErr != nil {
+		return nil, appErr
+	}
+
+	return map[string]any{
+		"id":           updatedChannel.Id,
+		"name":         updatedChannel.Name,
+		"display_name": updatedChannel.DisplayName,
 	}, nil
 }
 
