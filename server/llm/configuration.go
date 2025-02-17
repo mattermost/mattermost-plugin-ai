@@ -44,7 +44,6 @@ const (
 	ServiceTypeOpenAI           = "openai"
 	ServiceTypeOpenAICompatible = "openaicompatible"
 	ServiceTypeAzure            = "azure"
-	ServiceTypeAskSage          = "asksage"
 	ServiceTypeAnthropic        = "anthropic"
 )
 
@@ -88,8 +87,6 @@ func (c *BotConfig) IsValid() bool {
 		return c.Service.APIKey != "" && c.Service.APIURL != ""
 	case ServiceTypeAnthropic:
 		return c.Service.APIKey != ""
-	case ServiceTypeAskSage:
-		return c.Service.Username != "" && c.Service.Password != ""
 	default:
 		return false
 	}

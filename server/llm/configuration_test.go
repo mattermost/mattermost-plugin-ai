@@ -263,48 +263,6 @@ func TestBotConfig_IsValid(t *testing.T) {
 			},
 			want: true,
 		},
-		{
-			name: "Ask Sage service requires username to be set",
-			fields: fields{
-				ID:                 "xxx",
-				Name:               "xxx",
-				DisplayName:        "xxx",
-				CustomInstructions: "",
-				Service: ServiceConfig{
-					Name:                    "Copilot",
-					Type:                    "asksage",
-					Username:                "", // bad
-					Password:                "topsecret",
-					DefaultModel:            "xxx",
-					InputTokenLimit:         100,
-					StreamingTimeoutSeconds: 60,
-				},
-				ChannelAccessLevel: ChannelAccessLevelAll,
-				UserAccessLevel:    UserAccessLevelAll,
-			},
-			want: false,
-		},
-		{
-			name: "Ask Sage service requires password to be set",
-			fields: fields{
-				ID:                 "xxx",
-				Name:               "xxx",
-				DisplayName:        "xxx",
-				CustomInstructions: "",
-				Service: ServiceConfig{
-					Name:                    "Copilot",
-					Type:                    "asksage",
-					Username:                "myuser",
-					Password:                "", // bad
-					DefaultModel:            "xxx",
-					InputTokenLimit:         100,
-					StreamingTimeoutSeconds: 60,
-				},
-				ChannelAccessLevel: ChannelAccessLevelAll,
-				UserAccessLevel:    UserAccessLevelAll,
-			},
-			want: false,
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
