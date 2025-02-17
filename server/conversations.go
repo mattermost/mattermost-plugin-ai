@@ -62,25 +62,19 @@ func contains(slice []string, item string) bool {
 }
 
 func (p *Plugin) processUserRequestToAssistantStream(bot *Bot, context llm.ConversationContext, threadData *ThreadData) (*llm.TextStreamResult, error) {
+	context.PromptParameters = map[string]string{}
 	if threadData != nil {
 		threadDataInfoString := formatThread(threadData)
-		context.PromptParameters = map[string]string{"Thread": threadDataInfoString}
+		context.PromptParameters["Thread"] = threadDataInfoString
 	}
 
 	// Get all registered actions
 	actions := p.microactions.ListActions()
-	
+
 	// Extract schema information for each action
-	actionDocs := make([]struct {
-		Name        string
-		Description string
-		Required    []string
-		Optional    []string
-		Outputs     []string
-		Permissions []string
-	}, len(actions))
-	
-	for i, action := range actions {
+	actionsDocs := ""
+
+	for _, action := range actions {
 		// Extract required fields from input schema
 		required := []string{}
 		if props, ok := action.InputSchema["properties"].(map[string]any); ok {
@@ -111,34 +105,29 @@ func (p *Plugin) processUserRequestToAssistantStream(bot *Bot, context llm.Conve
 			}
 		}
 
-		actionDocs[i] = struct {
-			Name        string
-			Description string
-			Required    []string
-			Optional    []string
-			Outputs     []string
-			Permissions []string
-		}{
-			Name:        action.Name,
-			Description: action.Description,
-			Required:    required,
-			Optional:    optional,
-			Outputs:     outputs,
-			Permissions: action.Permissions,
-		}
+		actionsDocs = fmt.Sprintf(`%s\n\n%s:\n
+  Description: %s\n
+  Required inputs: %s\n
+  Optional inputs: %s\n
+  Outputs: %s\n
+  Permissions: %s\n
+`, actionsDocs, action.Name, action.Description, strings.Join(required, ","), strings.Join(optional, ","), strings.Join(outputs, ","), strings.Join(action.Permissions, ","))
 	}
 
-	context.PromptParameters["Actions"] = actionDocs
+	context.PromptParameters["Actions"] = actionsDocs
+	p.API.LogError("BEFORE")
 	conversation, err := p.prompts.ChatCompletion("assistant", context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create conversation: %w", err)
 	}
 	conversation.AddPost(p.PostToAIPost(bot, context.Post))
+	p.API.LogError("CONVERSATION", "conversation", conversation)
 
 	result, err := p.getLLM(bot.cfg).ChatCompletion(conversation)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get completion: %w", err)
 	}
+	p.API.LogError("RESULT", "result", result)
 	return result, nil
 }
 

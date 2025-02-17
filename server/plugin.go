@@ -5,6 +5,7 @@ package main
 
 import (
 	"embed"
+	"fmt"
 
 	"net/http"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/server/enterprise"
 	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 	"github.com/mattermost/mattermost-plugin-ai/server/metrics"
+	"github.com/mattermost/mattermost-plugin-ai/server/microactions"
 	"github.com/mattermost/mattermost-plugin-ai/server/openai"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/mattermost/mattermost/server/public/pluginapi"

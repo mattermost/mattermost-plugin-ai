@@ -4,6 +4,8 @@
 import React, {useState, useEffect} from 'react';
 import {useSelector} from 'react-redux';
 import styled, {keyframes, css} from 'styled-components';
+import {executeActions} from '@/client';
+
 
 import {GlobalState} from '@mattermost/types/store';
 import {Channel} from '@mattermost/types/channels';
@@ -61,51 +63,49 @@ const TextContainer = styled.div<{showCursor?: boolean}>`
 `;
 
 const PostText = (props: Props) => {
-    const [actionBlocks, setActionBlocks] = useState<{[key: string]: string}>({});
-    const [incompleteBlocks, setIncompleteBlocks] = useState<Set<string>>(new Set());
+    const [actionsBlock, setActionsBlock] = useState<string>('');
+    const [loadingBlock, setLoadingBlock] = useState<boolean>(false);
 
     useEffect(() => {
         const blocks: {[key: string]: string} = {};
-        const incomplete = new Set<string>();
 
         // Find all action blocks in the message
         const regex = /<actions>([\s\S]*?)<\/actions>/g;
         const openRegex = /<actions>/g;
         const closeRegex = /<\/actions>/g;
 
+
         let match;
-        let index = 0;
 
         // Count opening and closing tags
         const openMatches = props.message.match(openRegex)?.length || 0;
         const closeMatches = props.message.match(closeRegex)?.length || 0;
 
+        let block = ''
         // Process complete blocks
         while ((match = regex.exec(props.message)) !== null) {
-            const blockId = `block-${index}`;
-            blocks[blockId] = match[1];
-            index++;
+            block += match[1];
         }
 
         // Mark incomplete blocks
         if (openMatches > closeMatches) {
-            const lastBlockId = `block-${index}`;
-            incomplete.add(lastBlockId);
+            setLoadingBlock(true);
+        } else {
+            setLoadingBlock(false);
         }
 
-        setActionBlocks(blocks);
-        setIncompleteBlocks(incomplete);
+        setActionsBlock(block);
     }, [props.message]);
 
     const [isExecuting, setIsExecuting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const handleExecute = async () => {
+    const handleExecute = async (actions: any) => {
         try {
             setIsExecuting(true);
             setError(null);
-            await client.executeActions(actions);
-        } catch (err) {
+            await executeActions(actions);
+        } catch (err: any) {
             setError(err.message || 'Failed to execute actions');
             console.error('Failed to execute actions:', err);
         } finally {
@@ -161,37 +161,6 @@ const PostText = (props: Props) => {
         messageHtmlToComponentOptions,
     );
 
-    const processText = (text: React.ReactNode): React.ReactNode => {
-        if (typeof text !== 'string') {
-            return text;
-        }
-
-        const parts = [];
-        let lastIndex = 0;
-        const regex = /<actions>([\s\S]*?)<\/actions>/g;
-
-        let match;
-        let index = 0;
-        while ((match = regex.exec(text)) !== null) {
-            const blockId = `block-${index}`;
-            if (incompleteBlocks.has(blockId)) {
-                parts.push(<Spinner key={blockId}/>);
-            } else {
-                parts.push(
-                    <ActionBlock
-                        key={blockId}
-                        content={actionBlocks[blockId]}
-                        onExecute={() => handleExecute(blockId)}
-                    />
-                );
-            }
-
-            lastIndex = match.index + match[0].length;
-            index++;
-        }
-        return parts;
-    };
-
     if (!preTextString) {
         return <TextContainer showCursor={props.showCursor}>{<p/>}</TextContainer>;
     }
@@ -202,7 +171,16 @@ const PostText = (props: Props) => {
             showCursor={props.showCursor}
         >
             {preTextString}
-            {processText(props.message)}
+            {loadingBlock && <Spinner/>}
+            {actionsBlock && (
+                <ActionBlock
+                    content={actionsBlock}
+                    onExecute={handleExecute}
+                    executionError={error || ''}
+                    isExecuting={isExecuting}
+                    channelID={props.channelID}
+                />
+            )}
             {postTextString}
         </TextContainer>
     );

@@ -754,15 +754,12 @@ func (p *Plugin) removeTeamMemberAction(ctx context.Context, payload map[string]
 
 func (p *Plugin) updateChannelAction(ctx context.Context, payload map[string]any) (map[string]any, error) {
 	channelId := payload["id"].(string)
-	
+
 	// Fetch the original channel
-	originalChannel, appErr := p.API.GetChannel(channelId)
+	channel, appErr := p.API.GetChannel(channelId)
 	if appErr != nil {
 		return nil, appErr
 	}
-
-	// Create update with original values
-	channel := originalChannel.Clone()
 
 	// Update only the fields that were provided
 	if name, ok := payload["name"].(string); ok {

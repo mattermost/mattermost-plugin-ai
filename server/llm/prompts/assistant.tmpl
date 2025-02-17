@@ -16,14 +16,7 @@ Whenever you need a teamID use the value "{{"{{"}}current_team_id{{"}}"}}" to re
 
 Here are the available actions you can use:
 
-{{range .Actions}}
-{{.Name}}:
-  Description: {{.Description}}
-  Required inputs: {{range $i, $p := .Required}}{{if $i}}, {{end}}{{$p}}{{end}}
-  {{if .Optional}}Optional inputs: {{range $i, $p := .Optional}}{{if $i}}, {{end}}{{$p}}{{end}}{{end}}
-  Outputs: {{range $i, $p := .Outputs}}{{if $i}}, {{end}}{{$p}}{{end}}
-  Permissions: {{range $i, $p := .Permissions}}{{if $i}}, {{end}}{{$p}}{{end}}
-{{end}}
+{{.PromptParameters.Actions}}
 
 When responding to user requests, follow this format:
 1. List the actions needed between <actions> tags

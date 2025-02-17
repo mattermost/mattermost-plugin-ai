@@ -46,12 +46,16 @@ func (p *Prompts) ChatCompletion(templateName string, context ConversationContex
 
 	tmpl := p.templates.Lookup(withPromptExtension(templateName))
 	if tmpl == nil {
+		fmt.Println("EXITING HERE 0")
 		return conversation, errors.New("main template not found")
 	}
+
+	fmt.Println("TMPL", tmpl)
 
 	if systemTemplate := tmpl.Lookup(templateName + SystemSubTemplateName); systemTemplate != nil {
 		systemMessage, err := p.execute(systemTemplate, context)
 		if err != nil {
+			fmt.Println("EXITING HERE 1", err)
 			return conversation, err
 		}
 
@@ -64,6 +68,7 @@ func (p *Prompts) ChatCompletion(templateName string, context ConversationContex
 	if userTemplate := tmpl.Lookup(templateName + UserSubTemplateName); userTemplate != nil {
 		userMessage, err := p.execute(userTemplate, context)
 		if err != nil {
+			fmt.Println("EXITING HERE 2")
 			return conversation, err
 		}
 
@@ -73,6 +78,7 @@ func (p *Prompts) ChatCompletion(templateName string, context ConversationContex
 		})
 	}
 
+	fmt.Println("EXITING HERE 3")
 	return conversation, nil
 }
 

@@ -22,6 +22,60 @@ import (
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 )
 
+type LookupMattermostChannelArgs struct {
+	Name string `jsonschema_description:"The name of the channel to lookup without a leading '~'. Example: 'channel_name'"`
+}
+
+func (p *Plugin) toolResolveLookupMattermostChannel(context llm.ConversationContext, argsGetter llm.ToolArgumentGetter) (string, error) {
+	var args LookupMattermostChannelArgs
+	err := argsGetter(&args)
+	if err != nil {
+		return "invalid parameters to function", fmt.Errorf("failed to get arguments for tool LookupMattermostUser: %w", err)
+	}
+
+	if !model.IsValidChannelIdentifier(args.Name) {
+		return "invalid name", errors.New("invalid name")
+	}
+
+	teams, err := p.pluginAPI.Team.List()
+	if err != nil {
+		return "failed to lookup channel", fmt.Errorf("failed to get teams: %w", err)
+	}
+
+	var channel *model.Channel
+	for _, team := range teams {
+		fmt.Println("***** CHANNEL NAME IN TEAM", args.Name, team.Name)
+
+		var err error
+		channel, err = p.pluginAPI.Channel.GetByName(team.Id, args.Name, false)
+		if err != nil {
+			if errors.Is(err, pluginapi.ErrNotFound) {
+				continue
+			}
+			return "failed to lookup channel", fmt.Errorf("failed to lookup channel: %w", err)
+		}
+		if channel != nil {
+			break
+		}
+	}
+	if channel == nil {
+		return "channel not found", nil
+	}
+
+	if !p.pluginAPI.User.HasPermissionToChannel(context.RequestingUser.Id, channel.Id, model.PermissionReadChannel) {
+		return "user doesn't have permissions", errors.New("user doesn't have permission to lookup users")
+	}
+
+	result := fmt.Sprintf("Name: %s", channel.Name)
+	result += fmt.Sprintf("\nID: %s", channel.Id)
+	result += fmt.Sprintf("\nDisplay Name: %s", channel.DisplayName)
+	result += fmt.Sprintf("\nType: %s", channel.Type)
+	result += fmt.Sprintf("\nHeader: %s", channel.Header)
+	result += fmt.Sprintf("\nPurpose: %s", channel.Purpose)
+
+	return result, nil
+}
+
 type LookupMattermostUserArgs struct {
 	Username string `jsonschema_description:"The username of the user to lookup without a leading '@'. Example: 'firstname.lastname'"`
 }
@@ -52,10 +106,14 @@ func (p *Plugin) toolResolveLookupMattermostUser(context llm.ConversationContext
 
 	userStatus, err := p.pluginAPI.User.GetStatus(user.Id)
 	if err != nil {
-		return "failed to lookup user", fmt.Errorf("failed to get user status: %w", err)
+		userStatus = &model.Status{
+			LastActivityAt: 0,
+			Status:         "",
+		}
 	}
 
 	result := fmt.Sprintf("Username: %s", user.Username)
+	result += fmt.Sprintf("\nID: %s", user.Id)
 	if p.pluginAPI.Configuration.GetConfig().PrivacySettings.ShowFullName != nil && *p.pluginAPI.Configuration.GetConfig().PrivacySettings.ShowFullName {
 		if user.FirstName != "" || user.LastName != "" {
 			result += fmt.Sprintf("\nFull Name: %s %s", user.FirstName, user.LastName)
@@ -414,9 +472,16 @@ func (p *Plugin) getBuiltInTools(isDM bool, bot *Bot) []llm.Tool {
 
 		builtInTools = append(builtInTools, llm.Tool{
 			Name:        "LookupMattermostUser",
-			Description: "Lookup a Mattermost user by their username. Available information includes: username, full name, email, nickname, position, locale, timezone, last activity, and status.",
+			Description: "Lookup a Mattermost user by their username. Available information includes: username, id, full name, email, nickname, position, locale, timezone, last activity, and status.",
 			Schema:      LookupMattermostUserArgs{},
 			Resolver:    p.toolResolveLookupMattermostUser,
+		})
+
+		builtInTools = append(builtInTools, llm.Tool{
+			Name:        "LookupMattermostChannel",
+			Description: "Lookup a Mattermost channel by their name. Available information includes: name, id, displayName, purpose, header, type.",
+			Schema:      LookupMattermostChannelArgs{},
+			Resolver:    p.toolResolveLookupMattermostChannel,
 		})
 
 		// GitHub plugin tools

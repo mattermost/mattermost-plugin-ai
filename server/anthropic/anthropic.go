@@ -213,6 +213,7 @@ func (a *Anthropic) streamChatWithTools(state messageState) error {
 		if block.Type == anthropicSDK.ContentBlockTypeToolUse {
 			// Resolve the tool
 			result, err := state.resolver(block.Name, func(args any) error {
+				fmt.Println("************* BLOCK INPUT", args, block.Input)
 				return json.Unmarshal(block.Input, args)
 			}, state.context)
 

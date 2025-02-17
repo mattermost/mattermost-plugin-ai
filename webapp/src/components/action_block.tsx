@@ -1,8 +1,10 @@
 import React, {useState} from 'react';
+import {useSelector} from 'react-redux';
 import styled from 'styled-components';
 
+import {GlobalState} from '@mattermost/types/store';
+
 import MicroactionDisplay from './microaction_display';
-import {client} from '../client/client';
 
 const ActionBlockContainer = styled.div`
     border: 1px solid rgba(var(--center-channel-color-rgb), 0.16);
@@ -61,38 +63,21 @@ const ActionContent = styled.div`
 
 interface Props {
     content: string;
-    onExecute: () => void;
-    channelId: string;
+    onExecute: (actions: any) => void;
+    isExecuting: boolean;
+    channelID: string;
+    executionError: string;
 }
 
-const ActionBlock: React.FC<Props> = ({content, onExecute}) => {
-    const channel = useSelector<GlobalState, Channel>((state) => state.entities.channels.channels[props.channelId]);
-    const team = useSelector<GlobalState, Team>((state) => state.entities.teams.teams[channel?.team_id]);
+const ActionBlock: React.FC<Props> = ({content, onExecute, isExecuting, executionError, channelID}) => {
+    const teamID = useSelector<GlobalState, string>((state) => state.entities.teams.currentTeamId);
 
     const actions = React.useMemo(() => {
-        try {
-            const parsedActions = JSON.parse(content);
-            if (!Array.isArray(parsedActions)) {
-                return [];
-            }
-
-            // Replace placeholders in each action's payload
-            return parsedActions.map(action => {
-                const payloadStr = JSON.stringify(action.payload);
-                const updatedPayloadStr = payloadStr
-                    .replace(/"?\[\[current_team_id\]\]"?/g, `"${team?.id || ''}"`)
-                    .replace(/"?\[\[current_channel_id\]\]"?/g, `"${props.channelId || ''}"`)
-                
-                return {
-                    ...action,
-                    payload: JSON.parse(updatedPayloadStr)
-                };
-            });
-        } catch (e) {
-            console.error('Failed to parse actions:', e);
-            return [];
-        }
-    }, [content, team?.id, props.channelId]);
+        console.log(content)
+        let newContent = content.replace(/"?\{\{current_team_id\}\}"?/g, `"${teamID || ''}"`)
+        newContent = newContent.replace(/"?\{\{current_channel_id\}\}"?/g, `"${channelID || ''}"`)
+        return JSON.parse(newContent);
+    }, [content, teamID, channelID]);
 
     if (!Array.isArray(actions)) {
         return (
@@ -100,9 +85,7 @@ const ActionBlock: React.FC<Props> = ({content, onExecute}) => {
                 <ActionHeader>
                     <ActionTitle>Invalid Actions Format</ActionTitle>
                 </ActionHeader>
-                <ActionContent>
-                    <PayloadContent>{content}</PayloadContent>
-                </ActionContent>
+                <ActionContent>{content}</ActionContent>
             </ActionBlockContainer>
         );
     }
@@ -112,19 +95,19 @@ const ActionBlock: React.FC<Props> = ({content, onExecute}) => {
             <ActionHeader>
                 <ActionTitle>{`Actions (${actions.length})`}</ActionTitle>
                 <div>
-                    <ExecuteButton 
-                        onClick={handleExecute}
+                    <ExecuteButton
+                        onClick={() => onExecute(actions)}
                         disabled={isExecuting}
                         isExecuting={isExecuting}
                     >
                         {isExecuting ? 'Executing...' : 'Execute'}
                     </ExecuteButton>
-                    {error && <ErrorMessage>{error}</ErrorMessage>}
+                    {executionError && <ErrorMessage>{executionError}</ErrorMessage>}
                 </div>
             </ActionHeader>
             <ActionContent>
                 {actions.map((action, index) => (
-                    <MicroactionDisplay 
+                    <MicroactionDisplay
                         key={index}
                         action={action}
                     />

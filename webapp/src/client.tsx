@@ -292,3 +292,21 @@ export async function searchTeams(term: string) {
 export function getTeamIconUrl(teamId: string, lastTeamIconUpdate: number) {
     return Client4.getTeamIconUrl(teamId, lastTeamIconUpdate);
 }
+
+export async function executeActions(actions: any[]) {
+    const url = `${baseRoute()}/actions/execute`;
+    const response = await fetch(url, Client4.getOptions({
+        method: 'POST',
+        body: JSON.stringify(actions),
+    }));
+
+    if (response.ok) {
+        return;
+    }
+
+    throw new ClientError(Client4.url, {
+        message: '',
+        status_code: response.status,
+        url,
+    });
+}
