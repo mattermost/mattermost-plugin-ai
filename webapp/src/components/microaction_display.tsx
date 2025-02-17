@@ -145,6 +145,12 @@ const getActionMetadata = (actionName: string) => {
             required: ['team_id', 'user_id', 'requestor_id'],
             primaryField: 'user_id',
         },
+        update_channel: {
+            description: 'Updates an existing channel',
+            required: ['id', 'name', 'display_name', 'type'],
+            optional: ['purpose', 'header'],
+            primaryField: 'display_name',
+        },
     };
 
     return metadata[actionName] || {
