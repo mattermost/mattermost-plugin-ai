@@ -60,7 +60,7 @@
     "@mattermost/compass-icons": "0.1.38",
     "@mattermost/eslint-plugin": "1.1.0-0",
     "core-js": "3.38.1",
-    "debounce": "2.1.1",
+    "debounce": "2.2.0",
     "luxon": "3.5.0",
     "process": "0.11.10",
     "react": "^16.14.0",
