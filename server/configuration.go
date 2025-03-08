@@ -17,7 +17,6 @@ type Config struct {
 	TranscriptGenerator      string              `json:"transcriptBackend"`
 	EnableLLMTrace           bool                `json:"enableLLMTrace"`
 	AllowedUpstreamHostnames string              `json:"allowedUpstreamHostnames"`
-	IncomingWebhookURL       string              `json:"IncomingWebhookURL"`
 }
 
 // configuration captures the plugin's external configuration as exposed in the Mattermost server
