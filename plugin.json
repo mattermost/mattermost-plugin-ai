@@ -26,6 +26,12 @@
       {
         "key": "Config",
         "type": "custom"
+      },
+      {
+        "key": "IncomingWebhookURL",
+        "display_name": "Slack Incoming Webhook URL",
+        "type": "text",
+        "help_text": "The URL of the Slack incoming webhook where AI-transformed messages will be sent. This is used by the JSON transformer endpoint."
       }
     ]
   }
