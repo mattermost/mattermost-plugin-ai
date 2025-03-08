@@ -33,6 +33,7 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 
 	router.GET("/ai_threads", p.handleGetAIThreads)
 	router.GET("/ai_bots", p.handleGetAIBots)
+	router.POST("/transform_webhook", p.handleTransformWebhook)
 
 	botRequiredRouter := router.Group("")
 	botRequiredRouter.Use(p.aiBotRequired)
@@ -53,7 +54,6 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 
 	adminRouter := router.Group("/admin")
 	adminRouter.Use(p.mattermostAdminAuthorizationRequired)
-	adminRouter.POST("/transform_webhook", p.handleTransformWebhook)
 
 	router.ServeHTTP(w, r)
 }
@@ -259,12 +259,12 @@ func (p *Plugin) handleTransformWebhook(c *gin.Context) {
 	}
 
 	// Return success with the transformed JSON
-	result := struct {
+	result2 := struct {
 		Message        string          `json:"message"`
 		WebhookPayload json.RawMessage `json:"webhook_payload"`
 	}{
 		Message:        "Successfully transformed and sent webhook",
 		WebhookPayload: webhookPayload,
 	}
-	c.JSON(http.StatusOK, result)
+	c.JSON(http.StatusOK, result2)
 }
