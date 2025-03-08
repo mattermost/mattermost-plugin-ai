@@ -170,12 +170,7 @@ func (p *Plugin) handleGetAIBots(c *gin.Context) {
 func (p *Plugin) handleTransformWebhook(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 
-	// Check if webhook URL is configured
-	webhookURL := p.getConfiguration().IncomingWebhookURL
-	if webhookURL == "" {
-		c.AbortWithError(http.StatusBadRequest, errors.New("incoming webhook URL not configured"))
-		return
-	}
+	// No need to check for webhook URL anymore
 
 	// Get bot information
 	botUsername := c.DefaultQuery("botUsername", p.getConfiguration().DefaultBotName)
@@ -260,27 +255,83 @@ func (p *Plugin) handleTransformWebhook(c *gin.Context) {
 		return
 	}
 
-	// Send the transformed JSON to the webhook URL
-	resp, err := http.Post(webhookURL, "application/json", bytes.NewBuffer(webhookPayload))
+	// Create a direct message channel with the bot if it doesn't exist
+	botDMChannel, err := p.pluginAPI.Channel.GetDirect(userID, bot.mmBot.UserId)
 	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to send to webhook: %w", err))
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		c.AbortWithError(http.StatusBadGateway, fmt.Errorf("webhook returned error: %s - %s", resp.Status, body))
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to get DM channel with bot: %w", err))
 		return
 	}
 
-	// Return success with the transformed JSON
+	// Parse the webhook payload to extract relevant information
+	var slackMsg struct {
+		Text        string `json:"text"`
+		Attachments []struct {
+			Fallback string `json:"fallback"`
+			Text     string `json:"text"`
+			Title    string `json:"title"`
+		} `json:"attachments"`
+	}
+	
+	if err := json.Unmarshal(webhookPayload, &slackMsg); err != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to parse webhook payload: %w", err))
+		return
+	}
+	
+	// Build post message content from Slack format
+	var postMessage strings.Builder
+	
+	// Add the main text
+	if slackMsg.Text != "" {
+		postMessage.WriteString(slackMsg.Text)
+		postMessage.WriteString("\n\n")
+	}
+	
+	// Add attachments
+	for _, attachment := range slackMsg.Attachments {
+		if attachment.Title != "" {
+			postMessage.WriteString("### ")
+			postMessage.WriteString(attachment.Title)
+			postMessage.WriteString("\n\n")
+		}
+		
+		if attachment.Text != "" {
+			postMessage.WriteString(attachment.Text)
+			postMessage.WriteString("\n\n")
+		} else if attachment.Fallback != "" {
+			postMessage.WriteString(attachment.Fallback)
+			postMessage.WriteString("\n\n")
+		}
+	}
+	
+	// Create a post using the transformed data
+	post := &model.Post{
+		UserId:    bot.mmBot.UserId,
+		ChannelId: botDMChannel.Id,
+		Message:   postMessage.String(),
+	}
+	
+	// Add the original JSON as a prop
+	post.AddProp("original_json", string(prettyJSON))
+	post.AddProp("transformed_json", string(webhookPayload))
+	
+	// Create the post
+	createdPost, err := p.pluginAPI.Post.Create(post)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to create post: %w", err))
+		return
+	}
+
+	// Return success with the post information
 	result2 := struct {
 		Message        string          `json:"message"`
 		WebhookPayload json.RawMessage `json:"webhook_payload"`
+		PostID         string          `json:"post_id"`
+		ChannelID      string          `json:"channel_id"`
 	}{
-		Message:        "Successfully transformed and sent webhook",
+		Message:        "Successfully transformed and created post",
 		WebhookPayload: webhookPayload,
+		PostID:         createdPost.Id,
+		ChannelID:      createdPost.ChannelId,
 	}
 	c.JSON(http.StatusOK, result2)
 }
