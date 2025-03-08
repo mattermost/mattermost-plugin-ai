@@ -129,6 +129,11 @@ func (p *Plugin) OnActivate() error {
 	}
 
 	p.streamingContexts = map[string]PostStreamContext{}
+    
+	// Register slash commands
+	if err := p.registerCommands(); err != nil {
+	    return err
+	}
 
 	return nil
 }
