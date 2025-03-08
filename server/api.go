@@ -262,52 +262,28 @@ func (p *Plugin) handleTransformWebhook(c *gin.Context) {
 		return
 	}
 
-	// Parse the webhook payload to extract relevant information
-	var slackMsg struct {
-		Text        string `json:"text"`
-		Attachments []struct {
-			Fallback string `json:"fallback"`
-			Text     string `json:"text"`
-			Title    string `json:"title"`
-		} `json:"attachments"`
-	}
-	
+	// Parse the webhook payload
+	var slackMsg map[string]interface{}
 	if err := json.Unmarshal(webhookPayload, &slackMsg); err != nil {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to parse webhook payload: %w", err))
 		return
-	}
-	
-	// Build post message content from Slack format
-	var postMessage strings.Builder
-	
-	// Add the main text
-	if slackMsg.Text != "" {
-		postMessage.WriteString(slackMsg.Text)
-		postMessage.WriteString("\n\n")
-	}
-	
-	// Add attachments
-	for _, attachment := range slackMsg.Attachments {
-		if attachment.Title != "" {
-			postMessage.WriteString("### ")
-			postMessage.WriteString(attachment.Title)
-			postMessage.WriteString("\n\n")
-		}
-		
-		if attachment.Text != "" {
-			postMessage.WriteString(attachment.Text)
-			postMessage.WriteString("\n\n")
-		} else if attachment.Fallback != "" {
-			postMessage.WriteString(attachment.Fallback)
-			postMessage.WriteString("\n\n")
-		}
 	}
 	
 	// Create a post using the transformed data
 	post := &model.Post{
 		UserId:    bot.mmBot.UserId,
 		ChannelId: botDMChannel.Id,
-		Message:   postMessage.String(),
+		Message:   "",
+	}
+	
+	// Add the text to the post message
+	if text, ok := slackMsg["text"].(string); ok {
+		post.Message = text
+	}
+	
+	// Add the attachments directly to the post props
+	if attachments, ok := slackMsg["attachments"]; ok {
+		post.AddProp("attachments", attachments)
 	}
 	
 	// Add the original JSON as a prop
