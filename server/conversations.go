@@ -18,7 +18,7 @@ func (p *Plugin) processUserRequestToBot(bot *Bot, context llm.ConversationConte
 
 	if context.Post.RootId == "" {
 		// TODO: Change this to an attribute of the Bot
-		if bot.cfg.Name == "assistant" {
+		if strings.HasPrefix(bot.cfg.Name, "assistant") {
 			return p.processUserRequestToAssistant(bot, context)
 		}
 		return p.newConversation(bot, context)
@@ -34,7 +34,7 @@ func (p *Plugin) processUserRequestToBot(bot *Bot, context llm.ConversationConte
 
 	var result *llm.TextStreamResult
 	// TODO: Change this to an attribute of the Bot
-	if bot.cfg.Name == "assistant" {
+	if strings.HasPrefix(bot.cfg.Name, "assistant") {
 		result, err = p.processUserRequestToAssistantStream(bot, context, threadData)
 	} else {
 		result, err = p.continueConversation(bot, threadData, context)
