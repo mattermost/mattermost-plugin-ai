@@ -172,7 +172,7 @@ func (p *Plugin) handleTransformWebhook(c *gin.Context) {
 	// Check if webhook URL is configured
 	webhookURL := p.getConfiguration().IncomingWebhookURL
 	if webhookURL == "" {
-		c.JSON(http.StatusBadRequest, map[string]string{"error": "Incoming webhook URL not configured"})
+		c.AbortWithError(http.StatusBadRequest, errors.New("incoming webhook URL not configured"))
 		return
 	}
 
@@ -180,33 +180,33 @@ func (p *Plugin) handleTransformWebhook(c *gin.Context) {
 	botUsername := c.DefaultQuery("botUsername", p.getConfiguration().DefaultBotName)
 	bot := p.GetBotByUsernameOrFirst(botUsername)
 	if bot == nil {
-		c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("Failed to get bot: %s", botUsername)})
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to get bot: %s", botUsername))
 		return
 	}
 
 	// Read the JSON data from the request
 	var rawJSON json.RawMessage
 	if err := c.ShouldBindJSON(&rawJSON); err != nil {
-		c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("Failed to parse JSON: %v", err)})
+		c.AbortWithError(http.StatusBadRequest, fmt.Errorf("failed to parse JSON: %w", err))
 		return
 	}
 
 	// Validate and pretty print the JSON for better prompt formatting
 	var jsonObj interface{}
 	if err := json.Unmarshal(rawJSON, &jsonObj); err != nil {
-		c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("Invalid JSON: %v", err)})
+		c.AbortWithError(http.StatusBadRequest, fmt.Errorf("invalid JSON: %w", err))
 		return
 	}
 	prettyJSON, err := json.MarshalIndent(jsonObj, "", "  ")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("Failed to format JSON: %v", err)})
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to format JSON: %w", err))
 		return
 	}
 
 	// Create the user context
 	requestingUser, err := p.pluginAPI.User.Get(userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("Failed to get user: %v", err)})
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to get user: %w", err))
 		return
 	}
 
@@ -221,46 +221,50 @@ func (p *Plugin) handleTransformWebhook(c *gin.Context) {
 	}
 
 	// Create the AI conversation with the template
-	conversation, err := p.prompts.ChatCompletion("incomming_webhook", conversationContext, llm.ToolStore{})
+	conversation, err := p.prompts.ChatCompletion("incomming_webhook", conversationContext, p.getDefaultToolsStore(bot, false))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("Failed to create AI conversation: %v", err)})
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to create AI conversation: %w", err))
 		return
 	}
 
-	// Get the AI response
-	result, err := bot.Complete(conversation)
+	// Get the AI response using streaming
+	resultStream, err := p.getLLM(bot.cfg).ChatCompletion(conversation)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("Failed to complete AI conversation: %v", err)})
+		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
+
+	// Read all the streamed content
+	result := resultStream.ReadAll()
 
 	// Validate that the AI response is valid JSON
 	var webhookPayload json.RawMessage
 	if err := json.Unmarshal([]byte(result), &webhookPayload); err != nil {
-		c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("AI generated invalid JSON: %v", err)})
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("AI generated invalid JSON: %v", err))
 		return
 	}
 
 	// Send the transformed JSON to the webhook URL
 	resp, err := http.Post(webhookURL, "application/json", bytes.NewBuffer(webhookPayload))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("Failed to send to webhook: %v", err)})
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to send to webhook: %w", err))
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
-		c.JSON(http.StatusBadGateway, map[string]interface{}{
-			"error":    fmt.Sprintf("Webhook returned error: %s", resp.Status),
-			"response": string(body),
-		})
+		c.AbortWithError(http.StatusBadGateway, fmt.Errorf("webhook returned error: %s - %s", resp.Status, body))
 		return
 	}
 
 	// Return success with the transformed JSON
-	c.JSON(http.StatusOK, map[string]interface{}{
-		"message":         "Successfully transformed and sent webhook",
-		"webhook_payload": json.RawMessage(webhookPayload),
-	})
+	result := struct {
+		Message        string          `json:"message"`
+		WebhookPayload json.RawMessage `json:"webhook_payload"`
+	}{
+		Message:        "Successfully transformed and sent webhook",
+		WebhookPayload: webhookPayload,
+	}
+	c.JSON(http.StatusOK, result)
 }
