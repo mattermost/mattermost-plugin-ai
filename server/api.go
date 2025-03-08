@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"errors"
@@ -237,10 +238,25 @@ func (p *Plugin) handleTransformWebhook(c *gin.Context) {
 	// Read all the streamed content
 	result := resultStream.ReadAll()
 
-	// Validate that the AI response is valid JSON
+	// Extract JSON between <webhook> and </webhook> tags
+	start := "<webhook>"
+	end := "</webhook>"
+	startIndex := strings.Index(result, start)
+	endIndex := strings.Index(result, end)
+	
+	if startIndex == -1 || endIndex == -1 || startIndex >= endIndex {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("AI response doesn't contain valid webhook markers: %s", result))
+		return
+	}
+	
+	// Extract the JSON content between the markers
+	jsonContent := result[startIndex+len(start):endIndex]
+	jsonContent = strings.TrimSpace(jsonContent)
+	
+	// Validate that the extracted content is valid JSON
 	var webhookPayload json.RawMessage
-	if err := json.Unmarshal([]byte(result), &webhookPayload); err != nil {
-		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("AI generated invalid JSON: %v", err))
+	if err := json.Unmarshal([]byte(jsonContent), &webhookPayload); err != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("AI generated invalid JSON between markers: %v\nContent: %s", err, jsonContent))
 		return
 	}
 
