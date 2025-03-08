@@ -168,7 +168,6 @@ func (p *Plugin) handleGetAIBots(c *gin.Context) {
 func (p *Plugin) handleTransformWebhook(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 
-	// No need to check for webhook URL anymore
 
 	// Get bot information
 	botUsername := c.DefaultQuery("botUsername", p.getConfiguration().DefaultBotName)

@@ -21,8 +21,7 @@ type Config = {
     transcriptBackend: string,
     enableLLMTrace: boolean,
     enableCallSummary: boolean,
-    allowedUpstreamHostnames: string,
-    IncomingWebhookURL: string
+    allowedUpstreamHostnames: string
 }
 
 type Props = {
@@ -63,7 +62,6 @@ const defaultConfig = {
     llmBackend: '',
     transcriptBackend: '',
     enableLLMTrace: false,
-    IncomingWebhookURL: '',
 };
 
 const BetaMessage = () => (
@@ -178,19 +176,6 @@ const Config = (props: Props) => {
                         value={value.allowedUpstreamHostnames}
                         onChange={(e) => props.onChange(props.id, {...value, allowedUpstreamHostnames: e.target.value})}
                         helptext={intl.formatMessage({defaultMessage: 'Comma separated list of hostnames that LLMs are allowed to contact when using tools. Supports wildcards like *.mydomain.com. For instance to allow JIRA tool use to the Mattermost JIRA instance use mattermost.atlassian.net'})}
-                    />
-                </ItemList>
-            </Panel>
-            <Panel
-                title={intl.formatMessage({defaultMessage: 'Webhook Integration'})}
-                subtitle={intl.formatMessage({defaultMessage: 'Configure webhook integration for AI-powered transformations.'})}
-            >
-                <ItemList>
-                    <TextItem
-                        label={intl.formatMessage({defaultMessage: 'Slack Incoming Webhook URL'})}
-                        value={value.IncomingWebhookURL || ''}
-                        onChange={(e) => props.onChange(props.id, {...value, IncomingWebhookURL: e.target.value})}
-                        helptext={intl.formatMessage({defaultMessage: 'The URL of the Slack incoming webhook where AI-transformed messages will be sent. This is used by the JSON transformer endpoint.'})}
                     />
                 </ItemList>
             </Panel>
