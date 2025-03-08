@@ -4,10 +4,8 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -238,16 +236,16 @@ func (p *Plugin) handleTransformWebhook(c *gin.Context) {
 	end := "</webhook>"
 	startIndex := strings.Index(result, start)
 	endIndex := strings.Index(result, end)
-	
+
 	if startIndex == -1 || endIndex == -1 || startIndex >= endIndex {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("AI response doesn't contain valid webhook markers: %s", result))
 		return
 	}
-	
+
 	// Extract the JSON content between the markers
-	jsonContent := result[startIndex+len(start):endIndex]
+	jsonContent := result[startIndex+len(start) : endIndex]
 	jsonContent = strings.TrimSpace(jsonContent)
-	
+
 	// Validate that the extracted content is valid JSON
 	var webhookPayload json.RawMessage
 	if err := json.Unmarshal([]byte(jsonContent), &webhookPayload); err != nil {
@@ -268,31 +266,30 @@ func (p *Plugin) handleTransformWebhook(c *gin.Context) {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to parse webhook payload: %w", err))
 		return
 	}
-	
+
 	// Create a post using the transformed data
 	post := &model.Post{
 		UserId:    bot.mmBot.UserId,
 		ChannelId: botDMChannel.Id,
 		Message:   "",
 	}
-	
+
 	// Add the text to the post message
 	if text, ok := slackMsg["text"].(string); ok {
 		post.Message = text
 	}
-	
+
 	// Add the attachments directly to the post props
 	if attachments, ok := slackMsg["attachments"]; ok {
 		post.AddProp("attachments", attachments)
 	}
-	
+
 	// Add the original JSON as a prop
 	post.AddProp("original_json", string(prettyJSON))
 	post.AddProp("transformed_json", string(webhookPayload))
-	
+
 	// Create the post
-	createdPost, err := p.pluginAPI.Post.Create(post)
-	if err != nil {
+	if err := p.pluginAPI.Post.CreatePost(post); err != nil {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to create post: %w", err))
 		return
 	}
@@ -306,8 +303,8 @@ func (p *Plugin) handleTransformWebhook(c *gin.Context) {
 	}{
 		Message:        "Successfully transformed and created post",
 		WebhookPayload: webhookPayload,
-		PostID:         createdPost.Id,
-		ChannelID:      createdPost.ChannelId,
+		PostID:         post.Id,
+		ChannelID:      post.ChannelId,
 	}
 	c.JSON(http.StatusOK, result2)
 }
