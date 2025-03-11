@@ -434,3 +434,17 @@ e2e/node_modules: e2e/package.json
 e2e: e2e/node_modules
 	@MM_DEBUG= $(MAKE) dist
 	cd e2e && npx playwright test
+
+## Check and fix copyright/license headers in all files (enterprise directory is excluded)
+.PHONY: copyright
+copyright: install-go-tools webapp/node_modules
+	@echo Checking license headers...
+ifneq ($(HAS_SERVER),)
+	@echo Fixing Go license headers...
+	./scripts/fix_license_headers.sh 2023
+endif
+ifneq ($(HAS_WEBAPP),)
+	@echo Fixing webapp license headers...
+	cd webapp && $(NPM) run fix
+endif
+	@echo License headers have been checked and fixed.

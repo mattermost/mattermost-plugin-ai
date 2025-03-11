@@ -5,6 +5,8 @@ package main
 
 import (
 	"embed"
+	"encoding/json"
+	"fmt"
 
 	"net/http"
 	"os"
@@ -15,10 +17,12 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
 	"github.com/mattermost/mattermost-plugin-ai/server/anthropic"
+	"github.com/mattermost/mattermost-plugin-ai/server/embeddings"
 	"github.com/mattermost/mattermost-plugin-ai/server/enterprise"
 	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 	"github.com/mattermost/mattermost-plugin-ai/server/metrics"
 	"github.com/mattermost/mattermost-plugin-ai/server/openai"
+	"github.com/mattermost/mattermost-plugin-ai/server/postgres"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 	"github.com/mattermost/mattermost/server/public/shared/httpservice"
@@ -71,6 +75,7 @@ type Plugin struct {
 	i18n *i18n.Bundle
 
 	llmUpstreamHTTPClient *http.Client
+	search                embeddings.EmbeddingSearch
 }
 
 func resolveffmpegPath() string {
@@ -130,7 +135,60 @@ func (p *Plugin) OnActivate() error {
 
 	p.streamingContexts = map[string]PostStreamContext{}
 
+	p.search, err = p.initSearch()
+	if err != nil {
+		p.pluginAPI.Log.Error("Failed to initialize search", "error", err)
+		return err
+	}
+
 	return nil
+}
+
+// NewVectorStore creates a new vector store based on the provided configuration
+func (p *Plugin) newVectorStore(config embeddings.UpstreamConfig) (embeddings.VectorStore, error) {
+	switch config.Type { //nolint:gocritic
+	case "pgvector":
+		pgVectorConfig := postgres.PGVectorConfig{}
+		if err := json.Unmarshal(config.Parameters, &pgVectorConfig); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal Ollama config: %w", err)
+		}
+		return postgres.NewPGVector(p.db, pgVectorConfig)
+	}
+
+	return nil, fmt.Errorf("unsupported vector store type: %s", config.Type)
+}
+
+// NewEmbeddingProvider creates a new embedding provider based on the provided configuration
+func (p *Plugin) newEmbeddingProvider(config embeddings.UpstreamConfig) (embeddings.EmbeddingProvider, error) {
+	switch config.Type { //nolint:gocritic
+	case "ollama":
+		ollamaConfig := openai.Config{}
+		if err := json.Unmarshal(config.Parameters, &ollamaConfig); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal Ollama config: %w", err)
+		}
+		return openai.NewCompatibleEmbeddings(ollamaConfig, p.llmUpstreamHTTPClient), nil
+	}
+
+	return nil, fmt.Errorf("unsupported embedding provider type: %s", config.Type)
+}
+
+func (p *Plugin) initSearch() (embeddings.EmbeddingSearch, error) {
+	cfg := p.getConfiguration()
+
+	switch cfg.EmbeddingSearchConfig.Type { //nolint:gocritic
+	case "composite":
+		vector, err := p.newVectorStore(cfg.EmbeddingSearchConfig.VectorStore)
+		if err != nil {
+			return nil, err
+		}
+		embeddor, err := p.newEmbeddingProvider(cfg.EmbeddingSearchConfig.EmbeddingProvider)
+		if err != nil {
+			return nil, err
+		}
+		return embeddings.NewCompositeSearch(vector, embeddor), nil
+	}
+
+	return nil, fmt.Errorf("unsupported search type: %s", cfg.EmbeddingSearchConfig.Type)
 }
 
 func (p *Plugin) getLLM(llmBotConfig llm.BotConfig) llm.LanguageModel {

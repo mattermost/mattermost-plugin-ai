@@ -10,8 +10,6 @@ type ServiceConfig struct {
 	OrgID        string `json:"orgId"`
 	DefaultModel string `json:"defaultModel"`
 	APIURL       string `json:"apiURL"`
-	Username     string `json:"username"`
-	Password     string `json:"password"`
 
 	// Renaming the JSON field to inputTokenLimit would require a migration, leaving as is for now.
 	InputTokenLimit         int  `json:"tokenLimit"`

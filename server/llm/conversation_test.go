@@ -11,17 +11,17 @@ import (
 )
 
 // Tests truncation using words as tokens
-func TestBotConversationTruncate(t *testing.T) {
+func TestCompletionRequestTruncate(t *testing.T) {
 	tests := []struct {
 		name               string
-		conversation       BotConversation
-		resultConversation BotConversation
+		conversation       CompletionRequest
+		resultConversation CompletionRequest
 		maxTokens          int
 		isTruncated        bool
 	}{
 		{
 			name: "Truncate to 0",
-			conversation: BotConversation{
+			conversation: CompletionRequest{
 				Posts: []Post{
 					{
 						Message: "Hello",
@@ -35,13 +35,13 @@ func TestBotConversationTruncate(t *testing.T) {
 			},
 			maxTokens:   0,
 			isTruncated: true,
-			resultConversation: BotConversation{
+			resultConversation: CompletionRequest{
 				Posts: []Post{},
 			},
 		},
 		{
 			name: "Truncate removes first post",
-			conversation: BotConversation{
+			conversation: CompletionRequest{
 				Posts: []Post{
 					{
 						Message: "Hello",
@@ -55,7 +55,7 @@ func TestBotConversationTruncate(t *testing.T) {
 			},
 			maxTokens:   1,
 			isTruncated: true,
-			resultConversation: BotConversation{
+			resultConversation: CompletionRequest{
 				Posts: []Post{
 					{
 						Message: "Hello",
@@ -66,7 +66,7 @@ func TestBotConversationTruncate(t *testing.T) {
 		},
 		{
 			name: "No truncation",
-			conversation: BotConversation{
+			conversation: CompletionRequest{
 				Posts: []Post{
 					{
 						Message: "Hello",
@@ -80,7 +80,7 @@ func TestBotConversationTruncate(t *testing.T) {
 			},
 			maxTokens:   2,
 			isTruncated: false,
-			resultConversation: BotConversation{
+			resultConversation: CompletionRequest{
 				Posts: []Post{
 					{
 						Message: "Hello",
@@ -95,7 +95,7 @@ func TestBotConversationTruncate(t *testing.T) {
 		},
 		{
 			name: "Partial Truncation",
-			conversation: BotConversation{
+			conversation: CompletionRequest{
 				Posts: []Post{
 					{
 						Message: "one two three",
@@ -109,7 +109,7 @@ func TestBotConversationTruncate(t *testing.T) {
 			},
 			maxTokens:   5,
 			isTruncated: true,
-			resultConversation: BotConversation{
+			resultConversation: CompletionRequest{
 				Posts: []Post{
 					{
 						Message: "two three",

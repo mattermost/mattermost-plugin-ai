@@ -22,19 +22,19 @@ func NewLanguageModelLogWrapper(log pluginapi.LogService, wrapped llm.LanguageMo
 	}
 }
 
-func (w *LanguageModelLogWrapper) logInput(conversation llm.BotConversation, opts ...llm.LanguageModelOption) {
-	prompt := fmt.Sprintf("\n%v", conversation)
+func (w *LanguageModelLogWrapper) logInput(request llm.CompletionRequest, opts ...llm.LanguageModelOption) {
+	prompt := fmt.Sprintf("\n%v", request)
 	w.log.Info("LLM Call", "prompt", prompt)
 }
 
-func (w *LanguageModelLogWrapper) ChatCompletion(conversation llm.BotConversation, opts ...llm.LanguageModelOption) (*llm.TextStreamResult, error) {
-	w.logInput(conversation, opts...)
-	return w.wrapped.ChatCompletion(conversation, opts...)
+func (w *LanguageModelLogWrapper) ChatCompletion(request llm.CompletionRequest, opts ...llm.LanguageModelOption) (*llm.TextStreamResult, error) {
+	w.logInput(request, opts...)
+	return w.wrapped.ChatCompletion(request, opts...)
 }
 
-func (w *LanguageModelLogWrapper) ChatCompletionNoStream(conversation llm.BotConversation, opts ...llm.LanguageModelOption) (string, error) {
-	w.logInput(conversation, opts...)
-	return w.wrapped.ChatCompletionNoStream(conversation, opts...)
+func (w *LanguageModelLogWrapper) ChatCompletionNoStream(request llm.CompletionRequest, opts ...llm.LanguageModelOption) (string, error) {
+	w.logInput(request, opts...)
+	return w.wrapped.ChatCompletionNoStream(request, opts...)
 }
 
 func (w *LanguageModelLogWrapper) CountTokens(text string) int {

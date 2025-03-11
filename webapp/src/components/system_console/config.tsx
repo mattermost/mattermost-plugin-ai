@@ -13,6 +13,7 @@ import Bots, {firstNewBot} from './bots';
 import {LLMBotConfig} from './bot';
 import {BooleanItem, ItemList, SelectionItem, SelectionItemOption, TextItem} from './item';
 import NoBotsPage from './no_bots_page';
+import EmbeddingSearchPanel, {EmbeddingSearchConfig} from './embedding_search_config';
 
 type Config = {
     services: ServiceData[],
@@ -21,7 +22,8 @@ type Config = {
     transcriptBackend: string,
     enableLLMTrace: boolean,
     enableCallSummary: boolean,
-    allowedUpstreamHostnames: string
+    allowedUpstreamHostnames: string,
+    embeddingSearchConfig: EmbeddingSearchConfig
 }
 
 type Props = {
@@ -62,6 +64,18 @@ const defaultConfig = {
     llmBackend: '',
     transcriptBackend: '',
     enableLLMTrace: false,
+    embeddingSearchConfig: {
+        type: 'disabled',
+        vectorStore: {
+            type: '',
+            parameters: {},
+        },
+        embeddingProvider: {
+            type: '',
+            parameters: {},
+        },
+        parameters: {},
+    },
 };
 
 const BetaMessage = () => (
@@ -192,6 +206,13 @@ const Config = (props: Props) => {
                     />
                 </ItemList>
             </Panel>
+            <EmbeddingSearchPanel
+                value={value.embeddingSearchConfig || defaultConfig.embeddingSearchConfig}
+                onChange={(config) => {
+                    props.onChange(props.id, {...value, embeddingSearchConfig: config});
+                    props.setSaveNeeded();
+                }}
+            />
         </ConfigContainer>
     );
 };

@@ -31,8 +31,8 @@ type messageState struct {
 	depth    int
 	config   llm.LanguageModelConfig
 	tools    []llm.Tool
-	resolver func(name string, argsGetter llm.ToolArgumentGetter, context llm.ConversationContext) (string, error)
-	context  llm.ConversationContext
+	resolver func(name string, argsGetter llm.ToolArgumentGetter, context *llm.Context) (string, error)
+	context  *llm.Context
 }
 
 type Anthropic struct {
@@ -256,7 +256,7 @@ func (a *Anthropic) streamChatWithTools(state messageState) error {
 	return nil
 }
 
-func (a *Anthropic) ChatCompletion(conversation llm.BotConversation, opts ...llm.LanguageModelOption) (*llm.TextStreamResult, error) {
+func (a *Anthropic) ChatCompletion(request llm.CompletionRequest, opts ...llm.LanguageModelOption) (*llm.TextStreamResult, error) {
 	a.metricsService.IncrementLLMRequests()
 
 	output := make(chan string)
@@ -264,7 +264,7 @@ func (a *Anthropic) ChatCompletion(conversation llm.BotConversation, opts ...llm
 
 	cfg := a.createConfig(opts)
 
-	system, messages := conversationToMessages(conversation.Posts)
+	system, messages := conversationToMessages(request.Posts)
 
 	initialState := messageState{
 		messages: messages,
@@ -273,9 +273,12 @@ func (a *Anthropic) ChatCompletion(conversation llm.BotConversation, opts ...llm
 		errChan:  errChan,
 		depth:    0,
 		config:   cfg,
-		tools:    conversation.Tools.GetTools(),
-		resolver: conversation.Tools.ResolveTool,
-		context:  conversation.Context,
+		context:  request.Context,
+	}
+
+	if request.Context.Tools != nil {
+		initialState.tools = request.Context.Tools.GetTools()
+		initialState.resolver = request.Context.Tools.ResolveTool
 	}
 
 	go func() {
@@ -290,9 +293,9 @@ func (a *Anthropic) ChatCompletion(conversation llm.BotConversation, opts ...llm
 	return &llm.TextStreamResult{Stream: output, Err: errChan}, nil
 }
 
-func (a *Anthropic) ChatCompletionNoStream(conversation llm.BotConversation, opts ...llm.LanguageModelOption) (string, error) {
+func (a *Anthropic) ChatCompletionNoStream(request llm.CompletionRequest, opts ...llm.LanguageModelOption) (string, error) {
 	// This could perform better if we didn't use the streaming API here, but the complexity is not worth it.
-	result, err := a.ChatCompletion(conversation, opts...)
+	result, err := a.ChatCompletion(request, opts...)
 	if err != nil {
 		return "", err
 	}

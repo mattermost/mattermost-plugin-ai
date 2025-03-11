@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/andygrunwald/go-jira"
 	"github.com/google/go-github/v41/github"
+	"github.com/mattermost/mattermost-plugin-ai/server/embeddings"
 	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
@@ -26,7 +28,7 @@ type LookupMattermostUserArgs struct {
 	Username string `jsonschema_description:"The username of the user to lookup without a leading '@'. Example: 'firstname.lastname'"`
 }
 
-func (p *Plugin) toolResolveLookupMattermostUser(context llm.ConversationContext, argsGetter llm.ToolArgumentGetter) (string, error) {
+func (p *Plugin) toolResolveLookupMattermostUser(context *llm.Context, argsGetter llm.ToolArgumentGetter) (string, error) {
 	var args LookupMattermostUserArgs
 	err := argsGetter(&args)
 	if err != nil {
@@ -88,7 +90,7 @@ type GetChannelPosts struct {
 	NumberPosts int    `jsonschema_description:"The number of most recent posts to get. Example: '30'"`
 }
 
-func (p *Plugin) toolResolveGetChannelPosts(context llm.ConversationContext, argsGetter llm.ToolArgumentGetter, bot *Bot) (string, error) {
+func (p *Plugin) toolResolveGetChannelPosts(context *llm.Context, argsGetter llm.ToolArgumentGetter, bot *Bot) (string, error) {
 	var args GetChannelPosts
 	err := argsGetter(&args)
 	if err != nil {
@@ -146,7 +148,7 @@ func formatGithubIssue(issue *github.Issue) string {
 
 var validGithubRepoName = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
 
-func (p *Plugin) toolGetGithubIssue(context llm.ConversationContext, argsGetter llm.ToolArgumentGetter) (string, error) {
+func (p *Plugin) toolGetGithubIssue(context *llm.Context, argsGetter llm.ToolArgumentGetter) (string, error) {
 	var args GetGithubIssueArgs
 	err := argsGetter(&args)
 	if err != nil {
@@ -369,7 +371,7 @@ func (p *Plugin) getPublicJiraIssues(instanceURL string, issueKeys []string) ([]
 	return &issue, nil
 }*/
 
-func (p *Plugin) toolGetJiraIssue(context llm.ConversationContext, argsGetter llm.ToolArgumentGetter) (string, error) {
+func (p *Plugin) toolGetJiraIssue(context *llm.Context, argsGetter llm.ToolArgumentGetter) (string, error) {
 	var args GetJiraIssueArgs
 	err := argsGetter(&args)
 	if err != nil {
@@ -397,6 +399,38 @@ func (p *Plugin) toolGetJiraIssue(context llm.ConversationContext, argsGetter ll
 	return result.String(), nil
 }
 
+const MinSearchTermLength = 3
+const MaxSearchTermLength = 300
+
+type SearchServerArgs struct {
+	Term string `jsonschema_description:"The term to search for in the server. Must be more than 3 and less than 300 characters."`
+}
+
+func (p *Plugin) toolSearchServer(llmContext *llm.Context, argsGetter llm.ToolArgumentGetter) (string, error) {
+	var args SearchServerArgs
+	err := argsGetter(&args)
+	if err != nil {
+		return "invalid parameters to function", fmt.Errorf("failed to get arguments for tool SearchServer: %w", err)
+	}
+
+	if len(args.Term) < MinSearchTermLength {
+		return "search term too short", errors.New("search term too short")
+	}
+	if len(args.Term) > MaxSearchTermLength {
+		return "search term too long", errors.New("search term too long")
+	}
+
+	ctx := context.Background()
+	searchResults, err := p.search.Search(ctx, args.Term, embeddings.SearchOptions{
+		Limit: 10,
+	})
+	if err != nil {
+		return "there was an error performing the search", fmt.Errorf("search failed: %w", err)
+	}
+
+	return formatSearchResults(searchResults), nil
+}
+
 // getBuiltInTools returns the built-in tools that are available to all users.
 // isDM is true if the response will be in a DM with the user. More tools are available in DMs because of security properties.
 func (p *Plugin) getBuiltInTools(isDM bool, bot *Bot) []llm.Tool {
@@ -404,10 +438,17 @@ func (p *Plugin) getBuiltInTools(isDM bool, bot *Bot) []llm.Tool {
 
 	if isDM {
 		builtInTools = append(builtInTools, llm.Tool{
+			Name:        "SearchServer",
+			Description: "Search the server for a specific term.",
+			Schema:      SearchServerArgs{},
+			Resolver:    p.toolSearchServer,
+		})
+
+		builtInTools = append(builtInTools, llm.Tool{
 			Name:        "GetChannelPosts",
 			Description: "Get the most recent posts from a Mattermost channel. Returns posts in the format 'username: message'",
 			Schema:      GetChannelPosts{},
-			Resolver: func(context llm.ConversationContext, argsGetter llm.ToolArgumentGetter) (string, error) {
+			Resolver: func(context *llm.Context, argsGetter llm.ToolArgumentGetter) (string, error) {
 				return p.toolResolveGetChannelPosts(context, argsGetter, bot)
 			},
 		})
@@ -444,7 +485,7 @@ func (p *Plugin) getBuiltInTools(isDM bool, bot *Bot) []llm.Tool {
 	return builtInTools
 }
 
-func (p *Plugin) getDefaultToolsStore(bot *Bot, isDM bool) llm.ToolStore {
+func (p *Plugin) getDefaultToolsStore(bot *Bot, isDM bool) *llm.ToolStore {
 	if bot == nil || bot.cfg.DisableTools {
 		return llm.NewNoTools()
 	}

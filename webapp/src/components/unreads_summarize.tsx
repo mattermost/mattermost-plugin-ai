@@ -19,7 +19,7 @@ import IconThreadSummarization from './assets/icon_thread_summarization';
 
 import DotMenu, {DropdownMenu, DropdownMenuItem} from './dot_menu';
 import {Divider, DropdownChannelBlocked, DropdownInfoOnlyVisibleToYou} from './dropdown_info';
-import {DropdownBotSelector} from './bot_slector';
+import {DropdownBotSelector} from './bot_selector';
 
 const AskAIButton = styled(DotMenu)`
 	display: flex;

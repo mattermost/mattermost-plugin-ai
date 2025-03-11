@@ -8,7 +8,7 @@ import {FormattedMessage} from 'react-intl';
 
 import {DotMenuButton} from '../dot_menu';
 
-import {BotDropdown} from '../bot_slector';
+import {BotDropdown} from '../bot_selector';
 
 import {LLMBot} from '@/bots';
 

@@ -19,13 +19,17 @@ import IconThreadSummarization from './components/assets/icon_thread_summarizati
 import IconReactForMe from './components/assets/icon_react_for_me';
 import RHS from './components/rhs/rhs';
 import Config from './components/system_console/config';
-import {doReaction, doThreadAnalysis, getAIDirectChannel} from './client';
+import {doReaction, doRunSearch, doThreadAnalysis, getAIDirectChannel} from './client';
 import {setOpenRHSAction} from './redux_actions';
 import PostEventListener from './websocket';
 import {BotsHandler, setupRedux} from './redux';
 import UnreadsSummarize from './components/unreads_summarize';
 import {PostbackPost} from './components/postback_post';
 import {isRHSCompatable} from './mm_webapp';
+import SearchButton from './components/search_button';
+import {doSelectPost} from './hooks';
+import {handleAskChannelCommand} from './commands';
+import SearchHints from './components/search_hints';
 
 type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
 
@@ -144,6 +148,43 @@ export default class Plugin {
 
         if (registry.registerNewMessagesSeparatorActionComponent) {
             registry.registerNewMessagesSeparatorActionComponent(UnreadsSummarize);
+        }
+
+        // Register slash command
+        if (rhs) {
+            registry.registerSlashCommandWillBePostedHook((message: string, args: any) => {
+                if (message.startsWith('/ask-channel')) {
+                    const query = message.replace('/ask-channel', '').trim();
+                    return handleAskChannelCommand(query, args, store, rhs);
+                }
+                return {message, args};
+            });
+        }
+
+        if (registry.registerSearchComponents) {
+            registry.registerSearchComponents({
+                buttonComponent: SearchButton,
+                suggestionsComponent: () => null,
+                hintsComponent: SearchHints,
+                action: async (searchTerms: string) => {
+                    // Get the active bot from the state
+                    const state = store.getState() as any;
+                    const bots = state['plugins-' + manifest.id]?.bots || [];
+                    const activeBotUsername = localStorage.getItem('defaultBot') || '';
+                    const activeBot = bots.find((bot: any) => bot.username === activeBotUsername);
+
+                    const result = await doRunSearch(
+                        searchTerms,
+                        '',
+                        '',
+                        activeBot?.username,
+                    );
+                    doSelectPost(result.postId, result.channelId, store.dispatch);
+                    if (rhs) {
+                        store.dispatch(rhs.showRHSPlugin);
+                    }
+                },
+            });
         }
     }
 }

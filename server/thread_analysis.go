@@ -14,7 +14,7 @@ const ThreadIDProp = "referenced_thread"
 const AnalysisTypeProp = "prompt_type"
 
 // DM the user with a standard message. Run the inferance
-func (p *Plugin) analyzeThread(bot *Bot, postIDToAnalyze string, analysisType string, context llm.ConversationContext) (*llm.TextStreamResult, error) {
+func (p *Plugin) analyzeThread(bot *Bot, postIDToAnalyze string, analysisType string, context *llm.Context) (*llm.TextStreamResult, error) {
 	threadData, err := p.getThreadAndMeta(postIDToAnalyze)
 	if err != nil {
 		return nil, err
@@ -22,24 +22,43 @@ func (p *Plugin) analyzeThread(bot *Bot, postIDToAnalyze string, analysisType st
 
 	formattedThread := formatThread(threadData)
 
-	context.PromptParameters = map[string]string{"Thread": formattedThread}
+	context.Parameters = map[string]any{"Thread": formattedThread}
 	var promptType string
 	switch analysisType {
 	case "summarize_thread":
-		promptType = llm.PromptSummarizeThread
+		promptType = llm.PromptSummarizeThreadSystem
 	case "action_items":
-		promptType = llm.PromptFindActionItems
+		promptType = llm.PromptFindActionItemsSystem
 	case "open_questions":
-		promptType = llm.PromptFindOpenQuestions
+		promptType = llm.PromptFindOpenQuestionsSystem
 	default:
 		return nil, fmt.Errorf("invalid analysis type: %s", analysisType)
 	}
 
-	prompt, err := p.prompts.ChatCompletion(promptType, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
+	systemPrompt, err := p.prompts.Format(promptType, context)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to format system prompt: %w", err)
 	}
-	analysisStream, err := p.getLLM(bot.cfg).ChatCompletion(prompt)
+
+	userPrompt, err := p.prompts.Format(llm.PromptThreadUser, context)
+	if err != nil {
+		return nil, fmt.Errorf("failed to format user prompt: %w", err)
+	}
+
+	completionReqest := llm.CompletionRequest{
+		Posts: []llm.Post{
+			{
+				Role:    llm.PostRoleSystem,
+				Message: systemPrompt,
+			},
+			{
+				Role:    llm.PostRoleUser,
+				Message: userPrompt,
+			},
+		},
+		Context: context,
+	}
+	analysisStream, err := p.getLLM(bot.cfg).ChatCompletion(completionReqest)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +91,7 @@ func (p *Plugin) analysisPostMessage(locale string, postIDToAnalyze string, anal
 	}
 }
 
-func (p *Plugin) startNewAnalysisThread(bot *Bot, postIDToAnalyze string, analysisType string, context llm.ConversationContext) (*model.Post, error) {
+func (p *Plugin) startNewAnalysisThread(bot *Bot, postIDToAnalyze string, analysisType string, context *llm.Context) (*model.Post, error) {
 	analysisStream, err := p.analyzeThread(bot, postIDToAnalyze, analysisType, context)
 	if err != nil {
 		return nil, err

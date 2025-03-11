@@ -52,12 +52,12 @@ export const DropdownMenu = styled.div`
     box-shadow: 0px 8px 24px rgba(0, 0, 0, 0.12);
     border-radius: 4px;
 
-    z-index: 12;
+    z-index: 1000;
 `;
 
 type DotMenuProps = {
     children: React.ReactNode;
-    icon: JSX.Element;
+    icon: React.ReactNode;
     dotMenuButton?: typeof DotMenuButton | typeof PrimaryButton;
     dropdownMenu?: typeof DropdownMenu;
     title?: string;
@@ -187,7 +187,7 @@ export const iconSplitStyling = css`
     gap: 8px;
 `;
 
-export const DropdownMenuItem = (props: { children: React.ReactNode, onClick?: () => void, className?: string}) => {
+export const DropdownMenuItem = (props: { children: React.ReactNode, onClick?: (e: React.MouseEvent) => void, className?: string}) => {
     return (
         <DropdownMenuItemStyled
             href='#'

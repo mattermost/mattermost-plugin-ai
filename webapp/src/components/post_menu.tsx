@@ -23,7 +23,7 @@ import IconSparkleQuestion from './assets/icon_sparkle_question';
 import DotMenu, {DropdownMenu, DropdownMenuItem} from './dot_menu';
 import IconThreadSummarization from './assets/icon_thread_summarization';
 import {Divider, DropdownChannelBlocked, DropdownInfoOnlyVisibleToYou} from './dropdown_info';
-import {DropdownBotSelector} from './bot_slector';
+import {DropdownBotSelector} from './bot_selector';
 
 type Props = {
     post: Post,

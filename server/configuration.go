@@ -7,16 +7,18 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/mattermost/mattermost-plugin-ai/server/embeddings"
 	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 )
 
 type Config struct {
-	Services                 []llm.ServiceConfig `json:"services"`
-	Bots                     []llm.BotConfig     `json:"bots"`
-	DefaultBotName           string              `json:"defaultBotName"`
-	TranscriptGenerator      string              `json:"transcriptBackend"`
-	EnableLLMTrace           bool                `json:"enableLLMTrace"`
-	AllowedUpstreamHostnames string              `json:"allowedUpstreamHostnames"`
+	Services                 []llm.ServiceConfig              `json:"services"`
+	Bots                     []llm.BotConfig                  `json:"bots"`
+	DefaultBotName           string                           `json:"defaultBotName"`
+	TranscriptGenerator      string                           `json:"transcriptBackend"`
+	EnableLLMTrace           bool                             `json:"enableLLMTrace"`
+	AllowedUpstreamHostnames string                           `json:"allowedUpstreamHostnames"`
+	EmbeddingSearchConfig    embeddings.EmbeddingSearchConfig `json:"embeddingSearchConfig"`
 }
 
 // configuration captures the plugin's external configuration as exposed in the Mattermost server

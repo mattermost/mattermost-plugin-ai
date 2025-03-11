@@ -37,7 +37,7 @@ export const PanelFooterText = styled(PanelSubtitle)`
 `;
 
 type PanelProps = {
-    title: string
+    title: React.ReactNode
     subtitle: string
     children: React.ReactNode
 }

@@ -127,3 +127,26 @@ func (p *Plugin) getAIThreads(dmChannelIDs []string) ([]AIThread, error) {
 
 	return posts, nil
 }
+
+func (p *Plugin) getFirstPostBeforeTimeRangeID(channelID string, startTime, endTime int64) (string, error) {
+	var result struct {
+		ID string `db:"id"`
+	}
+	err := p.doQuery(&result, p.builder.
+		Select("id").
+		From("Posts").
+		Where(sq.Eq{"ChannelId": channelID}).
+		Where(sq.And{
+			sq.GtOrEq{"CreateAt": startTime},
+			sq.LtOrEq{"CreateAt": endTime},
+			sq.Eq{"DeleteAt": 0},
+		}).
+		OrderBy("CreateAt ASC").
+		Limit(1))
+
+	if err != nil {
+		return "", fmt.Errorf("failed to get first post ID: %w", err)
+	}
+
+	return result.ID, nil
+}

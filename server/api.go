@@ -45,10 +45,17 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 
 	channelRouter := botRequiredRouter.Group("/channel/:channelid")
 	channelRouter.Use(p.channelAuthorizationRequired)
-	channelRouter.POST("/since", p.handleSince)
+	channelRouter.POST("/interval", p.handleInterval)
+	channelRouter.POST("/search", p.handleChannelSearch)
 
 	adminRouter := router.Group("/admin")
 	adminRouter.Use(p.mattermostAdminAuthorizationRequired)
+	adminRouter.POST("/reindex", p.handleReindexPosts)
+	adminRouter.POST("/search", p.handleSearchPosts)
+
+	searchRouter := botRequiredRouter.Group("/search")
+	searchRouter.POST("", p.handleSearchQuery)
+	searchRouter.POST("/run", p.handleRunSearch)
 
 	router.ServeHTTP(w, r)
 }

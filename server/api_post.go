@@ -17,6 +17,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/server/enterprise"
 	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 	"github.com/mattermost/mattermost-plugin-ai/server/llm/subtitles"
+	"github.com/mattermost/mattermost-plugin-ai/server/mmapi"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
@@ -62,15 +63,31 @@ func (p *Plugin) handleReact(c *gin.Context) {
 		return
 	}
 
-	conversationContext := p.MakeConversationContext(bot, user, channel, post)
-	conversationContext.PromptParameters = map[string]string{"Message": post.Message}
-	prompt, err := p.prompts.ChatCompletion(llm.PromptEmojiSelect, conversationContext, llm.NewNoTools())
+	context := p.BuildLLMContextUserRequest(
+		bot,
+		user,
+		channel,
+	)
+	context.Parameters = map[string]any{"Message": post.Message}
+	prompt, err := p.prompts.Format(llm.PromptEmojiSelectSystem, context)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
-
-	emojiName, err := p.getLLM(bot.cfg).ChatCompletionNoStream(prompt, llm.WithMaxGeneratedTokens(25))
+	completionRequest := llm.CompletionRequest{
+		Posts: []llm.Post{
+			{
+				Role:    llm.PostRoleSystem,
+				Message: prompt,
+			},
+			{
+				Role:    llm.PostRoleUser,
+				Message: post.Message,
+			},
+		},
+		Context: context,
+	}
+	emojiName, err := p.getLLM(bot.cfg).ChatCompletionNoStream(completionRequest, llm.WithMaxGeneratedTokens(25))
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
@@ -137,7 +154,12 @@ func (p *Plugin) handleThreadAnalysis(c *gin.Context) {
 		return
 	}
 
-	createdPost, err := p.startNewAnalysisThread(bot, post.Id, data.AnalysisType, p.MakeConversationContext(bot, user, channel, nil))
+	context := p.BuildLLMContextUserRequest(
+		bot,
+		user,
+		channel,
+	)
+	createdPost, err := p.startNewAnalysisThread(bot, post.Id, data.AnalysisType, context)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to perform analysis: %w", err))
 		return
@@ -278,12 +300,12 @@ func (p *Plugin) handleRegenerate(c *gin.Context) {
 
 	user, err := p.pluginAPI.User.Get(userID)
 	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, err)
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to get user to regen post: %w", err))
 		return
 	}
 
 	if err := p.regeneratePost(bot, post, user, channel); err != nil {
-		c.AbortWithError(http.StatusInternalServerError, err)
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to regenerate post: %w", err))
 		return
 	}
 }
@@ -308,7 +330,12 @@ func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, ch
 		post.Message = p.analysisPostMessage(user.Locale, threadID, analysisType, *siteURL)
 
 		var err error
-		result, err = p.analyzeThread(bot, threadID, analysisType, p.MakeConversationContext(bot, user, channel, nil))
+		result, err = p.analyzeThread(bot, threadID, analysisType, p.BuildLLMContextUserRequest(
+			bot,
+			user,
+			channel,
+			p.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.mmBot.UserId, channel)),
+		))
 		if err != nil {
 			return fmt.Errorf("could not summarize post on regen: %w", err)
 		}
@@ -339,7 +366,12 @@ func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, ch
 			return fmt.Errorf("could not get channel of original recording on regen: %w", err)
 		}
 
-		context := p.MakeConversationContext(bot, user, originalFileChannel, nil)
+		context := p.BuildLLMContextUserRequest(
+			bot,
+			user,
+			originalFileChannel,
+			p.WithLLMContextDefaultTools(bot, originalFileChannel.Type == model.ChannelTypeDirect),
+		)
 		result, err = p.summarizeTranscription(bot, transcription, context)
 		if err != nil {
 			return fmt.Errorf("could not summarize transcription on regen: %w", err)
@@ -366,7 +398,12 @@ func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, ch
 			return fmt.Errorf("unable to parse transcription file: %w", err)
 		}
 
-		context := p.MakeConversationContext(bot, user, channel, nil)
+		context := p.BuildLLMContextUserRequest(
+			bot,
+			user,
+			channel,
+			p.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.mmBot.UserId, channel)),
+		)
 		result, err = p.summarizeTranscription(bot, transcription, context)
 		if err != nil {
 			return fmt.Errorf("unable to summarize transcription: %w", err)
@@ -385,15 +422,13 @@ func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, ch
 		} else {
 			threadData.cutoffAtPostID(respondingToPostID)
 		}
-		postToRegenerate := threadData.latestPost()
-		context := p.MakeConversationContext(bot, user, channel, postToRegenerate)
 
-		if result, err = p.continueConversation(bot, threadData, context); err != nil {
+		if result, err = p.processUserRequestToBot(bot, user, channel, post); err != nil {
 			return fmt.Errorf("could not continue conversation on regen: %w", err)
 		}
 	}
 
-	if channel.Type == model.ChannelTypeDirect {
+	if mmapi.IsDMWith(bot.mmBot.UserId, channel) {
 		if channel.Name == bot.mmBot.UserId+"__"+user.Id || channel.Name == user.Id+"__"+bot.mmBot.UserId {
 			p.streamResultToPost(ctx, result, post, user.Locale)
 			return nil
