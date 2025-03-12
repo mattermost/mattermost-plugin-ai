@@ -27,7 +27,7 @@ const (
 func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Request) {
 	router := gin.Default()
 	router.Use(p.ginlogger)
-	router.Use(p.MattermostAuthorizationRequired)
+	// router.Use(p.MattermostAuthorizationRequired)
 	router.Use(p.metricsMiddleware)
 
 	router.GET("/ai_threads", p.handleGetAIThreads)
@@ -168,7 +168,6 @@ func (p *Plugin) handleGetAIBots(c *gin.Context) {
 
 func (p *Plugin) handleTransformWebhook(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
-
 
 	// Get bot information
 	botUsername := c.DefaultQuery("botUsername", p.getConfiguration().DefaultBotName)
@@ -312,32 +311,32 @@ func (p *Plugin) handleTransformWebhook(c *gin.Context) {
 func (p *Plugin) handleSmartWebhook(c *gin.Context) {
 	webhookID := c.Param("id")
 	key := fmt.Sprintf("smart_webhook_%s", webhookID)
-	
+
 	// Get webhook data from KV store
 	data, appErr := p.API.KVGet(key)
 	if appErr != nil || data == nil {
 		c.AbortWithError(http.StatusNotFound, fmt.Errorf("webhook not found"))
 		return
 	}
-	
+
 	// Parse the stored data
 	parts := strings.Split(string(data), ",")
 	if len(parts) != 3 {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("invalid webhook data format"))
 		return
 	}
-	
+
 	channelID := parts[0]
 	username := parts[1]
 	iconURL := parts[2]
-	
+
 	// Read JSON data from request
 	var rawJSON json.RawMessage
 	if err := c.ShouldBindJSON(&rawJSON); err != nil {
 		c.AbortWithError(http.StatusBadRequest, fmt.Errorf("failed to parse JSON: %w", err))
 		return
 	}
-	
+
 	// Get bot information for AI transformation
 	botUsername := p.getConfiguration().DefaultBotName
 	bot := p.GetBotByUsernameOrFirst(botUsername)
@@ -345,7 +344,7 @@ func (p *Plugin) handleSmartWebhook(c *gin.Context) {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to get bot"))
 		return
 	}
-	
+
 	// Pretty print JSON for better prompt formatting
 	var jsonObj interface{}
 	if err := json.Unmarshal(rawJSON, &jsonObj); err != nil {
@@ -357,94 +356,101 @@ func (p *Plugin) handleSmartWebhook(c *gin.Context) {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to format JSON: %w", err))
 		return
 	}
-	
+
+	user, err := p.pluginAPI.User.Get(bot.mmBot.UserId)
+	if err != nil {
+		c.AbortWithError(http.StatusBadRequest, fmt.Errorf("invalid user"))
+	}
+
 	// Create AI context for transformation
 	conversationContext := llm.ConversationContext{
-		BotID: bot.mmBot.UserId,
-		Time:  time.Now().Format(time.RFC1123),
+		BotID:          bot.mmBot.UserId,
+		Time:           time.Now().Format(time.RFC1123),
+		RequestingUser: user,
 		PromptParameters: map[string]string{
 			"JSONData": string(prettyJSON),
 		},
 	}
-	
+
 	// Create AI conversation with the template
 	conversation, err := p.prompts.ChatCompletion("incomming_webhook", conversationContext, p.getDefaultToolsStore(bot, false))
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to create AI conversation: %w", err))
 		return
 	}
-	
+
 	// Get AI response using streaming
 	resultStream, err := p.getLLM(bot.cfg).ChatCompletion(conversation)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
-	
+
 	// Read all streamed content
 	result := resultStream.ReadAll()
-	
+
 	// Extract JSON between <webhook> and </webhook> tags
 	start := "<webhook>"
 	end := "</webhook>"
 	startIndex := strings.Index(result, start)
 	endIndex := strings.Index(result, end)
-	
+
 	if startIndex == -1 || endIndex == -1 || startIndex >= endIndex {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("AI response doesn't contain valid webhook markers: %s", result))
 		return
 	}
-	
+
 	// Extract the JSON content between the markers
-	jsonContent := result[startIndex+len(start):endIndex]
+	jsonContent := result[startIndex+len(start) : endIndex]
 	jsonContent = strings.TrimSpace(jsonContent)
-	
+
 	// Validate the extracted content is valid JSON
 	var webhookPayload json.RawMessage
 	if err := json.Unmarshal([]byte(jsonContent), &webhookPayload); err != nil {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("AI generated invalid JSON between markers: %v\nContent: %s", err, jsonContent))
 		return
 	}
-	
+
 	// Parse the webhook payload
 	var slackMsg map[string]interface{}
 	if err := json.Unmarshal(webhookPayload, &slackMsg); err != nil {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to parse webhook payload: %w", err))
 		return
 	}
-	
+
 	// Create a post using the transformed data
 	post := &model.Post{
+		UserId:    bot.mmBot.UserId,
 		ChannelId: channelID,
 		Message:   "",
 	}
-	
+
 	// Add the text to the post message
 	if text, ok := slackMsg["text"].(string); ok {
 		post.Message = text
 	}
-	
+
 	// Add the attachments directly to the post props
 	if attachments, ok := slackMsg["attachments"]; ok {
 		post.AddProp("attachments", attachments)
 	}
-	
+
 	// Set webhook props
 	post.AddProp("from_webhook", "true")
 	post.AddProp("override_username", username)
 	if iconURL != "" {
 		post.AddProp("override_icon_url", iconURL)
 	}
-	
+
 	// Add the original JSON as a prop
 	post.AddProp("original_json", string(prettyJSON))
-	
+
 	// Create the post
 	if _, err := p.API.CreatePost(post); err != nil {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to create post: %w", err))
 		return
 	}
-	
+
 	// Return success
 	c.JSON(http.StatusOK, map[string]string{
 		"status":  "success",
