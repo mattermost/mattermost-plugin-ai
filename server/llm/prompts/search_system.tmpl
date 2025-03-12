@@ -9,9 +9,5 @@ Follow these guidelines:
 6. Do not hallucinate information not present in the context.
 
 <context>
-{{range .Parameters.Results}}<message from="{{.Username}}" in="{{.ChannelName}}" relevance="{{printf "%.2f" .Score}}">
-{{.Content}}
-</message>
-
-{{end}}
+{{template "search_results.tmpl" .}}
 </context>

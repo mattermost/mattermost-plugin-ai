@@ -64,13 +64,17 @@ export class OpenAIMockContainer {
 			.withWaitStrategy(Wait.forLogMessage("Starting mock server"))
 			.start()
 
-		await fetch(`http://localhost:${this.container.getMappedPort(8081)}/reset`, {
-			method: "POST",
-		})
+		await this.resetMocks();
 	}
 
 	stop = async () => {
 		await this.container.stop()
+	}
+
+	resetMocks = async () => {
+		await fetch(`http://localhost:${this.container.getMappedPort(8081)}/reset`, {
+			method: "POST",
+		})
 	}
 
 	addMock = async (body: any) => {
@@ -91,7 +95,7 @@ export class OpenAIMockContainer {
 				path: prefix + "/chat/completions",
 			},
 			context: {
-				times: 1,
+				times: 100,
 			},
 			response: {
 				status: 200,
@@ -99,6 +103,57 @@ export class OpenAIMockContainer {
 					"Content-Type": "text/event-stream",
 				},
 				body: response,
+			},
+		})
+	}
+
+	// Added for more complex mocking scenarios
+	addCompletionMockWithRequestBody = async (response: string, requestBodyContains: string, botPrefix?: string) => {
+		const prefix = botPrefix ? ("/"+botPrefix) : ""
+		return this.addMock({
+			request: {
+				method: "POST",
+				path: prefix + "/chat/completions",
+				body: {
+					matcher: "ShouldContainSubstring",
+					value: requestBodyContains
+				}
+			},
+			context: {
+				times: 100,
+			},
+			response: {
+				status: 200,
+				headers: {
+					"Content-Type": "text/event-stream",
+				},
+				body: response,
+			},
+		})
+	}
+
+	// Add error mock for testing error handling
+	addErrorMock = async (statusCode: number, errorMessage: string, botPrefix?: string) => {
+		const prefix = botPrefix ? ("/"+botPrefix) : ""
+		return this.addMock({
+			request: {
+				method: "POST",
+				path: prefix + "/chat/completions",
+			},
+			context: {
+				times: 100,
+			},
+			response: {
+				status: statusCode,
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					error: {
+						message: errorMessage,
+						type: "api_error",
+					}
+				}),
 			},
 		})
 	}

@@ -105,5 +105,16 @@ func (p *Plugin) OnConfigurationChange() error {
 		return fmt.Errorf("failed on config change: %w", err)
 	}
 
+	// Reinitialize search based on new configuration
+	search, err := p.initSearch()
+	if err != nil {
+		// Only log the error but don't fail plugin configuration
+		p.pluginAPI.Log.Error("Failed to initialize search, search features will be disabled", "error", err)
+		// Set search to nil to disable search functionality
+		p.search = nil
+	} else {
+		p.search = search
+	}
+
 	return nil
 }

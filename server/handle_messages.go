@@ -149,18 +149,8 @@ func (p *Plugin) handleDMs(bot *Bot, channel *model.Channel, postingUser *model.
 
 // indexPost adds a post to the vector database for future searches
 func (p *Plugin) indexPost(post *model.Post) error {
-	// Skip posts that don't have content or are from bots
-	if post.Message == "" || p.IsAnyBot(post.UserId) {
-		return nil
-	}
-
-	// Skip non-regular posts
-	if post.Type != model.PostTypeDefault {
-		return nil
-	}
-
-	// Skip deleted posts
-	if post.DeleteAt != 0 {
+	// If search is not configured, skip indexing
+	if p.search == nil {
 		return nil
 	}
 
@@ -170,14 +160,14 @@ func (p *Plugin) indexPost(post *model.Post) error {
 		return fmt.Errorf("failed to get channel for post: %w", err)
 	}
 
-	// Skip posts in DM channels with the bots
-	if p.GetBotForDMChannel(channel) != nil {
+	if !p.ShouldIndexPost(post, channel) {
 		return nil
 	}
 
 	// Create document for vector db
 	doc := embeddings.PostDocument{
-		Post:      post,
+		PostID:    post.Id,
+		CreateAt:  post.CreateAt,
 		TeamID:    channel.TeamId,
 		ChannelID: post.ChannelId,
 		UserID:    post.UserId,
@@ -195,6 +185,11 @@ func (p *Plugin) indexPost(post *model.Post) error {
 // MessageHasBeenUpdated is called when a message is updated
 // For updated posts, we remove the old version and add the new version
 func (p *Plugin) MessageHasBeenUpdated(c *plugin.Context, newPost, oldPost *model.Post) {
+	// If search is not configured, skip indexing
+	if p.search == nil {
+		return
+	}
+
 	if err := p.search.Delete(context.Background(), []string{oldPost.Id}); err != nil {
 		p.pluginAPI.Log.Error("Failed to delete post from vector database", "error", err)
 		return

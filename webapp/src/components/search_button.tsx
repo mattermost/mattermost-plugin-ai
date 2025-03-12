@@ -3,8 +3,11 @@
 
 import React from 'react';
 import styled from 'styled-components';
+import {useSelector} from 'react-redux';
+import {GlobalState} from '@mattermost/types/store';
 
 import IconAI from '@/components/assets/icon_ai';
+import manifest from '../manifest';
 
 const SearchButtonContainer = styled.span`
     display: inline-flex;
@@ -18,10 +21,17 @@ const StyledIconAI = styled(IconAI)`
 	font-size: 12px;
 `;
 
-const SearchButton = () => (
-    <SearchButtonContainer>
-        <StyledIconAI/>{'Copilot'}
-    </SearchButtonContainer>
-);
+const SearchButton = () => {
+    const searchEnabled = useSelector<GlobalState, boolean>((state: any) => state['plugins-' + manifest.id].searchEnabled);
+
+    if (!searchEnabled) {
+        return null;
+    }
+    return (
+        <SearchButtonContainer>
+            <StyledIconAI/>{'Copilot'}
+        </SearchButtonContainer>
+    );
+};
 
 export default SearchButton;

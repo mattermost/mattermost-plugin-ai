@@ -6,17 +6,19 @@ package embeddings
 import (
 	"context"
 	"encoding/json"
-
-	"github.com/mattermost/mattermost/server/public/model"
 )
 
 // PostDocument represents a Mattermost post with its metadata
 type PostDocument struct {
-	Post      *model.Post
-	TeamID    string
-	ChannelID string
-	UserID    string
-	Content   string // Processed/extracted content
+	PostID      string // ID of the Mattermost post
+	CreateAt    int64  // Creation timestamp of the referenced post, not when this was indexed
+	TeamID      string
+	ChannelID   string
+	UserID      string
+	Content     string
+	IsChunk     bool
+	ChunkIndex  int
+	TotalChunks int
 }
 
 // SearchResult represents a single search result with its similarity score
@@ -31,11 +33,30 @@ type SearchOptions struct {
 	MinScore      float32
 	TeamID        string
 	ChannelID     string
+	UserID        string // User ID for permission checks
 	CreatedAfter  int64
 	CreatedBefore int64
 }
 
-// EmbeddingSearch defines the high-level interface for storing and searching embeddings
+// ChunkingOptions defines options for chunking documents
+type ChunkingOptions struct {
+	ChunkSize        int     `json:"chunkSize"`        // Maximum size of each chunk in characters
+	ChunkOverlap     int     `json:"chunkOverlap"`     // Number of characters to overlap between chunks
+	MinChunkSize     float64 `json:"minChunkSize"`     // Minimum chunk size as a fraction of max size (0.0-1.0)
+	ChunkingStrategy string  `json:"chunkingStrategy"` // Strategy: sentences, paragraphs, or fixed
+}
+
+// DefaultChunkingOptions returns the default chunking options
+func DefaultChunkingOptions() ChunkingOptions {
+	return ChunkingOptions{
+		ChunkSize:        1000,
+		ChunkOverlap:     200,
+		MinChunkSize:     0.75,
+		ChunkingStrategy: "sentences",
+	}
+}
+
+// EmbeddingSearch defines the high-level interface for storing and searching using embeddings
 type EmbeddingSearch interface {
 	// Store stores documents and handles embedding generation internally
 	Store(ctx context.Context, docs []PostDocument) error
@@ -89,4 +110,6 @@ type EmbeddingSearchConfig struct {
 	VectorStore       UpstreamConfig  `json:"vectorStore"`
 	EmbeddingProvider UpstreamConfig  `json:"embeddingProvider"`
 	Parameters        json.RawMessage `json:"parameters"`
+	Dimensions        int             `json:"dimensions"`
+	ChunkingOptions   ChunkingOptions `json:"chunkingOptions"`
 }

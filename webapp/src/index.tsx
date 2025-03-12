@@ -28,7 +28,7 @@ import {PostbackPost} from './components/postback_post';
 import {isRHSCompatable} from './mm_webapp';
 import SearchButton from './components/search_button';
 import {doSelectPost} from './hooks';
-import {handleAskChannelCommand} from './commands';
+import {handleAskChannelCommand, handleSummarizeChannelCommand} from './commands';
 import SearchHints from './components/search_hints';
 
 type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
@@ -150,18 +150,22 @@ export default class Plugin {
             registry.registerNewMessagesSeparatorActionComponent(UnreadsSummarize);
         }
 
-        // Register slash command
+        // Register slash commands
         if (rhs) {
             registry.registerSlashCommandWillBePostedHook((message: string, args: any) => {
                 if (message.startsWith('/ask-channel')) {
                     const query = message.replace('/ask-channel', '').trim();
                     return handleAskChannelCommand(query, args, store, rhs);
+                } else if (message.startsWith('/summarize-channel')) {
+                    const commandParams = message.replace('/summarize-channel', '').trim();
+                    return handleSummarizeChannelCommand(commandParams, args, store, rhs);
                 }
                 return {message, args};
             });
         }
 
         if (registry.registerSearchComponents) {
+            // The SearchButton and SearchHints components will check if search is enabled
             registry.registerSearchComponents({
                 buttonComponent: SearchButton,
                 suggestionsComponent: () => null,

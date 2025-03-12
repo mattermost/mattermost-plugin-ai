@@ -64,6 +64,7 @@ type BotDropdownProps = {
     setActiveBot: (bot: LLMBot) => void
     container: typeof DotMenuButton
     children: React.ReactNode
+    testId?: string
 }
 
 export const BotDropdown = (props: BotDropdownProps) => {
@@ -74,6 +75,7 @@ export const BotDropdown = (props: BotDropdownProps) => {
             dotMenuButton={props.container}
             dropdownMenu={StyledDropdownMenu}
             portal={false}
+            testId={props.testId}
         >
             <MenuInfoMessage>
                 <FormattedMessage defaultMessage='Choose a Bot'/>

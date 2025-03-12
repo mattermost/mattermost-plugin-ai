@@ -143,27 +143,6 @@ export async function doPostbackSummary(postid: string) {
     });
 }
 
-export async function summarizeChannelSince(channelID: string, since: number, prompt: string, botUsername: string) {
-    const url = `${channelRoute(channelID)}/since?botUsername=${botUsername}`;
-    const response = await fetch(url, Client4.getOptions({
-        method: 'POST',
-        body: JSON.stringify({
-            since,
-            preset_prompt: prompt,
-        }),
-    }));
-
-    if (response.ok) {
-        return response.json();
-    }
-
-    throw new ClientError(Client4.url, {
-        message: '',
-        status_code: response.status,
-        url,
-    });
-}
-
 export async function viewMyChannel(channelID: string) {
     return Client4.viewMyChannel(channelID);
 }
@@ -317,4 +296,50 @@ export function getTeamIconUrl(teamId: string, lastTeamIconUpdate: number) {
 
 export function getPost(postId: string) {
     return Client4.getPost(postId);
+}
+
+export async function doReindexPosts() {
+    const url = `${baseRoute()}/admin/reindex`;
+    const response = await fetch(url, Client4.getOptions({
+        method: 'POST',
+    }));
+
+    if (response.ok) {
+        return response.json();
+    }
+
+    throw new ClientError(Client4.url, {
+        message: '',
+        status_code: response.status,
+        url,
+    });
+}
+export async function getChannelInterval(
+    channelID: string,
+    startTime: number,
+    endTime: number,
+    presetPrompt: string,
+    prompt?: string,
+    botUsername?: string,
+) {
+    const url = `${channelRoute(channelID)}/interval${botUsername ? `?botUsername=${botUsername}` : ''}`;
+    const response = await fetch(url, Client4.getOptions({
+        method: 'POST',
+        body: JSON.stringify({
+            start_time: startTime,
+            end_time: endTime,
+            preset_prompt: presetPrompt,
+            prompt: prompt || '',
+        }),
+    }));
+
+    if (response.ok) {
+        return response.json();
+    }
+
+    throw new ClientError(Client4.url, {
+        message: '',
+        status_code: response.status,
+        url,
+    });
 }

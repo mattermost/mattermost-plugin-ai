@@ -15,6 +15,24 @@ const AnalysisTypeProp = "prompt_type"
 
 // DM the user with a standard message. Run the inferance
 func (p *Plugin) analyzeThread(bot *Bot, postIDToAnalyze string, analysisType string, context *llm.Context) (*llm.TextStreamResult, error) {
+	posts, err := p.getAnalyzeThreadPosts(postIDToAnalyze, context, analysisType)
+	if err != nil {
+		return nil, err
+	}
+
+	completionReqest := llm.CompletionRequest{
+		Posts:   posts,
+		Context: context,
+	}
+	analysisStream, err := p.getLLM(bot.cfg).ChatCompletion(completionReqest)
+	if err != nil {
+		return nil, err
+	}
+
+	return analysisStream, nil
+}
+
+func (p *Plugin) getAnalyzeThreadPosts(postIDToAnalyze string, context *llm.Context, analysisType string) ([]llm.Post, error) {
 	threadData, err := p.getThreadAndMeta(postIDToAnalyze)
 	if err != nil {
 		return nil, err
@@ -45,25 +63,17 @@ func (p *Plugin) analyzeThread(bot *Bot, postIDToAnalyze string, analysisType st
 		return nil, fmt.Errorf("failed to format user prompt: %w", err)
 	}
 
-	completionReqest := llm.CompletionRequest{
-		Posts: []llm.Post{
-			{
-				Role:    llm.PostRoleSystem,
-				Message: systemPrompt,
-			},
-			{
-				Role:    llm.PostRoleUser,
-				Message: userPrompt,
-			},
+	posts := []llm.Post{
+		{
+			Role:    llm.PostRoleSystem,
+			Message: systemPrompt,
 		},
-		Context: context,
+		{
+			Role:    llm.PostRoleUser,
+			Message: userPrompt,
+		},
 	}
-	analysisStream, err := p.getLLM(bot.cfg).ChatCompletion(completionReqest)
-	if err != nil {
-		return nil, err
-	}
-
-	return analysisStream, nil
+	return posts, nil
 }
 
 func (p *Plugin) makeAnalysisPost(locale string, postIDToAnalyze string, analysisType string) *model.Post {

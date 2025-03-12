@@ -69,6 +69,7 @@ const RHSHeader = (props: Props) => {
                     activeBot={props.activeBot}
                     setActiveBot={props.setActiveBot}
                     container={SelectorDropdown}
+                    testId='bot-selector-rhs'
                 >
                     <>
                         {currentBotName}

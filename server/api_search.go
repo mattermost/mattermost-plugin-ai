@@ -16,32 +16,37 @@ import (
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
-func formatSearchResults(results []embeddings.SearchResult) string {
-	var result strings.Builder
-	result.WriteString("<posts>\n")
-	for _, r := range results {
-		result.WriteString(fmt.Sprintf(`<post id="%s" channelID="%s" teamID="%s">%s</post>%s`, r.Document.Post.Id, r.Document.ChannelID, r.Document.TeamID, r.Document.Content, "\n"))
-	}
-	result.WriteString("</posts>\n")
+const (
+	SearchResultsProp = "search_results"
+	SearchQueryProp   = "search_query"
+)
 
-	return result.String()
+type SearchRequest struct {
+	Query      string `json:"query"`
+	TeamID     string `json:"teamId"`
+	ChannelID  string `json:"channelId"`
+	MaxResults int    `json:"maxResults"`
 }
 
-func (p *Plugin) performSearch(ctx context.Context, req SearchRequest) ([]RAGResult, error) {
-	if req.MaxResults == 0 {
-		req.MaxResults = 5
-	}
+type SearchResponse struct {
+	Answer    string      `json:"answer"`
+	Results   []RAGResult `json:"results"`
+	PostID    string      `json:"postId,omitempty"`
+	ChannelID string      `json:"channelId,omitempty"`
+}
 
-	// Search for relevant posts using embeddings
-	searchResults, err := p.search.Search(ctx, req.Query, embeddings.SearchOptions{
-		Limit:     req.MaxResults,
-		TeamID:    req.TeamID,
-		ChannelID: req.ChannelID,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("search failed: %w", err)
-	}
+type RAGResult struct {
+	PostID      string  `json:"postId"`
+	ChannelID   string  `json:"channelId"`
+	ChannelName string  `json:"channelName"`
+	UserID      string  `json:"userId"`
+	Username    string  `json:"username"`
+	Content     string  `json:"content"`
+	Score       float32 `json:"score"`
+}
 
+// convertToRAGResults converts embeddings.SearchResult to RAGResult with enriched metadata
+func (p *Plugin) convertToRAGResults(searchResults []embeddings.SearchResult) []RAGResult {
 	var ragResults []RAGResult
 	for _, result := range searchResults {
 		// Get channel name
@@ -73,36 +78,97 @@ func (p *Plugin) performSearch(ctx context.Context, req SearchRequest) ([]RAGRes
 			}
 		}
 
+		// Determine the correct content to show
+		content := result.Document.Content
+
+		// Handle additional metadata for chunks
+		var chunkInfo string
+		if result.Document.IsChunk {
+			chunkInfo = fmt.Sprintf(" (Chunk %d of %d)",
+				result.Document.ChunkIndex+1,
+				result.Document.TotalChunks)
+		}
+
 		ragResults = append(ragResults, RAGResult{
-			PostID:      result.Document.Post.Id,
+			PostID:      result.Document.PostID,
 			ChannelID:   result.Document.ChannelID,
-			ChannelName: channelName,
+			ChannelName: channelName + chunkInfo,
 			UserID:      result.Document.UserID,
 			Username:    username,
-			Content:     result.Document.Content,
+			Content:     content,
 			Score:       result.Score,
 		})
 	}
 
-	return ragResults, nil
+	return ragResults
 }
 
-func (p *Plugin) createSearchPrompt(results []RAGResult, query string) (llm.CompletionRequest, error) {
+// formatSearchResults formats search results using the template system
+func (p *Plugin) formatSearchResults(results []embeddings.SearchResult) (string, error) {
+	ragResults := p.convertToRAGResults(results)
+
 	// Create context for the prompt
 	ctx := llm.NewContext()
 	ctx.Parameters = map[string]interface{}{
-		"Query":   query,
-		"Results": results,
+		"Results": ragResults,
 	}
 
-	// Format the system message with search results
-	systemMessage, err := p.prompts.Format("search_system", ctx)
+	// Format using the search_results template
+	formatted, err := p.prompts.Format("search_results", ctx)
 	if err != nil {
-		return llm.CompletionRequest{}, fmt.Errorf("failed to format system message: %w", err)
+		return "", fmt.Errorf("failed to format search results: %w", err)
 	}
 
-	// Create the completion request with system and user messages
-	return llm.CompletionRequest{
+	return formatted, nil
+}
+
+// performSearch searches for posts using the given query and returns enriched RAGResult objects
+func (p *Plugin) performSearch(ctx context.Context, req SearchRequest, userID string) ([]RAGResult, error) {
+	if req.MaxResults == 0 {
+		req.MaxResults = 5
+	}
+
+	if p.search == nil {
+		return nil, fmt.Errorf("search functionality is not configured")
+	}
+
+	// Search for relevant posts using embeddings
+	searchResults, err := p.search.Search(ctx, req.Query, embeddings.SearchOptions{
+		Limit:     req.MaxResults,
+		TeamID:    req.TeamID,
+		ChannelID: req.ChannelID,
+		UserID:    userID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("search failed: %w", err)
+	}
+
+	return p.convertToRAGResults(searchResults), nil
+}
+
+// searchAndCreatePrompt combines search and prompt creation into a single operation
+func (p *Plugin) searchAndCreatePrompt(ctx context.Context, req SearchRequest, userID string) ([]RAGResult, llm.CompletionRequest, error) {
+	ragResults, err := p.performSearch(ctx, req, userID)
+	if err != nil {
+		return nil, llm.CompletionRequest{}, err
+	}
+
+	if len(ragResults) == 0 {
+		return ragResults, llm.CompletionRequest{}, nil
+	}
+
+	promptCtx := llm.NewContext()
+	promptCtx.Parameters = map[string]interface{}{
+		"Query":   req.Query,
+		"Results": ragResults,
+	}
+
+	systemMessage, err := p.prompts.Format("search_system", promptCtx)
+	if err != nil {
+		return ragResults, llm.CompletionRequest{}, fmt.Errorf("failed to format system message: %w", err)
+	}
+
+	prompt := llm.CompletionRequest{
 		Posts: []llm.Post{
 			{
 				Role:    llm.PostRoleSystem,
@@ -110,28 +176,23 @@ func (p *Plugin) createSearchPrompt(results []RAGResult, query string) (llm.Comp
 			},
 			{
 				Role:    llm.PostRoleUser,
-				Message: query,
+				Message: req.Query,
 			},
 		},
-		Context: ctx,
-	}, nil
-}
+		Context: promptCtx,
+	}
 
-const (
-	SearchResultsProp = "search_results"
-	SearchQueryProp   = "search_query"
-)
-
-type SearchRequest struct {
-	Query      string `json:"query"`
-	TeamID     string `json:"teamId"`
-	ChannelID  string `json:"channelId"`
-	MaxResults int    `json:"maxResults"`
+	return ragResults, prompt, nil
 }
 
 func (p *Plugin) handleRunSearch(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	bot := c.MustGet(ContextBotKey).(*Bot)
+
+	if p.search == nil {
+		c.AbortWithError(http.StatusBadRequest, fmt.Errorf("search functionality is not configured"))
+		return
+	}
 
 	var req SearchRequest
 	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
@@ -139,7 +200,6 @@ func (p *Plugin) handleRunSearch(c *gin.Context) {
 		return
 	}
 
-	// Validate the request
 	if req.Query == "" {
 		c.AbortWithError(http.StatusBadRequest, fmt.Errorf("query cannot be empty"))
 		return
@@ -165,126 +225,86 @@ func (p *Plugin) handleRunSearch(c *gin.Context) {
 
 	// Process the rest of the search asynchronously
 	go func(ctx context.Context, requestCopy SearchRequest) {
-		// Perform the search
-		ragResults, err := p.performSearch(ctx, requestCopy)
-		if err != nil {
-			p.pluginAPI.Log.Error("Error performing search", "error", err)
-			responsePost := &model.Post{
-				UserId:    bot.mmBot.UserId,
-				ChannelId: questionPost.ChannelId,
-				RootId:    questionPost.Id,
-				Message:   "I encountered an error while searching. Please try again later.",
-			}
-			responsePost.AddProp(NoRegen, "true")
-			if postErr := p.pluginAPI.Post.CreatePost(responsePost); postErr != nil {
-				p.pluginAPI.Log.Error("Error creating error response post", "error", postErr)
-			}
-			return
-		}
-
-		// Handle case with no results
-		if len(ragResults) == 0 {
-			responsePost := &model.Post{
-				UserId:    bot.mmBot.UserId,
-				ChannelId: questionPost.ChannelId,
-				RootId:    questionPost.Id,
-				Message:   "I couldn't find any relevant messages for your query. Please try a different search term.",
-			}
-			responsePost.AddProp(NoRegen, "true")
-			if postErr := p.pluginAPI.Post.CreatePost(responsePost); postErr != nil {
-				p.pluginAPI.Log.Error("Error creating empty results response post", "error", postErr)
-			}
-			return
-		}
-
-		// Create search prompt with results
-		prompt, promptErr := p.createSearchPrompt(ragResults, requestCopy.Query)
-		if promptErr != nil {
-			p.pluginAPI.Log.Error("Error creating search prompt", "error", promptErr)
-			return
-		}
-
-		resultStream, streamErr := p.getLLM(bot.cfg).ChatCompletion(prompt)
-		if streamErr != nil {
-			p.pluginAPI.Log.Error("Error generating answer", "error", streamErr)
-			return
-		}
-
-		resultsJSON, jsonErr := json.Marshal(ragResults)
-		if jsonErr != nil {
-			p.pluginAPI.Log.Error("Error marshaling results", "error", jsonErr)
-			return
-		}
-
 		// Create response post as a reply
 		responsePost := &model.Post{
 			RootId: questionPost.Id,
 		}
 		responsePost.AddProp(NoRegen, "true")
-		responsePost.AddProp(SearchResultsProp, string(resultsJSON))
 
-		if streamErr := p.streamResultToNewDM(bot.mmBot.UserId, resultStream, userID, responsePost); streamErr != nil {
-			p.pluginAPI.Log.Error("Error streaming result", "error", streamErr)
+		if err := p.botDM(bot.mmBot.UserId, userID, responsePost); err != nil {
+			// Not much point in retrying if this failed. (very unlikely beyond dev)
+			p.pluginAPI.Log.Error("Error creating bot DM", "error", err)
 			return
 		}
+
+		// Setup error handling to update the post on error
+		var processingError error
+		defer func() {
+			if processingError != nil {
+				responsePost.Message = "I encountered an error while searching. Please try again later. See server logs for details."
+				if err := p.pluginAPI.Post.UpdatePost(responsePost); err != nil {
+					p.API.LogError("Error updating post on error", "error", err)
+				}
+			}
+		}()
+
+		// Perform search and create prompt in one step
+		ragResults, prompt, err := p.searchAndCreatePrompt(ctx, requestCopy, userID)
+		if err != nil {
+			p.pluginAPI.Log.Error("Error performing search and creating prompt", "error", err)
+			processingError = err
+			return
+		}
+
+		if len(ragResults) == 0 {
+			responsePost.Message = "I couldn't find any relevant messages for your query. Please try a different search term."
+			if updateErr := p.pluginAPI.Post.UpdatePost(responsePost); updateErr != nil {
+				p.API.LogError("Error updating post on error", "error", updateErr)
+			}
+			return
+		}
+
+		resultStream, err := p.getLLM(bot.cfg).ChatCompletion(prompt)
+		if err != nil {
+			p.pluginAPI.Log.Error("Error generating answer", "error", err)
+			processingError = err
+			return
+		}
+
+		resultsJSON, err := json.Marshal(ragResults)
+		if err != nil {
+			p.pluginAPI.Log.Error("Error marshaling results", "error", err)
+			processingError = err
+			return
+		}
+
+		// Update post to add sources
+		responsePost.AddProp(SearchResultsProp, string(resultsJSON))
+		if updateErr := p.pluginAPI.Post.UpdatePost(responsePost); updateErr != nil {
+			p.API.LogError("Error updating post for search results", "error", updateErr)
+			processingError = updateErr
+			return
+		}
+
+		streamContext, err := p.getPostStreamingContext(ctx, responsePost.Id)
+		if err != nil {
+			p.pluginAPI.Log.Error("Error getting post streaming context", "error", err)
+			processingError = err
+			return
+		}
+		defer p.finishPostStreaming(responsePost.Id)
+		p.streamResultToPost(streamContext, resultStream, responsePost, "")
 	}(c.Request.Context(), req)
 }
 
-type SearchResponse struct {
-	Answer    string      `json:"answer"`
-	Results   []RAGResult `json:"results"`
-	PostID    string      `json:"postId,omitempty"`
-	ChannelID string      `json:"channelId,omitempty"`
-}
-
-type RAGResult struct {
-	PostID      string  `json:"postId"`
-	ChannelID   string  `json:"channelId"`
-	ChannelName string  `json:"channelName"`
-	UserID      string  `json:"userId"`
-	Username    string  `json:"username"`
-	Content     string  `json:"content"`
-	Score       float32 `json:"score"`
-}
-
-func (p *Plugin) handleChannelSearch(c *gin.Context) {
-	channel := c.MustGet(ContextChannelKey).(*model.Channel)
-	bot := c.MustGet(ContextBotKey).(*Bot)
-
-	var req SearchRequest
-	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
-		c.AbortWithError(http.StatusBadRequest, fmt.Errorf("invalid request: %w", err))
-		return
-	}
-
-	// Force channel ID to be the current channel
-	req.ChannelID = channel.Id
-
-	ragResults, err := p.performSearch(c.Request.Context(), req)
-	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, err)
-		return
-	}
-
-	prompt, err := p.createSearchPrompt(ragResults, req.Query)
-	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to create search prompt: %w", err))
-		return
-	}
-	answer, err := p.getLLM(bot.cfg).ChatCompletionNoStream(prompt)
-	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to generate answer: %w", err))
-		return
-	}
-
-	c.JSON(http.StatusOK, SearchResponse{
-		Answer:  answer,
-		Results: ragResults,
-	})
-}
-
 func (p *Plugin) handleSearchQuery(c *gin.Context) {
+	userID := c.GetHeader("Mattermost-User-Id")
 	bot := c.MustGet(ContextBotKey).(*Bot)
+
+	if p.search == nil {
+		c.AbortWithError(http.StatusBadRequest, fmt.Errorf("search functionality is not configured"))
+		return
+	}
 
 	var req SearchRequest
 	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
@@ -292,17 +312,20 @@ func (p *Plugin) handleSearchQuery(c *gin.Context) {
 		return
 	}
 
-	ragResults, err := p.performSearch(c.Request.Context(), req)
+	ragResults, prompt, err := p.searchAndCreatePrompt(c.Request.Context(), req, userID)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 
-	prompt, err := p.createSearchPrompt(ragResults, req.Query)
-	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to create search prompt: %w", err))
+	if len(ragResults) == 0 {
+		c.JSON(http.StatusOK, SearchResponse{
+			Answer:  "I couldn't find any relevant messages for your query. Please try a different search term.",
+			Results: []RAGResult{},
+		})
 		return
 	}
+
 	answer, err := p.getLLM(bot.cfg).ChatCompletionNoStream(prompt)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to generate answer: %w", err))

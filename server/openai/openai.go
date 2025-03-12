@@ -26,16 +26,16 @@ import (
 )
 
 type Config struct {
-	APIKey              string
-	APIURL              string
-	OrgID               string
-	DefaultModel        string
-	InputTokenLimit     int
-	OutputTokenLimit    int
-	StreamingTimeout    time.Duration
-	SendUserID          bool
-	EmbeddingModel      string
-	EmbeddingDimentions int
+	APIKey              string        `json:"apiKey"`
+	APIURL              string        `json:"apiURL"`
+	OrgID               string        `json:"orgID"`
+	DefaultModel        string        `json:"defaultModel"`
+	InputTokenLimit     int           `json:"inputTokenLimit"`
+	OutputTokenLimit    int           `json:"outputTokenLimit"`
+	StreamingTimeout    time.Duration `json:"streamingTimeout"`
+	SendUserID          bool          `json:"sendUserID"`
+	EmbeddingModel      string        `json:"embeddingModel"`
+	EmbeddingDimentions int           `json:"embeddingDimensions"`
 }
 
 type OpenAI struct {
@@ -584,7 +584,6 @@ func (s *OpenAI) BatchCreateEmbeddings(ctx context.Context, texts []string) ([][
 	return embeddings, nil
 }
 
-// Dimensions returns the dimensionality of the embeddings from the text-embedding-ada-002 model
 func (s *OpenAI) Dimensions() int {
 	return s.config.EmbeddingDimentions
 }
