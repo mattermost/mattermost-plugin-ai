@@ -18,12 +18,21 @@ const defaultBatchSize = 100
 
 func (p *Plugin) handleReindexPosts(c *gin.Context) {
 	type PostRecord struct {
-		ID        string `db:"id"`
-		Message   string `db:"message"`
-		UserID    string `db:"userid"`
-		ChannelID string `db:"channelid"`
-		CreateAt  int64  `db:"createat"`
-		TeamID    string `db:"teamid"`
+		ID       string `db:"id"`
+		Message  string `db:"message"`
+		UserID   string `db:"userid"`
+		CreateAt int64  `db:"createat"`
+		TeamID   string `db:"teamid"`
+
+		ChannelID   string `db:"channelid"`
+		ChannelName string `db:"channelname"`
+		ChannelType string `db:"channeltype"`
+	}
+
+	// Check if search is initialized
+	if p.search == nil {
+		c.AbortWithError(http.StatusBadRequest, fmt.Errorf("search functionality is not configured"))
+		return
 	}
 
 	var posts []PostRecord
@@ -48,7 +57,9 @@ func (p *Plugin) handleReindexPosts(c *gin.Context) {
 			Posts.UserId as userid,
 			Posts.ChannelId as channelid,
 			Posts.CreateAt as createat,
-			Channels.TeamId as teamid
+			Channels.TeamId as teamid,
+			Channels.Name as channelname,
+			Channels.Type as channeltype
 		FROM Posts
 		LEFT JOIN
 			Channels
@@ -56,6 +67,8 @@ func (p *Plugin) handleReindexPosts(c *gin.Context) {
 			Posts.ChannelId = Channels.Id
 		WHERE
 			Posts.DeleteAt = 0 AND
+			Posts.Message != '' AND
+			Posts.Type = '' AND
 			(Posts.CreateAt, Posts.Id) > ($1, $2)
 		ORDER BY
 			Posts.CreateAt ASC, Posts.Id ASC
@@ -72,16 +85,33 @@ func (p *Plugin) handleReindexPosts(c *gin.Context) {
 			break
 		}
 
-		// Convert to PostDocuments
+		// Convert to PostDocuments, applying the same filtering logic as indexPost
 		docs := make([]embeddings.PostDocument, 0, len(posts))
 		for _, post := range posts {
+			modelPost := &model.Post{
+				Id:        post.ID,
+				ChannelId: post.ChannelID,
+				UserId:    post.UserID,
+				Message:   post.Message,
+				Type:      model.PostTypeDefault, // We already filter out non-default post types in the SQL query
+				DeleteAt:  0,                     // We already filter deleted posts in the SQL query
+			}
+
+			// Create a minimal channel object with necessary fields for filtering
+			channel := &model.Channel{
+				Id:     post.ChannelID,
+				TeamId: post.TeamID,
+				Name:   post.ChannelName,
+				Type:   model.ChannelType(post.ChannelType),
+			}
+
+			// Apply same indexing rules as indexPost
+			if !p.ShouldIndexPost(modelPost, channel) {
+				continue
+			}
+
 			docs = append(docs, embeddings.PostDocument{
-				Post: &model.Post{
-					Id:        post.ID,
-					ChannelId: post.ChannelID,
-					UserId:    post.UserID,
-					Message:   post.Message,
-				},
+				Post:      modelPost,
 				TeamID:    post.TeamID,
 				ChannelID: post.ChannelID,
 				UserID:    post.UserID,
@@ -90,9 +120,11 @@ func (p *Plugin) handleReindexPosts(c *gin.Context) {
 		}
 
 		// Store the batch
-		if err := p.search.Store(c.Request.Context(), docs); err != nil {
-			c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to store documents: %w", err))
-			return
+		if len(docs) > 0 {
+			if err := p.search.Store(c.Request.Context(), docs); err != nil {
+				c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to store documents: %w", err))
+				return
+			}
 		}
 
 		// Update cursors for next batch
@@ -104,47 +136,6 @@ func (p *Plugin) handleReindexPosts(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status": "complete",
 	})
-}
-
-func (p *Plugin) handleSearchPosts(c *gin.Context) {
-	type SearchRequest struct {
-		Query         string                 `json:"query"`
-		Limit         int                    `json:"limit"`
-		MinScore      float32                `json:"minScore"`
-		TeamID        string                 `json:"teamId"`
-		ChannelID     string                 `json:"channelId"`
-		CreatedAfter  int64                  `json:"createdAfter"`
-		CreatedBefore int64                  `json:"createdBefore"`
-		Filter        map[string]interface{} `json:"filter"`
-	}
-
-	var req SearchRequest
-	if err := c.BindJSON(&req); err != nil {
-		c.AbortWithError(http.StatusBadRequest, fmt.Errorf("invalid request: %w", err))
-		return
-	}
-
-	opts := embeddings.SearchOptions{
-		Limit:         req.Limit,
-		MinScore:      req.MinScore,
-		TeamID:        req.TeamID,
-		ChannelID:     req.ChannelID,
-		CreatedAfter:  req.CreatedAfter,
-		CreatedBefore: req.CreatedBefore,
-	}
-
-	// Default limit if not specified
-	if opts.Limit == 0 {
-		opts.Limit = 10
-	}
-
-	results, err := p.search.Search(c.Request.Context(), req.Query, opts)
-	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("search failed: %w", err))
-		return
-	}
-
-	c.JSON(http.StatusOK, results)
 }
 
 func (p *Plugin) mattermostAdminAuthorizationRequired(c *gin.Context) {

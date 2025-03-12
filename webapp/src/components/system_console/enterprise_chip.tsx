@@ -15,6 +15,7 @@ const Chip = styled.div`
     margin-left: 8px;
     border-radius: 10px;
     height: 20px;
+	width: fit-content;
 
     font-size: 10px;
     font-weight: 600;

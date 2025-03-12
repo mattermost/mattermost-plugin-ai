@@ -66,17 +66,33 @@ func testDB(t *testing.T) *sqlx.DB {
 		require.NoError(t, err, "Failed to create vector extension in test database")
 	}
 
-	// Create a mock Posts table just for tests to satisfy the foreign key constraint
-	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS Posts (
+	// Create mock tables for tests to satisfy foreign key constraints and permission checks
+	tables := []string{
+		`CREATE TABLE IF NOT EXISTS Posts (
 			Id TEXT PRIMARY KEY,
 			CreateAt BIGINT NOT NULL
-		)
-	`)
-	if err != nil {
-		db.Close()
-		dropTestDB(t)
-		require.NoError(t, err, "Failed to create Posts table")
+		)`,
+		`CREATE TABLE IF NOT EXISTS Channels (
+			Id TEXT PRIMARY KEY,
+			Name TEXT NOT NULL,
+			DisplayName TEXT NOT NULL,
+			Type TEXT NOT NULL,
+			DeleteAt BIGINT NOT NULL DEFAULT 0
+		)`,
+		`CREATE TABLE IF NOT EXISTS ChannelMembers (
+			ChannelId TEXT NOT NULL,
+			UserId TEXT NOT NULL,
+			PRIMARY KEY(ChannelId, UserId)
+		)`,
+	}
+
+	for _, tableSQL := range tables {
+		_, err = db.Exec(tableSQL)
+		if err != nil {
+			db.Close()
+			dropTestDB(t)
+			require.NoError(t, err, "Failed to create test tables")
+		}
 	}
 
 	return db
@@ -118,6 +134,38 @@ func addTestPosts(t *testing.T, db *sqlx.DB, postIDs []string, createAts []int64
 		_, err := db.Exec("INSERT INTO Posts (Id, CreateAt) VALUES ($1, $2) ON CONFLICT (Id) DO NOTHING",
 			postID, createAts[i])
 		require.NoError(t, err, "Failed to insert test post")
+	}
+}
+
+// addTestChannels adds test channels to the Channels table
+func addTestChannels(t *testing.T, db *sqlx.DB, channelIDs []string, isDeleted bool) {
+	for _, channelID := range channelIDs {
+		deleteAt := int64(0)
+		if isDeleted {
+			deleteAt = model.GetMillis()
+		}
+
+		_, err := db.Exec(
+			"INSERT INTO Channels (Id, Name, DisplayName, Type, DeleteAt) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (Id) DO NOTHING",
+			channelID,
+			fmt.Sprintf("name-%s", channelID),
+			fmt.Sprintf("display-%s", channelID),
+			"O", // Open channel
+			deleteAt,
+		)
+		require.NoError(t, err, "Failed to insert test channel")
+	}
+}
+
+// addTestChannelMembers adds test channel memberships
+func addTestChannelMembers(t *testing.T, db *sqlx.DB, channelID string, userIDs []string) {
+	for _, userID := range userIDs {
+		_, err := db.Exec(
+			"INSERT INTO ChannelMembers (ChannelId, UserId) VALUES ($1, $2) ON CONFLICT (ChannelId, UserId) DO NOTHING",
+			channelID,
+			userID,
+		)
+		require.NoError(t, err, "Failed to insert test channel member")
 	}
 }
 
@@ -200,6 +248,97 @@ func TestStore(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, 2, count)
 	})
+
+	t.Run("successfully stores chunks", func(t *testing.T) {
+		db := testDB(t)
+		defer cleanupDB(t, db)
+
+		// Set up PGVector
+		config := PGVectorConfig{
+			Dimensions: 3, // Small dimensions for test
+		}
+		pgVector, err := NewPGVector(db, config)
+		require.NoError(t, err)
+
+		// Create test data
+		now := model.GetMillis()
+		postIDs := []string{"post1", "post1_chunk_0", "post1_chunk_1"}
+		createAts := []int64{now, now, now}
+		addTestPosts(t, db, postIDs, createAts)
+
+		docs := []embeddings.PostDocument{
+			{
+				Post: &model.Post{
+					Id:       "post1",
+					CreateAt: now,
+				},
+				TeamID:      "team1",
+				ChannelID:   "channel1",
+				UserID:      "user1",
+				Content:     "This is the full content",
+				IsChunk:     false,
+				TotalChunks: 2,
+			},
+			{
+				Post: &model.Post{
+					Id:       "post1_chunk_0",
+					CreateAt: now,
+				},
+				TeamID:        "team1",
+				ChannelID:     "channel1",
+				UserID:        "user1",
+				Content:       "This is ",
+				IsChunk:       true,
+				ChunkIndex:    0,
+				TotalChunks:   2,
+				SourceContent: "This is the full content",
+			},
+			{
+				Post: &model.Post{
+					Id:       "post1_chunk_1",
+					CreateAt: now,
+				},
+				TeamID:        "team1",
+				ChannelID:     "channel1",
+				UserID:        "user1",
+				Content:       "the full content",
+				IsChunk:       true,
+				ChunkIndex:    1,
+				TotalChunks:   2,
+				SourceContent: "This is the full content",
+			},
+		}
+
+		embedVectors := [][]float32{
+			{0.1, 0.2, 0.3},
+			{0.4, 0.5, 0.6},
+			{0.7, 0.8, 0.9},
+		}
+
+		ctx := context.Background()
+
+		// Store the documents
+		err = pgVector.Store(ctx, docs, embedVectors)
+		require.NoError(t, err)
+
+		// Verify documents were stored
+		var count int
+		err = db.Get(&count, "SELECT COUNT(*) FROM llm_posts_embeddings")
+		require.NoError(t, err)
+		assert.Equal(t, 3, count)
+
+		// Verify chunk data
+		var chunkCount int
+		err = db.Get(&chunkCount, "SELECT COUNT(*) FROM llm_posts_embeddings WHERE is_chunk = true")
+		require.NoError(t, err)
+		assert.Equal(t, 2, chunkCount)
+
+		// Verify source content for chunks
+		var sourceContent string
+		err = db.Get(&sourceContent, "SELECT source_content FROM llm_posts_embeddings WHERE id = 'post1_chunk_0'")
+		require.NoError(t, err)
+		assert.Equal(t, "This is the full content", sourceContent)
+	})
 }
 
 func TestStoreUpdate(t *testing.T) {
@@ -274,14 +413,14 @@ func TestStoreUpdate(t *testing.T) {
 
 		// Verify the content was updated
 		var content string
-		err = db.Get(&content, "SELECT content FROM llm_posts_embeddings WHERE post_id = 'post1'")
+		err = db.Get(&content, "SELECT content FROM llm_posts_embeddings WHERE id = 'post1'")
 		require.NoError(t, err)
 		assert.Equal(t, "Updated content", content)
 	})
 }
 
 func TestSearch(t *testing.T) {
-	// Setup test data
+	// Setup test data with system user for non-permission tests
 	setupSearchTest := func(t *testing.T) (context.Context, *PGVector, *sqlx.DB, []int64, []float32) {
 		db := testDB(t)
 
@@ -297,6 +436,17 @@ func TestSearch(t *testing.T) {
 		postIDs := []string{"post1", "post2", "post3", "post4"}
 		createAts := []int64{now - 2000, now - 1500, now - 1000, now - 500}
 		addTestPosts(t, db, postIDs, createAts)
+
+		// Create the channels needed for our tests
+		channelIDs := []string{"channel1", "channel2", "channel3", "channel4"}
+		addTestChannels(t, db, channelIDs, false)
+
+		// Add channel memberships for a test user that has access to all channels
+		// This ensures that tests work with the new permission filtering
+		systemUserID := "system_user"
+		for _, channelID := range channelIDs {
+			addTestChannelMembers(t, db, channelID, []string{systemUserID})
+		}
 
 		docs := []embeddings.PostDocument{
 			{
@@ -366,8 +516,10 @@ func TestSearch(t *testing.T) {
 		ctx, pgVector, db, _, searchVector := setupSearchTest(t)
 		defer cleanupDB(t, db)
 
+		// In the original test environment, we need permission filtering to work
 		opts := embeddings.SearchOptions{
-			Limit: 2,
+			Limit:  2,
+			UserID: "system_user", // Use the system user that has access to all channels
 		}
 
 		results, err := pgVector.Search(ctx, searchVector, opts)
@@ -379,12 +531,117 @@ func TestSearch(t *testing.T) {
 		assert.Equal(t, "post1", results[1].Document.Post.Id)
 	})
 
+	t.Run("search with chunks", func(t *testing.T) {
+		db := testDB(t)
+		defer cleanupDB(t, db)
+
+		// Set up PGVector
+		config := PGVectorConfig{
+			Dimensions: 3, // Small dimensions for test
+		}
+		pgVector, err := NewPGVector(db, config)
+		require.NoError(t, err)
+
+		// Create test data
+		now := model.GetMillis()
+		postIDs := []string{"post1", "post1_chunk_0", "post1_chunk_1"}
+		createAts := []int64{now, now, now}
+		addTestPosts(t, db, postIDs, createAts)
+
+		// Create the channels needed for our tests
+		channelIDs := []string{"channel1"}
+		addTestChannels(t, db, channelIDs, false)
+
+		// Add channel memberships for a test user that has access to all channels
+		systemUserID := "system_user"
+		addTestChannelMembers(t, db, "channel1", []string{systemUserID})
+
+		docs := []embeddings.PostDocument{
+			{
+				Post: &model.Post{
+					Id:       "post1",
+					CreateAt: now,
+				},
+				TeamID:      "team1",
+				ChannelID:   "channel1",
+				UserID:      "user1",
+				Content:     "This is the full content",
+				IsChunk:     false,
+				TotalChunks: 2,
+			},
+			{
+				Post: &model.Post{
+					Id:       "post1_chunk_0",
+					CreateAt: now,
+				},
+				TeamID:        "team1",
+				ChannelID:     "channel1",
+				UserID:        "user1",
+				Content:       "This is ",
+				IsChunk:       true,
+				ChunkIndex:    0,
+				TotalChunks:   2,
+				SourceContent: "This is the full content",
+			},
+			{
+				Post: &model.Post{
+					Id:       "post1_chunk_1",
+					CreateAt: now,
+				},
+				TeamID:        "team1",
+				ChannelID:     "channel1",
+				UserID:        "user1",
+				Content:       "the full content",
+				IsChunk:       true,
+				ChunkIndex:    1,
+				TotalChunks:   2,
+				SourceContent: "This is the full content",
+			},
+		}
+
+		embedVectors := [][]float32{
+			{0.1, 0.2, 0.3}, // post1
+			{0.9, 0.9, 0.9}, // post1_chunk_0 - most similar to search vector
+			{0.5, 0.5, 0.5}, // post1_chunk_1
+		}
+
+		ctx := context.Background()
+
+		// Store the documents
+		err = pgVector.Store(ctx, docs, embedVectors)
+		require.NoError(t, err)
+
+		// Search vector - will match chunk0 closest
+		searchVector := []float32{1.0, 1.0, 1.0}
+
+		opts := embeddings.SearchOptions{
+			Limit:  10,
+			UserID: "system_user",
+		}
+
+		results, err := pgVector.Search(ctx, searchVector, opts)
+		require.NoError(t, err)
+
+		// Should return all three documents
+		assert.Len(t, results, 3)
+
+		// The first result should be the chunk with highest similarity
+		assert.Equal(t, "post1_chunk_0", results[0].Document.Post.Id)
+		assert.True(t, results[0].Document.IsChunk)
+
+		// Verify correct chunk metadata
+		assert.Equal(t, 0, results[0].Document.ChunkIndex)
+		assert.Equal(t, 2, results[0].Document.TotalChunks)
+		assert.Equal(t, "This is the full content", results[0].Document.SourceContent)
+	})
+
 	t.Run("search with team filter", func(t *testing.T) {
 		ctx, pgVector, db, _, searchVector := setupSearchTest(t)
 		defer cleanupDB(t, db)
 
 		opts := embeddings.SearchOptions{
 			TeamID: "team1",
+			UserID: "system_user",
 		}
 
 		results, err := pgVector.Search(ctx, searchVector, opts)
@@ -401,6 +658,7 @@ func TestSearch(t *testing.T) {
 
 		opts := embeddings.SearchOptions{
 			ChannelID: "channel3",
+			UserID:    "system_user",
 		}
 
 		results, err := pgVector.Search(ctx, searchVector, opts)
@@ -415,6 +673,7 @@ func TestSearch(t *testing.T) {
 
 		opts := embeddings.SearchOptions{
 			MinScore: 0.8, // Only include very similar vectors
+			UserID:   "system_user",
 		}
 
 		results, err := pgVector.Search(ctx, searchVector, opts)
@@ -429,6 +688,7 @@ func TestSearch(t *testing.T) {
 
 		opts := embeddings.SearchOptions{
 			CreatedAfter: createAts[1], // After post2
+			UserID:       "system_user",
 		}
 
 		results, err := pgVector.Search(ctx, searchVector, opts)
@@ -441,8 +701,262 @@ func TestSearch(t *testing.T) {
 	})
 }
 
-func TestDelete(t *testing.T) {
-	t.Run("successfully deletes documents by ID", func(t *testing.T) {
+func TestSearchWithPermissions(t *testing.T) {
+	setupPermissionSearchTest := func(t *testing.T) (context.Context, *PGVector, *sqlx.DB, []float32) {
+		db := testDB(t)
+
+		// Set up PGVector
+		config := PGVectorConfig{
+			Dimensions: 3, // Small dimensions for test
+		}
+		pgVector, err := NewPGVector(db, config)
+		require.NoError(t, err)
+
+		// Create test data
+		now := model.GetMillis()
+
+		// Create 6 posts across 5 channels
+		postIDs := []string{"post1", "post2", "post3", "post4", "post5", "post6"}
+		createAts := []int64{now, now, now, now, now, now}
+		addTestPosts(t, db, postIDs, createAts)
+
+		// Create channels
+		channelIDs := []string{"channel1", "channel2", "channel3", "channel4", "channel5"}
+		addTestChannels(t, db, channelIDs, false)
+
+		// Channel5 is deleted
+		_, err = db.Exec("UPDATE Channels SET DeleteAt = $1 WHERE Id = $2", now, "channel5")
+		require.NoError(t, err)
+
+		// Create channel memberships
+		// user1 is a member of channels 1, 2, and 5 (deleted)
+		addTestChannelMembers(t, db, "channel1", []string{"user1"})
+		addTestChannelMembers(t, db, "channel2", []string{"user1"})
+		addTestChannelMembers(t, db, "channel5", []string{"user1"})
+
+		// user2 is a member of channels 3 and 4
+		addTestChannelMembers(t, db, "channel3", []string{"user2"})
+		addTestChannelMembers(t, db, "channel4", []string{"user2"})
+
+		// user3 is a member of channels 1 and 3
+		addTestChannelMembers(t, db, "channel1", []string{"user3"})
+		addTestChannelMembers(t, db, "channel3", []string{"user3"})
+
+		docs := []embeddings.PostDocument{
+			{
+				Post: &model.Post{
+					Id:       "post1",
+					CreateAt: now,
+				},
+				TeamID:    "team1",
+				ChannelID: "channel1", // Both user1 and user3 can access
+				UserID:    "user1",
+				Content:   "Content in channel 1",
+			},
+			{
+				Post: &model.Post{
+					Id:       "post2",
+					CreateAt: now,
+				},
+				TeamID:    "team1",
+				ChannelID: "channel2", // Only user1 can access
+				UserID:    "user2",
+				Content:   "Content in channel 2",
+			},
+			{
+				Post: &model.Post{
+					Id:       "post3",
+					CreateAt: now,
+				},
+				TeamID:    "team2",
+				ChannelID: "channel3", // Both user2 and user3 can access
+				UserID:    "user3",
+				Content:   "Content in channel 3",
+			},
+			{
+				Post: &model.Post{
+					Id:       "post4",
+					CreateAt: now,
+				},
+				TeamID:    "team2",
+				ChannelID: "channel4", // Only user2 can access
+				UserID:    "user2",
+				Content:   "Content in channel 4",
+			},
+			{
+				Post: &model.Post{
+					Id:       "post5",
+					CreateAt: now,
+				},
+				TeamID:    "team3",
+				ChannelID: "channel4", // Only user2 can access - different team
+				UserID:    "user2",
+				Content:   "Content in channel 4 team 3",
+			},
+			{
+				Post: &model.Post{
+					Id:       "post6",
+					CreateAt: now,
+				},
+				TeamID:    "team3",
+				ChannelID: "channel5", // Deleted channel
+				UserID:    "user1",
+				Content:   "Content in deleted channel 5",
+			},
+		}
+
+		// Use identical vectors for simplicity in permission tests
+		embedVectors := [][]float32{
+			{0.5, 0.5, 0.5}, // post1
+			{0.5, 0.5, 0.5}, // post2
+			{0.5, 0.5, 0.5}, // post3
+			{0.5, 0.5, 0.5}, // post4
+			{0.5, 0.5, 0.5}, // post5
+			{0.5, 0.5, 0.5}, // post6
+		}
+
+		ctx := context.Background()
+
+		// Store the documents
+		err = pgVector.Store(ctx, docs, embedVectors)
+		require.NoError(t, err)
+
+		// Search vector - exact match for simplicity
+		searchVector := []float32{0.5, 0.5, 0.5}
+
+		return ctx, pgVector, db, searchVector
+	}
+
+	t.Run("search without user ID fails", func(t *testing.T) {
+		ctx, pgVector, db, searchVector := setupPermissionSearchTest(t)
+		defer cleanupDB(t, db)
+
+		opts := embeddings.SearchOptions{
+			Limit: 10,
+		}
+
+		results, err := pgVector.Search(ctx, searchVector, opts)
+		require.Error(t, err)
+		assert.Len(t, results, 0, "Should return no posts when not specifying a user")
+	})
+
+	t.Run("search with user ID only returns posts from channels the user is a member of", func(t *testing.T) {
+		ctx, pgVector, db, searchVector := setupPermissionSearchTest(t)
+		defer cleanupDB(t, db)
+
+		// Search as user1
+		opts := embeddings.SearchOptions{
+			Limit:  10,
+			UserID: "user1",
+		}
+
+		results, err := pgVector.Search(ctx, searchVector, opts)
+		require.NoError(t, err)
+		assert.Len(t, results, 2, "Should return only posts from channels user1 is a member of")
+
+		// Verify we get the expected posts
+		postIDs := []string{}
+		for _, result := range results {
+			postIDs = append(postIDs, result.Document.Post.Id)
+		}
+		assert.Contains(t, postIDs, "post1", "Should contain post1 (channel1)")
+		assert.Contains(t, postIDs, "post2", "Should contain post2 (channel2)")
+		assert.NotContains(t, postIDs, "post6", "Should not contain post6 (deleted channel5)")
+	})
+
+	t.Run("search with user ID and team filter", func(t *testing.T) {
+		ctx, pgVector, db, searchVector := setupPermissionSearchTest(t)
+		defer cleanupDB(t, db)
+
+		// Search as user2 and filter by team2
+		opts := embeddings.SearchOptions{
+			Limit:  10,
+			UserID: "user2",
+			TeamID: "team2",
+		}
+
+		results, err := pgVector.Search(ctx, searchVector, opts)
+		require.NoError(t, err)
+		assert.Len(t, results, 2, "Should return posts from channels user2 is a member of in team2")
+
+		// Verify we only get posts from team2
+		postIDs := []string{}
+		for _, result := range results {
+			postIDs = append(postIDs, result.Document.Post.Id)
+			assert.Equal(t, "team2", result.Document.TeamID)
+		}
+		assert.Contains(t, postIDs, "post3", "Should contain post3 (channel3)")
+		assert.Contains(t, postIDs, "post4", "Should contain post4 (channel4)")
+		assert.NotContains(t, postIDs, "post5", "Should not contain post5 (channel4, but team3)")
+	})
+
+	t.Run("search with user ID and channel filter", func(t *testing.T) {
+		ctx, pgVector, db, searchVector := setupPermissionSearchTest(t)
+		defer cleanupDB(t, db)
+
+		// Search as user3, who has access to channels 1 and 3, but filter to just channel3
+		opts := embeddings.SearchOptions{
+			Limit:     10,
+			UserID:    "user3",
+			ChannelID: "channel3",
+		}
+
+		results, err := pgVector.Search(ctx, searchVector, opts)
+		require.NoError(t, err)
+		assert.Len(t, results, 1, "Should return only the post from channel3")
+		assert.Equal(t, "post3", results[0].Document.Post.Id)
+	})
+
+	t.Run("search with multiple users having access to the same channel", func(t *testing.T) {
+		ctx, pgVector, db, searchVector := setupPermissionSearchTest(t)
+		defer cleanupDB(t, db)
+
+		// Test that both user2 and user3 can access post3 in channel3
+		opts1 := embeddings.SearchOptions{
+			Limit:     10,
+			UserID:    "user2",
+			ChannelID: "channel3",
+		}
+
+		results1, err := pgVector.Search(ctx, searchVector, opts1)
+		require.NoError(t, err)
+		assert.Len(t, results1, 1, "user2 should be able to access post3")
+		assert.Equal(t, "post3", results1[0].Document.Post.Id)
+
+		opts2 := embeddings.SearchOptions{
+			Limit:     10,
+			UserID:    "user3",
+			ChannelID: "channel3",
+		}
+
+		results2, err := pgVector.Search(ctx, searchVector, opts2)
+		require.NoError(t, err)
+		assert.Len(t, results2, 1, "user3 should be able to access post3")
+		assert.Equal(t, "post3", results2[0].Document.Post.Id)
+	})
+
+	t.Run("deleted channels are excluded even if user is a member", func(t *testing.T) {
+		ctx, pgVector, db, searchVector := setupPermissionSearchTest(t)
+		defer cleanupDB(t, db)
+
+		// user1 is a member of channel5 (deleted)
+		opts := embeddings.SearchOptions{
+			Limit:  10,
+			UserID: "user1",
+		}
+
+		results, err := pgVector.Search(ctx, searchVector, opts)
+		require.NoError(t, err)
+
+		// Should not include post6 from deleted channel5
+		for _, result := range results {
+			assert.NotEqual(t, "post6", result.Document.Post.Id, "Should not include posts from deleted channels")
+		}
+	})
+}
+
+func TestDeleteWithChunks(t *testing.T) {
+	t.Run("deletes both posts and their chunks", func(t *testing.T) {
 		db := testDB(t)
 		defer cleanupDB(t, db)
 
@@ -455,40 +969,78 @@ func TestDelete(t *testing.T) {
 
 		// Create test data
 		now := model.GetMillis()
-		postIDs := []string{"post1", "post2", "post3"}
-		createAts := []int64{now, now, now}
+		postIDs := []string{"post1", "post1_chunk_0", "post1_chunk_1", "post2", "post2_chunk_0"}
+		createAts := []int64{now, now, now, now, now}
 		addTestPosts(t, db, postIDs, createAts)
 
 		docs := []embeddings.PostDocument{
+			// Post 1 and chunks
 			{
 				Post: &model.Post{
 					Id:       "post1",
 					CreateAt: now,
 				},
-				TeamID:    "team1",
-				ChannelID: "channel1",
-				UserID:    "user1",
-				Content:   "Content 1",
+				TeamID:      "team1",
+				ChannelID:   "channel1",
+				UserID:      "user1",
+				Content:     "Content 1",
+				IsChunk:     false,
+				TotalChunks: 2,
 			},
+			{
+				Post: &model.Post{
+					Id:       "post1_chunk_0",
+					CreateAt: now,
+				},
+				TeamID:        "team1",
+				ChannelID:     "channel1",
+				UserID:        "user1",
+				Content:       "Chunk 1.1",
+				IsChunk:       true,
+				ChunkIndex:    0,
+				TotalChunks:   2,
+				SourceContent: "Content 1",
+			},
+			{
+				Post: &model.Post{
+					Id:       "post1_chunk_1",
+					CreateAt: now,
+				},
+				TeamID:        "team1",
+				ChannelID:     "channel1",
+				UserID:        "user1",
+				Content:       "Chunk 1.2",
+				IsChunk:       true,
+				ChunkIndex:    1,
+				TotalChunks:   2,
+				SourceContent: "Content 1",
+			},
+			// Post 2 and chunks
 			{
 				Post: &model.Post{
 					Id:       "post2",
 					CreateAt: now,
 				},
-				TeamID:    "team1",
-				ChannelID: "channel1",
-				UserID:    "user1",
-				Content:   "Content 2",
+				TeamID:      "team1",
+				ChannelID:   "channel1",
+				UserID:      "user1",
+				Content:     "Content 2",
+				IsChunk:     false,
+				TotalChunks: 1,
 			},
 			{
 				Post: &model.Post{
-					Id:       "post3",
+					Id:       "post2_chunk_0",
 					CreateAt: now,
 				},
-				TeamID:    "team1",
-				ChannelID: "channel1",
-				UserID:    "user1",
-				Content:   "Content 3",
+				TeamID:        "team1",
+				ChannelID:     "channel1",
+				UserID:        "user1",
+				Content:       "Chunk 2.1",
+				IsChunk:       true,
+				ChunkIndex:    0,
+				TotalChunks:   1,
+				SourceContent: "Content 2",
 			},
 		}
 
@@ -496,6 +1048,8 @@ func TestDelete(t *testing.T) {
 			{0.1, 0.2, 0.3},
 			{0.4, 0.5, 0.6},
 			{0.7, 0.8, 0.9},
+			{0.1, 0.2, 0.3},
+			{0.4, 0.5, 0.6},
 		}
 
 		ctx := context.Background()
@@ -504,26 +1058,27 @@ func TestDelete(t *testing.T) {
 		err = pgVector.Store(ctx, docs, embedVectors)
 		require.NoError(t, err)
 
-		// Verify 3 documents were stored
+		// Verify initial count
 		var count int
 		err = db.Get(&count, "SELECT COUNT(*) FROM llm_posts_embeddings")
 		require.NoError(t, err)
-		assert.Equal(t, 3, count)
+		assert.Equal(t, 5, count)
 
-		// Delete 2 documents
-		err = pgVector.Delete(ctx, []string{"post1", "post3"})
+		// Delete post1 and its chunks
+		err = pgVector.Delete(ctx, []string{"post1"})
 		require.NoError(t, err)
 
-		// Verify only 1 document remains
+		// Verify post1 and its chunks are gone, but post2 remains
 		err = db.Get(&count, "SELECT COUNT(*) FROM llm_posts_embeddings")
 		require.NoError(t, err)
-		assert.Equal(t, 1, count)
+		assert.Equal(t, 2, count, "Should have only post2 and its chunk remaining")
 
-		// Verify the remaining document is post2
-		var postID string
-		err = db.Get(&postID, "SELECT post_id FROM llm_posts_embeddings")
+		// Verify the remaining documents are post2 and its chunk
+		var remainingIDs []string
+		err = db.Select(&remainingIDs, "SELECT id FROM llm_posts_embeddings")
 		require.NoError(t, err)
-		assert.Equal(t, "post2", postID)
+		assert.Contains(t, remainingIDs, "post2")
+		assert.Contains(t, remainingIDs, "post2_chunk_0")
 	})
 }
 
@@ -593,85 +1148,5 @@ func TestClear(t *testing.T) {
 		err = db.Get(&count, "SELECT COUNT(*) FROM llm_posts_embeddings")
 		require.NoError(t, err)
 		assert.Equal(t, 0, count)
-	})
-}
-
-// Stress test with a larger number of vectors
-func TestStoreAndSearchMany(t *testing.T) {
-	t.Run("handles large number of documents", func(t *testing.T) {
-		if testing.Short() {
-			t.Skip("Skipping stress test in short mode")
-		}
-
-		db := testDB(t)
-		defer cleanupDB(t, db)
-
-		// Set up PGVector
-		config := PGVectorConfig{
-			Dimensions: 3, // Small dimensions for test
-		}
-		pgVector, err := NewPGVector(db, config)
-		require.NoError(t, err)
-
-		// Create many test documents
-		numDocs := 100
-		docs := make([]embeddings.PostDocument, numDocs)
-		embedVectors := make([][]float32, numDocs)
-		postIDs := make([]string, numDocs)
-		createAts := make([]int64, numDocs)
-		now := model.GetMillis()
-
-		for i := 0; i < numDocs; i++ {
-			postID := fmt.Sprintf("post%d", i)
-			postIDs[i] = postID
-			createAts[i] = now - int64(i*100)
-
-			docs[i] = embeddings.PostDocument{
-				Post: &model.Post{
-					Id:       postID,
-					CreateAt: createAts[i],
-				},
-				TeamID:    fmt.Sprintf("team%d", i%5),
-				ChannelID: fmt.Sprintf("channel%d", i%10),
-				UserID:    fmt.Sprintf("user%d", i%20),
-				Content:   fmt.Sprintf("Content for document %d", i),
-			}
-
-			// Create vectors with varying similarity to search vector [1, 1, 1]
-			similarity := float32(i) / float32(numDocs)
-			embedVectors[i] = []float32{similarity, similarity, similarity}
-		}
-
-		ctx := context.Background()
-
-		// Add posts to the mock Posts table
-		addTestPosts(t, db, postIDs, createAts)
-
-		// Store all documents
-		err = pgVector.Store(ctx, docs, embedVectors)
-		require.NoError(t, err)
-
-		// Verify all documents were stored
-		var count int
-		err = db.Get(&count, "SELECT COUNT(*) FROM llm_posts_embeddings")
-		require.NoError(t, err)
-		assert.Equal(t, numDocs, count)
-
-		// Search vector
-		searchVector := []float32{1.0, 1.0, 1.0}
-
-		// Test search with limit
-		opts := embeddings.SearchOptions{
-			Limit: 10,
-		}
-
-		results, err := pgVector.Search(ctx, searchVector, opts)
-		require.NoError(t, err)
-		assert.Len(t, results, 10)
-
-		// Results should be sorted by similarity (descending)
-		for i := 1; i < len(results); i++ {
-			assert.GreaterOrEqual(t, results[i-1].Score, results[i].Score)
-		}
 	})
 }

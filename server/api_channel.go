@@ -57,7 +57,7 @@ func (p *Plugin) getPostsByChannelBetween(channelID string, startTime, endTime i
 		for _, post := range morePosts.Posts {
 			if post.CreateAt >= startTime && post.CreateAt <= endTime {
 				result.Posts[post.Id] = post
-				result.Order = append([]string{post.Id}, result.Order...) // Prepend ID to maintain chronological order
+				result.Order = append([]string{post.Id}, result.Order...)
 				totalPosts++
 				if totalPosts >= maxPosts {
 					break
@@ -170,13 +170,15 @@ func (p *Plugin) handleInterval(c *gin.Context) {
 		p.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.mmBot.UserId, channel)),
 	)
 	context.Parameters = map[string]any{
-		"Posts": formattedThread,
+		"Thread": formattedThread,
 	}
 
 	promptPreset := ""
 	switch data.PresetPrompt {
-	case "summarize":
+	case "summarize_unreads":
 		promptPreset = llm.PromptSummarizeChannelSinceSystem
+	case "summarize_range":
+		promptPreset = llm.PromptSummarizeChannelRangeSystem
 	case "action_items":
 		promptPreset = llm.PromptFindActionItemsSystem
 	case "open_questions":
@@ -229,31 +231,21 @@ func (p *Plugin) handleInterval(c *gin.Context) {
 
 	promptTitle := ""
 	switch data.PresetPrompt {
-	case "summarize":
-		if data.EndTime == 0 {
-			promptTitle = "Summarize Unreads"
-		} else {
-			promptTitle = "Date Range Summary"
-		}
+	case "summarize_unreads":
+		promptTitle = "Summarize Unreads"
+	case "summarize_range":
+		promptTitle = "Summarize Channel"
 	case "action_items":
-		if data.EndTime == 0 {
-			promptTitle = "Find Action Items"
-		} else {
-			promptTitle = "Date Range Action Items"
-		}
+		promptTitle = "Find Action Items"
 	case "open_questions":
-		if data.EndTime == 0 {
-			promptTitle = "Find Open Questions"
-		} else {
-			promptTitle = "Date Range Open Questions"
-		}
+		promptTitle = "Find Open Questions"
 	}
 
 	p.saveTitleAsync(post.Id, promptTitle)
 
 	result := struct {
-		PostID    string `json:"postid"`
-		ChannelID string `json:"channelid"`
+		PostID    string `json:"postId"`
+		ChannelID string `json:"channelId"`
 	}{
 		PostID:    post.Id,
 		ChannelID: post.ChannelId,

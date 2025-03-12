@@ -22,8 +22,6 @@ export type LLMService = {
     apiKey: string
     orgId: string
     defaultModel: string
-    username: string
-    password: string
     tokenLimit: number
     streamingTimeoutSeconds: number
     sendUserId: boolean
@@ -313,7 +311,7 @@ const ServiceItem = (props: ServiceItemProps) => {
 
 const ItemListContainer = styled.div`
 	padding: 24px 20px;
-	padding-right; 76px;
+	padding-right: 76px;
 `;
 
 const Title = styled.div`

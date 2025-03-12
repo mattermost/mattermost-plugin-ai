@@ -37,14 +37,19 @@ export const useBotlist = () => {
     // Load bots
     useEffect(() => {
         const fetchBots = async () => {
-            const fetchedBots = await getAIBots();
-            if (!fetchedBots) {
+            const response = await getAIBots();
+            if (!response) {
                 return;
             }
 
             dispatch({
                 type: BotsHandler,
-                bots: fetchedBots,
+                bots: response.bots,
+            });
+
+            dispatch({
+                type: 'SET_SEARCH_ENABLED',
+                searchEnabled: response.searchEnabled,
             });
         };
         if (!bots) {

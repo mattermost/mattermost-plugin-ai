@@ -7,7 +7,7 @@ import {FormattedMessage} from 'react-intl';
 
 import {useSelectPost} from '@/hooks';
 
-import {summarizeChannelSince} from '@/client';
+import {getChannelInterval} from '@/client';
 import {useIsBasicsLicensed} from '@/license';
 
 import {useBotlistForChannel} from '@/bots';
@@ -87,17 +87,17 @@ const UnreadsSumarize = (props: Props) => {
     const {bots, activeBot, setActiveBot, wasFiltered} = useBotlistForChannel(props.channelId);
 
     const summarizeNew = async () => {
-        const result = await summarizeChannelSince(props.channelId, props.lastViewedAt, 'summarize', activeBot?.username || '');
+        const result = await getChannelInterval(props.channelId, props.lastViewedAt, 0, 'unreads_summarize', '', activeBot?.username || '');
         selectPost(result.postid, result.channelid);
     };
 
     const actionItems = async () => {
-        const result = await summarizeChannelSince(props.channelId, props.lastViewedAt, 'action_items', activeBot?.username || '');
+        const result = await getChannelInterval(props.channelId, props.lastViewedAt, 0, 'action_items', '', activeBot?.username || '');
         selectPost(result.postid, result.channelid);
     };
 
     const openQuestions = async () => {
-        const result = await summarizeChannelSince(props.channelId, props.lastViewedAt, 'open_questions', activeBot?.username || '');
+        const result = await getChannelInterval(props.channelId, props.lastViewedAt, 0, 'open_questions', '', activeBot?.username || '');
         selectPost(result.postid, result.channelid);
     };
 

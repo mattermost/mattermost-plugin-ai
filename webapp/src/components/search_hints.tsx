@@ -5,8 +5,11 @@ import React from 'react';
 import styled from 'styled-components';
 import {FormattedMessage} from 'react-intl';
 import {ChevronDownIcon, LightbulbOutlineIcon} from '@mattermost/compass-icons/components';
+import {useSelector} from 'react-redux';
+import {GlobalState} from '@mattermost/types/store';
 
 import {useBotlist} from '@/bots';
+import manifest from '../manifest';
 
 import {BotDropdown} from './bot_selector';
 
@@ -61,9 +64,10 @@ const SelectorContainer = styled.div`
 const SearchHints = () => {
     const {bots, activeBot, setActiveBot} = useBotlist();
     const currentBotName = activeBot?.displayName ?? '';
+    const searchEnabled = useSelector<GlobalState, boolean>((state: any) => state['plugins-' + manifest.id].searchEnabled);
 
-    // Unconfigured state
-    if (!bots || bots.length === 0) {
+    // Don't show if search is disabled or no bots are available
+    if (!searchEnabled || !bots || bots.length === 0) {
         return null;
     }
 

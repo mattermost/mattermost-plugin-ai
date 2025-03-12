@@ -66,6 +66,7 @@ type DotMenuProps = {
     isActive?: boolean;
     onOpenChange?: (isOpen: boolean) => void;
     closeOnClick?: boolean;
+    testId?: string;
 };
 
 type DropdownProps = Omit<ComponentProps<typeof Dropdown>, 'target' | 'children' | 'isOpen'>;
@@ -81,6 +82,7 @@ const DotMenu = ({
     dotMenuButton: MenuButton = DotMenuButton,
     dropdownMenu: Menu = DropdownMenu,
     onOpenChange,
+    testId,
     ...props
 }: DotMenuProps & DropdownProps) => {
     const [isOpen, setOpen] = useState(false);
@@ -113,7 +115,7 @@ const DotMenu = ({
             className={className}
             role={'button'}
             disabled={disabled ?? false}
-            data-testid={'menuButton' + (title ?? '')}
+            data-testid={testId}
         >
             {icon}
         </MenuButton>

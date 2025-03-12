@@ -46,15 +46,15 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	channelRouter := botRequiredRouter.Group("/channel/:channelid")
 	channelRouter.Use(p.channelAuthorizationRequired)
 	channelRouter.POST("/interval", p.handleInterval)
-	channelRouter.POST("/search", p.handleChannelSearch)
 
 	adminRouter := router.Group("/admin")
 	adminRouter.Use(p.mattermostAdminAuthorizationRequired)
 	adminRouter.POST("/reindex", p.handleReindexPosts)
-	adminRouter.POST("/search", p.handleSearchPosts)
 
 	searchRouter := botRequiredRouter.Group("/search")
+	// Only returns search results
 	searchRouter.POST("", p.handleSearchQuery)
+	// Initiates a search and responds to the user in a DM with the selected bot
 	searchRouter.POST("/run", p.handleRunSearch)
 
 	router.ServeHTTP(w, r)
@@ -129,6 +129,11 @@ type AIBotInfo struct {
 	UserIDs            []string               `json:"userIDs"`
 }
 
+type AIBotsResponse struct {
+	Bots          []AIBotInfo `json:"bots"`
+	SearchEnabled bool        `json:"searchEnabled"`
+}
+
 func (p *Plugin) handleGetAIBots(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 
@@ -165,5 +170,13 @@ func (p *Plugin) handleGetAIBots(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, bots)
+	// Check if search is enabled
+	searchEnabled := p.search != nil && p.getConfiguration().Config.EmbeddingSearchConfig.Type != ""
+
+	response := AIBotsResponse{
+		Bots:          bots,
+		SearchEnabled: searchEnabled,
+	}
+
+	c.JSON(http.StatusOK, response)
 }

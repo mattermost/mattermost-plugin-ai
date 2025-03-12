@@ -64,7 +64,7 @@ func (c Context) String() string {
 		result.WriteString(fmt.Sprintf("\nTeam: %v", c.Team.Name))
 	}
 
-	result.WriteString("\nPromptParameters:")
+	result.WriteString("\n--- Parameters ---\n")
 	for key := range c.Parameters {
 		result.WriteString(fmt.Sprintf(" %v", key))
 	}

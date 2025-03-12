@@ -10,13 +10,19 @@ import (
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
+// NOTE: ChunkMetadata has been replaced with first-class fields in PostDocument
+
 // PostDocument represents a Mattermost post with its metadata
 type PostDocument struct {
-	Post      *model.Post
-	TeamID    string
-	ChannelID string
-	UserID    string
-	Content   string // Processed/extracted content
+	Post          *model.Post
+	TeamID        string
+	ChannelID     string
+	UserID        string
+	Content       string // Processed/extracted content
+	IsChunk       bool   // Whether this is a chunk or a full document
+	ChunkIndex    int    // Position in the original document (if this is a chunk)
+	TotalChunks   int    // Total number of chunks for the parent document
+	SourceContent string // Original content before chunking (if this is a chunk)
 }
 
 // SearchResult represents a single search result with its similarity score
@@ -31,8 +37,27 @@ type SearchOptions struct {
 	MinScore      float32
 	TeamID        string
 	ChannelID     string
+	UserID        string // User ID for permission checks
 	CreatedAfter  int64
 	CreatedBefore int64
+}
+
+// ChunkingOptions defines options for chunking documents
+type ChunkingOptions struct {
+	ChunkSize        int     `json:"chunkSize"`        // Maximum size of each chunk in characters
+	ChunkOverlap     int     `json:"chunkOverlap"`     // Number of characters to overlap between chunks
+	MinChunkSize     float64 `json:"minChunkSize"`     // Minimum chunk size as a fraction of max size (0.0-1.0)
+	ChunkingStrategy string  `json:"chunkingStrategy"` // Strategy: sentences, paragraphs, or fixed
+}
+
+// DefaultChunkingOptions returns the default chunking options
+func DefaultChunkingOptions() ChunkingOptions {
+	return ChunkingOptions{
+		ChunkSize:        1000,
+		ChunkOverlap:     200,
+		MinChunkSize:     0.75,
+		ChunkingStrategy: "sentences",
+	}
 }
 
 // EmbeddingSearch defines the high-level interface for storing and searching embeddings
@@ -89,4 +114,6 @@ type EmbeddingSearchConfig struct {
 	VectorStore       UpstreamConfig  `json:"vectorStore"`
 	EmbeddingProvider UpstreamConfig  `json:"embeddingProvider"`
 	Parameters        json.RawMessage `json:"parameters"`
+	Dimensions        int             `json:"dimensions"`
+	ChunkingOptions   ChunkingOptions `json:"chunkingOptions"`
 }
