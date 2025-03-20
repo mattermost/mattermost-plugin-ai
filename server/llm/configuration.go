@@ -43,6 +43,7 @@ const (
 	ServiceTypeOpenAICompatible = "openaicompatible"
 	ServiceTypeAzure            = "azure"
 	ServiceTypeAnthropic        = "anthropic"
+	ServiceTypeBedrock          = "bedrock"
 )
 
 type BotConfig struct {
@@ -85,6 +86,8 @@ func (c *BotConfig) IsValid() bool {
 		return c.Service.APIKey != "" && c.Service.APIURL != ""
 	case ServiceTypeAnthropic:
 		return c.Service.APIKey != ""
+	case ServiceTypeBedrock:
+		return c.Service.APIKey != "" && c.Service.OrgID != "" && c.Service.APIURL != ""
 	default:
 		return false
 	}

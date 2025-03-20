@@ -17,6 +17,7 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
 	"github.com/mattermost/mattermost-plugin-ai/server/anthropic"
+	"github.com/mattermost/mattermost-plugin-ai/server/bedrock"
 	"github.com/mattermost/mattermost-plugin-ai/server/embeddings"
 	"github.com/mattermost/mattermost-plugin-ai/server/enterprise"
 	"github.com/mattermost/mattermost-plugin-ai/server/llm"
@@ -228,6 +229,8 @@ func (p *Plugin) getLLM(llmBotConfig llm.BotConfig) llm.LanguageModel {
 		result = openai.NewAzure(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
 	case llm.ServiceTypeAnthropic:
 		result = anthropic.New(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
+	case llm.ServiceTypeBedrock:
+		result = bedrock.New(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
 	}
 
 	cfg := p.getConfiguration()

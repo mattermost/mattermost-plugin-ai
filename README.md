@@ -41,7 +41,7 @@ For detailed configuration instructions, see the [Mattermost Product Documentati
 
 - Go 1.22+
 - Node.js 20.11+
-- Access to an LLM provider (OpenAI, Anthropic, etc.)
+- Access to an LLM provider (OpenAI, Anthropic, AWS Bedrock, etc.)
 
 ### Local Setup
 

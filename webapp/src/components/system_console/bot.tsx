@@ -69,6 +69,7 @@ const mapServiceTypeToDisplayName = new Map<string, string>([
     ['openaicompatible', 'OpenAI Compatible'],
     ['azure', 'Azure'],
     ['anthropic', 'Anthropic'],
+    ['bedrock', 'AWS Bedrock'],
 ]);
 
 function serviceTypeToDisplayName(serviceType: string): string {
@@ -82,10 +83,11 @@ const Bot = (props: Props) => {
 		props.bot.displayName === '' ||
 		props.bot.service.type === '' ||
 		(props.bot.service.type !== 'openaicompatible' && props.bot.service.type !== 'azure' && props.bot.service.apiKey === '') ||
-		((props.bot.service.type === 'openaicompatible' || props.bot.service.type === 'azure') && props.bot.service.apiURL === '');
+		((props.bot.service.type === 'openaicompatible' || props.bot.service.type === 'azure') && props.bot.service.apiURL === '') ||
+		(props.bot.service.type === 'bedrock' && (props.bot.service.apiKey === '' || props.bot.service.orgId === '' || props.bot.service.apiURL === ''));
 
     const invalidUsername = props.bot.name !== '' && (!(/^[a-z0-9.\-_]+$/).test(props.bot.name) || !(/[a-z]/).test(props.bot.name.charAt(0)));
-    const invalidMaxTokens = props.bot.service.type === 'anthropic' && props.bot.service?.outputTokenLimit === 0;
+    const invalidMaxTokens = (props.bot.service.type === 'anthropic' || props.bot.service.type === 'bedrock') && props.bot.service?.outputTokenLimit === 0;
     return (
         <BotContainer>
             <HeaderContainer onClick={() => setOpen((o) => !o)}>
@@ -154,6 +156,7 @@ const Bot = (props: Props) => {
                             <SelectionItemOption value='openaicompatible'>{'OpenAI Compatible'}</SelectionItemOption>
                             <SelectionItemOption value='azure'>{'Azure'}</SelectionItemOption>
                             <SelectionItemOption value='anthropic'>{'Anthropic'}</SelectionItemOption>
+                            <SelectionItemOption value='bedrock'>{'AWS Bedrock'}</SelectionItemOption>
                         </SelectionItem>
                         <ServiceItem
                             service={props.bot.service}
@@ -166,7 +169,7 @@ const Bot = (props: Props) => {
                             value={props.bot.customInstructions}
                             onChange={(e) => props.onChange({...props.bot, customInstructions: e.target.value})}
                         />
-                        {(props.bot.service.type === 'openai' || props.bot.service.type === 'openaicompatible' || props.bot.service.type === 'azure' || props.bot.service.type === 'anthropic') && (
+                        {(props.bot.service.type === 'openai' || props.bot.service.type === 'openaicompatible' || props.bot.service.type === 'azure' || props.bot.service.type === 'anthropic' || props.bot.service.type === 'bedrock') && (
                             <>
                                 <BooleanItem
                                     label={
@@ -228,11 +231,14 @@ const ServiceItem = (props: ServiceItemProps) => {
     const type = props.service.type;
     const intl = useIntl();
     const isOpenAIType = type === 'openai' || type === 'openaicompatible' || type === 'azure';
+    const isBedrockType = type === 'bedrock';
 
     const getDefaultOutputTokenLimit = () => {
         switch (type) {
         case 'anthropic':
             return '8192';
+        case 'bedrock':
+            return '4096';
         default:
             return '0';
         }
@@ -247,8 +253,17 @@ const ServiceItem = (props: ServiceItemProps) => {
                     onChange={(e) => props.onChange({...props.service, apiURL: e.target.value})}
                 />
             )}
+            {isBedrockType && (
+                <TextItem
+                    label={intl.formatMessage({defaultMessage: 'AWS Region'})}
+                    value={props.service.apiURL}
+                    placeholder="us-west-2"
+                    helpText={intl.formatMessage({defaultMessage: 'The AWS region where Bedrock is enabled (e.g., us-west-2, us-east-1)'})}
+                    onChange={(e) => props.onChange({...props.service, apiURL: e.target.value})}
+                />
+            )}
             <TextItem
-                label={intl.formatMessage({defaultMessage: 'API Key'})}
+                label={isBedrockType ? intl.formatMessage({defaultMessage: 'AWS Access Key'}) : intl.formatMessage({defaultMessage: 'API Key'})}
                 type='password'
                 value={props.service.apiKey}
                 onChange={(e) => props.onChange({...props.service, apiKey: e.target.value})}
@@ -268,15 +283,26 @@ const ServiceItem = (props: ServiceItemProps) => {
                     />
                 </>
             )}
+            {isBedrockType && (
+                <TextItem
+                    label={intl.formatMessage({defaultMessage: 'AWS Secret Key'})}
+                    type='password'
+                    value={props.service.orgId}
+                    onChange={(e) => props.onChange({...props.service, orgId: e.target.value})}
+                />
+            )}
             <TextItem
                 label={intl.formatMessage({defaultMessage: 'Default model'})}
                 value={props.service.defaultModel}
                 onChange={(e) => props.onChange({...props.service, defaultModel: e.target.value})}
+                helpText={isBedrockType ? intl.formatMessage({defaultMessage: 'For AWS Bedrock, use model IDs like "anthropic.claude-3-sonnet-20240229-v1:0", "anthropic.claude-3-haiku-20240307-v1:0", or "amazon.titan-text-express-v1". Find available model IDs in the AWS Bedrock console.'}) : undefined}
+                placeholder={isBedrockType ? "anthropic.claude-3-sonnet-20240229-v1:0" : undefined}
             />
             <TextItem
                 label={intl.formatMessage({defaultMessage: 'Input token limit'})}
                 type='number'
                 value={props.service.tokenLimit.toString()}
+                helpText={isBedrockType ? intl.formatMessage({defaultMessage: 'For Claude models on Bedrock: Claude 3 Opus: 200K, Claude 3 Sonnet: 180K, Claude 3 Haiku: 150K'}) : undefined}
                 onChange={(e) => {
                     const value = parseInt(e.target.value, 10);
                     const tokenLimit = isNaN(value) ? 0 : value;
