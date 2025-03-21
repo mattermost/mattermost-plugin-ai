@@ -193,7 +193,7 @@ export const DestructiveButton = styled.button`
     }
 `;
 
-export const ButtonIcon = styled.button`
+export const ButtonIcon = styled.button<{icon?: React.ReactElement}>`
     width: 28px;
     height: 28px;
     padding: 0;

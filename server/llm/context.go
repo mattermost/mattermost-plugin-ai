@@ -18,6 +18,10 @@ type Context struct {
 	Time        string
 	ServerName  string
 	CompanyName string
+	
+	// CustomData is a map of custom data that can be used to store any additional information
+	// that needs to be persisted across multiple LLM calls in the same conversation
+	CustomData map[string]interface{}
 
 	// Location
 	Team    *model.Team

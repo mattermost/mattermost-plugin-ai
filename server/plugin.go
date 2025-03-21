@@ -77,6 +77,9 @@ type Plugin struct {
 
 	llmUpstreamHTTPClient *http.Client
 	search                embeddings.EmbeddingSearch
+	
+	// Bedrock Knowledge Base client
+	bedrockKBClient *BedrockKBClient
 }
 
 func resolveffmpegPath() string {
@@ -141,6 +144,18 @@ func (p *Plugin) OnActivate() error {
 	if err != nil {
 		// Only log the error but don't fail plugin activation
 		p.pluginAPI.Log.Error("Failed to initialize search, search features will be disabled", "error", err)
+	}
+	
+	// Initialize Bedrock KB client if configured
+	cfg := p.getConfiguration()
+	if len(cfg.BedrockKnowledgeBases) > 0 && cfg.BedrockKBRegion != "" {
+		p.bedrockKBClient, err = NewBedrockKBClient(cfg)
+		if err != nil {
+			p.API.LogWarn("Failed to initialize Bedrock KB client", "error", err.Error())
+			// Don't fail activation, just log a warning
+		} else {
+			p.API.LogInfo("Bedrock KB client initialized successfully")
+		}
 	}
 
 	return nil

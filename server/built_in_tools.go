@@ -391,6 +391,112 @@ func (p *Plugin) toolSearchServer(llmContext *llm.Context, argsGetter llm.ToolAr
 	return formatted, nil
 }
 
+type SearchBedrockKnowledgeBaseArgs struct {
+	Query string `jsonschema_description:"The query to search for in the knowledge base"`
+	//KnowledgeBaseID string `jsonschema_description:"The ID of the knowledge base to search. If empty, will search the default knowledge base."`
+	MaxResults int `jsonschema_description:"The maximum number of results to return (default: 5, max: 20)"`
+}
+
+func (p *Plugin) toolSearchBedrockKnowledgeBase(llmContext *llm.Context, argsGetter llm.ToolArgumentGetter) (string, error) {
+	var args SearchBedrockKnowledgeBaseArgs
+	err := argsGetter(&args)
+	if err != nil {
+		return "invalid parameters to function", fmt.Errorf("failed to get arguments for tool SearchBedrockKnowledgeBase: %w", err)
+	}
+
+	// Validate query
+	if len(args.Query) < MinSearchTermLength {
+		return "search query too short", errors.New("search query too short")
+	}
+	if len(args.Query) > MaxSearchTermLength {
+		return "search query too long", errors.New("search query too long")
+	}
+
+	// Initialize Bedrock KB client if not already initialized
+	if p.bedrockKBClient == nil {
+		p.bedrockKBClient, err = NewBedrockKBClient(p.getConfiguration())
+		if err != nil {
+			return "knowledge base functionality is not configured", fmt.Errorf("knowledge base client initialization failed: %w", err)
+		}
+	}
+
+	// If no KnowledgeBaseID is provided, use the first enabled one from the configuration
+	kbID := "" //args.KnowledgeBaseID
+	if kbID == "" {
+		cfg := p.getConfiguration()
+		for _, kb := range cfg.BedrockKnowledgeBases {
+			if kb.Enabled {
+				kbID = kb.ID
+				break
+			}
+		}
+
+		if kbID == "" {
+			return "no knowledge base ID provided and no default knowledge base is configured", errors.New("no knowledge base ID provided")
+		}
+	}
+
+	// Search the knowledge base
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// If this is a follow-up query, check if we have context from a previous query
+	if strings.Contains(strings.ToLower(args.Query), "previous") ||
+		strings.Contains(strings.ToLower(args.Query), "follow up") {
+		// Get conversation history from context
+		if llmContext != nil && llmContext.CustomData != nil {
+			// Extract previous queries from context
+			type KBQueryEntry struct {
+				Query  string `json:"query"`
+				Result string `json:"result"`
+			}
+
+			if existingData, ok := llmContext.CustomData["kb_queries"]; ok {
+				var storedQueries []KBQueryEntry
+				if existingJSON, err := json.Marshal(existingData); err == nil {
+					if err := json.Unmarshal(existingJSON, &storedQueries); err == nil && len(storedQueries) > 0 {
+						// Add previous context to the query
+						previousContext := "Previous query: " + storedQueries[len(storedQueries)-1].Query + "\n"
+						previousContext += "Previous result summary: " + storedQueries[len(storedQueries)-1].Result
+						args.Query = args.Query + "\n\nContext from previous query: " + previousContext
+					}
+				}
+			}
+		}
+	}
+
+	result, err := p.bedrockKBClient.RetrieveFromKnowledgeBase(ctx, args.Query, kbID, args.MaxResults)
+	if err != nil {
+		return "there was an error searching the knowledge base", fmt.Errorf("knowledge base search failed: %w", err)
+	}
+
+	// Store the result in conversation context for potential follow-up queries
+	if llmContext != nil {
+		if llmContext.CustomData == nil {
+			llmContext.CustomData = make(map[string]interface{})
+		}
+
+		// Use the shared function to store the result
+		llmContext.CustomData = StoreQueryResultInContext(args.Query, result, llmContext.CustomData)
+	}
+
+	return result, nil
+}
+
+func (p *Plugin) toolListBedrockKnowledgeBases(llmContext *llm.Context, argsGetter llm.ToolArgumentGetter) (string, error) {
+	// Initialize Bedrock KB client if not already initialized
+	var err error
+	if p.bedrockKBClient == nil {
+		p.bedrockKBClient, err = NewBedrockKBClient(p.getConfiguration())
+		if err != nil {
+			return "knowledge base functionality is not configured", fmt.Errorf("knowledge base client initialization failed: %w", err)
+		}
+	}
+
+	// Get the list of available knowledge bases
+	return p.bedrockKBClient.ListAvailableKnowledgeBases(), nil
+}
+
 // getBuiltInTools returns the built-in tools that are available to all users.
 // isDM is true if the response will be in a DM with the user. More tools are available in DMs because of security properties.
 func (p *Plugin) getBuiltInTools(isDM bool, bot *Bot) []llm.Tool {
@@ -434,6 +540,27 @@ func (p *Plugin) getBuiltInTools(isDM bool, bot *Bot) []llm.Tool {
 			Schema:      GetJiraIssueArgs{},
 			Resolver:    p.toolGetJiraIssue,
 		})
+
+		// Only add the Bedrock KB tools if knowledge bases are configured
+		cfg := p.getConfiguration()
+		if len(cfg.BedrockKnowledgeBases) > 0 && cfg.BedrockKBRegion != "" {
+			// List Knowledge Bases tool
+			/*builtInTools = append(builtInTools, llm.Tool{
+				Name:        "ListBedrockKnowledgeBases",
+				Description: "List all available AWS Bedrock knowledge bases that can be searched.",
+				Schema:      struct{}{}, // No arguments needed
+				Resolver:    p.toolListBedrockKnowledgeBases,
+			})*/
+
+			// Search Knowledge Base tool
+			builtInTools = append(builtInTools, llm.Tool{
+				Name: "SearchBedrockKnowledgeBase",
+				//Description: "Search an AWS Bedrock knowledge base for information. Use this tool when the user asks questions about specific topics that might be in the knowledge base, or when you need additional context from company documentation or resources.",
+				Description: "Search the knowage base for information. Use this tool if the user asks about Mattermost",
+				Schema:      SearchBedrockKnowledgeBaseArgs{},
+				Resolver:    p.toolSearchBedrockKnowledgeBase,
+			})
+		}
 	}
 
 	return builtInTools
@@ -447,3 +574,4 @@ func (p *Plugin) getDefaultToolsStore(bot *Bot, isDM bool) *llm.ToolStore {
 	store.AddTools(p.getBuiltInTools(isDM, bot))
 	return store
 }
+

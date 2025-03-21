@@ -11,6 +11,15 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 )
 
+type BedrockKnowledgeBaseConfig struct {
+	ID                 string  `json:"id"`
+	Name               string  `json:"name"`
+	Description        string  `json:"description"`
+	MaxResults         int     `json:"maxResults"`
+	RelevanceThreshold float32 `json:"relevanceThreshold"`
+	Enabled            bool    `json:"enabled"`
+}
+
 type Config struct {
 	Services                 []llm.ServiceConfig              `json:"services"`
 	Bots                     []llm.BotConfig                  `json:"bots"`
@@ -19,6 +28,12 @@ type Config struct {
 	EnableLLMTrace           bool                             `json:"enableLLMTrace"`
 	AllowedUpstreamHostnames string                           `json:"allowedUpstreamHostnames"`
 	EmbeddingSearchConfig    embeddings.EmbeddingSearchConfig `json:"embeddingSearchConfig"`
+	
+	// AWS Bedrock Knowledge Base configuration
+	BedrockKnowledgeBases []BedrockKnowledgeBaseConfig `json:"bedrockKnowledgeBases"`
+	BedrockKBRegion       string                       `json:"bedrockKBRegion"`
+	BedrockKBAPIKey       string                       `json:"bedrockKBAPIKey"`
+	BedrockKBAPISecret    string                       `json:"bedrockKBAPISecret"`
 }
 
 // configuration captures the plugin's external configuration as exposed in the Mattermost server

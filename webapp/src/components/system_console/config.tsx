@@ -14,6 +14,7 @@ import {LLMBotConfig} from './bot';
 import {BooleanItem, ItemList, SelectionItem, SelectionItemOption, TextItem} from './item';
 import NoBotsPage from './no_bots_page';
 import EmbeddingSearchPanel, {EmbeddingSearchConfig} from './embedding_search_config';
+import BedrockKnowledgeBaseSettingsComponent, {KnowledgeBaseConfig} from './bedrock_kb';
 
 type Config = {
     services: ServiceData[],
@@ -23,7 +24,11 @@ type Config = {
     enableLLMTrace: boolean,
     enableCallSummary: boolean,
     allowedUpstreamHostnames: string,
-    embeddingSearchConfig: EmbeddingSearchConfig
+    embeddingSearchConfig: EmbeddingSearchConfig,
+    bedrockKBRegion: string,
+    bedrockKBAPIKey: string,
+    bedrockKBAPISecret: string,
+    bedrockKnowledgeBases: KnowledgeBaseConfig[]
 }
 
 type Props = {
@@ -82,6 +87,10 @@ const defaultConfig = {
             chunkingStrategy: 'sentences',
         },
     },
+    bedrockKBRegion: '',
+    bedrockKBAPIKey: '',
+    bedrockKBAPISecret: '',
+    bedrockKnowledgeBases: [],
 };
 
 const BetaMessage = () => (
@@ -208,7 +217,7 @@ const Config = (props: Props) => {
                         label={intl.formatMessage({defaultMessage: 'Enable LLM Trace'})}
                         value={value.enableLLMTrace}
                         onChange={(to) => props.onChange(props.id, {...value, enableLLMTrace: to})}
-                        helpText={intl.formatMessage({defaultMessage: 'Enable tracing of LLM requests. Outputs full conversation data to the logs.'})}
+                        helptext={intl.formatMessage({defaultMessage: 'Enable tracing of LLM requests. Outputs full conversation data to the logs.'})}
                     />
                 </ItemList>
             </Panel>
@@ -219,6 +228,23 @@ const Config = (props: Props) => {
                     props.setSaveNeeded();
                 }}
             />
+            <Panel
+                title={intl.formatMessage({defaultMessage: 'AWS Bedrock Knowledge Bases'})}
+                subtitle={intl.formatMessage({defaultMessage: 'Configure AWS Bedrock Knowledge Bases to enable searches within your company knowledge repositories.'})}
+            >
+                <BedrockKnowledgeBaseSettingsComponent
+                    config={{
+                        bedrockKBRegion: value.bedrockKBRegion || '',
+                        bedrockKBAPIKey: value.bedrockKBAPIKey || '',
+                        bedrockKBAPISecret: value.bedrockKBAPISecret || '',
+                        bedrockKnowledgeBases: value.bedrockKnowledgeBases || [],
+                    }}
+                    onChange={(kbConfig) => {
+                        props.onChange(props.id, {...value, ...kbConfig});
+                        props.setSaveNeeded();
+                    }}
+                />
+            </Panel>
         </ConfigContainer>
     );
 };

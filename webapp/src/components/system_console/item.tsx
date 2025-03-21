@@ -162,7 +162,7 @@ type BooleanItemProps = {
     label: React.ReactNode
     value: boolean
     onChange: (to: boolean) => void
-    helpText?: string
+    helptext?: string
 };
 
 export const BooleanItem = (props: BooleanItemProps) => {
@@ -186,8 +186,8 @@ export const BooleanItem = (props: BooleanItemProps) => {
                     />
                     <FormattedMessage defaultMessage='false'/>
                 </BooleanItemRow>
-                {props.helpText &&
-                <HelpText>{props.helpText}</HelpText>
+                {props.helptext &&
+                <HelpText>{props.helptext}</HelpText>
                 }
             </TextFieldContainer>
         </>

@@ -180,7 +180,7 @@ const Bot = (props: Props) => {
                                     }
                                     value={props.bot.enableVision}
                                     onChange={(to: boolean) => props.onChange({...props.bot, enableVision: to})}
-                                    helpText={intl.formatMessage({defaultMessage: 'Enable Vision to allow the bot to process images. Requires a compatible model.'})}
+                                    helptext={intl.formatMessage({defaultMessage: 'Enable Vision to allow the bot to process images. Requires a compatible model.'})}
                                 />
                                 <BooleanItem
                                     label={
@@ -188,7 +188,7 @@ const Bot = (props: Props) => {
                                     }
                                     value={!props.bot.disableTools}
                                     onChange={(to: boolean) => props.onChange({...props.bot, disableTools: !to})}
-                                    helpText={intl.formatMessage({defaultMessage: 'By default some tool use is enabled to allow for features such as integrations with JIRA. Disabling this allows use of models that do not support or are not very good at tool use. Some features will not work without tools.'})}
+                                    helptext={intl.formatMessage({defaultMessage: 'By default some tool use is enabled to allow for features such as integrations with JIRA. Disabling this allows use of models that do not support or are not very good at tool use. Some features will not work without tools.'})}
                                 />
                             </>
                         )}
@@ -257,8 +257,8 @@ const ServiceItem = (props: ServiceItemProps) => {
                 <TextItem
                     label={intl.formatMessage({defaultMessage: 'AWS Region'})}
                     value={props.service.apiURL}
-                    placeholder="us-west-2"
-                    helpText={intl.formatMessage({defaultMessage: 'The AWS region where Bedrock is enabled (e.g., us-west-2, us-east-1)'})}
+                    placeholder='us-west-2'
+                    helptext={intl.formatMessage({defaultMessage: 'The AWS region where Bedrock is enabled (e.g., us-west-2, us-east-1)'})}
                     onChange={(e) => props.onChange({...props.service, apiURL: e.target.value})}
                 />
             )}
@@ -279,7 +279,7 @@ const ServiceItem = (props: ServiceItemProps) => {
                         label={intl.formatMessage({defaultMessage: 'Send User ID'})}
                         value={props.service.sendUserId}
                         onChange={(to: boolean) => props.onChange({...props.service, sendUserId: to})}
-                        helpText={intl.formatMessage({defaultMessage: 'Sends the Mattermost user ID to the upstream LLM.'})}
+                        helptext={intl.formatMessage({defaultMessage: 'Sends the Mattermost user ID to the upstream LLM.'})}
                     />
                 </>
             )}
@@ -295,14 +295,14 @@ const ServiceItem = (props: ServiceItemProps) => {
                 label={intl.formatMessage({defaultMessage: 'Default model'})}
                 value={props.service.defaultModel}
                 onChange={(e) => props.onChange({...props.service, defaultModel: e.target.value})}
-                helpText={isBedrockType ? intl.formatMessage({defaultMessage: 'For AWS Bedrock, use model IDs like "anthropic.claude-3-sonnet-20240229-v1:0", "anthropic.claude-3-haiku-20240307-v1:0", or "amazon.titan-text-express-v1". Find available model IDs in the AWS Bedrock console.'}) : undefined}
-                placeholder={isBedrockType ? "anthropic.claude-3-sonnet-20240229-v1:0" : undefined}
+                helptext={isBedrockType ? intl.formatMessage({defaultMessage: 'For AWS Bedrock, use model IDs like "anthropic.claude-3-sonnet-20240229-v1:0", "anthropic.claude-3-haiku-20240307-v1:0", or "amazon.titan-text-express-v1". Find available model IDs in the AWS Bedrock console.'}) : undefined}
+                placeholder={isBedrockType ? 'anthropic.claude-3-sonnet-20240229-v1:0' : undefined}
             />
             <TextItem
                 label={intl.formatMessage({defaultMessage: 'Input token limit'})}
                 type='number'
                 value={props.service.tokenLimit.toString()}
-                helpText={isBedrockType ? intl.formatMessage({defaultMessage: 'For Claude models on Bedrock: Claude 3 Opus: 200K, Claude 3 Sonnet: 180K, Claude 3 Haiku: 150K'}) : undefined}
+                helptext={isBedrockType ? intl.formatMessage({defaultMessage: 'For Claude models on Bedrock: Claude 3 Opus: 200K, Claude 3 Sonnet: 180K, Claude 3 Haiku: 150K'}) : undefined}
                 onChange={(e) => {
                     const value = parseInt(e.target.value, 10);
                     const tokenLimit = isNaN(value) ? 0 : value;
