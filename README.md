@@ -39,7 +39,7 @@ For detailed configuration instructions, see the [Mattermost Product Documentati
 
 ### Prerequisites
 
-- Go 1.22+
+- Go 1.23+
 - Node.js 20.11+
 - Access to an LLM provider (OpenAI, Anthropic, etc.)
 
