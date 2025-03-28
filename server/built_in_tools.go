@@ -444,6 +444,18 @@ func (p *Plugin) getDefaultToolsStore(bot *Bot, isDM bool) *llm.ToolStore {
 		return llm.NewNoTools()
 	}
 	store := llm.NewToolStore(&p.pluginAPI.Log, p.getConfiguration().EnableLLMTrace)
+	
+	// Add built-in tools
 	store.AddTools(p.getBuiltInTools(isDM, bot))
+	
+	// Add MCP tools if available and enabled
+	if p.mcpClient != nil && isDM {
+		mcpTools := p.mcpClient.GetTools()
+		if len(mcpTools) > 0 {
+			p.pluginAPI.Log.Debug("Adding MCP tools to tool store", "count", len(mcpTools))
+			store.AddTools(mcpTools)
+		}
+	}
+	
 	return store
 }
