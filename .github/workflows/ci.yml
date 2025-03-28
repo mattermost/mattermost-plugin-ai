@@ -65,41 +65,27 @@ jobs:
       - uses: actions/setup-go@v4
         with:
           go-version: '1.22'
-          
+
       - name: Run tests
         env:
           PG_ROOT_DSN: "postgres://mmuser:mostest@localhost:5432/postgres?sslmode=disable"
           MM_SERVICESETTINGS_ENABLEDEVELOPER: true
         run: |
           go test -v ./server/...
-          
+
   lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v4
-        with:
-          go-version: '1.22'
-          
-      - name: Setup environment
-        uses: mattermost/actions/setup-environment@main
-        
-      - name: Run Lint
-        run: make check-style
+      - uses: mattermost/actions/plugin-ci/setup@main
+      - uses: mattermost/actions/plugin-ci/lint@main
 
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v4
-        with:
-          go-version: '1.22'
-          
-      - name: Setup environment
-        uses: mattermost/actions/setup-environment@main
-        
-      - name: Build
-        run: make dist
+      - uses: mattermost/actions/plugin-ci/setup@main
+      - uses: mattermost/actions/plugin-ci/build@main
 
   deploy:
     needs: [lint, build, plugin-tests, e2e]
