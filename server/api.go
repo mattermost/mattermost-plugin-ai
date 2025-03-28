@@ -171,7 +171,7 @@ func (p *Plugin) handleGetAIBots(c *gin.Context) {
 	}
 
 	// Check if search is enabled
-	searchEnabled := p.search != nil && p.getConfiguration().Config.EmbeddingSearchConfig.Type != ""
+	searchEnabled := p.search != nil && p.getConfiguration().EmbeddingSearchConfig.Type != ""
 
 	response := AIBotsResponse{
 		Bots:          bots,

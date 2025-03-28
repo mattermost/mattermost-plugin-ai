@@ -123,11 +123,3 @@ func TestChunkContent(t *testing.T) {
 		}
 	})
 }
-
-// Helper function for min value
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}

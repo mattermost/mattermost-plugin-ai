@@ -176,9 +176,10 @@ func postsToChatCompletionMessages(posts []llm.Post) []openaiClient.ChatCompleti
 
 	for _, post := range posts {
 		role := openaiClient.ChatMessageRoleUser
-		if post.Role == llm.PostRoleBot {
+		switch post.Role {
+		case llm.PostRoleBot:
 			role = openaiClient.ChatMessageRoleAssistant
-		} else if post.Role == llm.PostRoleSystem {
+		case llm.PostRoleSystem:
 			role = openaiClient.ChatMessageRoleSystem
 		}
 		completionMessage := openaiClient.ChatCompletionMessage{

@@ -32,10 +32,10 @@ func NewMetricsHandler(metricsService Metrics) http.Handler {
 
 // Run will start the prometheus server.
 func (h *Server) Run() error {
-	return errors.Wrap(h.Server.ListenAndServe(), "prometheus ListenAndServe")
+	return errors.Wrap(h.ListenAndServe(), "prometheus ListenAndServe")
 }
 
 // Shutdown will shut down the prometheus server.
 func (h *Server) Shutdown() error {
-	return errors.Wrap(h.Server.Close(), "prometheus Close")
+	return errors.Wrap(h.Close(), "prometheus Close")
 }
