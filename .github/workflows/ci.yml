@@ -43,15 +43,66 @@ jobs:
         name: server-logs
         path: ./e2e/logs/server-logs.log
         retention-days: 30
-  plugin-ci:
-    uses: mattermost/actions-workflows/.github/workflows/plugin-ci.yml@main
-    with:
-      golangci-lint-version: "v1.54.2"
-      golang-version: "1.22"
-    secrets: inherit
+
+  plugin-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg15
+        env:
+          POSTGRES_USER: mmuser
+          POSTGRES_PASSWORD: mostest
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.22'
+          
+      - name: Run tests
+        env:
+          PG_ROOT_DSN: "postgres://mmuser:mostest@localhost:5432/postgres?sslmode=disable"
+          MM_SERVICESETTINGS_ENABLEDEVELOPER: true
+        run: |
+          go test -v ./server/...
+          
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.22'
+          
+      - name: Setup environment
+        uses: mattermost/actions/setup-environment@main
+        
+      - name: Run Lint
+        run: make check-style
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.22'
+          
+      - name: Setup environment
+        uses: mattermost/actions/setup-environment@main
+        
+      - name: Build
+        run: make dist
 
   deploy:
-    needs: [plugin-ci, e2e]
+    needs: [lint, build, plugin-tests, e2e]
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:
