@@ -4,7 +4,7 @@
 package mcp
 
 import (
-	"context"
+	stdctx "context" // Import standard context as stdctx to avoid confusion
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -18,7 +18,7 @@ import (
 // MCPClient represents a wrapper for the SSEMCPClient
 type MCPClient struct {
 	client   *client.SSEMCPClient
-	log      *pluginapi.LogService
+	log      pluginapi.LogService
 	enabled  bool
 	toolsMu  sync.RWMutex
 	toolDefs map[string]mcp.Tool
@@ -32,7 +32,7 @@ type Config struct {
 }
 
 // NewMCPClient creates a new MCP client
-func NewMCPClient(config Config, log *pluginapi.LogService) (*MCPClient, error) {
+func NewMCPClient(config Config, log pluginapi.LogService) (*MCPClient, error) {
 	if !config.Enabled {
 		return &MCPClient{
 			enabled: false,
@@ -51,7 +51,7 @@ func NewMCPClient(config Config, log *pluginapi.LogService) (*MCPClient, error) 
 	}
 
 	// Initialize the client
-	ctx := context.Background()
+	ctx := stdctx.Background()
 	if err := mcpClient.Start(ctx); err != nil {
 		return nil, fmt.Errorf("failed to start MCP client: %w", err)
 	}
@@ -83,7 +83,7 @@ func NewMCPClient(config Config, log *pluginapi.LogService) (*MCPClient, error) 
 }
 
 // fetchAvailableTools fetches the available tools from the MCP server
-func (m *MCPClient) fetchAvailableTools(ctx context.Context) error {
+func (m *MCPClient) fetchAvailableTools(ctx stdctx.Context) error {
 	if !m.enabled {
 		return nil
 	}
@@ -128,7 +128,7 @@ func (m *MCPClient) GetTools() []llm.Tool {
 		tools = append(tools, llm.Tool{
 			Name:        toolName,
 			Description: toolDef.Description,
-			Schema:      json.RawMessage(toolDef.ParameterSchema),
+			Schema:      toolDef.InputSchema,
 			Resolver:    m.createToolResolver(toolName),
 		})
 	}
@@ -150,17 +150,34 @@ func (m *MCPClient) createToolResolver(toolName string) func(context *llm.Contex
 		}
 
 		// Create the context for the tool call
-		ctx := context.Background()
+		stdCtx := stdctx.Background()
 
 		// Call the tool
-		result, err := m.client.CallTool(ctx, mcp.CallToolRequest{
-			Name:       toolName,
-			Parameters: rawArgs,
-		})
+		callRequest := mcp.CallToolRequest{}
+		callRequest.Params.Name = toolName
+		callRequest.Params.Arguments = make(map[string]interface{})
+			
+		// Parse the raw arguments into a map
+		var args map[string]interface{}
+		if err := json.Unmarshal(rawArgs, &args); err != nil {
+			return "", fmt.Errorf("failed to parse arguments for tool %s: %w", toolName, err)
+		}
+		callRequest.Params.Arguments = args
+			
+		result, err := m.client.CallTool(stdCtx, callRequest)
 		if err != nil {
 			return "", fmt.Errorf("failed to call tool %s: %w", toolName, err)
 		}
 
-		return result.Result, nil
+		// Extract text content from the result
+		if len(result.Content) > 0 {
+			for _, content := range result.Content {
+				if textContent, ok := mcp.AsTextContent(content); ok {
+					return textContent.Text, nil
+				}
+			}
+		}
+		
+		return "", fmt.Errorf("no text content found in response from tool %s", toolName)
 	}
 }
