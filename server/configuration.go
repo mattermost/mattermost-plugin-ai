@@ -9,6 +9,7 @@ import (
 
 	"github.com/mattermost/mattermost-plugin-ai/server/embeddings"
 	"github.com/mattermost/mattermost-plugin-ai/server/llm"
+	"github.com/mattermost/mattermost-plugin-ai/server/mcp"
 )
 
 type Config struct {
@@ -19,6 +20,7 @@ type Config struct {
 	EnableLLMTrace           bool                             `json:"enableLLMTrace"`
 	AllowedUpstreamHostnames string                           `json:"allowedUpstreamHostnames"`
 	EmbeddingSearchConfig    embeddings.EmbeddingSearchConfig `json:"embeddingSearchConfig"`
+	MCP                      mcp.Config                       `json:"mcp"`
 }
 
 // configuration captures the plugin's external configuration as exposed in the Mattermost server
@@ -114,6 +116,24 @@ func (p *Plugin) OnConfigurationChange() error {
 		p.search = nil
 	} else {
 		p.search = search
+	}
+
+	// Reinitialize MCP client based on new configuration
+	if p.mcpClient != nil {
+		// Close existing client first
+		if err := p.mcpClient.Close(); err != nil {
+			p.pluginAPI.Log.Error("Failed to close MCP client", "error", err)
+		}
+	}
+
+	mcpClient, err := mcp.NewMCPClient(configuration.MCP, p.pluginAPI.Log)
+	if err != nil {
+		// Log the error but don't fail plugin configuration
+		p.pluginAPI.Log.Error("Failed to initialize MCP client, MCP tools will be disabled", "error", err)
+		p.mcpClient = nil
+	} else {
+		p.mcpClient = mcpClient
+		p.pluginAPI.Log.Debug("MCP client reinitialized successfully")
 	}
 
 	return nil

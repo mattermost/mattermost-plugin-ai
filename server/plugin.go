@@ -20,6 +20,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/server/embeddings"
 	"github.com/mattermost/mattermost-plugin-ai/server/enterprise"
 	"github.com/mattermost/mattermost-plugin-ai/server/llm"
+	"github.com/mattermost/mattermost-plugin-ai/server/mcp"
 	"github.com/mattermost/mattermost-plugin-ai/server/metrics"
 	"github.com/mattermost/mattermost-plugin-ai/server/openai"
 	"github.com/mattermost/mattermost-plugin-ai/server/postgres"
@@ -76,6 +77,9 @@ type Plugin struct {
 
 	llmUpstreamHTTPClient *http.Client
 	search                embeddings.EmbeddingSearch
+	
+	// Model Control Protocol client
+	mcpClient             *mcp.MCPClient
 }
 
 func resolveffmpegPath() string {
@@ -140,6 +144,29 @@ func (p *Plugin) OnActivate() error {
 	if err != nil {
 		// Only log the error but don't fail plugin activation
 		p.pluginAPI.Log.Error("Failed to initialize search, search features will be disabled", "error", err)
+	}
+
+	// Initialize MCP client
+	cfg := p.getConfiguration()
+	mcpClient, err := mcp.NewMCPClient(cfg.MCP, p.pluginAPI.Log)
+	if err != nil {
+		// Log the error but don't fail plugin activation
+		p.pluginAPI.Log.Error("Failed to initialize MCP client, MCP tools will be disabled", "error", err)
+	} else {
+		p.mcpClient = mcpClient
+		p.pluginAPI.Log.Debug("MCP client initialized successfully")
+	}
+
+	return nil
+}
+
+// OnDeactivate is called when the plugin is deactivated
+func (p *Plugin) OnDeactivate() error {
+	// Clean up MCP client if it exists
+	if p.mcpClient != nil {
+		if err := p.mcpClient.Close(); err != nil {
+			p.pluginAPI.Log.Error("Failed to close MCP client during deactivation", "error", err)
+		}
 	}
 
 	return nil
