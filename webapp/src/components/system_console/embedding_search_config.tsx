@@ -1,14 +1,14 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import React, {useState} from 'react';
+import React, {useState, useEffect, useCallback} from 'react';
 import {useIntl, FormattedMessage} from 'react-intl';
 import styled from 'styled-components';
 
 import {Pill} from '../pill';
-import {PrimaryButton} from '../assets/buttons';
+import {PrimaryButton, SecondaryButton} from '../assets/buttons';
 import ConfirmationDialog from '../confirmation_dialog';
-import {doReindexPosts} from '../../client';
+import {doReindexPosts, getReindexStatus, cancelReindex} from '../../client';
 
 import {useIsBasicsLicensed} from '@/license';
 
@@ -72,12 +72,113 @@ const ErrorHelpText = styled(HelpText)`
     color: var(--error-text);
 `;
 
+const ProgressContainer = styled.div`
+    margin-top: 8px;
+    width: 100%;
+    background-color: rgba(var(--center-channel-color-rgb), 0.08);
+    border-radius: 4px;
+    height: 8px;
+    overflow: hidden;
+`;
+
+const ProgressBar = styled.div<{progress: number}>`
+    height: 100%;
+    width: ${(props) => props.progress}%;
+    background-color: var(--button-bg);
+    transition: width 0.3s ease-in-out;
+`;
+
+const ProgressText = styled(HelpText)`
+    margin-top: 8px;
+    margin-bottom: 12px;
+    font-size: 12px;
+`;
+
+const ButtonGroup = styled.div`
+    display: flex;
+    gap: 8px;
+`;
+
+// Match the server's JobStatus struct field names
+interface JobStatusType {
+    status: string; // 'running' | 'completed' | 'failed' | 'canceled' | 'no_job'
+    error?: string;
+    started_at: string; // ISO string from server's time.Time
+    completed_at?: string;
+    processed_rows: number;
+    total_rows: number;
+}
+
 const EmbeddingSearchPanel = ({value, onChange}: Props) => {
     const intl = useIntl();
     const [showReindexConfirmation, setShowReindexConfirmation] = useState(false);
-    const [isReindexing, setIsReindexing] = useState(false);
-    const [reindexStatus, setReindexStatus] = useState<{success?: boolean; message?: string}>({});
+    const [jobStatus, setJobStatus] = useState<JobStatusType | null>(null);
+    const [statusMessage, setStatusMessage] = useState<{success?: boolean; message?: string}>({});
+    const [polling, setPolling] = useState(false);
     const isBasicsLicensed = useIsBasicsLicensed();
+
+    // Check if job is running, using lowercase to match server-side values
+    const isReindexing = jobStatus?.status === 'running';
+
+    // Function to fetch job status
+    const fetchJobStatus = useCallback(async () => {
+        try {
+            const status = await getReindexStatus();
+            setJobStatus(status);
+
+            // Handle different status conditions
+            if (status.status === 'completed') {
+                setStatusMessage({
+                    success: true,
+                    message: intl.formatMessage({defaultMessage: 'Posts reindexing completed successfully.'}),
+                });
+                setPolling(false);
+            } else if (status.status === 'failed') {
+                setStatusMessage({
+                    success: false,
+                    message: intl.formatMessage(
+                        {defaultMessage: 'Failed to reindex posts: {error}'},
+                        {error: status.error || intl.formatMessage({defaultMessage: 'Unknown error'})},
+                    ),
+                });
+                setPolling(false);
+            } else if (status.status === 'canceled') {
+                setStatusMessage({
+                    success: false,
+                    message: intl.formatMessage({defaultMessage: 'Reindexing was canceled.'}),
+                });
+                setPolling(false);
+            }
+        } catch (error) {
+            // 404 is expected when no job has run yet, don't show an error
+            if (error && typeof error === 'object' && 'status_code' in error && error.status_code !== 404) {
+                setStatusMessage({
+                    success: false,
+                    message: intl.formatMessage({defaultMessage: 'Failed to get reindexing status.'}),
+                });
+            }
+            setPolling(false);
+        }
+    }, [intl]);
+
+    // Polling effect for job status
+    useEffect(() => {
+        if (polling) {
+            const interval = setInterval(() => {
+                fetchJobStatus();
+            }, 2000); // Poll every 2 seconds
+
+            return () => clearInterval(interval);
+        }
+
+        // Return a noop function
+        return function noop() { /* No cleanup needed */ };
+    }, [polling, fetchJobStatus]);
+
+    // Check status on component mount
+    useEffect(() => {
+        fetchJobStatus();
+    }, [fetchJobStatus]);
 
     const handleReindexClick = () => {
         setShowReindexConfirmation(true);
@@ -85,27 +186,39 @@ const EmbeddingSearchPanel = ({value, onChange}: Props) => {
 
     const handleConfirmReindex = async () => {
         setShowReindexConfirmation(false);
-        setIsReindexing(true);
-        setReindexStatus({});
+        setStatusMessage({});
 
         try {
-            await doReindexPosts();
-            setReindexStatus({
-                success: true,
-                message: intl.formatMessage({defaultMessage: 'Posts reindexing completed successfully.'}),
-            });
+            const response = await doReindexPosts();
+            setJobStatus(response);
+            setPolling(true);
         } catch (error) {
-            setReindexStatus({
+            setStatusMessage({
                 success: false,
-                message: intl.formatMessage({defaultMessage: 'Failed to reindex posts. Please try again.'}),
+                message: intl.formatMessage({defaultMessage: 'Failed to start reindexing. Please try again.'}),
             });
-        } finally {
-            setIsReindexing(false);
         }
     };
 
     const handleCancelReindex = () => {
         setShowReindexConfirmation(false);
+    };
+
+    const handleCancelJob = async () => {
+        try {
+            const response = await cancelReindex();
+            setJobStatus(response);
+            setStatusMessage({
+                success: false,
+                message: intl.formatMessage({defaultMessage: 'Reindexing job canceled.'}),
+            });
+            setPolling(false);
+        } catch (error) {
+            setStatusMessage({
+                success: false,
+                message: intl.formatMessage({defaultMessage: 'Failed to cancel reindexing job.'}),
+            });
+        }
     };
 
     if (!isBasicsLicensed) {
@@ -420,22 +533,53 @@ const EmbeddingSearchPanel = ({value, onChange}: Props) => {
                                 <FormattedMessage defaultMessage='Reindex All Posts'/>
                             </ItemLabel>
                             <div>
-                                <PrimaryButton
-                                    onClick={handleReindexClick}
-                                    disabled={isReindexing}
-                                >
-                                    {isReindexing ? <FormattedMessage defaultMessage='Reindexing...'/> : <FormattedMessage defaultMessage='Reindex Posts'/>
-                                    }
-                                </PrimaryButton>
+                                {/* Show different UI based on job status */}
+                                {isReindexing ? (
+                                    <>
+                                        <ButtonGroup>
+                                            <SecondaryButton
+                                                onClick={handleCancelJob}
+                                            >
+                                                <FormattedMessage defaultMessage='Cancel Reindexing'/>
+                                            </SecondaryButton>
+                                        </ButtonGroup>
 
-                                {reindexStatus.message && (
-                                    reindexStatus.success ? (
+                                        {jobStatus && (
+                                            <>
+                                                <ProgressText>
+                                                    <FormattedMessage
+                                                        defaultMessage='Processing: {processed} of {total} posts ({percent}%)'
+                                                        values={{
+                                                            processed: jobStatus.processed_rows.toLocaleString(),
+                                                            total: jobStatus.total_rows.toLocaleString(),
+                                                            percent: jobStatus.total_rows ? Math.floor((jobStatus.processed_rows / jobStatus.total_rows) * 100) : 0,
+                                                        }}
+                                                    />
+                                                </ProgressText>
+                                                <ProgressContainer>
+                                                    <ProgressBar
+                                                        progress={jobStatus.total_rows ? Math.min((jobStatus.processed_rows / jobStatus.total_rows) * 100, 100) : 0}
+                                                    />
+                                                </ProgressContainer>
+                                            </>
+                                        )}
+                                    </>
+                                ) : (
+                                    <PrimaryButton
+                                        onClick={handleReindexClick}
+                                    >
+                                        <FormattedMessage defaultMessage='Reindex Posts'/>
+                                    </PrimaryButton>
+                                )}
+
+                                {statusMessage.message && (
+                                    statusMessage.success ? (
                                         <SuccessHelpText>
-                                            {reindexStatus.message}
+                                            {statusMessage.message}
                                         </SuccessHelpText>
                                     ) : (
                                         <ErrorHelpText>
-                                            {reindexStatus.message}
+                                            {statusMessage.message}
                                         </ErrorHelpText>
                                     )
                                 )}

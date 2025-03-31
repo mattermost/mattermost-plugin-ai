@@ -314,6 +314,40 @@ export async function doReindexPosts() {
         url,
     });
 }
+
+export async function getReindexStatus() {
+    const url = `${baseRoute()}/admin/reindex/status`;
+    const response = await fetch(url, Client4.getOptions({
+        method: 'GET',
+    }));
+
+    if (response.ok) {
+        return response.json();
+    }
+
+    throw new ClientError(Client4.url, {
+        message: '',
+        status_code: response.status,
+        url,
+    });
+}
+
+export async function cancelReindex() {
+    const url = `${baseRoute()}/admin/reindex/cancel`;
+    const response = await fetch(url, Client4.getOptions({
+        method: 'POST',
+    }));
+
+    if (response.ok) {
+        return response.json();
+    }
+
+    throw new ClientError(Client4.url, {
+        message: '',
+        status_code: response.status,
+        url,
+    });
+}
 export async function getChannelInterval(
     channelID: string,
     startTime: number,

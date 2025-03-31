@@ -50,6 +50,8 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 	adminRouter := router.Group("/admin")
 	adminRouter.Use(p.mattermostAdminAuthorizationRequired)
 	adminRouter.POST("/reindex", p.handleReindexPosts)
+	adminRouter.GET("/reindex/status", p.handleGetJobStatus)
+	adminRouter.POST("/reindex/cancel", p.handleCancelJob)
 
 	searchRouter := botRequiredRouter.Group("/search")
 	// Only returns search results

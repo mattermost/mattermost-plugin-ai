@@ -4,139 +4,134 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
+	"time"
 
 	"errors"
 	"fmt"
 
 	"github.com/gin-gonic/gin"
-	"github.com/mattermost/mattermost-plugin-ai/server/embeddings"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
-const defaultBatchSize = 100
-
+// handleReindexPosts starts a background job to reindex all posts
 func (p *Plugin) handleReindexPosts(c *gin.Context) {
-	type PostRecord struct {
-		ID       string `db:"id"`
-		Message  string `db:"message"`
-		UserID   string `db:"userid"`
-		CreateAt int64  `db:"createat"`
-		TeamID   string `db:"teamid"`
-
-		ChannelID   string `db:"channelid"`
-		ChannelName string `db:"channelname"`
-		ChannelType string `db:"channeltype"`
-	}
-
 	// Check if search is initialized
 	if p.search == nil {
 		c.AbortWithError(http.StatusBadRequest, fmt.Errorf("search functionality is not configured"))
 		return
 	}
 
-	var posts []PostRecord
-	lastCreateAt := int64(0)
-	lastID := ""
-
-	if err := p.search.Clear(c.Request.Context()); err != nil {
-		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to clear search index: %w", err))
+	// Check if a job is already running
+	data, appErr := p.API.KVGet(ReindexJobKey)
+	if appErr != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to check job status: %w", appErr))
 		return
 	}
-	newSearch, err := p.initSearch()
-	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to re-initialize search: %w", err))
-		return
-	}
-	p.search = newSearch
 
-	for {
-		query := `SELECT
-			Posts.Id as id,
-			Posts.Message as message,
-			Posts.UserId as userid,
-			Posts.ChannelId as channelid,
-			Posts.CreateAt as createat,
-			Channels.TeamId as teamid,
-			Channels.Name as channelname,
-			Channels.Type as channeltype
-		FROM Posts
-		LEFT JOIN
-			Channels
-		ON
-			Posts.ChannelId = Channels.Id
-		WHERE
-			Posts.DeleteAt = 0 AND
-			Posts.Message != '' AND
-			Posts.Type = '' AND
-			(Posts.CreateAt, Posts.Id) > ($1, $2)
-		ORDER BY
-			Posts.CreateAt ASC, Posts.Id ASC
-		LIMIT
-			$3`
-
-		err := p.db.Select(&posts, query, lastCreateAt, lastID, defaultBatchSize)
-		if err != nil {
-			c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to fetch posts: %w", err))
-			return
-		}
-
-		if len(posts) == 0 {
-			break
-		}
-
-		// Convert to PostDocuments, applying the same filtering logic as indexPost
-		docs := make([]embeddings.PostDocument, 0, len(posts))
-		for _, post := range posts {
-			modelPost := &model.Post{
-				Id:        post.ID,
-				ChannelId: post.ChannelID,
-				UserId:    post.UserID,
-				Message:   post.Message,
-				Type:      model.PostTypeDefault, // We already filter out non-default post types in the SQL query
-				DeleteAt:  0,                     // We already filter deleted posts in the SQL query
-			}
-
-			// Create a minimal channel object with necessary fields for filtering
-			channel := &model.Channel{
-				Id:     post.ChannelID,
-				TeamId: post.TeamID,
-				Name:   post.ChannelName,
-				Type:   model.ChannelType(post.ChannelType),
-			}
-
-			// Apply same indexing rules as indexPost
-			if !p.ShouldIndexPost(modelPost, channel) {
-				continue
-			}
-
-			docs = append(docs, embeddings.PostDocument{
-				PostID:    modelPost.Id,
-				CreateAt:  modelPost.CreateAt,
-				TeamID:    post.TeamID,
-				ChannelID: post.ChannelID,
-				UserID:    post.UserID,
-				Content:   post.Message,
-			})
-		}
-
-		// Store the batch
-		if len(docs) > 0 {
-			if err := p.search.Store(c.Request.Context(), docs); err != nil {
-				c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to store documents: %w", err))
+	if data != nil {
+		var jobStatus JobStatus
+		if err := json.Unmarshal(data, &jobStatus); err == nil {
+			if jobStatus.Status == JobStatusRunning {
+				c.JSON(http.StatusConflict, jobStatus)
 				return
 			}
 		}
-
-		// Update cursors for next batch
-		lastPost := posts[len(posts)-1]
-		lastCreateAt = lastPost.CreateAt
-		lastID = lastPost.ID
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"status": "complete",
-	})
+	// Get an estimate of total posts for progress tracking
+	var count int64
+	err := p.db.Get(&count, `SELECT COUNT(*) FROM Posts WHERE DeleteAt = 0 AND Message != '' AND Type = ''`)
+	if err != nil {
+		p.pluginAPI.Log.Warn("Failed to get post count for progress tracking", "error", err)
+		count = 0 // Continue with zero estimate
+	}
+
+	// Create initial job status
+	jobStatus := &JobStatus{
+		Status:    JobStatusRunning,
+		StartedAt: time.Now(),
+		TotalRows: count,
+	}
+
+	// Save initial job status
+	jobData, _ := json.Marshal(jobStatus)
+	if appErr := p.API.KVSet(ReindexJobKey, jobData); appErr != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to save job status: %w", appErr))
+		return
+	}
+
+	// Start the reindexing job in background
+	go p.runReindexJob(jobStatus)
+
+	c.JSON(http.StatusOK, jobStatus)
+}
+
+// handleGetJobStatus gets the status of the reindex job
+func (p *Plugin) handleGetJobStatus(c *gin.Context) {
+	data, appErr := p.API.KVGet(ReindexJobKey)
+	if appErr != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to get job status: %w", appErr))
+		return
+	}
+
+	if data == nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"status": "no_job",
+		})
+		return
+	}
+
+	var jobStatus JobStatus
+	if err := json.Unmarshal(data, &jobStatus); err != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to parse job status: %w", err))
+		return
+	}
+
+	c.JSON(http.StatusOK, jobStatus)
+}
+
+// handleCancelJob cancels a running reindex job
+func (p *Plugin) handleCancelJob(c *gin.Context) {
+	data, appErr := p.API.KVGet(ReindexJobKey)
+	if appErr != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to get job status: %w", appErr))
+		return
+	}
+
+	if data == nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"status": "no_job",
+		})
+		return
+	}
+
+	var jobStatus JobStatus
+	if err := json.Unmarshal(data, &jobStatus); err != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to parse job status: %w", err))
+		return
+	}
+
+	if jobStatus.Status != JobStatusRunning {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status": "not_running",
+		})
+		return
+	}
+
+	// Update status to canceled
+	jobStatus.Status = JobStatusCanceled
+	jobStatus.CompletedAt = time.Now()
+
+	// Save updated status
+	data, _ = json.Marshal(jobStatus)
+	if appErr := p.API.KVSet(ReindexJobKey, data); appErr != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to save job status: %w", appErr))
+		return
+	}
+
+	c.JSON(http.StatusOK, jobStatus)
 }
 
 func (p *Plugin) mattermostAdminAuthorizationRequired(c *gin.Context) {
