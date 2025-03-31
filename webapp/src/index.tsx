@@ -145,6 +145,17 @@ export default class Plugin {
         if (registry.registerNewMessagesSeparatorActionComponent) {
             registry.registerNewMessagesSeparatorActionComponent(UnreadsSummarize);
         }
+
+        if (registry.registerDesktopNotificationHook) {
+            registry.registerDesktopNotificationHook((post: { type: string }) => {
+                // Stop all notifications for custom_llmbot posts
+                if (post.type === 'custom_llmbot') {
+                    return {};
+                }
+
+                return null;
+            });
+        }
     }
 }
 
