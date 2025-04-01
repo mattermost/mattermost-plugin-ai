@@ -18,7 +18,6 @@ import (
 
 	"errors"
 
-	"github.com/invopop/jsonschema"
 	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 	"github.com/mattermost/mattermost-plugin-ai/server/llm/subtitles"
 	"github.com/mattermost/mattermost-plugin-ai/server/metrics"
@@ -150,20 +149,13 @@ func modifyCompletionRequestWithRequest(openAIRequest openaiClient.ChatCompletio
 
 func toolsToOpenAITools(tools []llm.Tool) []openaiClient.Tool {
 	result := make([]openaiClient.Tool, 0, len(tools))
-
-	schemaMaker := jsonschema.Reflector{
-		Anonymous:      true,
-		ExpandedStruct: true,
-	}
-
 	for _, tool := range tools {
-		schema := schemaMaker.Reflect(tool.Schema)
 		result = append(result, openaiClient.Tool{
 			Type: openaiClient.ToolTypeFunction,
 			Function: &openaiClient.FunctionDefinition{
 				Name:        tool.Name,
 				Description: tool.Description,
-				Parameters:  schema,
+				Parameters:  tool.Schema,
 			},
 		})
 	}
