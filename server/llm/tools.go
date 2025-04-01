@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	"github.com/invopop/jsonschema"
 )
 
 // Tool represents a function that can be called by the language model during a conversation.
@@ -14,11 +16,13 @@ import (
 // Each tool has a name, description, and schema that defines its parameters. These are passed to the LLM for it to understand what capabilities it has.
 // It is the Resolver function that implements the actual functionality.
 //
-// The Schema field should contain a struct that defines the expected JSON structure of the tool's arguments. The Resolver function receives the conversation context and a way to access the parsed arguments, and returns either a result that will be passed to the LLM or an error.
+// The Schema field should contain a JSONSchema that defines the expected structure of the tool's arguments.
+// The Resolver function receives the conversation context and a way to access the parsed arguments,
+// and returns either a result that will be passed to the LLM or an error.
 type Tool struct {
 	Name        string
 	Description string
-	Schema      any
+	Schema      *jsonschema.Schema
 	Resolver    func(context *Context, argsGetter ToolArgumentGetter) (string, error)
 }
 
@@ -32,6 +36,17 @@ type ToolStore struct {
 
 type TraceLog interface {
 	Info(message string, keyValuePairs ...any)
+}
+
+// NewJSONSchemaFromStruct creates a JSONSchema from a Go struct using reflection
+// It's a helper function for tool providers that currently define schemas as structs
+func NewJSONSchemaFromStruct(schemaStruct interface{}) *jsonschema.Schema {
+	reflector := jsonschema.Reflector{
+		Anonymous:      true,
+		ExpandedStruct: true,
+	}
+
+	return reflector.Reflect(schemaStruct)
 }
 
 func NewNoTools() *ToolStore {

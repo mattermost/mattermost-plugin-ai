@@ -15,6 +15,7 @@ import {BooleanItem, ItemList, SelectionItem, SelectionItemOption, TextItem} fro
 import NoBotsPage from './no_bots_page';
 import EmbeddingSearchPanel from './embedding_search/embedding_search_panel';
 import {EmbeddingSearchConfig} from './embedding_search/types';
+import MCPServers, {MCPConfig} from './mcp_servers';
 
 type Config = {
     services: ServiceData[],
@@ -24,7 +25,8 @@ type Config = {
     enableLLMTrace: boolean,
     enableCallSummary: boolean,
     allowedUpstreamHostnames: string,
-    embeddingSearchConfig: EmbeddingSearchConfig
+    embeddingSearchConfig: EmbeddingSearchConfig,
+    mcp: MCPConfig
 }
 
 type Props = {
@@ -82,6 +84,10 @@ const defaultConfig = {
             minChunkSize: 0.75,
             chunkingStrategy: 'sentences',
         },
+    },
+    mcp: {
+        enabled: false,
+        servers: {},
     },
 };
 
@@ -220,6 +226,23 @@ const Config = (props: Props) => {
                     props.setSaveNeeded();
                 }}
             />
+            <Panel
+                title={intl.formatMessage({defaultMessage: 'Model Context Protocol (MCP)'})}
+                subtitle={intl.formatMessage({defaultMessage: 'Configure MCP servers to enable AI tools.'})}
+            >
+                <MCPServers
+                    value={value.mcp || defaultConfig.mcp}
+                    onChange={(config) => {
+                        // Ensure we're creating a valid structure for the server configuration
+                        const updatedConfig = {
+                            ...config,
+                            servers: config.servers || {},
+                        };
+                        props.onChange(props.id, {...value, mcp: updatedConfig});
+                        props.setSaveNeeded();
+                    }}
+                />
+            </Panel>
         </ConfigContainer>
     );
 };
