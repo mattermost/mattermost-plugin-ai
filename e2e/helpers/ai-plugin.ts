@@ -24,8 +24,9 @@ export class AIPlugin {
   }
 
   async openRHS() {
-    await this.appBarIcon.click();
     await expect(this.appBarIcon).toBeVisible();
+    await this.appBarIcon.click();
+    await expect(this.page.getByTestId('mattermost-ai-rhs')).toBeVisible();
   }
 
   async sendMessage(message: string) {

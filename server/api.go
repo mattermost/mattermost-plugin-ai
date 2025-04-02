@@ -95,10 +95,11 @@ func (p *Plugin) handleGetAIThreads(c *gin.Context) {
 	defer p.botsLock.RUnlock()
 	dmChannelIDs := []string{}
 	for _, bot := range p.bots {
-		botDMChannel, err := p.pluginAPI.Channel.GetDirect(userID, bot.mmBot.UserId)
+		channelName := model.GetDMNameFromIds(userID, bot.mmBot.UserId)
+		botDMChannel, err := p.pluginAPI.Channel.GetByName("", channelName, false)
 		if err != nil {
-			c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to get DM with AI bot: %w", err))
-			return
+			// Channel doesn't exist yet, so we'll skip it
+			continue
 		}
 
 		// Extra permissions checks are not totally necessary since a user should always have permission to read their own DMs
@@ -151,17 +152,22 @@ func (p *Plugin) handleGetAIBots(c *gin.Context) {
 		if p.checkUsageRestrictionsForUser(bot, userID) != nil {
 			continue
 		}
-		direct, err := p.pluginAPI.Channel.GetDirect(userID, bot.mmBot.UserId)
-		if err != nil {
-			p.API.LogError("unable to get direct channel for bot", "error", err)
-			continue
+
+		// Get the bot DM channel ID. To avoid creating the channel unless nessary
+		/// we return "" if the channel doesn't exist.
+		dmChannelID := ""
+		channelName := model.GetDMNameFromIds(userID, bot.mmBot.UserId)
+		botDMChannel, err := p.pluginAPI.Channel.GetByName("", channelName, false)
+		if err == nil {
+			dmChannelID = botDMChannel.Id
 		}
+
 		bots = append(bots, AIBotInfo{
 			ID:                 bot.mmBot.UserId,
 			DisplayName:        bot.mmBot.DisplayName,
 			Username:           bot.mmBot.Username,
 			LastIconUpdate:     bot.mmBot.LastIconUpdate,
-			DMChannelID:        direct.Id,
+			DMChannelID:        dmChannelID,
 			ChannelAccessLevel: bot.cfg.ChannelAccessLevel,
 			ChannelIDs:         bot.cfg.ChannelIDs,
 			UserAccessLevel:    bot.cfg.UserAccessLevel,

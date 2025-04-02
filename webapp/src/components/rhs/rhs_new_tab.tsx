@@ -1,7 +1,7 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import React, {useState, useCallback} from 'react';
+import React, {useState, useCallback, useEffect} from 'react';
 import styled from 'styled-components';
 import {useIntl, FormattedMessage} from 'react-intl';
 
@@ -11,13 +11,17 @@ import {
     PlaylistCheckIcon,
 } from '@mattermost/compass-icons/components';
 
-import {useDispatch} from 'react-redux';
+import {useDispatch, useSelector} from 'react-redux';
 
 import RHSImage from '../assets/rhs_image';
 
-import {createPost} from '@/client';
+import {createPost, getBotDirectChannel} from '@/client';
 
 import {AdvancedTextEditor, CreatePost} from '@/mm_webapp';
+
+import {LLMBot} from '@/bots';
+import {BotsHandler} from '@/redux';
+import manifest from '@/manifest';
 
 import {Button, RHSPaddingContainer, RHSText, RHSTitle} from './common';
 
@@ -69,9 +73,9 @@ const ReverseScroll = styled.div`
 `;
 
 type Props = {
-    botChannelId: string
     selectPost: (postId: string) => void
     setCurrentTab: (tab: string) => void
+    activeBot: LLMBot | null
 }
 
 const setEditorText = (text: string) => {
@@ -83,14 +87,48 @@ const setEditorText = (text: string) => {
     }
 };
 
-const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
+const RHSNewTab = ({selectPost, setCurrentTab, activeBot}: Props) => {
     const intl = useIntl();
-
-    // Compatibility with pre v10 create post export
     const dispatch = useDispatch();
-
-    // Compatibility with pre v10 create post export
     const [draft, updateDraft] = useState<any>(null);
+    const [creatingChannel, setCreatingChannel] = useState(false);
+    const currentUserId = useSelector((state: any) => state.entities.users.currentUserId);
+    const botChannelId = activeBot?.dmChannelID || '';
+
+    const currentBots = useSelector((state: any) =>
+        state[`plugins-${manifest.id}`]?.bots || [],
+    );
+
+    // If botChannelId is empty, we need to create a direct channel
+    useEffect(() => {
+        const createDirectChannel = async () => {
+            if (!botChannelId && !creatingChannel && activeBot) {
+                setCreatingChannel(true);
+                const botId = activeBot.id;
+
+                // This will as a side effect create the direct channel for us
+                const newChannelID = await getBotDirectChannel(currentUserId, botId);
+
+                // Update the bots list in Redux with the new channel ID
+                const updatedBots = currentBots.map((bot: LLMBot) => {
+                    if (bot.id === activeBot.id) {
+                        return {
+                            ...bot,
+                            dmChannelID: newChannelID,
+                        };
+                    }
+                    return bot;
+                });
+                dispatch({
+                    type: BotsHandler,
+                    bots: updatedBots,
+                });
+
+                setCreatingChannel(false);
+            }
+        };
+        createDirectChannel();
+    }, [botChannelId, currentUserId, activeBot, creatingChannel, dispatch, currentBots]);
 
     const addBrainstormingIdeas = useCallback(() => {
         setEditorText(intl.formatMessage({defaultMessage: 'Brainstorm ideas about '}));
@@ -108,9 +146,15 @@ const RHSNewTab = ({botChannelId, selectPost, setCurrentTab}: Props) => {
         setEditorText(intl.formatMessage({defaultMessage: 'Write a pros and cons list about '}));
     }, []);
 
-    // Compatibility with pre v10 create post export
+    // Show loading indicator if creating channel
     let editorComponent;
-    if (AdvancedTextEditor) {
+    if (creatingChannel || !botChannelId) {
+        editorComponent = (
+            <div style={{textAlign: 'center', padding: '20px'}}>
+                <FormattedMessage defaultMessage='Setting up chat channel...'/>
+            </div>
+        );
+    } else if (AdvancedTextEditor) {
         editorComponent = (
             <AdvancedTextEditor
                 channelId={botChannelId}
