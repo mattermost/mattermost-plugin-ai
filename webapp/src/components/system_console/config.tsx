@@ -13,7 +13,8 @@ import Bots, {firstNewBot} from './bots';
 import {LLMBotConfig} from './bot';
 import {BooleanItem, ItemList, SelectionItem, SelectionItemOption, TextItem} from './item';
 import NoBotsPage from './no_bots_page';
-import EmbeddingSearchPanel, {EmbeddingSearchConfig} from './embedding_search_config';
+import EmbeddingSearchPanel from './embedding_search/embedding_search_panel';
+import {EmbeddingSearchConfig} from './embedding_search/types';
 
 type Config = {
     services: ServiceData[],
