@@ -51,8 +51,6 @@ export const DropdownMenu = styled.div`
     border: 1px solid rgba(var(--center-channel-color-rgb), 0.16);
     box-shadow: 0px 8px 24px rgba(0, 0, 0, 0.12);
     border-radius: 4px;
-
-    z-index: 1000;
 `;
 
 type DotMenuProps = {
