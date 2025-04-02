@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/invopop/jsonschema"
 	"github.com/mark3labs/mcp-go/client"
@@ -87,6 +88,8 @@ func NewMCPClient(config Config, log pluginapi.LogService) (*MCPClient, error) {
 		if serverConfig.Headers != nil {
 			opts = append(opts, client.WithHeaders(serverConfig.Headers))
 		}
+
+		opts = append(opts, client.WithSSEReadTimeout(time.Hour*10000))
 
 		sseClient, err := client.NewSSEMCPClient(serverConfig.BaseURL, opts...)
 		if err != nil {
@@ -278,11 +281,13 @@ func (m *MCPClient) createToolResolver(toolName string) func(llmContext *llm.Con
 
 		// Extract text content from the result
 		if len(result.Content) > 0 {
+			text := ""
 			for _, content := range result.Content {
 				if textContent, ok := mcp.AsTextContent(content); ok {
-					return textContent.Text, nil
+					text += textContent.Text + "\n"
 				}
 			}
+			return text, nil
 		}
 
 		return "", fmt.Errorf("no text content found in response from tool %s on server %s", toolName, serverID)
