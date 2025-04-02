@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/mattermost/mattermost-plugin-ai/server/embeddings"
@@ -56,9 +55,12 @@ func (p *Plugin) convertToRAGResults(searchResults []embeddings.SearchResult) []
 			p.pluginAPI.Log.Warn("Failed to get channel", "error", chErr, "channelID", result.Document.ChannelID)
 			channelName = "Unknown Channel"
 		} else {
-			if channel.Type == model.ChannelTypeDirect || channel.Type == model.ChannelTypeGroup {
+			switch channel.Type {
+			case model.ChannelTypeDirect:
 				channelName = "Direct Message"
-			} else {
+			case model.ChannelTypeGroup:
+				channelName = "Group Message"
+			default:
 				channelName = channel.DisplayName
 			}
 		}
@@ -71,11 +73,6 @@ func (p *Plugin) convertToRAGResults(searchResults []embeddings.SearchResult) []
 			username = "Unknown User"
 		} else {
 			username = user.Username
-			// If we have the user's first and last name, use those instead
-			if user.FirstName != "" || user.LastName != "" {
-				username = fmt.Sprintf("%s %s", user.FirstName, user.LastName)
-				username = strings.TrimSpace(username)
-			}
 		}
 
 		// Determine the correct content to show
