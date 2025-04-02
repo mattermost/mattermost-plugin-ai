@@ -14,7 +14,25 @@ const ThreadIDProp = "referenced_thread"
 const AnalysisTypeProp = "prompt_type"
 
 // DM the user with a standard message. Run the inferance
-func (p *Plugin) analyzeThread(bot *Bot, postIDToAnalyze string, analysisType string, context llm.ConversationContext) (*llm.TextStreamResult, error) {
+func (p *Plugin) analyzeThread(bot *Bot, postIDToAnalyze string, analysisType string, context *llm.Context) (*llm.TextStreamResult, error) {
+	posts, err := p.getAnalyzeThreadPosts(postIDToAnalyze, context, analysisType)
+	if err != nil {
+		return nil, err
+	}
+
+	completionReqest := llm.CompletionRequest{
+		Posts:   posts,
+		Context: context,
+	}
+	analysisStream, err := p.getLLM(bot.cfg).ChatCompletion(completionReqest)
+	if err != nil {
+		return nil, err
+	}
+
+	return analysisStream, nil
+}
+
+func (p *Plugin) getAnalyzeThreadPosts(postIDToAnalyze string, context *llm.Context, analysisType string) ([]llm.Post, error) {
 	threadData, err := p.getThreadAndMeta(postIDToAnalyze)
 	if err != nil {
 		return nil, err
@@ -22,29 +40,40 @@ func (p *Plugin) analyzeThread(bot *Bot, postIDToAnalyze string, analysisType st
 
 	formattedThread := formatThread(threadData)
 
-	context.PromptParameters = map[string]string{"Thread": formattedThread}
+	context.Parameters = map[string]any{"Thread": formattedThread}
 	var promptType string
 	switch analysisType {
 	case "summarize_thread":
-		promptType = llm.PromptSummarizeThread
+		promptType = llm.PromptSummarizeThreadSystem
 	case "action_items":
-		promptType = llm.PromptFindActionItems
+		promptType = llm.PromptFindActionItemsSystem
 	case "open_questions":
-		promptType = llm.PromptFindOpenQuestions
+		promptType = llm.PromptFindOpenQuestionsSystem
 	default:
 		return nil, fmt.Errorf("invalid analysis type: %s", analysisType)
 	}
 
-	prompt, err := p.prompts.ChatCompletion(promptType, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
+	systemPrompt, err := p.prompts.Format(promptType, context)
 	if err != nil {
-		return nil, err
-	}
-	analysisStream, err := p.getLLM(bot.cfg).ChatCompletion(prompt)
-	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to format system prompt: %w", err)
 	}
 
-	return analysisStream, nil
+	userPrompt, err := p.prompts.Format(llm.PromptThreadUser, context)
+	if err != nil {
+		return nil, fmt.Errorf("failed to format user prompt: %w", err)
+	}
+
+	posts := []llm.Post{
+		{
+			Role:    llm.PostRoleSystem,
+			Message: systemPrompt,
+		},
+		{
+			Role:    llm.PostRoleUser,
+			Message: userPrompt,
+		},
+	}
+	return posts, nil
 }
 
 func (p *Plugin) makeAnalysisPost(locale string, postIDToAnalyze string, analysisType string) *model.Post {
@@ -72,7 +101,7 @@ func (p *Plugin) analysisPostMessage(locale string, postIDToAnalyze string, anal
 	}
 }
 
-func (p *Plugin) startNewAnalysisThread(bot *Bot, postIDToAnalyze string, analysisType string, context llm.ConversationContext) (*model.Post, error) {
+func (p *Plugin) startNewAnalysisThread(bot *Bot, postIDToAnalyze string, analysisType string, context *llm.Context) (*model.Post, error) {
 	analysisStream, err := p.analyzeThread(bot, postIDToAnalyze, analysisType, context)
 	if err != nil {
 		return nil, err

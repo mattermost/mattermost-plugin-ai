@@ -20,7 +20,7 @@ import {
 
 const FloatingContainer = styled.div`
     min-width: 16rem;
-	z-index: 50;
+	z-index: 1000;
 `;
 
 type DropdownProps = {
@@ -52,6 +52,7 @@ const Dropdown = (props: DropdownProps) => {
         placement: props.placement ?? 'bottom-start',
         middleware: [offset(props.offset ?? 2), flip(props.flip), shift(props.shift ?? {padding: 2})],
         whileElementsMounted: autoUpdate,
+        strategy: 'fixed',
     });
 
     const {getReferenceProps, getFloatingProps} = useInteractions([

@@ -51,13 +51,11 @@ export const DropdownMenu = styled.div`
     border: 1px solid rgba(var(--center-channel-color-rgb), 0.16);
     box-shadow: 0px 8px 24px rgba(0, 0, 0, 0.12);
     border-radius: 4px;
-
-    z-index: 12;
 `;
 
 type DotMenuProps = {
     children: React.ReactNode;
-    icon: JSX.Element;
+    icon: React.ReactNode;
     dotMenuButton?: typeof DotMenuButton | typeof PrimaryButton;
     dropdownMenu?: typeof DropdownMenu;
     title?: string;
@@ -66,6 +64,7 @@ type DotMenuProps = {
     isActive?: boolean;
     onOpenChange?: (isOpen: boolean) => void;
     closeOnClick?: boolean;
+    testId?: string;
 };
 
 type DropdownProps = Omit<ComponentProps<typeof Dropdown>, 'target' | 'children' | 'isOpen'>;
@@ -81,6 +80,7 @@ const DotMenu = ({
     dotMenuButton: MenuButton = DotMenuButton,
     dropdownMenu: Menu = DropdownMenu,
     onOpenChange,
+    testId,
     ...props
 }: DotMenuProps & DropdownProps) => {
     const [isOpen, setOpen] = useState(false);
@@ -113,7 +113,7 @@ const DotMenu = ({
             className={className}
             role={'button'}
             disabled={disabled ?? false}
-            data-testid={'menuButton' + (title ?? '')}
+            data-testid={testId}
         >
             {icon}
         </MenuButton>
@@ -187,7 +187,7 @@ export const iconSplitStyling = css`
     gap: 8px;
 `;
 
-export const DropdownMenuItem = (props: { children: React.ReactNode, onClick?: () => void, className?: string}) => {
+export const DropdownMenuItem = (props: { children: React.ReactNode, onClick?: (e: React.MouseEvent) => void, className?: string}) => {
     return (
         <DropdownMenuItemStyled
             href='#'

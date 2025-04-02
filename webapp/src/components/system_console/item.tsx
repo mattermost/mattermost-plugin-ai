@@ -12,7 +12,7 @@ export const ItemList = styled.div`
 	grid-row-gap: 24px;
 `;
 
-type TextItemProps = {
+export type TextItemProps = {
     label: string,
     value: string,
     type?: string,
@@ -20,6 +20,9 @@ type TextItemProps = {
     multiline?: boolean,
     placeholder?: string,
     maxLength?: number,
+    step?: string,
+    min?: string,
+    max?: string,
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => void
 };
 
@@ -35,6 +38,9 @@ export const TextItem = (props: TextItemProps) => {
                     placeholder={props.placeholder ? props.placeholder : props.label}
                     onChange={props.onChange}
                     maxLength={props.maxLength}
+                    step={props.step}
+                    min={props.min}
+                    max={props.max}
                 />
                 {props.helptext &&
                 <HelpText>{props.helptext}</HelpText>
@@ -44,24 +50,30 @@ export const TextItem = (props: TextItemProps) => {
     );
 };
 
-type SelectionItemProps = {
+export type SelectionItemProps = {
     label: string
     value: string
     onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void
     children: React.ReactNode
+    helptext?: string
 };
 
 export const SelectionItem = (props: SelectionItemProps) => {
     return (
         <>
             <ItemLabel>{props.label}</ItemLabel>
-            <StyledInput
-                as='select'
-                value={props.value}
-                onChange={props.onChange}
-            >
-                {props.children}
-            </StyledInput>
+            <TextFieldContainer>
+                <StyledInput
+                    as='select'
+                    value={props.value}
+                    onChange={props.onChange}
+                >
+                    {props.children}
+                </StyledInput>
+                {props.helptext &&
+                <HelpText>{props.helptext}</HelpText>
+                }
+            </TextFieldContainer>
         </>
     );
 };

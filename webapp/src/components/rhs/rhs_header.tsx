@@ -8,7 +8,7 @@ import {FormattedMessage} from 'react-intl';
 
 import {DotMenuButton} from '../dot_menu';
 
-import {BotDropdown} from '../bot_slector';
+import {BotDropdown} from '../bot_selector';
 
 import {LLMBot} from '@/bots';
 
@@ -69,6 +69,7 @@ const RHSHeader = (props: Props) => {
                     activeBot={props.activeBot}
                     setActiveBot={props.setActiveBot}
                     container={SelectorDropdown}
+                    testId='bot-selector-rhs'
                 >
                     <>
                         {currentBotName}

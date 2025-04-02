@@ -164,7 +164,7 @@ apply:
 ## Install go tools
 install-go-tools:
 	@echo Installing go tools
-	$(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.61.0
+	$(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.0.2
 	$(GO) install gotest.tools/gotestsum@v1.7.0
 	$(GO) install github.com/mattermost/mattermost-govet/v2@3f08281c344327ac09364f196b15f9a81c7eff08
 
@@ -434,3 +434,17 @@ e2e/node_modules: e2e/package.json
 e2e: e2e/node_modules
 	@MM_DEBUG= $(MAKE) dist
 	cd e2e && npx playwright test
+
+## Check and fix copyright/license headers in all files (enterprise directory is excluded)
+.PHONY: copyright
+copyright: install-go-tools webapp/node_modules
+	@echo Checking license headers...
+ifneq ($(HAS_SERVER),)
+	@echo Fixing Go license headers...
+	./scripts/fix_license_headers.sh 2023
+endif
+ifneq ($(HAS_WEBAPP),)
+	@echo Fixing webapp license headers...
+	cd webapp && $(NPM) run fix
+endif
+	@echo License headers have been checked and fixed.

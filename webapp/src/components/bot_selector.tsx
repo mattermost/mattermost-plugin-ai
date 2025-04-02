@@ -48,7 +48,7 @@ const BotPill = styled(GrayPill)`
 	gap: 0;
 `;
 
-const BotSelectorContainer = styled.div`
+export const BotSelectorContainer = styled.div`
 	display: flex;
 	flex-direction: row;
 	align-items: center;
@@ -63,7 +63,8 @@ type BotDropdownProps = {
     activeBot: LLMBot | null
     setActiveBot: (bot: LLMBot) => void
     container: typeof DotMenuButton
-    children: JSX.Element
+    children: React.ReactNode
+    testId?: string
 }
 
 export const BotDropdown = (props: BotDropdownProps) => {
@@ -73,6 +74,8 @@ export const BotDropdown = (props: BotDropdownProps) => {
             title={props.activeBot?.displayName}
             dotMenuButton={props.container}
             dropdownMenu={StyledDropdownMenu}
+            portal={false}
+            testId={props.testId}
         >
             <MenuInfoMessage>
                 <FormattedMessage defaultMessage='Choose a Bot'/>
@@ -82,7 +85,9 @@ export const BotDropdown = (props: BotDropdownProps) => {
                 return (
                     <StyledDropdownMenuItem
                         key={bot.displayName}
-                        onClick={() => props.setActiveBot(bot)}
+                        onClick={() => {
+                            props.setActiveBot(bot);
+                        }}
                     >
                         <BotIconDropdownItem
                             src={botProfileURL}

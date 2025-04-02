@@ -4,8 +4,8 @@
 package llm
 
 type LanguageModel interface {
-	ChatCompletion(conversation BotConversation, opts ...LanguageModelOption) (*TextStreamResult, error)
-	ChatCompletionNoStream(conversation BotConversation, opts ...LanguageModelOption) (string, error)
+	ChatCompletion(conversation CompletionRequest, opts ...LanguageModelOption) (*TextStreamResult, error)
+	ChatCompletionNoStream(conversation CompletionRequest, opts ...LanguageModelOption) (string, error)
 
 	CountTokens(text string) int
 	InputTokenLimit() int

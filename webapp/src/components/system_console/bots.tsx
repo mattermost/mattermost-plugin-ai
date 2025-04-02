@@ -24,8 +24,6 @@ const defaultNewBot: LLMBotConfig = {
         apiURL: '',
         orgId: '',
         defaultModel: '',
-        username: '',
-        password: '',
         tokenLimit: 0,
         streamingTimeoutSeconds: 0,
         sendUserId: false,

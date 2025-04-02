@@ -13,6 +13,8 @@ import Bots, {firstNewBot} from './bots';
 import {LLMBotConfig} from './bot';
 import {BooleanItem, ItemList, SelectionItem, SelectionItemOption, TextItem} from './item';
 import NoBotsPage from './no_bots_page';
+import EmbeddingSearchPanel from './embedding_search/embedding_search_panel';
+import {EmbeddingSearchConfig} from './embedding_search/types';
 
 type Config = {
     services: ServiceData[],
@@ -21,7 +23,8 @@ type Config = {
     transcriptBackend: string,
     enableLLMTrace: boolean,
     enableCallSummary: boolean,
-    allowedUpstreamHostnames: string
+    allowedUpstreamHostnames: string,
+    embeddingSearchConfig: EmbeddingSearchConfig
 }
 
 type Props = {
@@ -62,6 +65,24 @@ const defaultConfig = {
     llmBackend: '',
     transcriptBackend: '',
     enableLLMTrace: false,
+    embeddingSearchConfig: {
+        type: 'disabled',
+        vectorStore: {
+            type: '',
+            parameters: {},
+        },
+        embeddingProvider: {
+            type: '',
+            parameters: {},
+        },
+        parameters: {},
+        chunkingOptions: {
+            chunkSize: 1000,
+            chunkOverlap: 200,
+            minChunkSize: 0.75,
+            chunkingStrategy: 'sentences',
+        },
+    },
 };
 
 const BetaMessage = () => (
@@ -192,6 +213,13 @@ const Config = (props: Props) => {
                     />
                 </ItemList>
             </Panel>
+            <EmbeddingSearchPanel
+                value={value.embeddingSearchConfig || defaultConfig.embeddingSearchConfig}
+                onChange={(config) => {
+                    props.onChange(props.id, {...value, embeddingSearchConfig: config});
+                    props.setSaveNeeded();
+                }}
+            />
         </ConfigContainer>
     );
 };

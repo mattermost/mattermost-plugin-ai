@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/andygrunwald/go-jira"
 	"github.com/google/go-github/v41/github"
+	"github.com/mattermost/mattermost-plugin-ai/server/embeddings"
 	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
@@ -26,7 +28,7 @@ type LookupMattermostUserArgs struct {
 	Username string `jsonschema_description:"The username of the user to lookup without a leading '@'. Example: 'firstname.lastname'"`
 }
 
-func (p *Plugin) toolResolveLookupMattermostUser(context llm.ConversationContext, argsGetter llm.ToolArgumentGetter) (string, error) {
+func (p *Plugin) toolResolveLookupMattermostUser(context *llm.Context, argsGetter llm.ToolArgumentGetter) (string, error) {
 	var args LookupMattermostUserArgs
 	err := argsGetter(&args)
 	if err != nil {
@@ -83,57 +85,6 @@ func (p *Plugin) toolResolveLookupMattermostUser(context llm.ConversationContext
 	return result, nil
 }
 
-type GetChannelPosts struct {
-	ChannelName string `jsonschema_description:"The name of the channel to get posts from. Should be the channel name without the leading '~'. Example: 'town-square'"`
-	NumberPosts int    `jsonschema_description:"The number of most recent posts to get. Example: '30'"`
-}
-
-func (p *Plugin) toolResolveGetChannelPosts(context llm.ConversationContext, argsGetter llm.ToolArgumentGetter, bot *Bot) (string, error) {
-	var args GetChannelPosts
-	err := argsGetter(&args)
-	if err != nil {
-		return "invalid parameters to function", fmt.Errorf("failed to get arguments for tool GetChannelPosts: %w", err)
-	}
-
-	if !model.IsValidChannelIdentifier(args.ChannelName) {
-		return "invalid channel name", errors.New("invalid channel name")
-	}
-
-	if args.NumberPosts < 1 || args.NumberPosts > 100 {
-		return "invalid number of posts. only 100 supported at a time", errors.New("invalid number of posts")
-	}
-
-	if context.Channel == nil || context.Channel.TeamId == "" {
-		//TODO: support DMs. This will require some way to disambiguate between channels with the same name on different teams.
-		return "Error: Ambiguous channel lookup. Unable to what channel the user is referring to because DMs do not belong to specific teams. Tell the user to ask outside a DM channel.", errors.New("ambiguous channel lookup")
-	}
-
-	channel, err := p.pluginAPI.Channel.GetByName(context.Channel.TeamId, args.ChannelName, false)
-	if err != nil {
-		return "internal failure", fmt.Errorf("failed to lookup channel by name, may not exist: %w", err)
-	}
-
-	if err = p.checkUsageRestrictionsForChannel(bot, channel); err != nil {
-		return "user asked for a channel that is blocked by usage restrictions", fmt.Errorf("usage restrictions during channel lookup: %w", err)
-	}
-
-	if !p.pluginAPI.User.HasPermissionToChannel(context.RequestingUser.Id, channel.Id, model.PermissionReadChannel) {
-		return "user doesn't have permissions to read requested channel", errors.New("user doesn't have permission to read channel")
-	}
-
-	posts, err := p.pluginAPI.Post.GetPostsForChannel(channel.Id, 0, args.NumberPosts)
-	if err != nil {
-		return "internal failure", fmt.Errorf("failed to get posts for channel: %w", err)
-	}
-
-	postsData, err := p.getMetadataForPosts(posts)
-	if err != nil {
-		return "internal failure", fmt.Errorf("failed to get metadata for posts: %w", err)
-	}
-
-	return formatThread(postsData), nil
-}
-
 type GetGithubIssueArgs struct {
 	RepoOwner string `jsonschema_description:"The owner of the repository to get issues from. Example: 'mattermost'"`
 	RepoName  string `jsonschema_description:"The name of the repository to get issues from. Example: 'mattermost-plugin-ai'"`
@@ -146,7 +97,7 @@ func formatGithubIssue(issue *github.Issue) string {
 
 var validGithubRepoName = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
 
-func (p *Plugin) toolGetGithubIssue(context llm.ConversationContext, argsGetter llm.ToolArgumentGetter) (string, error) {
+func (p *Plugin) toolGetGithubIssue(context *llm.Context, argsGetter llm.ToolArgumentGetter) (string, error) {
 	var args GetGithubIssueArgs
 	err := argsGetter(&args)
 	if err != nil {
@@ -369,7 +320,7 @@ func (p *Plugin) getPublicJiraIssues(instanceURL string, issueKeys []string) ([]
 	return &issue, nil
 }*/
 
-func (p *Plugin) toolGetJiraIssue(context llm.ConversationContext, argsGetter llm.ToolArgumentGetter) (string, error) {
+func (p *Plugin) toolGetJiraIssue(context *llm.Context, argsGetter llm.ToolArgumentGetter) (string, error) {
 	var args GetJiraIssueArgs
 	err := argsGetter(&args)
 	if err != nil {
@@ -397,20 +348,64 @@ func (p *Plugin) toolGetJiraIssue(context llm.ConversationContext, argsGetter ll
 	return result.String(), nil
 }
 
+const MinSearchTermLength = 3
+const MaxSearchTermLength = 300
+
+type SearchServerArgs struct {
+	Term string `jsonschema_description:"The terms to search for in the server. Must be more than 3 and less than 300 characters."`
+}
+
+func (p *Plugin) toolSearchServer(llmContext *llm.Context, argsGetter llm.ToolArgumentGetter) (string, error) {
+	var args SearchServerArgs
+	err := argsGetter(&args)
+	if err != nil {
+		return "invalid parameters to function", fmt.Errorf("failed to get arguments for tool SearchServer: %w", err)
+	}
+
+	if len(args.Term) < MinSearchTermLength {
+		return "search term too short", errors.New("search term too short")
+	}
+	if len(args.Term) > MaxSearchTermLength {
+		return "search term too long", errors.New("search term too long")
+	}
+
+	// Check if search is initialized
+	if p.search == nil {
+		return "search functionality is not configured", errors.New("search is not configured")
+	}
+
+	ctx := context.Background()
+	searchResults, err := p.search.Search(ctx, args.Term, embeddings.SearchOptions{
+		Limit:  10,
+		UserID: llmContext.RequestingUser.Id,
+	})
+	if err != nil {
+		return "there was an error performing the search", fmt.Errorf("search failed: %w", err)
+	}
+
+	formatted, err := p.formatSearchResults(searchResults)
+	if err != nil {
+		return "there was an error formatting the search results", fmt.Errorf("formatting failed: %w", err)
+	}
+
+	return formatted, nil
+}
+
 // getBuiltInTools returns the built-in tools that are available to all users.
 // isDM is true if the response will be in a DM with the user. More tools are available in DMs because of security properties.
 func (p *Plugin) getBuiltInTools(isDM bool, bot *Bot) []llm.Tool {
 	builtInTools := []llm.Tool{}
 
 	if isDM {
-		builtInTools = append(builtInTools, llm.Tool{
-			Name:        "GetChannelPosts",
-			Description: "Get the most recent posts from a Mattermost channel. Returns posts in the format 'username: message'",
-			Schema:      GetChannelPosts{},
-			Resolver: func(context llm.ConversationContext, argsGetter llm.ToolArgumentGetter) (string, error) {
-				return p.toolResolveGetChannelPosts(context, argsGetter, bot)
-			},
-		})
+		// Only add the search tool if search is configured
+		if p.search != nil {
+			builtInTools = append(builtInTools, llm.Tool{
+				Name:        "SearchServer",
+				Description: "Search the Mattermost chat server the user is on for messages using semantic search. Use this tool whenever the user asks a question and you don't have the context to answer or you think your response would be more accurate with knowage from the Mattermost server",
+				Schema:      SearchServerArgs{},
+				Resolver:    p.toolSearchServer,
+			})
+		}
 
 		builtInTools = append(builtInTools, llm.Tool{
 			Name:        "LookupMattermostUser",
@@ -444,7 +439,7 @@ func (p *Plugin) getBuiltInTools(isDM bool, bot *Bot) []llm.Tool {
 	return builtInTools
 }
 
-func (p *Plugin) getDefaultToolsStore(bot *Bot, isDM bool) llm.ToolStore {
+func (p *Plugin) getDefaultToolsStore(bot *Bot, isDM bool) *llm.ToolStore {
 	if bot == nil || bot.cfg.DisableTools {
 		return llm.NewNoTools()
 	}

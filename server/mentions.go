@@ -14,7 +14,7 @@ import (
 func userIsMentioned(text, botUsername string) bool {
 	for _, word := range strings.FieldsFunc(text, func(c rune) bool {
 		// Split on any whitespace or punctuation that can't be part of an at mention or emoji pattern
-		return !(c == ':' || c == '.' || c == '-' || c == '_' || c == '@' || unicode.IsLetter(c) || unicode.IsNumber(c))
+		return !unicode.IsLetter(c) && !unicode.IsNumber(c) && c != ':' && c != '.' && c != '-' && c != '_' && c != '@'
 	}) {
 		// skip word with format ':word:' with an assumption that it is an emoji format only
 		if word[0] == ':' && word[len(word)-1] == ':' {

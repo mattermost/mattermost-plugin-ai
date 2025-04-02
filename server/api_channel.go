@@ -14,8 +14,65 @@ import (
 	"github.com/gin-gonic/gin/render"
 	"github.com/mattermost/mattermost-plugin-ai/server/enterprise"
 	"github.com/mattermost/mattermost-plugin-ai/server/llm"
+	"github.com/mattermost/mattermost-plugin-ai/server/mmapi"
 	"github.com/mattermost/mattermost/server/public/model"
 )
+
+const (
+	postsPerPage = 60
+	maxPosts     = 200
+)
+
+func (p *Plugin) getPostsByChannelBetween(channelID string, startTime, endTime int64) (*model.PostList, error) {
+	// Find the ID of first post in our time range
+	firstPostID, err := p.getFirstPostBeforeTimeRangeID(channelID, startTime, endTime)
+	if err != nil {
+		return nil, err
+	}
+
+	// Initialize result list
+	result := &model.PostList{
+		Posts: make(map[string]*model.Post),
+		Order: []string{},
+	}
+
+	// Keep fetching previous pages until we either:
+	// 1. Reach the endTime
+	// 2. Hit the maxPosts limit
+	// 3. Run out of posts
+	totalPosts := 0
+	page := 0
+
+	for totalPosts < maxPosts {
+		morePosts, err := p.pluginAPI.Post.GetPostsBefore(channelID, firstPostID, page, postsPerPage)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(morePosts.Posts) == 0 {
+			break // No more posts
+		}
+
+		// Add posts that fall within our time range
+		for _, post := range morePosts.Posts {
+			if post.CreateAt >= startTime && post.CreateAt <= endTime {
+				result.Posts[post.Id] = post
+				result.Order = append([]string{post.Id}, result.Order...)
+				totalPosts++
+				if totalPosts >= maxPosts {
+					break
+				}
+			}
+			if post.CreateAt < startTime {
+				break // We've gone too far back
+			}
+		}
+
+		page++
+	}
+
+	return result, nil
+}
 
 func (p *Plugin) channelAuthorizationRequired(c *gin.Context) {
 	channelID := c.Param("channelid")
@@ -40,7 +97,7 @@ func (p *Plugin) channelAuthorizationRequired(c *gin.Context) {
 	}
 }
 
-func (p *Plugin) handleSince(c *gin.Context) {
+func (p *Plugin) handleInterval(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 	bot := c.MustGet(ContextBotKey).(*Bot)
@@ -51,7 +108,8 @@ func (p *Plugin) handleSince(c *gin.Context) {
 	}
 
 	data := struct {
-		Since        int64  `json:"since"`
+		StartTime    int64  `json:"start_time"`
+		EndTime      int64  `json:"end_time"` // 0 means "until present"
 		PresetPrompt string `json:"preset_prompt"`
 		Prompt       string `json:"prompt"`
 	}{}
@@ -62,13 +120,31 @@ func (p *Plugin) handleSince(c *gin.Context) {
 	}
 	defer c.Request.Body.Close()
 
+	// Validate time range
+	if data.EndTime != 0 && data.StartTime >= data.EndTime {
+		c.AbortWithError(http.StatusBadRequest, errors.New("start_time must be before end_time"))
+		return
+	}
+
+	// Cap the date range at 14 days
+	maxDuration := int64(14 * 24 * 60 * 60) // 14 days in seconds
+	if data.EndTime != 0 && (data.EndTime-data.StartTime) > maxDuration {
+		c.AbortWithError(http.StatusBadRequest, errors.New("date range cannot exceed 14 days"))
+		return
+	}
+
 	user, err := p.pluginAPI.User.Get(userID)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 
-	posts, err := p.pluginAPI.Post.GetPostsSince(channel.Id, data.Since)
+	var posts *model.PostList
+	if data.EndTime == 0 {
+		posts, err = p.pluginAPI.Post.GetPostsSince(channel.Id, data.StartTime)
+	} else {
+		posts, err = p.getPostsByChannelBetween(channel.Id, data.StartTime, data.EndTime)
+	}
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
@@ -87,19 +163,26 @@ func (p *Plugin) handleSince(c *gin.Context) {
 
 	formattedThread := formatThread(threadData)
 
-	context := p.MakeConversationContext(bot, user, channel, nil)
-	context.PromptParameters = map[string]string{
-		"Posts": formattedThread,
+	context := p.BuildLLMContextUserRequest(
+		bot,
+		user,
+		channel,
+		p.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.mmBot.UserId, channel)),
+	)
+	context.Parameters = map[string]any{
+		"Thread": formattedThread,
 	}
 
 	promptPreset := ""
 	switch data.PresetPrompt {
-	case "summarize":
-		promptPreset = llm.PromptSummarizeChannelSince
+	case "summarize_unreads":
+		promptPreset = llm.PromptSummarizeChannelSinceSystem
+	case "summarize_range":
+		promptPreset = llm.PromptSummarizeChannelRangeSystem
 	case "action_items":
-		promptPreset = llm.PromptFindActionItemsSince
+		promptPreset = llm.PromptFindActionItemsSystem
 	case "open_questions":
-		promptPreset = llm.PromptFindOpenQuestionsSince
+		promptPreset = llm.PromptFindOpenQuestionsSystem
 	}
 
 	if promptPreset == "" {
@@ -107,13 +190,33 @@ func (p *Plugin) handleSince(c *gin.Context) {
 		return
 	}
 
-	prompt, err := p.prompts.ChatCompletion(promptPreset, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
+	systemPrompt, err := p.prompts.Format(promptPreset, context)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 
-	resultStream, err := p.getLLM(bot.cfg).ChatCompletion(prompt)
+	userPrompt, err := p.prompts.Format(llm.PromptThreadUser, context)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	completionRequest := llm.CompletionRequest{
+		Posts: []llm.Post{
+			{
+				Role:    llm.PostRoleSystem,
+				Message: systemPrompt,
+			},
+			{
+				Role:    llm.PostRoleUser,
+				Message: userPrompt,
+			},
+		},
+		Context: context,
+	}
+
+	resultStream, err := p.getLLM(bot.cfg).ChatCompletion(completionRequest)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
@@ -128,8 +231,10 @@ func (p *Plugin) handleSince(c *gin.Context) {
 
 	promptTitle := ""
 	switch data.PresetPrompt {
-	case "summarize":
+	case "summarize_unreads":
 		promptTitle = "Summarize Unreads"
+	case "summarize_range":
+		promptTitle = "Summarize Channel"
 	case "action_items":
 		promptTitle = "Find Action Items"
 	case "open_questions":
@@ -139,8 +244,8 @@ func (p *Plugin) handleSince(c *gin.Context) {
 	p.saveTitleAsync(post.Id, promptTitle)
 
 	result := struct {
-		PostID    string `json:"postid"`
-		ChannelID string `json:"channelid"`
+		PostID    string `json:"postId"`
+		ChannelID string `json:"channelId"`
 	}{
 		PostID:    post.Id,
 		ChannelID: post.ChannelId,

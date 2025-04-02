@@ -19,7 +19,7 @@ type Tool struct {
 	Name        string
 	Description string
 	Schema      any
-	Resolver    func(context ConversationContext, argsGetter ToolArgumentGetter) (string, error)
+	Resolver    func(context *Context, argsGetter ToolArgumentGetter) (string, error)
 }
 
 type ToolArgumentGetter func(args any) error
@@ -34,16 +34,16 @@ type TraceLog interface {
 	Info(message string, keyValuePairs ...any)
 }
 
-func NewNoTools() ToolStore {
-	return ToolStore{
+func NewNoTools() *ToolStore {
+	return &ToolStore{
 		tools:   make(map[string]Tool),
 		log:     nil,
 		doTrace: false,
 	}
 }
 
-func NewToolStore(log TraceLog, doTrace bool) ToolStore {
-	return ToolStore{
+func NewToolStore(log TraceLog, doTrace bool) *ToolStore {
+	return &ToolStore{
 		tools:   make(map[string]Tool),
 		log:     log,
 		doTrace: doTrace,
@@ -56,7 +56,7 @@ func (s *ToolStore) AddTools(tools []Tool) {
 	}
 }
 
-func (s *ToolStore) ResolveTool(name string, argsGetter ToolArgumentGetter, context ConversationContext) (string, error) {
+func (s *ToolStore) ResolveTool(name string, argsGetter ToolArgumentGetter, context *Context) (string, error) {
 	tool, ok := s.tools[name]
 	if !ok {
 		s.TraceUnknown(name, argsGetter)
@@ -79,7 +79,7 @@ func (s *ToolStore) TraceUnknown(name string, argsGetter ToolArgumentGetter) {
 	if s.log != nil && s.doTrace {
 		args := ""
 		var raw json.RawMessage
-		if err := argsGetter(raw); err != nil {
+		if err := argsGetter(&raw); err != nil {
 			args = fmt.Sprintf("failed to get tool args: %v", err)
 		} else {
 			args = string(raw)
@@ -92,7 +92,7 @@ func (s *ToolStore) TraceResolved(name string, argsGetter ToolArgumentGetter, re
 	if s.log != nil && s.doTrace {
 		args := ""
 		var raw json.RawMessage
-		if err := argsGetter(raw); err != nil {
+		if err := argsGetter(&raw); err != nil {
 			args = fmt.Sprintf("failed to get tool args: %v", err)
 		} else {
 			args = string(raw)

@@ -16,6 +16,7 @@ import (
 
 	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 	"github.com/mattermost/mattermost-plugin-ai/server/llm/subtitles"
+	"github.com/mattermost/mattermost-plugin-ai/server/mmapi"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
@@ -182,8 +183,13 @@ func (p *Plugin) newCallTranscriptionSummaryThread(bot *Bot, requestingUser *mod
 			}
 		}
 
-		context := p.MakeConversationContext(bot, requestingUser, channel, nil)
-		summaryStream, err := p.summarizeTranscription(bot, transcription, context)
+		requestContext := p.BuildLLMContextUserRequest(
+			bot,
+			requestingUser,
+			channel,
+			p.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.mmBot.UserId, channel)),
+		)
+		summaryStream, err := p.summarizeTranscription(bot, transcription, requestContext)
 		if err != nil {
 			return fmt.Errorf("unable to summarize transcription: %w", err)
 		}
@@ -238,8 +244,13 @@ func (p *Plugin) summarizeCallRecording(bot *Bot, rootID string, requestingUser 
 			return fmt.Errorf("unable to upload transcript: %w", err)
 		}
 
-		conversationContext := p.MakeConversationContext(bot, requestingUser, channel, nil)
-		summaryStream, err := p.summarizeTranscription(bot, transcription, conversationContext)
+		llmContext := p.BuildLLMContextUserRequest(
+			bot,
+			requestingUser,
+			channel,
+			p.WithLLMContextDefaultTools(bot, channel.Type == model.ChannelTypeDirect),
+		)
+		summaryStream, err := p.summarizeTranscription(bot, transcription, llmContext)
 		if err != nil {
 			return fmt.Errorf("unable to summarize transcription: %w", err)
 		}
@@ -262,7 +273,7 @@ func (p *Plugin) summarizeCallRecording(bot *Bot, rootID string, requestingUser 
 	return nil
 }
 
-func (p *Plugin) summarizeTranscription(bot *Bot, transcription *subtitles.Subtitles, context llm.ConversationContext) (*llm.TextStreamResult, error) {
+func (p *Plugin) summarizeTranscription(bot *Bot, transcription *subtitles.Subtitles, context *llm.Context) (*llm.TextStreamResult, error) {
 	llmFormattedTranscription := transcription.FormatForLLM()
 	tokens := p.getLLM(bot.cfg).CountTokens(llmFormattedTranscription)
 	tokenLimitWithMargin := int(float64(p.getLLM(bot.cfg).InputTokenLimit())*0.75) - ContextTokenMargin
@@ -276,13 +287,25 @@ func (p *Plugin) summarizeTranscription(bot *Bot, transcription *subtitles.Subti
 		summarizedChunks := make([]string, 0, len(chunks))
 		p.pluginAPI.Log.Debug("Split into chunks", "chunks", len(chunks))
 		for _, chunk := range chunks {
-			context.PromptParameters = map[string]string{"TranscriptionChunk": chunk}
-			summarizeChunkPrompt, err := p.prompts.ChatCompletion(llm.PromptSummarizeChunk, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
+			systemPrompt, err := p.prompts.Format(llm.PromptSummarizeChunkSystem, context)
 			if err != nil {
 				return nil, fmt.Errorf("unable to get summarize chunk prompt: %w", err)
 			}
+			request := llm.CompletionRequest{
+				Posts: []llm.Post{
+					{
+						Role:    llm.PostRoleSystem,
+						Message: systemPrompt,
+					},
+					{
+						Role:    llm.PostRoleUser,
+						Message: chunk,
+					},
+				},
+				Context: context,
+			}
 
-			summarizedChunk, err := p.getLLM(bot.cfg).ChatCompletionNoStream(summarizeChunkPrompt)
+			summarizedChunk, err := p.getLLM(bot.cfg).ChatCompletionNoStream(request)
 			if err != nil {
 				return nil, fmt.Errorf("unable to get summarized chunk: %w", err)
 			}
@@ -295,13 +318,27 @@ func (p *Plugin) summarizeTranscription(bot *Bot, transcription *subtitles.Subti
 		p.pluginAPI.Log.Debug("Completed chunk summarization", "chunks", len(summarizedChunks), "tokens", p.getLLM(bot.cfg).CountTokens(llmFormattedTranscription))
 	}
 
-	context.PromptParameters = map[string]string{"Transcription": llmFormattedTranscription, "IsChunked": fmt.Sprintf("%t", isChunked)}
-	summaryPrompt, err := p.prompts.ChatCompletion(llm.PromptMeetingSummary, context, p.getDefaultToolsStore(bot, context.IsDMWithBot()))
+	context.Parameters = map[string]any{"IsChunked": fmt.Sprintf("%t", isChunked)}
+	systemPrompt, err := p.prompts.Format(llm.PromptMeetingSummarySystem, context)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get meeting summary prompt: %w", err)
 	}
 
-	summaryStream, err := p.getLLM(bot.cfg).ChatCompletion(summaryPrompt)
+	completionRequest := llm.CompletionRequest{
+		Posts: []llm.Post{
+			{
+				Role:    llm.PostRoleSystem,
+				Message: systemPrompt,
+			},
+			{
+				Role:    llm.PostRoleUser,
+				Message: llmFormattedTranscription,
+			},
+		},
+		Context: context,
+	}
+
+	summaryStream, err := p.getLLM(bot.cfg).ChatCompletion(completionRequest)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get meeting summary: %w", err)
 	}

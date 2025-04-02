@@ -17,9 +17,13 @@ import {useSelectNotAIPost} from '@/hooks';
 
 import {PostMessagePreview} from '@/mm_webapp';
 
+import {SearchSources} from './search_sources';
+
 import PostText from './post_text';
 import IconRegenerate from './assets/icon_regenerate';
 import IconCancel from './assets/icon_cancel';
+
+const SearchResultsPropKey = 'search_results';
 
 const PostBody = styled.div`
 `;
@@ -192,6 +196,11 @@ export const LLMBotPost = (props: Props) => {
                 postID={props.post.id}
                 showCursor={generating}
             />
+            {props.post.props?.[SearchResultsPropKey] && (
+                <SearchSources
+                    sources={JSON.parse(props.post.props[SearchResultsPropKey])}
+                />
+            )}
             { showPostbackButton &&
             <PostSummaryHelpMessage>
                 <FormattedMessage defaultMessage='Would you like to post this summary to the original call thread? You can also ask Copilot to make changes.'/>

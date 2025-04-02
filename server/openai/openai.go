@@ -25,89 +25,127 @@ import (
 	openaiClient "github.com/sashabaranov/go-openai"
 )
 
-type OpenAI struct {
-	client           *openaiClient.Client
-	defaultModel     string
-	inputTokenLimit  int
-	streamingTimeout time.Duration
-	metricsService   metrics.LLMetrics
-	sendUserID       bool
-	outputTokenLimit int
+type Config struct {
+	APIKey              string        `json:"apiKey"`
+	APIURL              string        `json:"apiURL"`
+	OrgID               string        `json:"orgID"`
+	DefaultModel        string        `json:"defaultModel"`
+	InputTokenLimit     int           `json:"inputTokenLimit"`
+	OutputTokenLimit    int           `json:"outputTokenLimit"`
+	StreamingTimeout    time.Duration `json:"streamingTimeout"`
+	SendUserID          bool          `json:"sendUserID"`
+	EmbeddingModel      string        `json:"embeddingModel"`
+	EmbeddingDimentions int           `json:"embeddingDimensions"`
 }
 
-const StreamingTimeoutDefault = 10 * time.Second
+type OpenAI struct {
+	client         *openaiClient.Client
+	config         Config
+	metricsService metrics.LLMetrics
+}
 
-const MaxFunctionCalls = 10
-
-const OpenAIMaxImageSize = 20 * 1024 * 1024 // 20 MB
+const (
+	StreamingTimeoutDefault = 10 * time.Second
+	MaxFunctionCalls        = 10
+	OpenAIMaxImageSize      = 20 * 1024 * 1024 // 20 MB
+)
 
 var ErrStreamingTimeout = errors.New("timeout streaming")
 
 func NewAzure(llmService llm.ServiceConfig, httpClient *http.Client, metricsService metrics.LLMetrics) *OpenAI {
-	return newOpenAI(llmService, httpClient, metricsService,
+	config := configFromLLMService(llmService)
+	return newOpenAI(config, httpClient, metricsService,
 		func(apiKey string) openaiClient.ClientConfig {
-			config := openaiClient.DefaultAzureConfig(apiKey, strings.TrimSuffix(llmService.APIURL, "/"))
-			config.APIVersion = "2024-06-01"
-			return config
+			clientConfig := openaiClient.DefaultAzureConfig(apiKey, strings.TrimSuffix(config.APIURL, "/"))
+			clientConfig.APIVersion = "2024-06-01"
+			return clientConfig
 		},
 	)
 }
 
 func NewCompatible(llmService llm.ServiceConfig, httpClient *http.Client, metricsService metrics.LLMetrics) *OpenAI {
-	return newOpenAI(llmService, httpClient, metricsService,
+	config := configFromLLMService(llmService)
+	return newOpenAI(config, httpClient, metricsService,
 		func(apiKey string) openaiClient.ClientConfig {
-			config := openaiClient.DefaultConfig(apiKey)
-			config.BaseURL = strings.TrimSuffix(llmService.APIURL, "/")
-			return config
+			clientConfig := openaiClient.DefaultConfig(apiKey)
+			clientConfig.BaseURL = strings.TrimSuffix(config.APIURL, "/")
+			return clientConfig
 		},
 	)
 }
 
 func New(llmService llm.ServiceConfig, httpClient *http.Client, metricsService metrics.LLMetrics) *OpenAI {
-	return newOpenAI(llmService, httpClient, metricsService,
+	config := configFromLLMService(llmService)
+	return newOpenAI(config, httpClient, metricsService,
 		func(apiKey string) openaiClient.ClientConfig {
-			config := openaiClient.DefaultConfig(apiKey)
-			config.OrgID = llmService.OrgID
-			return config
+			clientConfig := openaiClient.DefaultConfig(apiKey)
+			clientConfig.OrgID = config.OrgID
+			return clientConfig
 		},
 	)
 }
 
-func newOpenAI(
-	llmService llm.ServiceConfig,
-	httpClient *http.Client,
-	metricsService metrics.LLMetrics,
-	baseConfigFunc func(apiKey string) openaiClient.ClientConfig,
-) *OpenAI {
-	apiKey := llmService.APIKey
+// NewCompatibleEmbeddings creates a new OpenAI client configured only for embeddings functionality
+func NewCompatibleEmbeddings(config Config, httpClient *http.Client) *OpenAI {
+	if config.EmbeddingModel == "" {
+		config.EmbeddingModel = string(openaiClient.LargeEmbedding3)
+		config.EmbeddingDimentions = 3072
+	}
+
+	return newOpenAI(config, httpClient, nil,
+		func(apiKey string) openaiClient.ClientConfig {
+			clientConfig := openaiClient.DefaultConfig(apiKey)
+			clientConfig.BaseURL = strings.TrimSuffix(config.APIURL, "/")
+			return clientConfig
+		},
+	)
+}
+
+func configFromLLMService(llmService llm.ServiceConfig) Config {
 	defaultModel := llmService.DefaultModel
 	if defaultModel == "" {
 		defaultModel = openaiClient.GPT3Dot5Turbo
 	}
-
-	config := baseConfigFunc(apiKey)
-	config.HTTPClient = httpClient
 
 	streamingTimeout := StreamingTimeoutDefault
 	if llmService.StreamingTimeoutSeconds > 0 {
 		streamingTimeout = time.Duration(llmService.StreamingTimeoutSeconds) * time.Second
 	}
 
-	return &OpenAI{
-		client:           openaiClient.NewClientWithConfig(config),
-		defaultModel:     defaultModel,
-		inputTokenLimit:  llmService.InputTokenLimit,
-		streamingTimeout: streamingTimeout,
-		metricsService:   metricsService,
-		sendUserID:       llmService.SendUserID,
-		outputTokenLimit: llmService.OutputTokenLimit,
+	return Config{
+		APIKey:           llmService.APIKey,
+		APIURL:           llmService.APIURL,
+		OrgID:            llmService.OrgID,
+		DefaultModel:     defaultModel,
+		InputTokenLimit:  llmService.InputTokenLimit,
+		OutputTokenLimit: llmService.OutputTokenLimit,
+		StreamingTimeout: streamingTimeout,
+		SendUserID:       llmService.SendUserID,
 	}
 }
 
-func modifyCompletionRequestWithConversation(request openaiClient.ChatCompletionRequest, conversation llm.BotConversation) openaiClient.ChatCompletionRequest {
-	request.Messages = postsToChatCompletionMessages(conversation.Posts)
-	request.Tools = toolsToOpenAITools(conversation.Tools.GetTools())
-	return request
+func newOpenAI(
+	config Config,
+	httpClient *http.Client,
+	metricsService metrics.LLMetrics,
+	baseConfigFunc func(apiKey string) openaiClient.ClientConfig,
+) *OpenAI {
+	clientConfig := baseConfigFunc(config.APIKey)
+	clientConfig.HTTPClient = httpClient
+
+	return &OpenAI{
+		client:         openaiClient.NewClientWithConfig(clientConfig),
+		config:         config,
+		metricsService: metricsService,
+	}
+}
+
+func modifyCompletionRequestWithRequest(openAIRequest openaiClient.ChatCompletionRequest, interalRequest llm.CompletionRequest) openaiClient.ChatCompletionRequest {
+	openAIRequest.Messages = postsToChatCompletionMessages(interalRequest.Posts)
+	if interalRequest.Context.Tools != nil {
+		openAIRequest.Tools = toolsToOpenAITools(interalRequest.Context.Tools.GetTools())
+	}
+	return openAIRequest
 }
 
 func toolsToOpenAITools(tools []llm.Tool) []openaiClient.Tool {
@@ -138,9 +176,10 @@ func postsToChatCompletionMessages(posts []llm.Post) []openaiClient.ChatCompleti
 
 	for _, post := range posts {
 		role := openaiClient.ChatMessageRoleUser
-		if post.Role == llm.PostRoleBot {
+		switch post.Role {
+		case llm.PostRoleBot:
 			role = openaiClient.ChatMessageRoleAssistant
-		} else if post.Role == llm.PostRoleSystem {
+		case llm.PostRoleSystem:
 			role = openaiClient.ChatMessageRoleSystem
 		}
 		completionMessage := openaiClient.ChatCompletionMessage{
@@ -210,7 +249,7 @@ type ToolBufferElement struct {
 	args strings.Builder
 }
 
-func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionRequest, conversation llm.BotConversation, output chan<- string, errChan chan<- error) {
+func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionRequest, llmContext *llm.Context, output chan<- string, errChan chan<- error) {
 	request.Stream = true
 
 	ctx, cancel := context.WithCancelCause(context.Background())
@@ -219,7 +258,7 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 	// watchdog to cancel if the streaming stalls
 	watchdog := make(chan struct{})
 	go func() {
-		timer := time.NewTimer(s.streamingTimeout)
+		timer := time.NewTimer(s.config.StreamingTimeout)
 		defer timer.Stop()
 		for {
 			select {
@@ -232,7 +271,7 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 				if !timer.Stop() {
 					<-timer.C
 				}
-				timer.Reset(s.streamingTimeout)
+				timer.Reset(s.config.StreamingTimeout)
 			}
 		}
 	}()
@@ -322,7 +361,7 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 				name := tool.Function.Name
 				arguments := tool.Function.Arguments
 				toolID := tool.ID
-				toolResult, err := conversation.Tools.ResolveTool(name, createFunctionArgumentResolver(arguments), conversation.Context)
+				toolResult, err := llmContext.Tools.ResolveTool(name, createFunctionArgumentResolver(arguments), llmContext)
 				if err != nil {
 					fmt.Printf("Error resolving function %s: %s", name, err)
 				}
@@ -335,7 +374,7 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 			}
 
 			// Call ourselves again with the result of the function call
-			s.streamResultToChannels(request, conversation, output, errChan)
+			s.streamResultToChannels(request, llmContext, output, errChan)
 			return
 		default:
 			fmt.Printf("Unknown finish reason: %s", response.Choices[0].FinishReason)
@@ -366,13 +405,13 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 	}
 }
 
-func (s *OpenAI) streamResult(request openaiClient.ChatCompletionRequest, conversation llm.BotConversation) (*llm.TextStreamResult, error) {
+func (s *OpenAI) streamResult(request openaiClient.ChatCompletionRequest, llmContext *llm.Context) (*llm.TextStreamResult, error) {
 	output := make(chan string)
 	errChan := make(chan error)
 	go func() {
 		defer close(output)
 		defer close(errChan)
-		s.streamResultToChannels(request, conversation, output, errChan)
+		s.streamResultToChannels(request, llmContext, output, errChan)
 	}()
 
 	return &llm.TextStreamResult{Stream: output, Err: errChan}, nil
@@ -380,8 +419,8 @@ func (s *OpenAI) streamResult(request openaiClient.ChatCompletionRequest, conver
 
 func (s *OpenAI) GetDefaultConfig() llm.LanguageModelConfig {
 	return llm.LanguageModelConfig{
-		Model:              s.defaultModel,
-		MaxGeneratedTokens: s.outputTokenLimit,
+		Model:              s.config.DefaultModel,
+		MaxGeneratedTokens: s.config.OutputTokenLimit,
 	}
 }
 
@@ -408,21 +447,23 @@ func (s *OpenAI) completionRequestFromConfig(cfg llm.LanguageModelConfig) openai
 	return request
 }
 
-func (s *OpenAI) ChatCompletion(conversation llm.BotConversation, opts ...llm.LanguageModelOption) (*llm.TextStreamResult, error) {
+func (s *OpenAI) ChatCompletion(request llm.CompletionRequest, opts ...llm.LanguageModelOption) (*llm.TextStreamResult, error) {
 	s.metricsService.IncrementLLMRequests()
 
-	request := s.completionRequestFromConfig(s.createConfig(opts))
-	request = modifyCompletionRequestWithConversation(request, conversation)
-	request.Stream = true
-	if s.sendUserID {
-		request.User = conversation.Context.RequestingUser.Id
+	openAIRequest := s.completionRequestFromConfig(s.createConfig(opts))
+	openAIRequest = modifyCompletionRequestWithRequest(openAIRequest, request)
+	openAIRequest.Stream = true
+	if s.config.SendUserID {
+		if request.Context.RequestingUser != nil {
+			openAIRequest.User = request.Context.RequestingUser.Id
+		}
 	}
-	return s.streamResult(request, conversation)
+	return s.streamResult(openAIRequest, request.Context)
 }
 
-func (s *OpenAI) ChatCompletionNoStream(conversation llm.BotConversation, opts ...llm.LanguageModelOption) (string, error) {
+func (s *OpenAI) ChatCompletionNoStream(request llm.CompletionRequest, opts ...llm.LanguageModelOption) (string, error) {
 	// This could perform better if we didn't use the streaming API here, but the complexity is not worth it.
-	result, err := s.ChatCompletion(conversation, opts...)
+	result, err := s.ChatCompletion(request, opts...)
 	if err != nil {
 		return "", err
 	}
@@ -485,27 +526,65 @@ func (s *OpenAI) CountTokens(text string) int {
 }
 
 func (s *OpenAI) InputTokenLimit() int {
-	if s.inputTokenLimit > 0 {
-		return s.inputTokenLimit
+	if s.config.InputTokenLimit > 0 {
+		return s.config.InputTokenLimit
 	}
 
 	switch {
-	case strings.HasPrefix(s.defaultModel, "gpt-4o"),
-		strings.HasPrefix(s.defaultModel, "o1-preview"),
-		strings.HasPrefix(s.defaultModel, "o1-mini"),
-		strings.HasPrefix(s.defaultModel, "gpt-4-turbo"),
-		strings.HasPrefix(s.defaultModel, "gpt-4-0125-preview"),
-		strings.HasPrefix(s.defaultModel, "gpt-4-1106-preview"):
+	case strings.HasPrefix(s.config.DefaultModel, "gpt-4o"),
+		strings.HasPrefix(s.config.DefaultModel, "o1-preview"),
+		strings.HasPrefix(s.config.DefaultModel, "o1-mini"),
+		strings.HasPrefix(s.config.DefaultModel, "gpt-4-turbo"),
+		strings.HasPrefix(s.config.DefaultModel, "gpt-4-0125-preview"),
+		strings.HasPrefix(s.config.DefaultModel, "gpt-4-1106-preview"):
 		return 128000
-	case strings.HasPrefix(s.defaultModel, "gpt-4"):
+	case strings.HasPrefix(s.config.DefaultModel, "gpt-4"):
 		return 8192
-	case strings.HasPrefix(s.defaultModel, "gpt-3.5-turbo"),
-		s.defaultModel == "gpt-3.5-turbo-0125",
-		s.defaultModel == "gpt-3.5-turbo-1106":
+	case strings.HasPrefix(s.config.DefaultModel, "gpt-3.5-turbo"),
+		s.config.DefaultModel == "gpt-3.5-turbo-0125",
+		s.config.DefaultModel == "gpt-3.5-turbo-1106":
 		return 16385
-	case s.defaultModel == "gpt-3.5-turbo-instruct":
+	case s.config.DefaultModel == "gpt-3.5-turbo-instruct":
 		return 4096
 	}
 
 	return 128000 // Default fallback
+}
+
+func (s *OpenAI) CreateEmbedding(ctx context.Context, text string) ([]float32, error) {
+	resp, err := s.client.CreateEmbeddings(ctx, openaiClient.EmbeddingRequest{
+		Input: []string{text},
+		Model: openaiClient.EmbeddingModel(s.config.EmbeddingModel),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create embedding: %w", err)
+	}
+
+	if len(resp.Data) == 0 {
+		return nil, fmt.Errorf("no embedding data returned")
+	}
+
+	return resp.Data[0].Embedding, nil
+}
+
+// BatchCreateEmbeddings generates embeddings for multiple texts in a single API call
+func (s *OpenAI) BatchCreateEmbeddings(ctx context.Context, texts []string) ([][]float32, error) {
+	resp, err := s.client.CreateEmbeddings(ctx, openaiClient.EmbeddingRequest{
+		Input: texts,
+		Model: openaiClient.EmbeddingModel(s.config.EmbeddingModel),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create embeddings batch: %w", err)
+	}
+
+	embeddings := make([][]float32, len(resp.Data))
+	for i, data := range resp.Data {
+		embeddings[i] = data.Embedding
+	}
+
+	return embeddings, nil
+}
+
+func (s *OpenAI) Dimensions() int {
+	return s.config.EmbeddingDimentions
 }

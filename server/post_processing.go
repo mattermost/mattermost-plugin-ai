@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"sort"
@@ -41,13 +42,6 @@ func (t *ThreadData) cutoffAtPostID(postID string) {
 			break
 		}
 	}
-}
-
-func (t *ThreadData) latestPost() *model.Post {
-	if len(t.Posts) == 0 {
-		return nil
-	}
-	return t.Posts[len(t.Posts)-1]
 }
 
 type PostStreamContext struct {
@@ -96,7 +90,7 @@ func (p *Plugin) getMetadataForPosts(posts *model.PostList) (*ThreadData, error)
 func formatThread(data *ThreadData) string {
 	result := ""
 	for _, post := range data.Posts {
-		result += fmt.Sprintf("%s: %s\n\n", data.UsersByID[post.UserId].Username, llm.FormatPostBody(post))
+		result += fmt.Sprintf("%s: %s\n\n", data.UsersByID[post.UserId].Username, FormatPostBody(post))
 	}
 
 	return result
@@ -393,7 +387,7 @@ func isImageMimeType(mimeType string) bool {
 
 func (p *Plugin) PostToAIPost(bot *Bot, post *model.Post) llm.Post {
 	var filesForUpstream []llm.File
-	message := llm.FormatPostBody(post)
+	message := FormatPostBody(post)
 	var extractedFileContents []string
 
 	maxFileSize := defaultMaxFileSize
@@ -465,14 +459,52 @@ func (p *Plugin) PostToAIPost(bot *Bot, post *model.Post) llm.Post {
 	}
 }
 
-func (p *Plugin) ThreadToBotConversation(bot *Bot, posts []*model.Post) llm.BotConversation {
-	result := llm.BotConversation{
-		Posts: make([]llm.Post, 0, len(posts)),
-	}
+func (p *Plugin) ThreadToLLMPosts(bot *Bot, posts []*model.Post) []llm.Post {
+	result := make([]llm.Post, 0, len(posts))
 
 	for _, post := range posts {
-		result.Posts = append(result.Posts, p.PostToAIPost(bot, post))
+		result = append(result, p.PostToAIPost(bot, post))
 	}
 
 	return result
+}
+
+func FormatPostBody(post *model.Post) string {
+	attachments := post.Attachments()
+	if len(attachments) > 0 {
+		result := strings.Builder{}
+		result.WriteString(post.Message)
+		for _, attachment := range attachments {
+			result.WriteString("\n")
+			if attachment.Pretext != "" {
+				result.WriteString(attachment.Pretext)
+				result.WriteString("\n")
+			}
+			if attachment.Title != "" {
+				result.WriteString(attachment.Title)
+				result.WriteString("\n")
+			}
+			if attachment.Text != "" {
+				result.WriteString(attachment.Text)
+				result.WriteString("\n")
+			}
+			for _, field := range attachment.Fields {
+				value, err := json.Marshal(field.Value)
+				if err != nil {
+					continue
+				}
+				result.WriteString(field.Title)
+				result.WriteString(": ")
+				result.Write(value)
+				result.WriteString("\n")
+			}
+
+			if attachment.Footer != "" {
+				result.WriteString(attachment.Footer)
+				result.WriteString("\n")
+			}
+		}
+		return result.String()
+	}
+	return post.Message
 }
