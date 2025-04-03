@@ -9,15 +9,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
-	"path"
 	"time"
 
 	"github.com/mattermost/mattermost/server/public/plugin"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -27,10 +25,26 @@ const (
 	aiPluginID = "mattermost-ai"
 )
 
+type PluginAPI interface {
+	PluginHTTP(*http.Request) *http.Response
+}
+
 // Client allows calling the AI plugin functions from other plugins
 type Client struct {
-	baseURL    string
-	httpClient *http.Client
+	httpClient http.Client
+}
+
+type pluginAPIRoundTripper struct {
+	api PluginAPI
+}
+
+func (p *pluginAPIRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp := p.api.PluginHTTP(req)
+	if resp == nil {
+		return nil, errors.Errorf("Failed to make interplugin request")
+	}
+
+	return resp, nil
 }
 
 // CompletionRequest represents the data needed for an interplugin completion request
@@ -67,7 +81,7 @@ func (c *Client) SimpleCompletionWithContext(ctx context.Context, req SimpleComp
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	apiURL := fmt.Sprintf("%s/inter-plugin/v1/simple_completion", c.baseURL)
+	apiURL := fmt.Sprintf("/%s/inter-plugin/v1/simple_completion", aiPluginID)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return "", fmt.Errorf("failed to create HTTP request: %w", err)
@@ -102,22 +116,9 @@ func (c *Client) SimpleCompletion(req SimpleCompletionRequest) (string, error) {
 }
 
 // NewClientFromPlugin creates a new Client using the plugin's API client
-func NewClient(p *plugin.MattermostPlugin) (*Client, error) {
-	// Get site URL from plugin config
-	config := p.API.GetConfig()
-	if config == nil || config.ServiceSettings.SiteURL == nil || *config.ServiceSettings.SiteURL == "" {
-		return nil, errors.New("site URL not configured")
-	}
+func NewClient(p *plugin.MattermostPlugin) *Client {
+	client := &Client{}
+	client.httpClient.Transport = &pluginAPIRoundTripper{p.API}
 
-	baseURL, err := url.Parse(*config.ServiceSettings.SiteURL)
-	if err != nil {
-		return nil, fmt.Errorf("invalid site URL: %w", err)
-	}
-
-	baseURL.Path = path.Join(baseURL.Path, "plugins", aiPluginID)
-
-	return &Client{
-		baseURL:    baseURL.String(),
-		httpClient: &http.Client{Timeout: DefaultTimeout},
-	}, nil
+	return client
 }
