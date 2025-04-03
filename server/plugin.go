@@ -95,13 +95,15 @@ func resolveffmpegPath() string {
 
 func (p *Plugin) OnActivate() error {
 	p.pluginAPI = pluginapi.NewClient(p.API, p.Driver)
-	p.pluginSecret = p.getConfiguration().Config.InterPluginSecretKey
+	p.pluginSecret = p.getConfiguration().InterPluginSecretKey
 	if p.pluginSecret == "" {
 		p.pluginSecret = model.NewId()
 		config := p.API.GetConfig()
 		aiPluginConfig := config.PluginSettings.Plugins[manifest.Id]["config"].(map[string]any)
 		aiPluginConfig["interPluginSecretKey"] = p.pluginSecret
-		p.API.SaveConfig(config)
+		if err := p.API.SaveConfig(config); err != nil {
+			return err
+		}
 	}
 
 	p.licenseChecker = enterprise.NewLicenseChecker(p.pluginAPI)
