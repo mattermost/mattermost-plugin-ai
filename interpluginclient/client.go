@@ -109,22 +109,6 @@ func NewClient(p *plugin.MattermostPlugin) (*Client, error) {
 		return nil, errors.New("site URL not configured")
 	}
 
-	// Get the plugin secret from the KV store
-	aiPluginConfig := config.PluginSettings.Plugins[aiPluginID]
-	if aiPluginConfig == nil {
-		return nil, errors.New("not inter plugin secret key found")
-	}
-
-	aiPluginConfig = aiPluginConfig["config"].(map[string]any)
-	if aiPluginConfig == nil {
-		return nil, errors.New("not inter plugin secret key found")
-	}
-
-	secret := aiPluginConfig["interPluginSecretKey"]
-	if secret == nil {
-		return nil, errors.New("not inter plugin secret key found")
-	}
-
 	baseURL, err := url.Parse(*config.ServiceSettings.SiteURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid site URL: %w", err)

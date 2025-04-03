@@ -9,24 +9,15 @@ import (
 )
 
 type SimpleCompletionRequest struct {
-	SystemPrompt    string                     `json:"systemPrompt"`
-	UserPrompt      string                     `json:"userPrompt"`
-	BotUsername     string                     `json:"botUsername"`
-	RequesterUserID string                     `json:"requesterUserID"`
-	Parameters      SimpleCompletionParameters `json:"parameters"`
-}
-
-type SimpleCompletionParameters struct {
-	// Model specifies which specific model to use
-	Model string
-
-	// MaxGeneratedTokens limits the maximum number of tokens generated in the response
-	MaxGeneratedTokens int
+	SystemPrompt    string         `json:"systemPrompt"`
+	UserPrompt      string         `json:"userPrompt"`
+	BotUsername     string         `json:"botUsername"`
+	RequesterUserID string         `json:"requesterUserID"`
+	Parameters      map[string]any `json:"parameters"`
 }
 
 func (p *Plugin) handleInterPluginSimpleCompletion(c *gin.Context) {
-
-	var req CompletionRequest
+	var req SimpleCompletionRequest
 	if err := c.BindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid request: %v", err)})
 		return
@@ -98,17 +89,8 @@ func (p *Plugin) handleInterPluginSimpleCompletion(c *gin.Context) {
 		Context: context,
 	}
 
-	// Apply any custom parameters for the model
-	options := []llm.LanguageModelOption{}
-	if model, ok := req.Parameters["model"].(string); ok && model != "" {
-		options = append(options, llm.WithModel(model))
-	}
-	if maxTokens, ok := req.Parameters["maxGeneratedTokens"].(float64); ok && maxTokens > 0 {
-		options = append(options, llm.WithMaxGeneratedTokens(int(maxTokens)))
-	}
-
 	// Execute the completion
-	response, err := p.getLLM(bot.cfg).ChatCompletionNoStream(completionRequest, options...)
+	response, err := p.getLLM(bot.cfg).ChatCompletionNoStream(completionRequest)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("completion failed: %v", err)})
 		return
