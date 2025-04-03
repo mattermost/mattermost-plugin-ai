@@ -188,6 +188,16 @@ ifneq ($(HAS_SERVER),)
 	$(GO) vet -vettool=$(GOBIN)/mattermost-govet -license -license.year=2023 ./...
 endif
 
+## Runs all style checks but fixes anything it can.
+.PHONY: check-style-fix
+check-style-fix: manifest-check apply webapp/node_modules
+	goimports -w .
+	./scripts/fix_license_headers.sh 2023
+	cd webapp && npm run fix
+	cd webapp && npm run check-types
+	$(GO) vet ./...
+	$(GOBIN)/golangci-lint run --fix ./...
+
 generate:
 	$(GO) generate ./...
 
