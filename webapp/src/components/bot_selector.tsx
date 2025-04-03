@@ -12,7 +12,7 @@ import {LLMBot} from '@/bots';
 
 import {getProfilePictureUrl} from '@/client';
 
-import DotMenu, {DotMenuButton, DropdownMenu, DropdownMenuItem} from './dot_menu';
+import DotMenu, {DropdownMenu, DropdownMenuItem} from './dot_menu';
 import {GrayPill} from './pill';
 
 type DropdownBotSelectorProps = {
@@ -62,7 +62,7 @@ type BotDropdownProps = {
     bots: LLMBot[]
     activeBot: LLMBot | null
     setActiveBot: (bot: LLMBot) => void
-    container: typeof DotMenuButton
+    container: React.ReactNode
     children: React.ReactNode
     testId?: string
 }
