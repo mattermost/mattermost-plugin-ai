@@ -24,8 +24,13 @@ const (
 func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Request) {
 	router := gin.Default()
 	router.Use(p.ginlogger)
-	router.Use(p.MattermostAuthorizationRequired)
 	router.Use(p.metricsMiddleware)
+
+	interPluginRoute := router.Group("/inter-plugin")
+	interPluginRoute.Use(p.interPluginAuthorizationRequired)
+	interPluginRoute.POST("/completion", p.handleInterPluginCompletion)
+
+	router.Use(p.MattermostAuthorizationRequired)
 
 	router.GET("/ai_threads", p.handleGetAIThreads)
 	router.GET("/ai_bots", p.handleGetAIBots)
@@ -86,6 +91,16 @@ func (p *Plugin) MattermostAuthorizationRequired(c *gin.Context) {
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
+}
+
+func (p *Plugin) interPluginAuthorizationRequired(c *gin.Context) {
+	pluginSecret := c.GetHeader("Mattermost-Plugin-Secret")
+	if pluginSecret != "" {
+		if p.pluginSecret == pluginSecret {
+			return
+		}
+	}
+	c.AbortWithStatus(http.StatusUnauthorized)
 }
 
 func (p *Plugin) handleGetAIThreads(c *gin.Context) {
@@ -181,4 +196,105 @@ func (p *Plugin) handleGetAIBots(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, response)
+}
+
+func (p *Plugin) handleInterPluginCompletion(c *gin.Context) {
+	type CompletionRequest struct {
+		SystemPrompt    string                 `json:"systemPrompt"`
+		UserPrompt      string                 `json:"userPrompt"`
+		BotUsername     string                 `json:"botUsername"`
+		RequesterUserID string                 `json:"requesterUserID"`
+		Parameters      map[string]interface{} `json:"parameters"`
+	}
+
+	var req CompletionRequest
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid request: %v", err)})
+		return
+	}
+
+	// If bot username is not provided, use the default bot
+	if req.BotUsername == "" {
+		req.BotUsername = p.getConfiguration().DefaultBotName
+	}
+
+	// Get the bot by username or use the first available bot
+	bot := p.GetBotByUsernameOrFirst(req.BotUsername)
+	if bot == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to get bot: %s", req.BotUsername)})
+		return
+	}
+
+	userID := req.RequesterUserID
+	if userID == "" {
+		userID = bot.mmBot.UserId
+	}
+
+	// Get user information
+	user, err := p.pluginAPI.User.Get(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to get user: %v", err)})
+		return
+	}
+
+	// Create a proper context for the LLM
+	context := p.BuildLLMContextUserRequest(
+		bot,
+		user,
+		nil, // No channel for inter-plugin requests
+		p.WithLLMContextParameters(req.Parameters),
+	)
+
+	// Add tools if not disabled
+	if !bot.cfg.DisableTools {
+		context.Tools = p.getDefaultToolsStore(bot, true)
+	}
+
+	// Format system prompt using template
+	systemPrompt, err := p.prompts.FormatString(req.SystemPrompt, context)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to format system prompt: %v", err)})
+		return
+	}
+
+	userPrompt, err := p.prompts.FormatString(req.UserPrompt, context)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to format user prompt: %v", err)})
+		return
+	}
+
+	// Create a completion request with system prompt and user prompt
+	completionRequest := llm.CompletionRequest{
+		Posts: []llm.Post{
+			{
+				Role:    llm.PostRoleSystem,
+				Message: systemPrompt,
+			},
+			{
+				Role:    llm.PostRoleUser,
+				Message: userPrompt,
+			},
+		},
+		Context: context,
+	}
+
+	// Apply any custom parameters for the model
+	options := []llm.LanguageModelOption{}
+	if model, ok := req.Parameters["model"].(string); ok && model != "" {
+		options = append(options, llm.WithModel(model))
+	}
+	if maxTokens, ok := req.Parameters["maxGeneratedTokens"].(float64); ok && maxTokens > 0 {
+		options = append(options, llm.WithMaxGeneratedTokens(int(maxTokens)))
+	}
+
+	// Execute the completion
+	response, err := p.getLLM(bot.cfg).ChatCompletionNoStream(completionRequest, options...)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("completion failed: %v", err)})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"response": response,
+	})
 }

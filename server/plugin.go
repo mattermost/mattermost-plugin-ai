@@ -23,6 +23,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/server/metrics"
 	"github.com/mattermost/mattermost-plugin-ai/server/openai"
 	"github.com/mattermost/mattermost-plugin-ai/server/postgres"
+	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 	"github.com/mattermost/mattermost/server/public/shared/httpservice"
@@ -76,6 +77,7 @@ type Plugin struct {
 
 	llmUpstreamHTTPClient *http.Client
 	search                embeddings.EmbeddingSearch
+	pluginSecret          string
 }
 
 func resolveffmpegPath() string {
@@ -93,6 +95,14 @@ func resolveffmpegPath() string {
 
 func (p *Plugin) OnActivate() error {
 	p.pluginAPI = pluginapi.NewClient(p.API, p.Driver)
+	p.pluginSecret = p.getConfiguration().Config.InterPluginSecretKey
+	if p.pluginSecret == "" {
+		p.pluginSecret = model.NewId()
+		config := p.API.GetConfig()
+		aiPluginConfig := config.PluginSettings.Plugins[manifest.Id]["config"].(map[string]any)
+		aiPluginConfig["interPluginSecretKey"] = p.pluginSecret
+		p.API.SaveConfig(config)
+	}
 
 	p.licenseChecker = enterprise.NewLicenseChecker(p.pluginAPI)
 
