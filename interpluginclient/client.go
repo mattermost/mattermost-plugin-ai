@@ -27,18 +27,14 @@ const (
 	aiPluginID = "mattermost-ai"
 )
 
-// ErrAIPluginNotAvailable is returned when the AI plugin is not available or not properly configured
-var ErrAIPluginNotAvailable = errors.New("AI plugin is not available or not properly configured")
-
 // Client allows calling the AI plugin functions from other plugins
 type Client struct {
-	baseURL      string
-	httpClient   *http.Client
-	pluginSecret string
+	baseURL    string
+	httpClient *http.Client
 }
 
 // CompletionRequest represents the data needed for an interplugin completion request
-type CompletionRequest struct {
+type SimpleCompletionRequest struct {
 	// SystemPrompt is the text system prompt to send to the AI model
 	SystemPrompt string `json:"systemPrompt"`
 
@@ -56,33 +52,12 @@ type CompletionRequest struct {
 }
 
 // CompletionResponse represents the response from an interplugin completion request
-type CompletionResponse struct {
+type SimpleCompletionResponse struct {
 	Response string `json:"response"`
 }
 
-// CompletionParameters provides a type-safe way to configure completion requests
-type CompletionParameters struct {
-	// Model specifies which specific model to use
-	Model string
-
-	// MaxGeneratedTokens limits the maximum number of tokens generated in the response
-	MaxGeneratedTokens int
-}
-
-// ToMap converts CompletionParameters to a map for the request
-func (p CompletionParameters) ToMap() map[string]interface{} {
-	params := map[string]interface{}{}
-	if p.Model != "" {
-		params["model"] = p.Model
-	}
-	if p.MaxGeneratedTokens > 0 {
-		params["maxGeneratedTokens"] = float64(p.MaxGeneratedTokens)
-	}
-	return params
-}
-
 // CompletionWithContext sends a prompt to the AI plugin with context and returns the generated response
-func (c *Client) CompletionWithContext(ctx context.Context, req CompletionRequest) (string, error) {
+func (c *Client) SimpleCompletionWithContext(ctx context.Context, req SimpleCompletionRequest) (string, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -92,14 +67,13 @@ func (c *Client) CompletionWithContext(ctx context.Context, req CompletionReques
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	apiURL := fmt.Sprintf("%s/inter-plugin/completion", c.baseURL)
+	apiURL := fmt.Sprintf("%s/inter-plugin/v1/simple_completion", c.baseURL)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return "", fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Mattermost-Plugin-Secret", c.pluginSecret)
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -112,30 +86,19 @@ func (c *Client) CompletionWithContext(ctx context.Context, req CompletionReques
 		return "", fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var completionResp map[string]interface{}
+	var completionResp SimpleCompletionResponse
 	if err := json.NewDecoder(resp.Body).Decode(&completionResp); err != nil {
 		return "", fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	// Extract the response from the map
-	responseVal, ok := completionResp["response"]
-	if !ok {
-		return "", fmt.Errorf("response field missing from AI plugin response")
-	}
-
-	response, ok := responseVal.(string)
-	if !ok {
-		return "", fmt.Errorf("response field is not a string")
-	}
-
-	return response, nil
+	return completionResp.Response, nil
 }
 
 // Completion sends a prompt to the AI plugin and returns the generated response (with default timeout)
-func (c *Client) Completion(req CompletionRequest) (string, error) {
+func (c *Client) SimpleCompletion(req SimpleCompletionRequest) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout)
 	defer cancel()
-	return c.CompletionWithContext(ctx, req)
+	return c.SimpleCompletionWithContext(ctx, req)
 }
 
 // NewClientFromPlugin creates a new Client using the plugin's API client
@@ -170,8 +133,7 @@ func NewClient(p *plugin.MattermostPlugin) (*Client, error) {
 	baseURL.Path = path.Join(baseURL.Path, "plugins", aiPluginID)
 
 	return &Client{
-		baseURL:      baseURL.String(),
-		httpClient:   &http.Client{Timeout: DefaultTimeout},
-		pluginSecret: secret.(string),
+		baseURL:    baseURL.String(),
+		httpClient: &http.Client{Timeout: DefaultTimeout},
 	}, nil
 }
