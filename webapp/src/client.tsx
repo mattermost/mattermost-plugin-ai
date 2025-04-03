@@ -3,7 +3,8 @@
 
 import {Client4 as Client4Class, ClientError} from '@mattermost/client';
 import {ChannelWithTeamData} from '@mattermost/types/channels';
-import {Team} from '@mattermost/types/lib/teams';
+
+import {NotPagedTeamSearchOpts, Team} from '@mattermost/types/teams';
 
 import manifest from './manifest';
 
@@ -286,8 +287,11 @@ export async function getTeamsByIds(teamIds: string[]) {
     return Promise.all(teamIds.map((id) => Client4.getTeam(id)));
 }
 
-export async function searchTeams(term: string) {
-    return Client4.searchTeams(term, {}) as Promise<Team[]>;
+export async function searchTeams(term: string): Promise<Team[]> {
+    const opts: NotPagedTeamSearchOpts = {};
+
+    // Types are messed up
+    return Client4.searchTeams(term, opts) as unknown as Promise<Team[]>;
 }
 
 export function getTeamIconUrl(teamId: string, lastTeamIconUpdate: number) {
