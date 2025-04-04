@@ -13,6 +13,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
+	"github.com/mattermost/mattermost/server/public/pluginapi"
 )
 
 const (
@@ -98,14 +99,18 @@ func (p *Plugin) handleGetAIThreads(c *gin.Context) {
 		channelName := model.GetDMNameFromIds(userID, bot.mmBot.UserId)
 		botDMChannel, err := p.pluginAPI.Channel.GetByName("", channelName, false)
 		if err != nil {
-			// Channel doesn't exist yet, so we'll skip it
+			if errors.Is(err, pluginapi.ErrNotFound) {
+				// Channel doesn't exist yet, so we'll skip it
+				continue
+			}
+			p.API.LogError("unable to get DM channel for bot", "error", err, "bot_id", bot.mmBot.UserId)
 			continue
 		}
 
 		// Extra permissions checks are not totally necessary since a user should always have permission to read their own DMs
 		if !p.pluginAPI.User.HasPermissionToChannel(userID, botDMChannel.Id, model.PermissionReadChannel) {
-			c.AbortWithError(http.StatusForbidden, errors.New("user doesn't have permission to read channel"))
-			return
+			p.API.LogDebug("user doesn't have permission to read channel", "user_id", userID, "channel_id", botDMChannel.Id, "bot_id", bot.mmBot.UserId)
+			continue
 		}
 
 		dmChannelIDs = append(dmChannelIDs, botDMChannel.Id)
