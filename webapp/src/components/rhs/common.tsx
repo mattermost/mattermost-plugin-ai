@@ -34,6 +34,8 @@ export const Button = styled.button`
 `;
 
 export const RHSTitle = styled.div`
+    margin-top: 12px;
+    margin-bottom: 8px;
     font-family: Metropolis;
     font-weight: 600;
     font-size: 22px;
