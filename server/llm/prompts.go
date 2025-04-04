@@ -35,6 +35,24 @@ func withPromptExtension(filename string) string {
 	return filename + "." + PromptExtension
 }
 
+func (p *Prompts) FormatString(templateCode string, context *Context) (string, error) {
+	template, err := p.templates.Clone()
+	if err != nil {
+		return "", err
+	}
+
+	template, err = template.Parse(templateCode)
+	if err != nil {
+		return "", err
+	}
+
+	out := &strings.Builder{}
+	if err := template.Execute(out, context); err != nil {
+		return "", fmt.Errorf("unable to execute template: %w", err)
+	}
+	return strings.TrimSpace(out.String()), nil
+}
+
 func (p *Prompts) Format(templateName string, context *Context) (string, error) {
 	tmpl := p.templates.Lookup(withPromptExtension(templateName))
 	if tmpl == nil {

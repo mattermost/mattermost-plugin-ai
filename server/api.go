@@ -24,8 +24,13 @@ const (
 func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Request) {
 	router := gin.Default()
 	router.Use(p.ginlogger)
-	router.Use(p.MattermostAuthorizationRequired)
 	router.Use(p.metricsMiddleware)
+
+	interPluginRoute := router.Group("/inter-plugin/v1")
+	interPluginRoute.Use(p.interPluginAuthorizationRequired)
+	interPluginRoute.POST("/simple_completion", p.handleInterPluginSimpleCompletion)
+
+	router.Use(p.MattermostAuthorizationRequired)
 
 	router.GET("/ai_threads", p.handleGetAIThreads)
 	router.GET("/ai_bots", p.handleGetAIBots)
@@ -86,6 +91,14 @@ func (p *Plugin) MattermostAuthorizationRequired(c *gin.Context) {
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
+}
+
+func (p *Plugin) interPluginAuthorizationRequired(c *gin.Context) {
+	pluginID := c.GetHeader("Mattermost-Plugin-ID")
+	if pluginID != "" {
+		return
+	}
+	c.AbortWithStatus(http.StatusUnauthorized)
 }
 
 func (p *Plugin) handleGetAIThreads(c *gin.Context) {
