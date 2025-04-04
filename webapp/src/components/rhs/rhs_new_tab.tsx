@@ -49,7 +49,7 @@ const OptionButton = styled(Button)`
 const QuestionOptions = styled.div`
     display: flex;
 	gap: 8px;
-	margin-top: 16px;
+	margin-top: 24px;
 	margin-bottom: 24px;
     flex-wrap: wrap;
 `;
