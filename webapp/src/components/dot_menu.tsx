@@ -7,7 +7,6 @@ import styled, {css} from 'styled-components';
 import {useUpdateEffect} from 'react-use';
 
 import Dropdown from './dropdown';
-import {PrimaryButton} from './assets/buttons';
 
 export const DotMenuButton = styled.div<{isActive: boolean}>`
     display: inline-flex;
@@ -56,8 +55,8 @@ export const DropdownMenu = styled.div`
 type DotMenuProps = {
     children: React.ReactNode;
     icon: React.ReactNode;
-    dotMenuButton?: typeof DotMenuButton | typeof PrimaryButton;
-    dropdownMenu?: typeof DropdownMenu;
+    dotMenuButton?: React.ReactNode;
+    dropdownMenu?: React.ReactNode;
     title?: string;
     disabled?: boolean;
     className?: string;
@@ -77,8 +76,8 @@ const DotMenu = ({
     disabled,
     isActive,
     closeOnClick = true,
-    dotMenuButton: MenuButton = DotMenuButton,
-    dropdownMenu: Menu = DropdownMenu,
+    dotMenuButton,
+    dropdownMenu,
     onOpenChange,
     testId,
     ...props
@@ -90,6 +89,9 @@ const DotMenu = ({
     useUpdateEffect(() => {
         onOpenChange?.(isOpen);
     }, [isOpen]);
+
+    const Menu = dropdownMenu || DropdownMenu;
+    const MenuButton = dotMenuButton || DotMenuButton;
 
     const button = (
 
@@ -119,6 +121,22 @@ const DotMenu = ({
         </MenuButton>
     );
 
+    const menu = (
+
+        // @ts-ignore
+        <Menu
+            data-testid='dropdownmenu'
+            onClick={(e: React.MouseEvent) => {
+                e.stopPropagation();
+                if (closeOnClick) {
+                    setOpen(false);
+                }
+            }}
+        >
+            {children}
+        </Menu>
+    );
+
     return (
         <Dropdown
             {...props}
@@ -126,17 +144,7 @@ const DotMenu = ({
             onOpenChange={setOpen}
             target={button}
         >
-            <Menu
-                data-testid='dropdownmenu'
-                onClick={(e) => {
-                    e.stopPropagation();
-                    if (closeOnClick) {
-                        setOpen(false);
-                    }
-                }}
-            >
-                {children}
-            </Menu>
+            {menu}
         </Dropdown>
     );
 };
