@@ -438,11 +438,7 @@ func (s *OpenAI) completionRequestFromConfig(cfg llm.LanguageModelConfig) openai
 		Model: cfg.Model,
 	}
 
-	if _, ok := openaiClient.O1SeriesModels[cfg.Model]; ok {
-		request.MaxCompletionTokens = cfg.MaxGeneratedTokens
-	} else {
-		request.MaxTokens = cfg.MaxGeneratedTokens
-	}
+	request.MaxTokens = cfg.MaxGeneratedTokens
 
 	return request
 }
