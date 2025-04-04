@@ -20,7 +20,7 @@ import (
 
 const (
 	// DefaultTimeout is the default timeout for all requests to the AI plugin
-	DefaultTimeout = 30 * time.Second
+	DefaultTimeout = 10 * time.Minute
 
 	aiPluginID = "mattermost-ai"
 )

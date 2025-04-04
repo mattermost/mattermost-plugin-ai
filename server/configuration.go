@@ -19,7 +19,6 @@ type Config struct {
 	EnableLLMTrace           bool                             `json:"enableLLMTrace"`
 	AllowedUpstreamHostnames string                           `json:"allowedUpstreamHostnames"`
 	EmbeddingSearchConfig    embeddings.EmbeddingSearchConfig `json:"embeddingSearchConfig"`
-	InterPluginSecretKey     string                           `json:"interPluginSecretKey"`
 }
 
 // configuration captures the plugin's external configuration as exposed in the Mattermost server
