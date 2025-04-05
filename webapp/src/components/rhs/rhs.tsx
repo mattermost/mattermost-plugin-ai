@@ -162,14 +162,16 @@ export default function RHS() {
         content = (
             <RHSNewTab
                 data-testid='rhs-new-tab'
-                botChannelId={activeBot?.dmChannelID ?? ''}
                 setCurrentTab={setCurrentTab}
                 selectPost={selectPost}
+                activeBot={activeBot}
             />
         );
     }
     return (
-        <RhsContainer>
+        <RhsContainer
+            data-testid='mattermost-ai-rhs'
+        >
             <RHSHeader
                 currentTab={currentTab}
                 setCurrentTab={setCurrentTab}
