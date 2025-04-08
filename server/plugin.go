@@ -77,9 +77,8 @@ type Plugin struct {
 
 	llmUpstreamHTTPClient *http.Client
 	search                embeddings.EmbeddingSearch
-	
-	// Model Control Protocol client
-	mcpClient             *mcp.MCPClient
+
+	mcpClientManager *mcp.ClientManager
 }
 
 func resolveffmpegPath() string {
@@ -146,15 +145,13 @@ func (p *Plugin) OnActivate() error {
 		p.pluginAPI.Log.Error("Failed to initialize search, search features will be disabled", "error", err)
 	}
 
-	// Initialize MCP client
+	// Initialize MCP client manager
 	cfg := p.getConfiguration()
-	mcpClient, err := mcp.NewMCPClient(cfg.MCP, p.pluginAPI.Log)
+	mcpClient, err := mcp.NewClientManager(cfg.MCP, p.pluginAPI.Log)
 	if err != nil {
-		// Log the error but don't fail plugin activation
-		p.pluginAPI.Log.Error("Failed to initialize MCP client, MCP tools will be disabled", "error", err)
+		p.pluginAPI.Log.Error("Failed to initialize MCP client manager, MCP tools will be disabled", "error", err)
 	} else {
-		p.mcpClient = mcpClient
-		p.pluginAPI.Log.Debug("MCP client initialized successfully")
+		p.mcpClientManager = mcpClient
 	}
 
 	return nil
@@ -162,10 +159,10 @@ func (p *Plugin) OnActivate() error {
 
 // OnDeactivate is called when the plugin is deactivated
 func (p *Plugin) OnDeactivate() error {
-	// Clean up MCP client if it exists
-	if p.mcpClient != nil {
-		if err := p.mcpClient.Close(); err != nil {
-			p.pluginAPI.Log.Error("Failed to close MCP client during deactivation", "error", err)
+	// Clean up MCP client manager if it exists
+	if p.mcpClientManager != nil {
+		if err := p.mcpClientManager.Close(); err != nil {
+			p.pluginAPI.Log.Error("Failed to close MCP client manager during deactivation", "error", err)
 		}
 	}
 

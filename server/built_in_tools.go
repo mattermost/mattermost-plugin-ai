@@ -439,20 +439,36 @@ func (p *Plugin) getBuiltInTools(isDM bool, bot *Bot) []llm.Tool {
 	return builtInTools
 }
 
-func (p *Plugin) getDefaultToolsStore(bot *Bot, isDM bool) *llm.ToolStore {
-	if bot == nil || bot.cfg.DisableTools {
+// getToolsStoreForUser returns a tool store for a specific user, including MCP tools
+func (p *Plugin) getToolsStoreForUser(bot *Bot, isDM bool, userID string) *llm.ToolStore {
+	// Check for nil bot, which is unexpected
+	if bot == nil {
+		p.pluginAPI.Log.Error("Unexpected nil bot when getting tool store for user", "userID", userID)
 		return llm.NewNoTools()
 	}
+
+	// Check for empty userID, which is unexpected
+	if userID == "" {
+		p.pluginAPI.Log.Error("Unexpected empty userID when getting tool store for user")
+		return llm.NewNoTools()
+	}
+
+	// Check if tools are disabled for this bot
+	if bot.cfg.DisableTools {
+		return llm.NewNoTools()
+	}
+
 	store := llm.NewToolStore(&p.pluginAPI.Log, p.getConfiguration().EnableLLMTrace)
 
 	// Add built-in tools
 	store.AddTools(p.getBuiltInTools(isDM, bot))
 
-	// Add MCP tools if available and enabled
-	if p.mcpClient != nil && isDM {
-		mcpTools := p.mcpClient.GetTools()
-		if len(mcpTools) > 0 {
-			p.pluginAPI.Log.Debug("Adding MCP tools to tool store", "count", len(mcpTools))
+	// Add MCP tools if available, enabled, and in a DM
+	if p.mcpClientManager != nil && isDM {
+		mcpTools, err := p.mcpClientManager.GetToolsForUser(userID)
+		if err != nil {
+			p.pluginAPI.Log.Error("Failed to get MCP tools for user", "userID", userID, "error", err)
+		} else if len(mcpTools) > 0 {
 			store.AddTools(mcpTools)
 		}
 	}

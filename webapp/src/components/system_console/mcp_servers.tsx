@@ -18,6 +18,7 @@ export type MCPServerConfig = {
 export type MCPConfig = {
     enabled: boolean;
     servers: {[key: string]: MCPServerConfig};
+    idleTimeout?: number;
 };
 
 type Props = {
@@ -201,15 +202,16 @@ const MCPServers = ({value, onChange}: Props) => {
     const intl = useIntl();
 
     // Initialize with default empty config if not provided
-    const mcpConfig = {
-        enabled: false,
-        servers: {},
-        ...value,
-    };
+    const mcpConfig = value ? {...value} : {enabled: false, servers: {}, idleTimeout: 30};
 
     // Ensure servers object is initialized
     if (!mcpConfig.servers) {
         mcpConfig.servers = {};
+    }
+
+    // Ensure idleTimeout has a value
+    if (typeof mcpConfig.idleTimeout !== 'number') {
+        mcpConfig.idleTimeout = 30; // Default to 30 minutes
     }
 
     // Generate a server name
@@ -242,14 +244,14 @@ const MCPServers = ({value, onChange}: Props) => {
     };
 
     // Update a server's name
-    const renameServer = (oldID: string, newID: string, config: MCPServerConfig) => {
+    const renameServer = (oldID: string, originalNewID: string, config: MCPServerConfig) => {
         // Skip if the ID hasn't changed
-        if (oldID === newID) {
+        if (oldID === originalNewID) {
             return;
         }
 
         // Make the ID safe for use (remove spaces, special chars)
-        newID = newID.toLowerCase().replace(/[^a-z0-9-_]/g, '-');
+        const newID = originalNewID.toLowerCase().replace(/[^a-z0-9-_]/g, '-');
 
         // Skip if the new ID is empty or already exists
         if (!newID || (newID !== oldID && mcpConfig.servers[newID])) {
@@ -293,12 +295,25 @@ const MCPServers = ({value, onChange}: Props) => {
 
     return (
         <div>
-            <ItemList>
+            <ItemList title={intl.formatMessage({defaultMessage: 'MCP Configuration'})}>
                 <BooleanItem
                     label={intl.formatMessage({defaultMessage: 'Enable MCP'})}
                     value={mcpConfig.enabled}
                     onChange={(enabled) => onChange({...mcpConfig, enabled})}
                     helpText={intl.formatMessage({defaultMessage: 'Enable the Model Context Protocol (MCP) integration to access tools from MCP servers.'})}
+                />
+                <TextItem
+                    label={intl.formatMessage({defaultMessage: 'Connection Idle Timeout (minutes)'})}
+                    value={mcpConfig.idleTimeout?.toString() || '30'}
+                    type='number'
+                    onChange={(e) => {
+                        const idleTimeout = parseInt(e.target.value, 10);
+                        onChange({
+                            ...mcpConfig,
+                            idleTimeout: isNaN(idleTimeout) ? 30 : Math.max(1, idleTimeout),
+                        });
+                    }}
+                    helptext={intl.formatMessage({defaultMessage: 'How long to keep an inactive user connection open before closing it automatically. Lower values save resources, higher values improve response times.'})}
                 />
             </ItemList>
 

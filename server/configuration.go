@@ -119,21 +119,22 @@ func (p *Plugin) OnConfigurationChange() error {
 	}
 
 	// Reinitialize MCP client based on new configuration
-	if p.mcpClient != nil {
+	if p.mcpClientManager != nil {
 		// Close existing client first
-		if err := p.mcpClient.Close(); err != nil {
-			p.pluginAPI.Log.Error("Failed to close MCP client", "error", err)
+		closeErr := p.mcpClientManager.Close()
+		if closeErr != nil {
+			p.pluginAPI.Log.Error("Failed to close MCP client manager", "error", closeErr)
 		}
 	}
 
-	mcpClient, err := mcp.NewMCPClient(configuration.MCP, p.pluginAPI.Log)
+	mcpClient, err := mcp.NewClientManager(configuration.MCP, p.pluginAPI.Log)
 	if err != nil {
 		// Log the error but don't fail plugin configuration
-		p.pluginAPI.Log.Error("Failed to initialize MCP client, MCP tools will be disabled", "error", err)
-		p.mcpClient = nil
+		p.pluginAPI.Log.Error("Failed to initialize MCP client manager, MCP tools will be disabled", "error", err)
+		p.mcpClientManager = nil
 	} else {
-		p.mcpClient = mcpClient
-		p.pluginAPI.Log.Debug("MCP client reinitialized successfully")
+		p.mcpClientManager = mcpClient
+		p.pluginAPI.Log.Debug("MCP client manager reinitialized successfully")
 	}
 
 	return nil

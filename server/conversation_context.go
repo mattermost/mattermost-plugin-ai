@@ -68,7 +68,7 @@ func (p *Plugin) WithLLMContextRequestingUser(user *model.User) llm.ContextOptio
 
 func (p *Plugin) WithLLMContextDefaultTools(bot *Bot, isDM bool) llm.ContextOption {
 	return func(c *llm.Context) {
-		c.Tools = p.getDefaultToolsStore(bot, isDM)
+		c.Tools = p.getToolsStoreForUser(bot, isDM, c.RequestingUser.Id)
 	}
 }
 
