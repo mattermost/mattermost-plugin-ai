@@ -108,7 +108,7 @@ func (p *Plugin) startNewAnalysisThread(bot *Bot, postIDToAnalyze string, analys
 	}
 
 	post := p.makeAnalysisPost(context.RequestingUser.Locale, postIDToAnalyze, analysisType)
-	if err := p.streamResultToNewDM(bot.mmBot.UserId, analysisStream, context.RequestingUser.Id, post); err != nil {
+	if err := p.streamResultToNewDM(bot.mmBot.UserId, analysisStream, context.RequestingUser.Id, post, postIDToAnalyze); err != nil {
 		return nil, err
 	}
 

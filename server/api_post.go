@@ -412,18 +412,16 @@ func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, ch
 	default:
 		post.Message = ""
 
-		threadData, err := p.getThreadAndMeta(post.Id)
-		if err != nil {
-			return err
-		}
 		respondingToPostID, ok := post.GetProp(RespondingToProp).(string)
 		if !ok {
-			threadData.cutoffBeforePostID(post.Id)
-		} else {
-			threadData.cutoffAtPostID(respondingToPostID)
+			return errors.New("post missing responding to prop")
+		}
+		respondingToPost, getErr := p.pluginAPI.Post.GetPost(respondingToPostID)
+		if getErr != nil {
+			return fmt.Errorf("could not get post being responded to: %w", getErr)
 		}
 
-		if result, err = p.processUserRequestToBot(bot, user, channel, post); err != nil {
+		if result, err = p.processUserRequestToBot(bot, user, channel, respondingToPost); err != nil {
 			return fmt.Errorf("could not continue conversation on regen: %w", err)
 		}
 	}

@@ -116,7 +116,7 @@ func (p *Plugin) existingConversationToLLMPosts(bot *Bot, conversation *ThreadDa
 				RootId:    originalThreadID,
 				Message:   T("copilot.no_longer_access_error", "Sorry, you no longer have access to the original thread."),
 			}
-			if err = p.botCreatePost(bot.mmBot.UserId, context.RequestingUser.Id, responsePost); err != nil {
+			if err = p.botCreateNonResponsePost(bot.mmBot.UserId, context.RequestingUser.Id, responsePost); err != nil {
 				return nil, err
 			}
 			return nil, fmt.Errorf("user no longer has access to original thread")

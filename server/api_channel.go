@@ -224,7 +224,8 @@ func (p *Plugin) handleInterval(c *gin.Context) {
 
 	post := &model.Post{}
 	post.AddProp(NoRegen, "true")
-	if err := p.streamResultToNewDM(bot.mmBot.UserId, resultStream, user.Id, post); err != nil {
+	// Here we don't have a specific post we're responding to, so pass empty string
+	if err := p.streamResultToNewDM(bot.mmBot.UserId, resultStream, user.Id, post, ""); err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
