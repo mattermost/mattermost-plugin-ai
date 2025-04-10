@@ -13,6 +13,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/server/llm"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
+	"github.com/mattermost/mattermost/server/public/pluginapi"
 )
 
 const (
@@ -108,16 +109,21 @@ func (p *Plugin) handleGetAIThreads(c *gin.Context) {
 	defer p.botsLock.RUnlock()
 	dmChannelIDs := []string{}
 	for _, bot := range p.bots {
-		botDMChannel, err := p.pluginAPI.Channel.GetDirect(userID, bot.mmBot.UserId)
+		channelName := model.GetDMNameFromIds(userID, bot.mmBot.UserId)
+		botDMChannel, err := p.pluginAPI.Channel.GetByName("", channelName, false)
 		if err != nil {
-			c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to get DM with AI bot: %w", err))
-			return
+			if errors.Is(err, pluginapi.ErrNotFound) {
+				// Channel doesn't exist yet, so we'll skip it
+				continue
+			}
+			p.API.LogError("unable to get DM channel for bot", "error", err, "bot_id", bot.mmBot.UserId)
+			continue
 		}
 
 		// Extra permissions checks are not totally necessary since a user should always have permission to read their own DMs
 		if !p.pluginAPI.User.HasPermissionToChannel(userID, botDMChannel.Id, model.PermissionReadChannel) {
-			c.AbortWithError(http.StatusForbidden, errors.New("user doesn't have permission to read channel"))
-			return
+			p.API.LogDebug("user doesn't have permission to read channel", "user_id", userID, "channel_id", botDMChannel.Id, "bot_id", bot.mmBot.UserId)
+			continue
 		}
 
 		dmChannelIDs = append(dmChannelIDs, botDMChannel.Id)
@@ -164,17 +170,22 @@ func (p *Plugin) handleGetAIBots(c *gin.Context) {
 		if p.checkUsageRestrictionsForUser(bot, userID) != nil {
 			continue
 		}
-		direct, err := p.pluginAPI.Channel.GetDirect(userID, bot.mmBot.UserId)
-		if err != nil {
-			p.API.LogError("unable to get direct channel for bot", "error", err)
-			continue
+
+		// Get the bot DM channel ID. To avoid creating the channel unless nessary
+		/// we return "" if the channel doesn't exist.
+		dmChannelID := ""
+		channelName := model.GetDMNameFromIds(userID, bot.mmBot.UserId)
+		botDMChannel, err := p.pluginAPI.Channel.GetByName("", channelName, false)
+		if err == nil {
+			dmChannelID = botDMChannel.Id
 		}
+
 		bots = append(bots, AIBotInfo{
 			ID:                 bot.mmBot.UserId,
 			DisplayName:        bot.mmBot.DisplayName,
 			Username:           bot.mmBot.Username,
 			LastIconUpdate:     bot.mmBot.LastIconUpdate,
-			DMChannelID:        direct.Id,
+			DMChannelID:        dmChannelID,
 			ChannelAccessLevel: bot.cfg.ChannelAccessLevel,
 			ChannelIDs:         bot.cfg.ChannelIDs,
 			UserAccessLevel:    bot.cfg.UserAccessLevel,
