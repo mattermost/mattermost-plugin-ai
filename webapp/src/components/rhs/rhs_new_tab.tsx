@@ -99,32 +99,40 @@ const RHSNewTab = ({selectPost, setCurrentTab, activeBot}: Props) => {
         state[`plugins-${manifest.id}`]?.bots || [],
     );
 
+    // State for error handling
+    const [channelError, setChannelError] = useState(false);
+
     // If botChannelId is empty, we need to create a direct channel
     useEffect(() => {
         const createDirectChannel = async () => {
             if (!botChannelId && !creatingChannel && activeBot) {
                 setCreatingChannel(true);
+                setChannelError(false);
                 const botId = activeBot.id;
 
-                // This will as a side effect create the direct channel for us
-                const newChannelID = await getBotDirectChannel(currentUserId, botId);
+                try {
+                    // This will as a side effect create the direct channel for us
+                    const newChannelID = await getBotDirectChannel(currentUserId, botId);
 
-                // Update the bots list in Redux with the new channel ID
-                const updatedBots = currentBots.map((bot: LLMBot) => {
-                    if (bot.id === activeBot.id) {
-                        return {
-                            ...bot,
-                            dmChannelID: newChannelID,
-                        };
-                    }
-                    return bot;
-                });
-                dispatch({
-                    type: BotsHandler,
-                    bots: updatedBots,
-                });
-
-                setCreatingChannel(false);
+                    // Update the bots list in Redux with the new channel ID
+                    const updatedBots = currentBots.map((bot: LLMBot) => {
+                        if (bot.id === activeBot.id) {
+                            return {
+                                ...bot,
+                                dmChannelID: newChannelID,
+                            };
+                        }
+                        return bot;
+                    });
+                    dispatch({
+                        type: BotsHandler,
+                        bots: updatedBots,
+                    });
+                } catch (error) {
+                    setChannelError(true);
+                } finally {
+                    setCreatingChannel(false);
+                }
             }
         };
         createDirectChannel();
@@ -146,9 +154,15 @@ const RHSNewTab = ({selectPost, setCurrentTab, activeBot}: Props) => {
         setEditorText(intl.formatMessage({defaultMessage: 'Write a pros and cons list about '}));
     }, []);
 
-    // Show loading indicator if creating channel
+    // Show loading indicator if creating channel or error message if failed
     let editorComponent;
-    if (creatingChannel || !botChannelId) {
+    if (channelError) {
+        editorComponent = (
+            <div style={{textAlign: 'center', padding: '20px', color: 'var(--error-text)'}}>
+                <FormattedMessage defaultMessage='Failed to create chat channel. Please try again later.'/>
+            </div>
+        );
+    } else if (creatingChannel || !botChannelId) {
         editorComponent = (
             <div style={{textAlign: 'center', padding: '20px'}}>
                 <FormattedMessage defaultMessage='Setting up chat channel...'/>
