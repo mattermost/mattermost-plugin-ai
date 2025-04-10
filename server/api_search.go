@@ -228,7 +228,7 @@ func (p *Plugin) handleRunSearch(c *gin.Context) {
 		}
 		responsePost.AddProp(NoRegen, "true")
 
-		if err := p.botDM(bot.mmBot.UserId, userID, responsePost); err != nil {
+		if err := p.botDMNonResponse(bot.mmBot.UserId, userID, responsePost); err != nil {
 			// Not much point in retrying if this failed. (very unlikely beyond dev)
 			p.pluginAPI.Log.Error("Error creating bot DM", "error", err)
 			return

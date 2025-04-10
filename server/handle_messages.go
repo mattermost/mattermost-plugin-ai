@@ -114,7 +114,7 @@ func (p *Plugin) handleMentions(bot *Bot, post *model.Post, postingUser *model.U
 		ChannelId: channel.Id,
 		RootId:    responseRootID,
 	}
-	if err := p.streamResultToNewPost(bot.mmBot.UserId, postingUser.Id, stream, responsePost); err != nil {
+	if err := p.streamResultToNewPost(bot.mmBot.UserId, postingUser.Id, stream, responsePost, post.Id); err != nil {
 		return fmt.Errorf("unable to stream response: %w", err)
 	}
 
@@ -140,7 +140,7 @@ func (p *Plugin) handleDMs(bot *Bot, channel *model.Channel, postingUser *model.
 		ChannelId: channel.Id,
 		RootId:    responseRootID,
 	}
-	if err := p.streamResultToNewPost(bot.mmBot.UserId, postingUser.Id, stream, responsePost); err != nil {
+	if err := p.streamResultToNewPost(bot.mmBot.UserId, postingUser.Id, stream, responsePost, post.Id); err != nil {
 		return fmt.Errorf("unable to stream response: %w", err)
 	}
 
