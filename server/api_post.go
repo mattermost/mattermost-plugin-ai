@@ -343,27 +343,27 @@ func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, ch
 		post.Message = ""
 		referencedRecordingFileID := referenceRecordingFileIDProp.(string)
 
-		fileInfo, err := p.pluginAPI.File.GetInfo(referencedRecordingFileID)
-		if err != nil {
-			return fmt.Errorf("could not get transcription file on regen: %w", err)
+		fileInfo, getErr := p.pluginAPI.File.GetInfo(referencedRecordingFileID)
+		if getErr != nil {
+			return fmt.Errorf("could not get transcription file on regen: %w", getErr)
 		}
 
-		reader, err := p.pluginAPI.File.Get(post.FileIds[0])
-		if err != nil {
-			return fmt.Errorf("could not get transcription file on regen: %w", err)
+		reader, getErr := p.pluginAPI.File.Get(post.FileIds[0])
+		if getErr != nil {
+			return fmt.Errorf("could not get transcription file on regen: %w", getErr)
 		}
-		transcription, err := subtitles.NewSubtitlesFromVTT(reader)
-		if err != nil {
-			return fmt.Errorf("could not parse transcription file on regen: %w", err)
+		transcription, parseErr := subtitles.NewSubtitlesFromVTT(reader)
+		if parseErr != nil {
+			return fmt.Errorf("could not parse transcription file on regen: %w", parseErr)
 		}
 
 		if transcription.IsEmpty() {
 			return errors.New("transcription is empty on regen")
 		}
 
-		originalFileChannel, err := p.pluginAPI.Channel.Get(fileInfo.ChannelId)
-		if err != nil {
-			return fmt.Errorf("could not get channel of original recording on regen: %w", err)
+		originalFileChannel, channelErr := p.pluginAPI.Channel.Get(fileInfo.ChannelId)
+		if channelErr != nil {
+			return fmt.Errorf("could not get channel of original recording on regen: %w", channelErr)
 		}
 
 		context := p.BuildLLMContextUserRequest(
@@ -372,30 +372,31 @@ func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, ch
 			originalFileChannel,
 			p.WithLLMContextDefaultTools(bot, originalFileChannel.Type == model.ChannelTypeDirect),
 		)
-		result, err = p.summarizeTranscription(bot, transcription, context)
-		if err != nil {
-			return fmt.Errorf("could not summarize transcription on regen: %w", err)
+		var summaryErr error
+		result, summaryErr = p.summarizeTranscription(bot, transcription, context)
+		if summaryErr != nil {
+			return fmt.Errorf("could not summarize transcription on regen: %w", summaryErr)
 		}
 	case referencedTranscriptPostProp != nil:
 		post.Message = ""
 		referencedTranscriptionPostID := referencedTranscriptPostProp.(string)
-		referencedTranscriptionPost, err := p.pluginAPI.Post.GetPost(referencedTranscriptionPostID)
-		if err != nil {
-			return fmt.Errorf("could not get transcription post on regen: %w", err)
+		referencedTranscriptionPost, postErr := p.pluginAPI.Post.GetPost(referencedTranscriptionPostID)
+		if postErr != nil {
+			return fmt.Errorf("could not get transcription post on regen: %w", postErr)
 		}
 
-		transcriptionFileID, err := getCaptionsFileIDFromProps(referencedTranscriptionPost)
-		if err != nil {
-			return fmt.Errorf("unable to get transcription file id: %w", err)
+		transcriptionFileID, fileIDErr := getCaptionsFileIDFromProps(referencedTranscriptionPost)
+		if fileIDErr != nil {
+			return fmt.Errorf("unable to get transcription file id: %w", fileIDErr)
 		}
-		transcriptionFileReader, err := p.pluginAPI.File.Get(transcriptionFileID)
-		if err != nil {
-			return fmt.Errorf("unable to read calls file: %w", err)
+		transcriptionFileReader, fileErr := p.pluginAPI.File.Get(transcriptionFileID)
+		if fileErr != nil {
+			return fmt.Errorf("unable to read calls file: %w", fileErr)
 		}
 
-		transcription, err := subtitles.NewSubtitlesFromVTT(transcriptionFileReader)
-		if err != nil {
-			return fmt.Errorf("unable to parse transcription file: %w", err)
+		transcription, parseErr := subtitles.NewSubtitlesFromVTT(transcriptionFileReader)
+		if parseErr != nil {
+			return fmt.Errorf("unable to parse transcription file: %w", parseErr)
 		}
 
 		context := p.BuildLLMContextUserRequest(
@@ -404,27 +405,27 @@ func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, ch
 			channel,
 			p.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.mmBot.UserId, channel)),
 		)
-		result, err = p.summarizeTranscription(bot, transcription, context)
-		if err != nil {
-			return fmt.Errorf("unable to summarize transcription: %w", err)
+		var summaryErr error
+		result, summaryErr = p.summarizeTranscription(bot, transcription, context)
+		if summaryErr != nil {
+			return fmt.Errorf("unable to summarize transcription: %w", summaryErr)
 		}
 
 	default:
 		post.Message = ""
 
-		threadData, err := p.getThreadAndMeta(post.Id)
-		if err != nil {
-			return err
-		}
 		respondingToPostID, ok := post.GetProp(RespondingToProp).(string)
 		if !ok {
-			threadData.cutoffBeforePostID(post.Id)
-		} else {
-			threadData.cutoffAtPostID(respondingToPostID)
+			return errors.New("post missing responding to prop")
+		}
+		respondingToPost, getErr := p.pluginAPI.Post.GetPost(respondingToPostID)
+		if getErr != nil {
+			return fmt.Errorf("could not get post being responded to: %w", getErr)
 		}
 
-		if result, err = p.processUserRequestToBot(bot, user, channel, post); err != nil {
-			return fmt.Errorf("could not continue conversation on regen: %w", err)
+		var processErr error
+		if result, processErr = p.processUserRequestToBot(bot, user, channel, respondingToPost); processErr != nil {
+			return fmt.Errorf("could not continue conversation on regen: %w", processErr)
 		}
 	}
 

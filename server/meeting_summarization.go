@@ -111,7 +111,7 @@ func (p *Plugin) newCallRecordingThread(bot *Bot, requestingUser *model.User, re
 		Message: T("copilot.summarize_recording", "Sure, I will summarize this recording: %s/_redirect/pl/%s\n", *siteURL, recordingPost.Id),
 	}
 	surePost.AddProp(NoRegen, "true")
-	if err := p.botDM(bot.mmBot.UserId, requestingUser.Id, surePost); err != nil {
+	if err := p.botDMNonResponse(bot.mmBot.UserId, requestingUser.Id, surePost); err != nil {
 		return nil, err
 	}
 
@@ -134,7 +134,7 @@ func (p *Plugin) newCallTranscriptionSummaryThread(bot *Bot, requestingUser *mod
 	}
 	surePost.AddProp(NoRegen, "true")
 	surePost.AddProp(ReferencedTranscriptPostID, transcriptionPost.Id)
-	if err := p.botDM(bot.mmBot.UserId, requestingUser.Id, surePost); err != nil {
+	if err := p.botDMNonResponse(bot.mmBot.UserId, requestingUser.Id, surePost); err != nil {
 		return nil, err
 	}
 
@@ -200,7 +200,7 @@ func (p *Plugin) newCallTranscriptionSummaryThread(bot *Bot, requestingUser *mod
 			Message:   "",
 		}
 		summaryPost.AddProp(ReferencedTranscriptPostID, transcriptionPost.Id)
-		if err := p.streamResultToNewPost(bot.mmBot.UserId, requestingUser.Id, summaryStream, summaryPost); err != nil {
+		if err := p.streamResultToNewPost(bot.mmBot.UserId, requestingUser.Id, summaryStream, summaryPost, transcriptionPost.Id); err != nil {
 			return fmt.Errorf("unable to stream result to post: %w", err)
 		}
 
@@ -218,7 +218,7 @@ func (p *Plugin) summarizeCallRecording(bot *Bot, rootID string, requestingUser 
 		Message: T("copilot.summarize_call_recording_processing", "Processing audio into transcription. This will take some time..."),
 	}
 	transcriptPost.AddProp(ReferencedRecordingFileID, recordingFileID)
-	if err := p.botDM(bot.mmBot.UserId, requestingUser.Id, transcriptPost); err != nil {
+	if err := p.botDMNonResponse(bot.mmBot.UserId, requestingUser.Id, transcriptPost); err != nil {
 		return err
 	}
 
