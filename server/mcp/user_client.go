@@ -50,9 +50,6 @@ type UserClient struct {
 
 // ConnectToAllServers initializes connections to all provided servers
 func (c *UserClient) ConnectToAllServers(servers map[string]ServerConfig) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
 	// Initialize clients for each server
 	for serverID, serverConfig := range servers {
 		if serverConfig.BaseURL == "" {
@@ -60,7 +57,7 @@ func (c *UserClient) ConnectToAllServers(servers map[string]ServerConfig) error 
 			continue
 		}
 
-		if err := c.connectToServer(ctx, serverID, serverConfig); err != nil {
+		if err := c.connectToServer(context.Background(), serverID, serverConfig); err != nil {
 			c.log.Error("Failed to connect to MCP server", "userID", c.userID, "serverID", serverID, "error", err)
 			continue
 		}
@@ -88,8 +85,6 @@ func (c *UserClient) connectToServer(ctx context.Context, serverID string, serve
 	}
 	opts = append(opts, client.WithHeaders(serverConfig.Headers))
 
-	// Set a very long read timeout to keep the connection alive
-	opts = append(opts, client.WithSSEReadTimeout(time.Hour*10000))
 	sseClient, err := client.NewSSEMCPClient(serverConfig.BaseURL, opts...)
 	if err != nil {
 		return fmt.Errorf("failed to create MCP client: %w", err)

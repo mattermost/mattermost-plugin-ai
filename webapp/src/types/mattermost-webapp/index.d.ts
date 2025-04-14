@@ -6,3 +6,19 @@ export interface PluginRegistry {
 
     // Add more if needed from https://developers.mattermost.com/extend/plugins/webapp/reference
 }
+
+// Global type definitions
+declare global {
+    interface Window {
+        WebappUtils?: {
+            sendWebSocketMessage: (msg: {
+                action: string;
+                seq: number;
+                data: {
+                    data: string;
+                    [key: string]: any;
+                };
+            }) => void;
+        };
+    }
+}

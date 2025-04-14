@@ -28,6 +28,7 @@ type Post struct {
 	Role    PostRole
 	Message string
 	Files   []File
+	ToolUse []ToolCall
 }
 
 type CompletionRequest struct {

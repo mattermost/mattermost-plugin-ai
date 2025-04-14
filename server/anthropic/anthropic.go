@@ -6,7 +6,6 @@ package anthropic
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -25,8 +24,7 @@ const (
 type messageState struct {
 	messages []anthropicSDK.MessageParam
 	system   string
-	output   chan<- string
-	errChan  chan<- error
+	output   chan<- llm.TextStreamEvent
 	depth    int
 	config   llm.LanguageModelConfig
 	tools    []llm.Tool
@@ -143,6 +141,42 @@ func conversationToMessages(posts []llm.Post) (string, []anthropicSDK.MessagePar
 			}
 			currentBlocks = append(currentBlocks, imageBlock)
 		}
+
+		if len(post.ToolUse) > 0 {
+			for _, tool := range post.ToolUse {
+				toolBlock := anthropicSDK.ToolUseBlockParam{
+					ID:    anthropicSDK.F(tool.ID),
+					Type:  anthropicSDK.F(anthropicSDK.ToolUseBlockParamTypeToolUse),
+					Name:  anthropicSDK.F(tool.Name),
+					Input: anthropicSDK.Raw[any](tool.Arguments),
+				}
+				currentBlocks = append(currentBlocks, toolBlock)
+			}
+
+			resultBlocks := make([]anthropicSDK.ContentBlockParamUnion, 0, len(post.ToolUse))
+			for _, tool := range post.ToolUse {
+				if tool.Result != "" {
+					toolResultBlock := anthropicSDK.ToolResultBlockParam{
+						Type:      anthropicSDK.F(anthropicSDK.ToolResultBlockParamTypeToolResult),
+						ToolUseID: anthropicSDK.F(tool.ID),
+						Content: anthropicSDK.F([]anthropicSDK.ToolResultBlockParamContentUnion{
+							anthropicSDK.TextBlockParam{
+								Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
+								Text: anthropicSDK.F(tool.Result),
+							},
+						}),
+					}
+					resultBlocks = append(resultBlocks, toolResultBlock)
+				}
+			}
+
+			if len(resultBlocks) > 0 {
+				flushCurrentMessage()
+				currentRole = anthropicSDK.MessageParamRoleUser
+				currentBlocks = resultBlocks
+				flushCurrentMessage()
+			}
+		}
 	}
 
 	flushCurrentMessage()
@@ -171,6 +205,10 @@ func (a *Anthropic) createConfig(opts []llm.LanguageModelOption) llm.LanguageMod
 
 func (a *Anthropic) streamChatWithTools(state messageState) error {
 	if state.depth >= MaxToolResolutionDepth {
+		state.output <- llm.TextStreamEvent{
+			Type:  llm.EventTypeError,
+			Value: fmt.Errorf("max tool resolution depth (%d) exceeded", MaxToolResolutionDepth),
+		}
 		return fmt.Errorf("max tool resolution depth (%d) exceeded", MaxToolResolutionDepth)
 	}
 
@@ -186,8 +224,6 @@ func (a *Anthropic) streamChatWithTools(state messageState) error {
 	})
 
 	message := anthropicSDK.Message{}
-	var toolResults []anthropicSDK.ContentBlockParamUnion
-
 	for stream.Next() {
 		event := stream.Current()
 		if err := message.Accumulate(event); err != nil {
@@ -198,58 +234,53 @@ func (a *Anthropic) streamChatWithTools(state messageState) error {
 		switch delta := event.Delta.(type) { // nolint: gocritic
 		case anthropicSDK.ContentBlockDeltaEventDelta:
 			if delta.Text != "" {
-				state.output <- delta.Text
+				state.output <- llm.TextStreamEvent{
+					Type:  llm.EventTypeText,
+					Value: delta.Text,
+				}
 			}
 		}
 	}
 
 	if err := stream.Err(); err != nil {
+		state.output <- llm.TextStreamEvent{
+			Type:  llm.EventTypeError,
+			Value: fmt.Errorf("error from anthropic stream: %w", err),
+		}
 		return fmt.Errorf("error from anthropic stream: %w", err)
 	}
 
 	// Check for tool usage after message is complete
+	pendingToolCalls := make([]llm.ToolCall, 0, len(message.Content))
 	for _, block := range message.Content {
 		if block.Type == anthropicSDK.ContentBlockTypeToolUse {
-			// Resolve the tool
-			result, err := state.resolver(block.Name, func(args any) error {
-				return json.Unmarshal(block.Input, args)
-			}, state.context)
-
-			if err != nil {
-				return fmt.Errorf("tool resolution error: %w", err)
+			// Convert to pending tool calls
+			for _, block := range message.Content {
+				if block.Type == anthropicSDK.ContentBlockTypeToolUse {
+					pendingToolCalls = append(pendingToolCalls, llm.ToolCall{
+						ID:          block.ID,
+						Name:        block.Name,
+						Description: "", // Anthropic doesn't provide description in the response
+						Arguments:   block.Input,
+					})
+				}
 			}
-
-			toolResults = append(toolResults, anthropicSDK.NewToolResultBlock(block.ID, result, false))
 		}
 	}
 
-	// If tools were used, continue the conversation with the results
-	if len(toolResults) > 0 {
-		// Add tool results as a new user message
-		state.messages = append(state.messages,
-			message.ToParam(),
-			anthropicSDK.MessageParam{
-				Role:    anthropicSDK.F(anthropicSDK.MessageParamRoleUser),
-				Content: anthropicSDK.F(toolResults),
-			},
-		)
-
-		newState := messageState{
-			messages: state.messages,
-			system:   state.system,
-			output:   state.output,
-			errChan:  state.errChan,
-			depth:    state.depth + 1,
-			config:   state.config,
-			tools:    state.tools,
-			resolver: state.resolver,
-			context:  state.context,
+	// If tools were used, send tool calls event and end the stream
+	if len(pendingToolCalls) > 0 {
+		// Send the tool calls event
+		state.output <- llm.TextStreamEvent{
+			Type:  llm.EventTypeToolCalls,
+			Value: pendingToolCalls,
 		}
+	}
 
-		// Recursively handle the continued conversation
-		if err := a.streamChatWithTools(newState); err != nil {
-			return err
-		}
+	// Send end event if no tools were used
+	state.output <- llm.TextStreamEvent{
+		Type:  llm.EventTypeEnd,
+		Value: nil,
 	}
 
 	return nil
@@ -258,8 +289,7 @@ func (a *Anthropic) streamChatWithTools(state messageState) error {
 func (a *Anthropic) ChatCompletion(request llm.CompletionRequest, opts ...llm.LanguageModelOption) (*llm.TextStreamResult, error) {
 	a.metricsService.IncrementLLMRequests()
 
-	output := make(chan string)
-	errChan := make(chan error)
+	eventStream := make(chan llm.TextStreamEvent)
 
 	cfg := a.createConfig(opts)
 
@@ -268,8 +298,7 @@ func (a *Anthropic) ChatCompletion(request llm.CompletionRequest, opts ...llm.La
 	initialState := messageState{
 		messages: messages,
 		system:   system,
-		output:   output,
-		errChan:  errChan,
+		output:   eventStream,
 		depth:    0,
 		config:   cfg,
 		context:  request.Context,
@@ -281,15 +310,14 @@ func (a *Anthropic) ChatCompletion(request llm.CompletionRequest, opts ...llm.La
 	}
 
 	go func() {
-		defer close(output)
-		defer close(errChan)
+		defer close(eventStream)
 
 		if err := a.streamChatWithTools(initialState); err != nil {
-			errChan <- err
+			// Error is already sent to the event stream in streamChatWithTools
 		}
 	}()
 
-	return &llm.TextStreamResult{Stream: output, Err: errChan}, nil
+	return &llm.TextStreamResult{Stream: eventStream}, nil
 }
 
 func (a *Anthropic) ChatCompletionNoStream(request llm.CompletionRequest, opts ...llm.LanguageModelOption) (string, error) {

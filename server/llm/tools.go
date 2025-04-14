@@ -26,6 +26,32 @@ type Tool struct {
 	Resolver    func(context *Context, argsGetter ToolArgumentGetter) (string, error)
 }
 
+// ToolCallStatus represents the current status of a tool call
+type ToolCallStatus int
+
+const (
+	// ToolCallStatusPending indicates the tool is waiting for user approval/rejection
+	ToolCallStatusPending ToolCallStatus = iota
+	// ToolCallStatusAccepted indicates the user has accepted the tool call but it's not resolved yet
+	ToolCallStatusAccepted
+	// ToolCallStatusRejected indicates the user has rejected the tool call
+	ToolCallStatusRejected
+	// ToolCallStatusError indicates the tool call was accepted but errored during resolution
+	ToolCallStatusError
+	// ToolCallStatusSuccess indicates the tool call was accepted and resolved successfully
+	ToolCallStatusSuccess
+)
+
+// ToolCall represents a tool call. An empty result indicates that the tool has not yet been resolved.
+type ToolCall struct {
+	ID          string          `json:"id"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Arguments   json.RawMessage `json:"arguments"`
+	Result      string          `json:"result"`
+	Status      ToolCallStatus  `json:"status"`
+}
+
 type ToolArgumentGetter func(args any) error
 
 type ToolStore struct {

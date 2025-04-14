@@ -30,6 +30,8 @@ export default class PostEventListener {
 
     public handlePostUpdateWebsockets = (msg: WebSocketMessage<PostUpdateWebsocketMessage>) => {
         const postID = msg.data.post_id;
+
+        // Notify registered listeners for this post
         this.postUpdateWebsocketListeners.forEach((listenerObject) => {
             if (listenerObject.postID === postID) {
                 listenerObject.listener(msg);

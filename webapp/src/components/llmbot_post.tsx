@@ -22,6 +22,7 @@ import {SearchSources} from './search_sources';
 import PostText from './post_text';
 import IconRegenerate from './assets/icon_regenerate';
 import IconCancel from './assets/icon_cancel';
+import ToolApprovalSet from './tool_approval_set';
 
 const SearchResultsPropKey = 'search_results';
 
@@ -93,15 +94,33 @@ const PostSummaryHelpMessage = styled.div`
 `;
 
 export interface PostUpdateWebsocketMessage {
-    next: string
     post_id: string
+    next?: string
     control?: string
+    tool_call?: string
+}
+
+export enum ToolCallStatus {
+    Pending = 0,
+    Accepted = 1,
+    Rejected = 2,
+    Error = 3,
+    Success = 4
+}
+
+export interface ToolCall {
+    id: string;
+    name: string;
+    description: string;
+    arguments: any;
+    result?: string;
+    status: ToolCallStatus;
 }
 
 interface Props {
     post: any;
-    websocketRegister: (postID: string, listenerID: string, handler: (msg: WebSocketMessage<PostUpdateWebsocketMessage>) => void) => void;
-    websocketUnregister: (postID: string, listenerID: string) => void;
+    websocketRegister?: (postID: string, listenerID: string, handler: (msg: WebSocketMessage<any>) => void) => void;
+    websocketUnregister?: (postID: string, listenerID: string) => void;
 }
 
 export const LLMBotPost = (props: Props) => {
@@ -117,28 +136,72 @@ export const LLMBotPost = (props: Props) => {
     const stoppedRef = useRef(stopped);
     stoppedRef.current = stopped;
 
+    // State for tool calls
+    const [toolCalls, setToolCalls] = useState<ToolCall[]>([]);
+    const [error, setError] = useState('');
+
     const currentUserId = useSelector<GlobalState, string>((state) => state.entities.users.currentUserId);
     const rootPost = useSelector<GlobalState, any>((state) => state.entities.posts.posts[props.post.root_id]);
 
+    // Get tool calls from post props
+    const toolCallsJson = props.post.props?.pending_tool_call;
+
+    // Update tool calls from props when available
     useEffect(() => {
-        const listenerID = Math.random().toString(36).substring(7);
-        props.websocketRegister(props.post.id, listenerID, (msg: WebSocketMessage<PostUpdateWebsocketMessage>) => {
-            const data = msg.data;
-            if (!data.control && !stoppedRef.current) {
-                setGenerating(true);
-                setMessage(data.next);
-            } else if (data.control === 'end') {
-                setGenerating(false);
-                setStopped(false);
-            } else if (data.control === 'start') {
-                setGenerating(true);
-                setStopped(false);
+        if (toolCallsJson) {
+            try {
+                const parsedToolCalls = JSON.parse(toolCallsJson);
+                setToolCalls(parsedToolCalls);
+            } catch (error) {
+                // Log error for debugging
+                setError('Error parsing tool calls');
             }
-        });
-        return () => {
-            props.websocketUnregister(props.post.id, listenerID);
-        };
-    }, []);
+        }
+    }, [toolCallsJson]);
+
+    // Use original websocket registration for listening
+    useEffect(() => {
+        if (props.websocketRegister && props.websocketUnregister) {
+            const listenerID = Math.random().toString(36).substring(7);
+
+            props.websocketRegister(props.post.id, listenerID, (msg: WebSocketMessage<PostUpdateWebsocketMessage>) => {
+                const data = msg.data;
+
+                // Handle tool call events from the websocket event
+                if (data.control === 'tool_call' && data.post_id === props.post.id && data.tool_call) {
+                    try {
+                        const parsedToolCalls = JSON.parse(data.tool_call);
+                        setToolCalls(parsedToolCalls);
+                    } catch (error) {
+                        // Handle error silently
+                        setError('Error parsing tool call data');
+                    }
+                    return;
+                }
+
+                // Handle regular post updates
+                if (data.next && !stoppedRef.current) {
+                    setGenerating(true);
+                    setMessage(data.next);
+                } else if (data.control === 'end') {
+                    setGenerating(false);
+                    setStopped(false);
+                } else if (data.control === 'start') {
+                    setGenerating(true);
+                    setStopped(false);
+                }
+            });
+
+            return () => {
+                if (props.websocketUnregister) {
+                    props.websocketUnregister(props.post.id, listenerID);
+                }
+            };
+        }
+
+        // No cleanup needed if websocket handlers weren't registered
+        return () => { /* No cleanup needed */ };
+    }, [props.post.id]);
 
     const regnerate = () => {
         setGenerating(true);
@@ -151,6 +214,16 @@ export const LLMBotPost = (props: Props) => {
         setStopped(true);
         setGenerating(false);
         doStopGenerating(props.post.id);
+    };
+
+    // These functions are now handled directly in the ToolCallApproval component
+    // We keep them for backward compatibility
+    const handleApproveToolCall = async () => {
+        // No implementation needed - handled in ToolCallApproval
+    };
+
+    const handleRejectToolCall = async () => {
+        // No implementation needed - handled in ToolCallApproval
     };
 
     const postSummary = async () => {
@@ -185,6 +258,7 @@ export const LLMBotPost = (props: Props) => {
         <PostBody
             data-testid='llm-bot-post'
         >
+            {error && <div className='error'>{error}</div>}
             {isThreadSummaryPost && permalinkView &&
             <>
                 {permalinkView}
@@ -199,6 +273,14 @@ export const LLMBotPost = (props: Props) => {
             {props.post.props?.[SearchResultsPropKey] && (
                 <SearchSources
                     sources={JSON.parse(props.post.props[SearchResultsPropKey])}
+                />
+            )}
+            {toolCalls && toolCalls.length > 0 && (
+                <ToolApprovalSet
+                    postID={props.post.id}
+                    toolCalls={toolCalls}
+                    onApprove={handleApproveToolCall}
+                    onReject={handleRejectToolCall}
                 />
             )}
             { showPostbackButton &&
@@ -260,4 +342,3 @@ function extractPermalinkData(post: any): PermalinkData | null {
     }
     return null;
 }
-

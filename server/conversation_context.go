@@ -84,3 +84,10 @@ func (p *Plugin) WithLLMContextBot(bot *Bot) llm.ContextOption {
 		c.CustomInstructions = bot.cfg.CustomInstructions
 	}
 }
+
+// WithLLMContextToolCallCallback configures the tool store to use the tool calls stream
+func (p *Plugin) WithLLMContextToolCallCallback(postID string) llm.ContextOption {
+	return func(c *llm.Context) {
+		// No longer needed as we use the stream directly
+	}
+}

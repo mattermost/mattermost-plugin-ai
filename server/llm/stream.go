@@ -3,31 +3,63 @@
 
 package llm
 
+// EventType represents the type of event in the text stream
+type EventType int
+
+const (
+	// EventTypeText represents a text chunk event
+	EventTypeText EventType = iota
+	// EventTypeEnd represents the end of the stream
+	EventTypeEnd
+	// EventTypeError represents an error event
+	EventTypeError
+	// EventTypeToolCalls represents a tool call event
+	EventTypeToolCalls
+)
+
+// TextStreamEvent represents an event in the text stream
+type TextStreamEvent struct {
+	Type  EventType
+	Value any
+}
+
+// TextStreamResult represents a stream of text events
 type TextStreamResult struct {
-	Stream <-chan string
-	Err    <-chan error
+	Stream <-chan TextStreamEvent
 }
 
 func NewStreamFromString(text string) *TextStreamResult {
-	output := make(chan string)
-	err := make(chan error)
+	stream := make(chan TextStreamEvent)
 
 	go func() {
-		output <- text
-		close(output)
-		close(err)
+		// Send the text as a text event
+		stream <- TextStreamEvent{
+			Type:  EventTypeText,
+			Value: text,
+		}
+
+		// Send end event
+		stream <- TextStreamEvent{
+			Type:  EventTypeEnd,
+			Value: nil,
+		}
+
+		close(stream)
 	}()
 
 	return &TextStreamResult{
-		Stream: output,
-		Err:    err,
+		Stream: stream,
 	}
 }
 
 func (t *TextStreamResult) ReadAll() string {
 	result := ""
-	for next := range t.Stream {
-		result += next
+	for event := range t.Stream {
+		if event.Type == EventTypeText {
+			if textChunk, ok := event.Value.(string); ok {
+				result += textChunk
+			}
+		}
 	}
 
 	return result

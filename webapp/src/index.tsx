@@ -33,8 +33,6 @@ import SearchHints from './components/search_hints';
 
 type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
 
-const StreamingPostWebsocketEvent = 'custom_mattermost-ai_postupdate';
-
 const IconAIContainer = styled.img`
 	border-radius: 50%;
     width: 24px;
@@ -100,7 +98,10 @@ export default class Plugin {
             }
         });
 
-        registry.registerWebSocketEventHandler(StreamingPostWebsocketEvent, this.postEventListener.handlePostUpdateWebsockets);
+        // Handle all post-related websocket events with one handler
+        registry.registerWebSocketEventHandler('custom_mattermost-ai_postupdate', this.postEventListener.handlePostUpdateWebsockets);
+        registry.registerWebSocketEventHandler('custom_mattermost-ai_tool_call_status_updated', this.postEventListener.handlePostUpdateWebsockets);
+
         const LLMBotPostWithWebsockets = (props: any) => {
             return (
                 <LLMBotPost
@@ -108,8 +109,7 @@ export default class Plugin {
                     websocketRegister={this.postEventListener.registerPostUpdateListener}
                     websocketUnregister={this.postEventListener.unregisterPostUpdateListener}
                 />
-            )
-            ;
+            );
         };
 
         registry.registerWebSocketEventHandler('config_changed', () => {
@@ -196,7 +196,7 @@ export default class Plugin {
 declare global {
     interface Window {
         registerPlugin(pluginId: string, plugin: Plugin): void
-        WebappUtils: any
+        WebappUtils?: any
     }
 }
 

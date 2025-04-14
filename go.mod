@@ -14,7 +14,7 @@ require (
 	github.com/invopop/jsonschema v0.13.0
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/lib/pq v1.10.9
-	github.com/mark3labs/mcp-go v0.17.0
+	github.com/mark3labs/mcp-go v0.20.1
 	github.com/mattermost/mattermost/server/public v0.1.11
 	github.com/nicksnyder/go-i18n/v2 v2.5.1
 	github.com/pgvector/pgvector-go v0.3.0

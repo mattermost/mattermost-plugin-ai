@@ -17,6 +17,8 @@ import (
 
 const defaultMaxFileSize = int64(1024 * 1024 * 5) // 5MB
 
+const ToolCallProp = "pending_tool_call"
+
 type ThreadData struct {
 	Posts     []*model.Post
 	UsersByID map[string]*model.User
@@ -130,6 +132,8 @@ func (p *Plugin) streamResultToNewPost(botid string, requesterUserID string, str
 		return fmt.Errorf("unable to create post: %w", err)
 	}
 
+	// The callback is already set when creating the context
+
 	ctx, err := p.getPostStreamingContext(context.Background(), post.Id)
 	if err != nil {
 		return err
@@ -169,6 +173,8 @@ func (p *Plugin) streamResultToNewDM(botid string, stream *llm.TextStreamResult,
 	if err := p.pluginAPI.Post.DM(botid, userID, post); err != nil {
 		return fmt.Errorf("failed to post DM: %w", err)
 	}
+
+	// The callback is already set when creating the context
 
 	ctx, err := p.getPostStreamingContext(context.Background(), post.Id)
 	if err != nil {
@@ -273,38 +279,82 @@ func (p *Plugin) streamResultToPost(ctx context.Context, stream *llm.TextStreamR
 
 	for {
 		select {
-		case next := <-stream.Stream:
-			post.Message += next
-			p.sendPostStreamingUpdateEvent(post, post.Message)
-		case err, ok := <-stream.Err:
-			// Stream has closed cleanly
-			if !ok {
+		case event := <-stream.Stream:
+			switch event.Type {
+			case llm.EventTypeText:
+				// Handle text event
+				if textChunk, ok := event.Value.(string); ok {
+					post.Message += textChunk
+					p.sendPostStreamingUpdateEvent(post, post.Message)
+				}
+			case llm.EventTypeEnd:
+				// Stream has closed cleanly
 				if strings.TrimSpace(post.Message) == "" {
 					p.API.LogError("LLM closed stream with no result")
 					post.Message = T("copilot.stream_to_post_llm_not_return", "Sorry! The LLM did not return a result.")
 					p.sendPostStreamingUpdateEvent(post, post.Message)
 				}
-				if err = p.pluginAPI.Post.UpdatePost(post); err != nil {
+				if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
 					p.API.LogError("Streaming failed to update post", "error", err)
 					return
 				}
 				return
-			}
-			// Handle partial results
-			if strings.TrimSpace(post.Message) == "" {
-				post.Message = ""
-			} else {
-				post.Message += "\n\n"
-			}
-			p.API.LogError("Streaming result to post failed partway", "error", err)
-			post.Message = T("copilot.stream_to_post_access_llm_error", "Sorry! An error occurred while accessing the LLM. See server logs for details.")
+			case llm.EventTypeError:
+				// Handle error event
+				var err error
+				if errValue, ok := event.Value.(error); ok {
+					err = errValue
+				} else {
+					err = fmt.Errorf("unknown error from LLM")
+				}
 
-			if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
-				p.API.LogError("Error recovering from streaming error", "error", err)
+				// Handle partial results
+				if strings.TrimSpace(post.Message) == "" {
+					post.Message = ""
+				} else {
+					post.Message += "\n\n"
+				}
+				p.API.LogError("Streaming result to post failed partway", "error", err)
+				post.Message = T("copilot.stream_to_post_access_llm_error", "Sorry! An error occurred while accessing the LLM. See server logs for details.")
+
+				if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
+					p.API.LogError("Error recovering from streaming error", "error", err)
+					return
+				}
+				p.sendPostStreamingUpdateEvent(post, post.Message)
+				return
+			case llm.EventTypeToolCalls:
+				// Handle tool call event
+				if toolCalls, ok := event.Value.([]llm.ToolCall); ok {
+					// Ensure all tool calls have Pending status
+					for i := range toolCalls {
+						toolCalls[i].Status = llm.ToolCallStatusPending
+					}
+
+					// Add the tool call as a prop to the post
+					toolCallJSON, err := json.Marshal(toolCalls)
+					if err != nil {
+						p.API.LogError("Failed to marshal tool call", "error", err)
+					} else {
+						post.AddProp(ToolCallProp, string(toolCallJSON))
+					}
+
+					// Update the post with the tool call
+					if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
+						p.API.LogError("Failed to update post with tool call", "error", err)
+					}
+
+					// Send websocket event with tool call data
+					p.API.PublishWebSocketEvent("postupdate", map[string]interface{}{
+						"post_id":   post.Id,
+						"control":   "tool_call",
+						"tool_call": string(toolCallJSON),
+					}, &model.WebsocketBroadcast{
+						ChannelId: post.ChannelId,
+					})
+				}
 				return
 			}
-			p.sendPostStreamingUpdateEvent(post, post.Message)
-			return
 		case <-ctx.Done():
 			if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
 				p.API.LogError("Error updating post on stop signaled", "error", err)
@@ -452,10 +502,24 @@ func (p *Plugin) PostToAIPost(bot *Bot, post *model.Post) llm.Post {
 		role = llm.PostRoleBot
 	}
 
+	// Check for tools
+	pendingToolsProp := post.GetProp(ToolCallProp)
+	tools := []llm.ToolCall{}
+	pendingTools, ok := pendingToolsProp.(string)
+	if ok {
+		var toolCalls []llm.ToolCall
+		if err := json.Unmarshal([]byte(pendingTools), &toolCalls); err != nil {
+			p.API.LogError("Error unmarshalling tool calls", "error", err)
+		} else {
+			tools = toolCalls
+		}
+	}
+
 	return llm.Post{
 		Role:    role,
 		Message: message,
 		Files:   filesForUpstream,
+		ToolUse: tools,
 	}
 }
 

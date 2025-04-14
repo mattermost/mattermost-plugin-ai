@@ -439,6 +439,8 @@ func (p *Plugin) getBuiltInTools(isDM bool, bot *Bot) []llm.Tool {
 	return builtInTools
 }
 
+// This function is no longer needed as we use the tool calls stream directly
+
 // getToolsStoreForUser returns a tool store for a specific user, including MCP tools
 func (p *Plugin) getToolsStoreForUser(bot *Bot, isDM bool, userID string) *llm.ToolStore {
 	// Check for nil bot, which is unexpected
@@ -458,6 +460,7 @@ func (p *Plugin) getToolsStoreForUser(bot *Bot, isDM bool, userID string) *llm.T
 		return llm.NewNoTools()
 	}
 
+	// Create a tool store that requires user approval for tool calls
 	store := llm.NewToolStore(&p.pluginAPI.Log, p.getConfiguration().EnableLLMTrace)
 
 	// Add built-in tools
