@@ -391,6 +391,79 @@ func (p *Plugin) toolSearchServer(llmContext *llm.Context, argsGetter llm.ToolAr
 	return formatted, nil
 }
 
+type CreateChannelArgs struct {
+	TeamName    string `jsonschema_description:"The team name where the channel will be created. DO NOT MAKE ONE UP. If unclear ask for the team name."`
+	DisplayName string `jsonschema_description:"The display name for the channel. Example: 'Project Discussion'"`
+	Name        string `jsonschema_description:"The URL-friendly name for the channel (lowercase, no spaces). Example: 'project-discussion'"`
+	Purpose     string `jsonschema_description:"The purpose of the channel (optional). Example: 'For discussing project updates'"`
+	Header      string `jsonschema_description:"The header for the channel (optional). Example: 'Welcome to the project discussion channel'"`
+	Type        string `jsonschema_description:"The type of channel: 'O' for public, 'P' for private. Default is 'O'"`
+}
+
+func (p *Plugin) toolCreateChannel(context *llm.Context, argsGetter llm.ToolArgumentGetter) (string, error) {
+	var args CreateChannelArgs
+	err := argsGetter(&args)
+	if err != nil {
+		return "invalid parameters to function", fmt.Errorf("failed to get arguments for tool CreateChannel: %w", err)
+	}
+
+	// Validate channel type
+	if args.Type != "O" && args.Type != "P" {
+		args.Type = "O" // Default to public
+	}
+
+	// Validate team name
+	team, err := p.pluginAPI.Team.GetByName(args.TeamName)
+	if err != nil {
+		return "team not found", fmt.Errorf("failed to find team %s: %w", args.TeamName, err)
+	}
+
+	// Validate channel name
+	if !model.IsValidChannelIdentifier(args.Name) {
+		return "invalid channel name, must be lowercase with no spaces", errors.New("invalid channel name")
+	}
+
+	// Check user permissions
+	if !p.pluginAPI.User.HasPermissionToTeam(context.RequestingUser.Id, team.Id, model.PermissionCreatePublicChannel) {
+		if args.Type == "O" {
+			return "user doesn't have permissions to create public channels in this team", errors.New("insufficient permissions")
+		}
+	}
+
+	if args.Type == "P" && !p.pluginAPI.User.HasPermissionToTeam(context.RequestingUser.Id, team.Id, model.PermissionCreatePrivateChannel) {
+		return "user doesn't have permissions to create private channels in this team", errors.New("insufficient permissions")
+	}
+
+	// Create the channel
+	newChannel := &model.Channel{
+		TeamId:      team.Id,
+		Type:        model.ChannelType(args.Type),
+		DisplayName: args.DisplayName,
+		Name:        args.Name,
+		Purpose:     args.Purpose,
+		Header:      args.Header,
+	}
+
+	// Use the Mattermost API directly to create the channel which returns the proper type
+	createdChannel, appErr := p.API.CreateChannel(newChannel)
+	if appErr != nil {
+		return "failed to create channel", fmt.Errorf("failed to create channel: %w", appErr)
+	}
+
+	// Add the requesting user to the channel
+	var addErr error
+	_, addErr = p.pluginAPI.Channel.AddMember(createdChannel.Id, context.RequestingUser.Id)
+	if addErr != nil {
+		p.pluginAPI.Log.Error("Failed to add user to newly created channel", "channelId", createdChannel.Id, "userId", context.RequestingUser.Id, "error", addErr)
+		// Continue anyway, as the channel was created successfully
+	}
+
+	return fmt.Sprintf("Successfully created %s channel '%s' in team '%s'",
+		map[string]string{"O": "public", "P": "private"}[args.Type],
+		createdChannel.DisplayName,
+		team.DisplayName), nil
+}
+
 // getBuiltInTools returns the built-in tools that are available to all users.
 // isDM is true if the response will be in a DM with the user. More tools are available in DMs because of security properties.
 func (p *Plugin) getBuiltInTools(isDM bool, bot *Bot) []llm.Tool {
@@ -412,6 +485,13 @@ func (p *Plugin) getBuiltInTools(isDM bool, bot *Bot) []llm.Tool {
 			Description: "Lookup a Mattermost user by their username. Available information includes: username, full name, email, nickname, position, locale, timezone, last activity, and status.",
 			Schema:      llm.NewJSONSchemaFromStruct(LookupMattermostUserArgs{}),
 			Resolver:    p.toolResolveLookupMattermostUser,
+		})
+
+		builtInTools = append(builtInTools, llm.Tool{
+			Name:        "CreateChannel",
+			Description: "Create a new Mattermost channel in a specified team. The channel can be public or private.",
+			Schema:      llm.NewJSONSchemaFromStruct(CreateChannelArgs{}),
+			Resolver:    p.toolCreateChannel,
 		})
 
 		// GitHub plugin tools

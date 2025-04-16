@@ -322,6 +322,7 @@ func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, ch
 	analysisTypeProp := post.GetProp(AnalysisTypeProp)
 	referenceRecordingFileIDProp := post.GetProp(ReferencedRecordingFileID)
 	referencedTranscriptPostProp := post.GetProp(ReferencedTranscriptPostID)
+	post.DelProp(ToolCallProp)
 	var result *llm.TextStreamResult
 	switch {
 	case threadIDProp != nil:
