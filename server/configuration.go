@@ -7,21 +7,8 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/mattermost/mattermost-plugin-ai/server/embeddings"
-	"github.com/mattermost/mattermost-plugin-ai/server/llm"
-	"github.com/mattermost/mattermost-plugin-ai/server/mcp"
+	"github.com/mattermost/mattermost-plugin-ai/agents"
 )
-
-type Config struct {
-	Services                 []llm.ServiceConfig              `json:"services"`
-	Bots                     []llm.BotConfig                  `json:"bots"`
-	DefaultBotName           string                           `json:"defaultBotName"`
-	TranscriptGenerator      string                           `json:"transcriptBackend"`
-	EnableLLMTrace           bool                             `json:"enableLLMTrace"`
-	AllowedUpstreamHostnames string                           `json:"allowedUpstreamHostnames"`
-	EmbeddingSearchConfig    embeddings.EmbeddingSearchConfig `json:"embeddingSearchConfig"`
-	MCP                      mcp.Config                       `json:"mcp"`
-}
 
 // configuration captures the plugin's external configuration as exposed in the Mattermost server
 // configuration, as well as values computed from the configuration. Any public fields will be
@@ -35,7 +22,7 @@ type Config struct {
 // If you add non-reference types to your configuration struct, be sure to rewrite Clone as a deep
 // copy appropriate for your types.
 type configuration struct {
-	Config `json:"config"`
+	agents.Config `json:"config"`
 }
 
 // Clone shallow copies the configuration. Your implementation may require a deep copy if
@@ -43,20 +30,6 @@ type configuration struct {
 func (c *configuration) Clone() *configuration {
 	var clone = *c
 	return &clone
-}
-
-// getConfiguration retrieves the active configuration under lock, making it safe to use
-// concurrently. The active configuration may change underneath the client of this method, but
-// the struct returned by this API call is considered immutable.
-func (p *Plugin) getConfiguration() *configuration {
-	p.configurationLock.RLock()
-	defer p.configurationLock.RUnlock()
-
-	if p.configuration == nil {
-		return &configuration{}
-	}
-
-	return p.configuration
 }
 
 // setConfiguration replaces the active configuration under lock.
@@ -96,46 +69,16 @@ func (p *Plugin) OnConfigurationChange() error {
 	}
 
 	p.setConfiguration(configuration)
+	if p.agentsService != nil {
+		p.agentsService.SetConfiguration(&configuration.Config)
+	}
 
 	// If OnActivate hasn't run yet then don't do the change tasks
 	if p.pluginAPI == nil {
 		return nil
 	}
 
-	// Extra config change tasks
-	if err := p.EnsureBots(); err != nil {
-		return fmt.Errorf("failed on config change: %w", err)
-	}
-
-	// Reinitialize search based on new configuration
-	search, err := p.initSearch()
-	if err != nil {
-		// Only log the error but don't fail plugin configuration
-		p.pluginAPI.Log.Error("Failed to initialize search, search features will be disabled", "error", err)
-		// Set search to nil to disable search functionality
-		p.search = nil
-	} else {
-		p.search = search
-	}
-
-	// Reinitialize MCP client based on new configuration
-	if p.mcpClientManager != nil {
-		// Close existing client first
-		closeErr := p.mcpClientManager.Close()
-		if closeErr != nil {
-			p.pluginAPI.Log.Error("Failed to close MCP client manager", "error", closeErr)
-		}
-	}
-
-	mcpClient, err := mcp.NewClientManager(configuration.MCP, p.pluginAPI.Log)
-	if err != nil {
-		// Log the error but don't fail plugin configuration
-		p.pluginAPI.Log.Error("Failed to initialize MCP client manager, MCP tools will be disabled", "error", err)
-		p.mcpClientManager = nil
-	} else {
-		p.mcpClientManager = mcpClient
-		p.pluginAPI.Log.Debug("MCP client manager reinitialized successfully")
-	}
+	p.agentsService.OnConfigurationChange()
 
 	return nil
 }
