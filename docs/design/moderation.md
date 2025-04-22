@@ -2,6 +2,18 @@
 
 This document outlines a proposal for implementing content moderation in the Mattermost AI Plugin using Azure AI Content Safety APIs. Here we explore how we might filter inappropriate content in both user inputs to LLMs and LLM-generated responses to protect users from potentially harmful, offensive, or inappropriate content.
 
+## Implementation Strategy
+
+This design adopts a **minimum viable product (MVP)** approach for the first implementation of content moderation:
+
+- Focus on essential functionality with a simple binary allow/reject model
+- Implement core moderation points (user input, LLM responses, image content)
+- Use a global configuration with consistent thresholds
+- Provide basic audit logging for moderation decisions
+- Defer more complex features to future iterations
+
+Throughout this document, we identify potential enhancements that could be considered for future releases after gathering customer feedback on the initial implementation.
+
 ## API Selection
 
 ### Azure Content Moderator (Deprecated)
@@ -33,9 +45,12 @@ The proposed moderation system would consist of the following components:
 - This ensures potentially problematic content doesn't slip through due to technical issues.
 - However, this means if moderation APIs are unavailable, all LLM interactions would be disabled by default.
 
-**Open Questions:**
-- Should there be an option for fail-open in certain trusted environments?
-- How can we implement graceful degradation instead of complete service shutdown?
+**Initial Implementation Approach:**
+- For the first release, we will use the fail-closed approach for simplicity and security.
+
+**Potential Future Considerations (Not in Initial Implementation):**
+- Options for fail-open in trusted environments
+- Graceful degradation mechanisms instead of complete service shutdown
 
 ## Proposed Moderation Flow
 
@@ -58,32 +73,25 @@ The proposed implementation would include three primary moderation points:
 
 ### Review Mechanism Considerations:
 - If content exceeds the configured threshold, it would be automatically rejected without any human review process.
-- This binary approach (allow/reject) may be too rigid for some use cases.
+- This binary approach (allow/reject) will be used for the initial implementation.
+- All rejected content will be audit logged (without including the actual content).
 
-**Open Questions:**
-- Should we implement a review queue for borderline content?
-- Should moderators have the ability to override automated decisions?
-- How would a review process be integrated with Mattermost's permission system?
+**Potential Future Enhancements (Not in Initial Implementation):**
+- Review queues for borderline content
+- Ability for moderators to override automated decisions
+- Graduated response levels (warnings, override options, etc.)
+- Feedback loops for users to contest moderation decisions
 
-**Potential Enhancements:**
-- **Human-in-the-Loop Review**: We could implement a review queue where content that falls within a "gray zone" (e.g., between 0.6-0.8 on the threshold) would be sent for human review before final determination.
-- **Graduated Response**: Rather than a binary allow/block decision, we could implement multiple response levels:
-  - Allow (below threshold)
-  - Warn user but allow (borderline)
-  - Block but allow override with explanation (moderately above threshold)
-  - Block completely (significantly above threshold)
-- **Feedback Loop**: We could create a mechanism for users to contest moderation decisions, providing a learning loop for the system and reducing false positives over time.
+> **Note:** For the first iteration, we will focus on implementing a simple, minimal viable product before considering more complex review mechanisms. Additional features will be prioritized based on customer feedback after the initial release.
 
 ### User Feedback Considerations:
-- Users receive generic messages when their content is flagged, without specifics about why.
+- For the initial implementation, users will receive generic messages when their content is flagged, without specifics about why.
+- This simple approach will be sufficient for the MVP release.
 
-**Open Questions:**
-- Should users receive more detailed feedback about why their content was rejected?
-- Could we implement different levels of feedback based on user roles/permissions?
-- How can we balance transparency with avoiding instructing users on circumventing filters?
-
-**Potential Enhancement:**
-- **User Education**: We could provide educational resources about content policies when users have content rejected, helping them understand the guidelines.
+**Potential Future Enhancements (Not in Initial Implementation):**
+- More detailed feedback about content rejection reasons
+- Different feedback levels based on user roles/permissions
+- Educational resources about content policies
 
 ## Proposed Configuration
 
@@ -118,21 +126,22 @@ This design allows for:
 ### Threshold Configuration Considerations:
 - This proposal uses category-specific thresholds (hate, sexual, violence, selfHarm) based on Azure Content Safety's severity levels.
 - The default configuration would block content at medium severity (4) or higher.
+- For the initial implementation, thresholds will be global and not configurable per channel or team.
 
-**Open Questions:**
-- Should thresholds be configurable per channel or per team?
-- How can administrators test and tune thresholds effectively?
-- Should we implement different actions based on different severity levels (e.g., warn vs. block)?
-
-**Potential Enhancements:**
-- **Blocklist Integration**: We could leverage Azure Content Safety's blocklist feature to allow administrators to create custom lists of forbidden terms or patterns.
-- **Channel/Team-Specific Settings**: We could enable different moderation policies for different contexts - stricter in public channels, more lenient in private teams with trusted users.
-- **Jailbreak Detection (Prompt Shield)**: We could utilize Azure's specialized Text Jailbreak Detection API for identifying prompt injection attacks. This API specifically detects prompts designed to manipulate or "jailbreak" an LLM's safety guardrails. The API returns a simple boolean result indicating whether a jailbreak attempt was detected.
+**Potential Future Enhancements (Not in Initial Implementation):**
+- Channel/Team-specific threshold configurations
+- More sophisticated threshold testing and tuning capabilities
+- Different actions based on severity levels (warnings vs. blocks)
+- Blocklist integration for custom forbidden terms
+- Jailbreak detection using Azure's Text Jailbreak Detection API
 
 ### Logging and Audit Considerations:
-- All moderation decisions should be logged
+- All moderation decisions will be logged, but the actual content will not be included in logs.
+- Any configuration changes (especially threshold value changes) must be audit logged.
+- Normal logging will be used for non-sensitive information.
+- Audit logging is mandatory for all content rejections.
 
-**Open Questions:**
-- What additional metadata should be logged for moderation decisions?
-- Should we implement an admin dashboard for monitoring moderation activity?
-- How long should moderation logs be retained?
+**Potential Future Enhancements (Not in Initial Implementation):**
+- Admin dashboards for monitoring moderation activity
+- Extended metadata for moderation decision logs
+- Configurable log retention policies
