@@ -65,6 +65,16 @@ The proposed implementation would include three primary moderation points:
    - When an LLM generates a response, the complete response would be checked before being displayed to users.
    - If flagged, users would see a generic message instead of the problematic content.
    - This happens in `streamResultToPost()` in `post_processing.go`.
+   
+   **Streaming Considerations:**
+   - The AI plugin normally streams LLM responses incrementally as they're generated, updating a post in real-time.
+   - This creates a challenge for content moderation as the entire response must be evaluated.
+   - A new setting will be introduced to disable streaming when moderation is enabled:
+     - When streaming is disabled, a "working" message will be displayed while the complete response is generated
+     - The complete response will then be checked by the moderation service
+     - If it passes moderation, the "working" message will be replaced with the full response
+     - If it fails moderation, the "working" message will be replaced with a moderation failure message
+     - The rejected content is never shown to the user
 
 3. **Image Moderation**:
    - Images attached to messages would be moderated before being sent to vision-capable LLMs.
@@ -104,6 +114,7 @@ The moderation system would be configured through a generic moderation object in
     "type": "azure",
     "endpoint": "https://*.azure.com",
     "apiKey": "your-api-key",
+    "disableStreaming": true,
     "thresholds": {
       "hate": 4,
       "sexual": 4,
