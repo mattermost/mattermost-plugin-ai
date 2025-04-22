@@ -1,13 +1,17 @@
 # Content Moderation Design Proposal
 
-This document outlines a proposal for implementing content moderation in the Mattermost AI Plugin using Azure AI Content Safety APIs. Here we explore how we might filter inappropriate content in both user inputs to LLMs and LLM-generated responses to protect users from potentially harmful, offensive, or inappropriate content.
+This document outlines a proposal for implementing content moderation using two Mattermost plugins:
+1. A dedicated **Content Moderation Plugin** using Azure AI Content Safety APIs to moderate all content in the system
+2. Updates to the **AI Plugin** to support moderation of LLM-generated content
+
+The primary goal is to protect users from potentially harmful, offensive, or inappropriate content in both user-generated posts and AI-generated responses.
 
 ## Implementation Strategy
 
 This design adopts a **minimum viable product (MVP)** approach for the first implementation of content moderation:
 
 - Focus on essential functionality with a simple binary allow/reject model
-- Implement core moderation points (user input, LLM responses, image content)
+- Implement core moderation through Mattermost plugin hooks for all content
 - Use a global configuration with consistent thresholds
 - Provide basic audit logging for moderation decisions
 - Defer more complex features to future iterations
@@ -34,16 +38,27 @@ The proposed design below utilizes the AI Content Safety APIs.
 
 ## Proposed Architecture
 
-The proposed moderation system would consist of the following components:
+### Content Moderation Plugin
 
-1. **Moderation Interface**: A generic `Moderator` interface that defines methods for text and image moderation, allowing for different implementation providers.
-2. **Azure Implementation**: An implementation of the `Moderator` interface that integrates with Azure AI Content Safety APIs.
-3. **Integration Points**: Code that integrates moderation into the message processing flow, both for user input and LLM responses.
+The new Content Moderation Plugin will:
+
+1. Leverage Mattermost Server Plugin Hooks, specifically `MessageWillBePosted` and `MessageWillBeUpdated` to intercept all messages.
+2. Implement a generic `Moderator` interface that defines methods for text and image moderation, allowing for different implementation providers.
+3. Provide an Azure implementation of the `Moderator` interface that integrates with Azure AI Content Safety APIs.
+4. Filter content based on configurable thresholds for different content categories.
+
+### AI Plugin Updates
+
+The AI Plugin will be updated to:
+
+1. Add a new `disableStreaming` configuration option
+2. Modify the streaming behavior to support content moderation 
+3. Coordinate with the Content Moderation Plugin via direct post filtering
 
 ### Service Availability Considerations:
-- The proposed design would use a "fail-closed" approach for safety - if the moderation service encounters an error, content would be blocked by default.
+- The Content Moderation Plugin would use a "fail-closed" approach for safety - if the moderation service encounters an error, content would be blocked by default.
 - This ensures potentially problematic content doesn't slip through due to technical issues.
-- However, this means if moderation APIs are unavailable, all LLM interactions would be disabled by default.
+- However, this means if moderation APIs are unavailable, all posting interactions would be disabled by default.
 
 **Initial Implementation Approach:**
 - For the first release, we will use the fail-closed approach for simplicity and security.
@@ -54,32 +69,38 @@ The proposed moderation system would consist of the following components:
 
 ## Proposed Moderation Flow
 
-The proposed implementation would include three primary moderation points:
+### Content Moderation Plugin
 
-1. **User Input Moderation**:
-   - When a user sends a message to an AI bot, the message would be checked by the moderation service.
-   - If flagged, the user would receive a notification and the message would not be processed by the LLM.
-   - This happens in `processUserRequestToBot()` in `conversations.go`.
+The Content Moderation Plugin will provide comprehensive moderation through these primary hooks:
 
-2. **LLM Response Moderation**:
-   - When an LLM generates a response, the complete response would be checked before being displayed to users.
-   - If flagged, users would see a generic message instead of the problematic content.
-   - This happens in `streamResultToPost()` in `post_processing.go`.
-   
-   **Streaming Considerations:**
-   - The AI plugin normally streams LLM responses incrementally as they're generated, updating a post in real-time.
-   - This creates a challenge for content moderation as the entire response must be evaluated.
-   - A new setting will be introduced to disable streaming when moderation is enabled:
-     - When streaming is disabled, a "working" message will be displayed while the complete response is generated
-     - The complete response will then be checked by the moderation service
-     - If it passes moderation, the "working" message will be replaced with the full response
-     - If it fails moderation, the "working" message will be replaced with a moderation failure message
+1. **Message Posting Moderation**:
+   - Uses `MessageWillBePosted` hook to intercept and check posts before they are created.
+   - Only moderates posts from specific users (e.g., the AI bot) based on configuration.
+   - If flagged, the user receives a notification and the message is blocked.
+   - Particularly important for AI-generated responses to ensure they meet content standards.
+
+2. **Message Update Moderation**:
+   - Uses `MessageWillBeUpdated` hook to intercept and check post edits.
+   - Same user-targeting logic applies - only monitors configured users.
+   - If flagged, the edit is blocked and the original post remains unchanged.
+
+3. **Attachment Moderation**:
+   - Also within the `MessageWillBePosted` hook, checks file attachments including images.
+   - Only applies to attachments from configured users.
+   - Uses Azure AI Content Safety's image analysis capabilities to detect inappropriate visuals.
+
+### AI Plugin Adjustments
+
+The AI Plugin will be updated to work with the new moderation system:
+
+1. **Streaming Behavior**:
+   - The AI plugin will add a new `disableStreaming` configuration option.
+   - When streaming is disabled:
+     - A "working" message will be displayed while the complete response is generated
+     - The complete response will be posted as a single message, which is then caught by the moderation plugin's `MessageWillBePosted` hook
+     - If it passes moderation, the message is displayed to users
+     - If it fails moderation, the moderation plugin will block it and the user will see the moderation failure message
      - The rejected content is never shown to the user
-
-3. **Image Moderation**:
-   - Images attached to messages would be moderated before being sent to vision-capable LLMs.
-   - Images that fail moderation would not be included in the context sent to the LLM.
-   - This happens in `PostToAIPost()` in `post_processing.go`.
 
 ### Review Mechanism Considerations:
 - If content exceeds the configured threshold, it would be automatically rejected without any human review process.
@@ -105,27 +126,40 @@ The proposed implementation would include three primary moderation points:
 
 ## Proposed Configuration
 
-The moderation system would be configured through a generic moderation object in the plugin settings:
+### Content Moderation Plugin Settings
+
+The Content Moderation Plugin would be configured through its own plugin settings:
 
 ```json
 {
-  "moderation": {
-    "enabled": true,
-    "type": "azure",
-    "endpoint": "https://*.azure.com",
-    "apiKey": "your-api-key",
-    "disableStreaming": true,
-    "thresholds": {
-      "hate": 4,
-      "sexual": 4,
-      "violence": 4,
-      "selfHarm": 4
-    }
-  }
+  "enabled": true,
+  "type": "azure",
+  "endpoint": "https://*.azure.com",
+  "apiKey": "your-api-key",
+  "moderationTargets": {
+    "users": ["ai-bot-user-id"],
+    "moderateAllUsers": false
+  },
+  "thresholds": {
+    "hate": 4,
+    "sexual": 4,
+    "violence": 4,
+    "selfHarm": 4
+  },
 }
 ```
 
-This design allows for:
+### AI Plugin Settings
+
+The AI Plugin configuration would be updated to include only the streaming behavior setting:
+
+```json
+{
+  "disableStreaming": true
+}
+```
+
+These designs allow for:
 - Future expansion to other moderation providers by changing the `type` parameter
 - Category-specific thresholds based on Azure Content Safety's severity levels:
   - 0: Safe (always allowed)
@@ -133,6 +167,7 @@ This design allows for:
   - 4: Medium severity (moderate)
   - 6: High severity (severe)
 - Configuration control over which severity levels trigger moderation actions
+- Separation of concerns between content generation and content moderation
 
 ### Threshold Configuration Considerations:
 - This proposal uses category-specific thresholds (hate, sexual, violence, selfHarm) based on Azure Content Safety's severity levels.
@@ -145,14 +180,22 @@ This design allows for:
 - Different actions based on severity levels (warnings vs. blocks)
 - Blocklist integration for custom forbidden terms
 - Jailbreak detection using Azure's Text Jailbreak Detection API
+- Expand user targeting to include groups and teams
 
 ### Logging and Audit Considerations:
-- All moderation decisions will be logged, but the actual content will not be included in logs.
+- All moderation decisions will be logged by the Content Moderation Plugin, but the actual content will not be included in logs.
 - Any configuration changes (especially threshold value changes) must be audit logged.
 - Normal logging will be used for non-sensitive information.
 - Audit logging is mandatory for all content rejections.
+
+### Plugin Integration Considerations:
+- The Content Moderation Plugin operates independently but affects AI Plugin content.
+- The AI Plugin only needs to be aware of moderation to the extent it affects streaming behavior.
+- The Mattermost Server handles message rejection notifications to users.
+- No direct inter-plugin communication is required as the moderation is handled through the standard message flow.
 
 **Potential Future Enhancements (Not in Initial Implementation):**
 - Admin dashboards for monitoring moderation activity
 - Extended metadata for moderation decision logs
 - Configurable log retention policies
+- Inter-plugin communication to enable more sophisticated moderation coordination
