@@ -6,6 +6,7 @@ import styled from 'styled-components';
 import {FormattedMessage, useIntl} from 'react-intl';
 
 import {setUserProfilePictureByUsername} from '@/client';
+import {Pill} from '../../components/pill';
 
 import {ServiceData} from './service';
 import Panel, {PanelFooterText} from './panel';
@@ -60,6 +61,13 @@ const ConfigContainer = styled.div`
 	display: flex;
 	flex-direction: column;
 	gap: 20px;
+`;
+
+const Horizontal = styled.div`
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
 `;
 
 const defaultConfig = {
@@ -227,7 +235,12 @@ const Config = (props: Props) => {
                 }}
             />
             <Panel
-                title={intl.formatMessage({defaultMessage: 'Model Context Protocol (MCP)'})}
+                title={
+                    <Horizontal>
+                        <FormattedMessage defaultMessage='Model Context Protocol (MCP)'/>
+                        <Pill><FormattedMessage defaultMessage='EXPERIMENTAL'/></Pill>
+                    </Horizontal>
+                }
                 subtitle={intl.formatMessage({defaultMessage: 'Configure MCP servers to enable AI tools.'})}
             >
                 <MCPServers
