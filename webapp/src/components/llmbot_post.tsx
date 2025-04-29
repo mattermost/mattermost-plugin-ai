@@ -199,8 +199,7 @@ export const LLMBotPost = (props: Props) => {
             };
         }
 
-        // No cleanup needed if websocket handlers weren't registered
-        return () => { /* No cleanup needed */ };
+        return () => {/* no cleanup */};
     }, [props.post.id]);
 
     const regnerate = () => {
@@ -216,16 +215,6 @@ export const LLMBotPost = (props: Props) => {
         doStopGenerating(props.post.id);
     };
 
-    // These functions are now handled directly in the ToolCallApproval component
-    // We keep them for backward compatibility
-    const handleApproveToolCall = async () => {
-        // No implementation needed - handled in ToolCallApproval
-    };
-
-    const handleRejectToolCall = async () => {
-        // No implementation needed - handled in ToolCallApproval
-    };
-
     const postSummary = async () => {
         const result = await doPostbackSummary(props.post.id);
         selectPost(result.rootid, result.channelid);
@@ -237,7 +226,7 @@ export const LLMBotPost = (props: Props) => {
     const isTranscriptionResult = rootPost?.props?.referenced_transcript_post_id && rootPost?.props?.referenced_transcript_post_id !== '';
 
     let permalinkView = null;
-    if (PostMessagePreview) { // Ignore permalink if version does not exporrt PostMessagePreview
+    if (PostMessagePreview) { // Ignore permalink if version does not export PostMessagePreview
         const permalinkData = extractPermalinkData(props.post);
         if (permalinkData !== null) {
             permalinkView = (
@@ -279,8 +268,6 @@ export const LLMBotPost = (props: Props) => {
                 <ToolApprovalSet
                     postID={props.post.id}
                     toolCalls={toolCalls}
-                    onApprove={handleApproveToolCall}
-                    onReject={handleRejectToolCall}
                 />
             )}
             { showPostbackButton &&

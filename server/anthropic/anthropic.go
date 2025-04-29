@@ -260,7 +260,7 @@ func (a *Anthropic) streamChatWithTools(state messageState) error {
 					pendingToolCalls = append(pendingToolCalls, llm.ToolCall{
 						ID:          block.ID,
 						Name:        block.Name,
-						Description: "", // Anthropic doesn't provide description in the response
+						Description: "",
 						Arguments:   block.Input,
 					})
 				}

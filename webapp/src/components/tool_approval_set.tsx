@@ -21,8 +21,6 @@ const ToolCallsContainer = styled.div`
 interface ToolApprovalSetProps {
     postID: string;
     toolCalls: ToolCall[];
-    onApprove: (toolID: string) => Promise<void>;
-    onReject: (toolID: string) => Promise<void>;
 }
 
 const ToolApprovalSet: React.FC<ToolApprovalSetProps> = (props) => {
@@ -38,11 +36,6 @@ const ToolApprovalSet: React.FC<ToolApprovalSetProps> = (props) => {
 
             // Call the API endpoint
             await doToolCall(props.postID, [toolID]);
-
-            // Also call the onApprove callback for backward compatibility
-            if (props.onApprove) {
-                await props.onApprove(toolID);
-            }
         } catch (err) {
             setError('Failed to approve tool call');
 
@@ -58,11 +51,6 @@ const ToolApprovalSet: React.FC<ToolApprovalSetProps> = (props) => {
 
             // Call the API endpoint
             await doToolCall(props.postID, []);
-
-            // Also call the onReject callback for backward compatibility
-            if (props.onReject) {
-                await props.onReject(toolID);
-            }
         } catch (err) {
             setError('Failed to reject tool call');
 
@@ -73,9 +61,7 @@ const ToolApprovalSet: React.FC<ToolApprovalSetProps> = (props) => {
 
     const toggleCollapse = (toolID: string) => {
         setCollapsedTools((prev) =>
-            (prev.includes(toolID) ?
-                prev.filter((id) => id !== toolID) :
-                [...prev, toolID]),
+            (prev.includes(toolID) ? prev.filter((id) => id !== toolID) : [...prev, toolID]),
         );
     };
 

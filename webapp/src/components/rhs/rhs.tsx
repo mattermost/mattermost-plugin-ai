@@ -79,11 +79,11 @@ export default function RHS() {
         if (currentTab === 'threads') {
             fetchThreads();
         } else if (currentTab === 'thread' && Boolean(selectedPostId)) {
-            // Update read for the thread to tommorow. We don't really want the unreads thing to show up.
+            // Update read for the thread to tomorrow. We don't really want the unreads thing to show up.
             updateRead(currentUserId, currentTeamId, selectedPostId, Date.now() + twentyFourHoursInMS);
         }
         return () => {
-            // Somtimes we are too fast for the server, so try again on unmount/switch.
+            // Sometimes we are too fast for the server, so try again on unmount/switch.
             if (selectedPostId) {
                 updateRead(currentUserId, currentTeamId, selectedPostId, Date.now() + twentyFourHoursInMS);
             }
