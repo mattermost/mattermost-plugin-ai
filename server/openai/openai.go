@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"image"
 	"image/png"
@@ -226,13 +225,6 @@ func postsToChatCompletionMessages(posts []llm.Post) []openaiClient.ChatCompleti
 	}
 
 	return result
-}
-
-// createFunctionArgumentResolver Creates a resolver for the json arguments of an openai function call. Unmarshalling the json into the supplied struct.
-func createFunctionArgumentResolver(jsonArgs string) llm.ToolArgumentGetter {
-	return func(args any) error {
-		return json.Unmarshal([]byte(jsonArgs), args)
-	}
 }
 
 type ToolBufferElement struct {

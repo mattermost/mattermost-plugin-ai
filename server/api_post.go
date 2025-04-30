@@ -337,7 +337,6 @@ func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, ch
 			user,
 			channel,
 			p.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.mmBot.UserId, channel)),
-			p.WithLLMContextToolCallCallback(post.Id),
 		))
 		if err != nil {
 			return fmt.Errorf("could not summarize post on regen: %w", err)
@@ -374,7 +373,6 @@ func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, ch
 			user,
 			originalFileChannel,
 			p.WithLLMContextDefaultTools(bot, originalFileChannel.Type == model.ChannelTypeDirect),
-			p.WithLLMContextToolCallCallback(post.Id),
 		)
 		var summaryErr error
 		result, summaryErr = p.summarizeTranscription(bot, transcription, context)
@@ -408,7 +406,6 @@ func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, ch
 			user,
 			channel,
 			p.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.mmBot.UserId, channel)),
-			p.WithLLMContextToolCallCallback(post.Id),
 		)
 		var summaryErr error
 		result, summaryErr = p.summarizeTranscription(bot, transcription, context)
@@ -428,18 +425,8 @@ func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, ch
 			return fmt.Errorf("could not get post being responded to: %w", getErr)
 		}
 
-		// Create a context with the tool call callback already set
-		contextWithCallback := p.BuildLLMContextUserRequest(
-			bot,
-			user,
-			channel,
-			p.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.mmBot.UserId, channel)),
-			p.WithLLMContextToolCallCallback(post.Id),
-		)
-
-		// Process the user request with the context that has the callback
 		var processErr error
-		result, processErr = p.processUserRequestWithContext(bot, user, channel, respondingToPost, contextWithCallback)
+		result, processErr = p.processUserRequestToBot(bot, user, channel, respondingToPost)
 		if processErr != nil {
 			return fmt.Errorf("could not continue conversation on regen: %w", processErr)
 		}
@@ -468,9 +455,9 @@ func (p *Plugin) handleToolCall(c *gin.Context) {
 		return
 	}
 
-	user, err := p.pluginAPI.User.Get(userID)
-	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, err)
+	user, getUserErr := p.pluginAPI.User.Get(userID)
+	if getUserErr != nil {
+		c.AbortWithError(http.StatusInternalServerError, getUserErr)
 		return
 	}
 
@@ -533,9 +520,9 @@ func (p *Plugin) handleToolCall(c *gin.Context) {
 	}
 
 	// Update post with the tool call results
-	resolvedToolsJSON, err := json.Marshal(tools)
-	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to marshal tool call results: %w", err))
+	resolvedToolsJSON, marshalErr := json.Marshal(tools)
+	if marshalErr != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to marshal tool call results: %w", marshalErr))
 		return
 	}
 	post.AddProp(ToolCallProp, string(resolvedToolsJSON))
@@ -553,9 +540,9 @@ func (p *Plugin) handleToolCall(c *gin.Context) {
 		return
 	}
 
-	previousConversation, err := p.getThreadAndMeta(responseRootID)
-	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to get previous conversation: %w", err))
+	previousConversation, getThreadAndMetaErr := p.getThreadAndMeta(responseRootID)
+	if getThreadAndMetaErr != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to get previous conversation: %w", getThreadAndMetaErr))
 		return
 	}
 	previousConversation.cutoffBeforePostID(post.Id)

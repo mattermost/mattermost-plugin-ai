@@ -312,9 +312,7 @@ func (a *Anthropic) ChatCompletion(request llm.CompletionRequest, opts ...llm.La
 	go func() {
 		defer close(eventStream)
 
-		if err := a.streamChatWithTools(initialState); err != nil {
-			// Error is already sent to the event stream in streamChatWithTools
-		}
+		_ = a.streamChatWithTools(initialState)
 	}()
 
 	return &llm.TextStreamResult{Stream: eventStream}, nil

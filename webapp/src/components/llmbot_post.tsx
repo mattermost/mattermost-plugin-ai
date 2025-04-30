@@ -159,7 +159,6 @@ export const LLMBotPost = (props: Props) => {
         }
     }, [toolCallsJson]);
 
-    // Use original websocket registration for listening
     useEffect(() => {
         if (props.websocketRegister && props.websocketUnregister) {
             const listenerID = Math.random().toString(36).substring(7);

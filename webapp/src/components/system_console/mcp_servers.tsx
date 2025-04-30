@@ -1,7 +1,7 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import React from 'react';
+import React, {useState} from 'react';
 import styled from 'styled-components';
 import {PlusIcon, TrashCanOutlineIcon} from '@mattermost/compass-icons/components';
 import {FormattedMessage, useIntl} from 'react-intl';
@@ -47,8 +47,8 @@ const MCPServer = ({
     onRename: (oldID: string, newID: string, config: MCPServerConfig) => void;
 }) => {
     const intl = useIntl();
-    const [isEditingName, setIsEditingName] = React.useState(false);
-    const [serverName, setServerName] = React.useState(serverID);
+    const [isEditingName, setIsEditingName] = useState(false);
+    const [serverName, setServerName] = useState(serverID);
 
     // Ensure server config has all required properties
     const config = {
@@ -293,6 +293,11 @@ const MCPServers = ({value, onChange}: Props) => {
 
     const serverCount = Object.keys(mcpConfig.servers).length;
 
+    // Let's hide the configuration from the system console until the MCP implmentation is more mature
+    if (!mcpConfig.enabled) {
+        return null;
+    }
+
     return (
         <div>
             <ItemList title={intl.formatMessage({defaultMessage: 'MCP Configuration'})}>
@@ -302,19 +307,21 @@ const MCPServers = ({value, onChange}: Props) => {
                     onChange={(enabled) => onChange({...mcpConfig, enabled})}
                     helpText={intl.formatMessage({defaultMessage: 'Enable the Model Context Protocol (MCP) integration to access tools from MCP servers.'})}
                 />
-                <TextItem
-                    label={intl.formatMessage({defaultMessage: 'Connection Idle Timeout (minutes)'})}
-                    value={mcpConfig.idleTimeout?.toString() || '30'}
-                    type='number'
-                    onChange={(e) => {
-                        const idleTimeout = parseInt(e.target.value, 10);
-                        onChange({
-                            ...mcpConfig,
-                            idleTimeout: isNaN(idleTimeout) ? 30 : Math.max(1, idleTimeout),
-                        });
-                    }}
-                    helptext={intl.formatMessage({defaultMessage: 'How long to keep an inactive user connection open before closing it automatically. Lower values save resources, higher values improve response times.'})}
-                />
+                {mcpConfig.enabled && (
+                    <TextItem
+                        label={intl.formatMessage({defaultMessage: 'Connection Idle Timeout (minutes)'})}
+                        value={mcpConfig.idleTimeout?.toString() || '30'}
+                        type='number'
+                        onChange={(e) => {
+                            const idleTimeout = parseInt(e.target.value, 10);
+                            onChange({
+                                ...mcpConfig,
+                                idleTimeout: isNaN(idleTimeout) ? 30 : Math.max(1, idleTimeout),
+                            });
+                        }}
+                        helptext={intl.formatMessage({defaultMessage: 'How long to keep an inactive user connection open before closing it automatically. Lower values save resources, higher values improve response times.'})}
+                    />
+                )}
             </ItemList>
 
             {mcpConfig.enabled && (

@@ -391,7 +391,7 @@ func (p *Plugin) toolSearchServer(llmContext *llm.Context, argsGetter llm.ToolAr
 	return formatted, nil
 }
 
-type CreateChannelArgs struct {
+/*type CreateChannelArgs struct {
 	TeamName    string `jsonschema_description:"The team name where the channel will be created. DO NOT MAKE ONE UP. If unclear ask for the team name."`
 	DisplayName string `jsonschema_description:"The display name for the channel. Example: 'Project Discussion'"`
 	Name        string `jsonschema_description:"The URL-friendly name for the channel (lowercase, no spaces). Example: 'project-discussion'"`
@@ -462,7 +462,7 @@ func (p *Plugin) toolCreateChannel(context *llm.Context, argsGetter llm.ToolArgu
 		map[string]string{"O": "public", "P": "private"}[args.Type],
 		createdChannel.DisplayName,
 		team.DisplayName), nil
-}
+}*/
 
 // getBuiltInTools returns the built-in tools that are available to all users.
 // isDM is true if the response will be in a DM with the user. More tools are available in DMs because of security properties.
@@ -487,13 +487,6 @@ func (p *Plugin) getBuiltInTools(isDM bool, bot *Bot) []llm.Tool {
 			Resolver:    p.toolResolveLookupMattermostUser,
 		})
 
-		builtInTools = append(builtInTools, llm.Tool{
-			Name:        "CreateChannel",
-			Description: "Create a new Mattermost channel in a specified team. The channel can be public or private.",
-			Schema:      llm.NewJSONSchemaFromStruct(CreateChannelArgs{}),
-			Resolver:    p.toolCreateChannel,
-		})
-
 		// GitHub plugin tools
 		status, err := p.pluginAPI.Plugin.GetPluginStatus("github")
 		if err != nil && !errors.Is(err, pluginapi.ErrNotFound) {
@@ -508,18 +501,16 @@ func (p *Plugin) getBuiltInTools(isDM bool, bot *Bot) []llm.Tool {
 		}
 
 		// Jira plugin tools
-		/*builtInTools = append(builtInTools, llm.Tool{
+		builtInTools = append(builtInTools, llm.Tool{
 			Name:        "GetJiraIssue",
 			Description: "Retrieve a single Jira issue by issue key.",
 			Schema:      llm.NewJSONSchemaFromStruct(GetJiraIssueArgs{}),
 			Resolver:    p.toolGetJiraIssue,
-		})*/
+		})
 	}
 
 	return builtInTools
 }
-
-// This function is no longer needed as we use the tool calls stream directly
 
 // getToolsStoreForUser returns a tool store for a specific user, including MCP tools
 func (p *Plugin) getToolsStoreForUser(bot *Bot, isDM bool, userID string) *llm.ToolStore {

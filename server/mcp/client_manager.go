@@ -82,6 +82,7 @@ func (m *ClientManager) cleanupInactiveClients() {
 }
 
 // Close closes the client manager and all managed clients
+// The client manger should not be used after Close is called
 func (m *ClientManager) Close() error {
 	// Stop the cleanup goroutine
 	close(m.closeChan)

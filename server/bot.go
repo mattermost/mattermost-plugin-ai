@@ -270,16 +270,6 @@ func (p *Plugin) GetBotByID(botID string) *Bot {
 	return nil
 }
 
-// getUserByID gets a user by ID and logs an error if the user is not found
-func (p *Plugin) getUserByID(userID string) *model.User {
-	user, err := p.pluginAPI.User.Get(userID)
-	if err != nil {
-		p.API.LogError("Failed to get user", "user_id", userID, "error", err.Error())
-		return nil
-	}
-	return user
-}
-
 // GetBotForDMChannel returns the bot for the given DM channel.
 func (p *Plugin) GetBotForDMChannel(channel *model.Channel) *Bot {
 	p.botsLock.RLock()

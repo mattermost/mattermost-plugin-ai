@@ -14,8 +14,14 @@ import (
 
 const RespondingToProp = "responding_to"
 
-// processUserRequestWithContext is an internal helper that uses an existing context to process a message
-func (p *Plugin) processUserRequestWithContext(bot *Bot, postingUser *model.User, channel *model.Channel, post *model.Post, context *llm.Context) (*llm.TextStreamResult, error) {
+func (p *Plugin) processUserRequestToBot(bot *Bot, postingUser *model.User, channel *model.Channel, post *model.Post) (*llm.TextStreamResult, error) {
+	context := p.BuildLLMContextUserRequest(
+		bot,
+		postingUser,
+		channel,
+		p.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.mmBot.UserId, channel)),
+	)
+
 	var posts []llm.Post
 	if post.RootId == "" {
 		// A new conversation
@@ -67,18 +73,6 @@ func (p *Plugin) processUserRequestWithContext(bot *Bot, postingUser *model.User
 	}()
 
 	return result, nil
-}
-
-func (p *Plugin) processUserRequestToBot(bot *Bot, postingUser *model.User, channel *model.Channel, post *model.Post) (*llm.TextStreamResult, error) {
-	// Create a context with default tools
-	context := p.BuildLLMContextUserRequest(
-		bot,
-		postingUser,
-		channel,
-		p.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.mmBot.UserId, channel)),
-	)
-
-	return p.processUserRequestWithContext(bot, postingUser, channel, post, context)
 }
 
 func (p *Plugin) generateTitle(bot *Bot, request string, postID string, context *llm.Context) error {

@@ -132,8 +132,6 @@ func (p *Plugin) streamResultToNewPost(botid string, requesterUserID string, str
 		return fmt.Errorf("unable to create post: %w", err)
 	}
 
-	// The callback is already set when creating the context
-
 	ctx, err := p.getPostStreamingContext(context.Background(), post.Id)
 	if err != nil {
 		return err
@@ -173,8 +171,6 @@ func (p *Plugin) streamResultToNewDM(botid string, stream *llm.TextStreamResult,
 	if err := p.pluginAPI.Post.DM(botid, userID, post); err != nil {
 		return fmt.Errorf("failed to post DM: %w", err)
 	}
-
-	// The callback is already set when creating the context
 
 	ctx, err := p.getPostStreamingContext(context.Background(), post.Id)
 	if err != nil {
