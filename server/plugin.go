@@ -162,20 +162,22 @@ func (p *Plugin) newVectorStore(config embeddings.UpstreamConfig, dimensions int
 }
 
 // NewEmbeddingProvider creates a new embedding provider based on the provided configuration
-func (p *Plugin) newEmbeddingProvider(config embeddings.UpstreamConfig) (embeddings.EmbeddingProvider, error) {
-	switch config.Type {
+func (p *Plugin) newEmbeddingProvider(config embeddings.EmbeddingSearchConfig) (embeddings.EmbeddingProvider, error) {
+	switch config.EmbeddingProvider.Type {
 	case "openai-compatible":
 		compatibleConfig := openai.Config{}
-		if err := json.Unmarshal(config.Parameters, &compatibleConfig); err != nil {
+		if err := json.Unmarshal(config.EmbeddingProvider.Parameters, &compatibleConfig); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal OpenAI-compatible config: %w", err)
 		}
+		compatibleConfig.EmbeddingDimentions = config.Dimensions
 		return openai.NewCompatibleEmbeddings(compatibleConfig, p.llmUpstreamHTTPClient), nil
 	case "openai":
 		var openaiConfig openai.Config
-		if err := json.Unmarshal(config.Parameters, &openaiConfig); err != nil {
+		if err := json.Unmarshal(config.EmbeddingProvider.Parameters, &openaiConfig); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal OpenAI config: %w", err)
 		}
-		return openai.NewCompatibleEmbeddings(openaiConfig, p.llmUpstreamHTTPClient), nil
+		openaiConfig.EmbeddingDimentions = config.Dimensions
+		return openai.NewEmbeddings(openaiConfig, p.llmUpstreamHTTPClient), nil
 	}
 
 	return nil, fmt.Errorf("unsupported embedding provider type: %s", config.Type)
@@ -198,7 +200,7 @@ func (p *Plugin) initSearch() (embeddings.EmbeddingSearch, error) {
 		if err != nil {
 			return nil, err
 		}
-		embeddor, err := p.newEmbeddingProvider(cfg.EmbeddingSearchConfig.EmbeddingProvider)
+		embeddor, err := p.newEmbeddingProvider(cfg.EmbeddingSearchConfig)
 		if err != nil {
 			return nil, err
 		}
