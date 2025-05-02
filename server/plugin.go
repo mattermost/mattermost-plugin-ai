@@ -262,3 +262,8 @@ func (p *Plugin) getTranscribe() Transcriber {
 	}
 	return nil
 }
+
+// IsStreamingDisabled returns whether streaming of AI responses is disabled
+func (p *Plugin) IsStreamingDisabled() bool {
+	return p.getConfiguration().DisableStreaming
+}

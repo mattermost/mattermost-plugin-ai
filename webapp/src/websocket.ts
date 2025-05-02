@@ -5,6 +5,8 @@ import {WebSocketMessage} from '@mattermost/client';
 
 import {PostUpdateWebsocketMessage} from './components/llmbot_post';
 
+import {PostEditedWebsocketEvent} from './index';
+
 type WebsocketListener = (msg: WebSocketMessage<PostUpdateWebsocketMessage>) => void
 type WebsocketListenerObject = {
     postID: string;
@@ -29,7 +31,19 @@ export default class PostEventListener {
     };
 
     public handlePostUpdateWebsockets = (msg: WebSocketMessage<PostUpdateWebsocketMessage>) => {
-        const postID = msg.data.post_id;
+        let postID: string;
+        if (msg.event === PostEditedWebsocketEvent) {
+            try {
+                const post = JSON.parse(msg.data.post ?? '{}');
+                postID = post.id;
+                msg.data = post;
+            } catch (e) {
+                // ignore malformed post_edited message
+                return;
+            }
+        } else {
+            postID = msg.data.post_id;
+        }
         this.postUpdateWebsocketListeners.forEach((listenerObject) => {
             if (listenerObject.postID === postID) {
                 listenerObject.listener(msg);

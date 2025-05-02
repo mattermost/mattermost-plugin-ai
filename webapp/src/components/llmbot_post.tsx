@@ -96,6 +96,8 @@ export interface PostUpdateWebsocketMessage {
     next: string
     post_id: string
     control?: string
+    message?: string
+    post?: string
 }
 
 interface Props {
@@ -124,7 +126,9 @@ export const LLMBotPost = (props: Props) => {
         const listenerID = Math.random().toString(36).substring(7);
         props.websocketRegister(props.post.id, listenerID, (msg: WebSocketMessage<PostUpdateWebsocketMessage>) => {
             const data = msg.data;
-            if (!data.control && !stoppedRef.current) {
+            if (data.message) {
+                setMessage(data.message);
+            } else if (!data.control && !stoppedRef.current) {
                 setGenerating(true);
                 setMessage(data.next);
             } else if (data.control === 'end') {

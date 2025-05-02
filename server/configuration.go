@@ -17,6 +17,7 @@ type Config struct {
 	DefaultBotName           string                           `json:"defaultBotName"`
 	TranscriptGenerator      string                           `json:"transcriptBackend"`
 	EnableLLMTrace           bool                             `json:"enableLLMTrace"`
+	DisableStreaming         bool                             `json:"disableStreaming"`
 	AllowedUpstreamHostnames string                           `json:"allowedUpstreamHostnames"`
 	EmbeddingSearchConfig    embeddings.EmbeddingSearchConfig `json:"embeddingSearchConfig"`
 }

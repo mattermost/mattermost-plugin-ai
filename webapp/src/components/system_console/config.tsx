@@ -22,6 +22,7 @@ type Config = {
     defaultBotName: string,
     transcriptBackend: string,
     enableLLMTrace: boolean,
+    disableStreaming: boolean,
     enableCallSummary: boolean,
     allowedUpstreamHostnames: string,
     embeddingSearchConfig: EmbeddingSearchConfig
@@ -65,6 +66,7 @@ const defaultConfig = {
     llmBackend: '',
     transcriptBackend: '',
     enableLLMTrace: false,
+    disableStreaming: false,
     embeddingSearchConfig: {
         type: 'disabled',
         vectorStore: {
@@ -210,6 +212,12 @@ const Config = (props: Props) => {
                         value={value.enableLLMTrace}
                         onChange={(to) => props.onChange(props.id, {...value, enableLLMTrace: to})}
                         helpText={intl.formatMessage({defaultMessage: 'Enable tracing of LLM requests. Outputs full conversation data to the logs.'})}
+                    />
+                    <BooleanItem
+                        label={intl.formatMessage({defaultMessage: 'Disable LLM Output Streaming'})}
+                        value={value.disableStreaming}
+                        onChange={(to) => props.onChange(props.id, {...value, disableStreaming: to})}
+                        helpText={intl.formatMessage({defaultMessage: 'Disable streaming of LLM response output. Users will not see the response until it is fully formed.'})}
                     />
                 </ItemList>
             </Panel>

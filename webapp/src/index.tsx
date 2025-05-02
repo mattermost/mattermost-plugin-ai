@@ -34,6 +34,7 @@ import SearchHints from './components/search_hints';
 type WebappStore = Store<GlobalState, Action<Record<string, unknown>>>
 
 const StreamingPostWebsocketEvent = 'custom_mattermost-ai_postupdate';
+export const PostEditedWebsocketEvent = 'post_edited';
 
 const IconAIContainer = styled.img`
 	border-radius: 50%;
@@ -101,6 +102,7 @@ export default class Plugin {
         });
 
         registry.registerWebSocketEventHandler(StreamingPostWebsocketEvent, this.postEventListener.handlePostUpdateWebsockets);
+        registry.registerWebSocketEventHandler(PostEditedWebsocketEvent, this.postEventListener.handlePostUpdateWebsockets);
         const LLMBotPostWithWebsockets = (props: any) => {
             return (
                 <LLMBotPost

@@ -275,6 +275,10 @@ func (p *Plugin) streamResultToPost(ctx context.Context, stream *llm.TextStreamR
 		select {
 		case next := <-stream.Stream:
 			post.Message += next
+			// Don't post intermediate updates if streaming is disabled
+			if p.IsStreamingDisabled() {
+				continue
+			}
 			p.sendPostStreamingUpdateEvent(post, post.Message)
 		case err, ok := <-stream.Err:
 			// Stream has closed cleanly
