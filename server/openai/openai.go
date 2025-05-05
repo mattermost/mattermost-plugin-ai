@@ -85,6 +85,20 @@ func New(llmService llm.ServiceConfig, httpClient *http.Client, metricsService m
 	)
 }
 
+// NewEmbeddings creates a new OpenAI client configured only for embeddings functionality
+func NewEmbeddings(config Config, httpClient *http.Client) *OpenAI {
+	if config.EmbeddingModel == "" {
+		config.EmbeddingModel = string(openaiClient.LargeEmbedding3)
+		config.EmbeddingDimentions = 3072
+	}
+	return newOpenAI(config, httpClient, nil,
+		func(apiKey string) openaiClient.ClientConfig {
+			clientConfig := openaiClient.DefaultConfig(apiKey)
+			return clientConfig
+		},
+	)
+}
+
 // NewCompatibleEmbeddings creates a new OpenAI client configured only for embeddings functionality
 func NewCompatibleEmbeddings(config Config, httpClient *http.Client) *OpenAI {
 	if config.EmbeddingModel == "" {
@@ -549,8 +563,9 @@ func (s *OpenAI) InputTokenLimit() int {
 
 func (s *OpenAI) CreateEmbedding(ctx context.Context, text string) ([]float32, error) {
 	resp, err := s.client.CreateEmbeddings(ctx, openaiClient.EmbeddingRequest{
-		Input: []string{text},
-		Model: openaiClient.EmbeddingModel(s.config.EmbeddingModel),
+		Input:      []string{text},
+		Model:      openaiClient.EmbeddingModel(s.config.EmbeddingModel),
+		Dimensions: s.config.EmbeddingDimentions,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create embedding: %w", err)
@@ -566,8 +581,9 @@ func (s *OpenAI) CreateEmbedding(ctx context.Context, text string) ([]float32, e
 // BatchCreateEmbeddings generates embeddings for multiple texts in a single API call
 func (s *OpenAI) BatchCreateEmbeddings(ctx context.Context, texts []string) ([][]float32, error) {
 	resp, err := s.client.CreateEmbeddings(ctx, openaiClient.EmbeddingRequest{
-		Input: texts,
-		Model: openaiClient.EmbeddingModel(s.config.EmbeddingModel),
+		Input:      texts,
+		Model:      openaiClient.EmbeddingModel(s.config.EmbeddingModel),
+		Dimensions: s.config.EmbeddingDimentions,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create embeddings batch: %w", err)
