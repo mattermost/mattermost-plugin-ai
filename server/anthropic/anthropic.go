@@ -203,13 +203,13 @@ func (a *Anthropic) createConfig(opts []llm.LanguageModelOption) llm.LanguageMod
 	return cfg
 }
 
-func (a *Anthropic) streamChatWithTools(state messageState) error {
+func (a *Anthropic) streamChatWithTools(state messageState) {
 	if state.depth >= MaxToolResolutionDepth {
 		state.output <- llm.TextStreamEvent{
 			Type:  llm.EventTypeError,
 			Value: fmt.Errorf("max tool resolution depth (%d) exceeded", MaxToolResolutionDepth),
 		}
-		return fmt.Errorf("max tool resolution depth (%d) exceeded", MaxToolResolutionDepth)
+		return
 	}
 
 	stream := a.client.Messages.NewStreaming(context.Background(), anthropicSDK.MessageNewParams{
@@ -227,7 +227,11 @@ func (a *Anthropic) streamChatWithTools(state messageState) error {
 	for stream.Next() {
 		event := stream.Current()
 		if err := message.Accumulate(event); err != nil {
-			return fmt.Errorf("error accumulating message: %w", err)
+			state.output <- llm.TextStreamEvent{
+				Type:  llm.EventTypeError,
+				Value: fmt.Errorf("error accumulating message: %w", err),
+			}
+			return
 		}
 
 		// Stream text content immediately
@@ -247,7 +251,7 @@ func (a *Anthropic) streamChatWithTools(state messageState) error {
 			Type:  llm.EventTypeError,
 			Value: fmt.Errorf("error from anthropic stream: %w", err),
 		}
-		return fmt.Errorf("error from anthropic stream: %w", err)
+		return
 	}
 
 	// Check for tool usage after message is complete
@@ -282,8 +286,6 @@ func (a *Anthropic) streamChatWithTools(state messageState) error {
 		Type:  llm.EventTypeEnd,
 		Value: nil,
 	}
-
-	return nil
 }
 
 func (a *Anthropic) ChatCompletion(request llm.CompletionRequest, opts ...llm.LanguageModelOption) (*llm.TextStreamResult, error) {
@@ -311,8 +313,7 @@ func (a *Anthropic) ChatCompletion(request llm.CompletionRequest, opts ...llm.La
 
 	go func() {
 		defer close(eventStream)
-
-		_ = a.streamChatWithTools(initialState)
+		a.streamChatWithTools(initialState)
 	}()
 
 	return &llm.TextStreamResult{Stream: eventStream}, nil
