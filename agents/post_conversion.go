@@ -9,6 +9,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/mattermost/mattermost-plugin-ai/agents/format"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost/server/public/model"
 )
@@ -56,7 +57,7 @@ func isImageMimeType(mimeType string) bool {
 
 func (p *AgentsService) PostToAIPost(bot *Bot, post *model.Post) llm.Post {
 	var filesForUpstream []llm.File
-	message := FormatPostBody(post)
+	message := format.PostBody(post)
 	var extractedFileContents []string
 
 	maxFileSize := defaultMaxFileSize
@@ -150,44 +151,4 @@ func (p *AgentsService) ThreadToLLMPosts(bot *Bot, posts []*model.Post) []llm.Po
 	}
 
 	return result
-}
-
-func FormatPostBody(post *model.Post) string {
-	attachments := post.Attachments()
-	if len(attachments) > 0 {
-		result := strings.Builder{}
-		result.WriteString(post.Message)
-		for _, attachment := range attachments {
-			result.WriteString("\n")
-			if attachment.Pretext != "" {
-				result.WriteString(attachment.Pretext)
-				result.WriteString("\n")
-			}
-			if attachment.Title != "" {
-				result.WriteString(attachment.Title)
-				result.WriteString("\n")
-			}
-			if attachment.Text != "" {
-				result.WriteString(attachment.Text)
-				result.WriteString("\n")
-			}
-			for _, field := range attachment.Fields {
-				value, err := json.Marshal(field.Value)
-				if err != nil {
-					continue
-				}
-				result.WriteString(field.Title)
-				result.WriteString(": ")
-				result.Write(value)
-				result.WriteString("\n")
-			}
-
-			if attachment.Footer != "" {
-				result.WriteString(attachment.Footer)
-				result.WriteString("\n")
-			}
-		}
-		return result.String()
-	}
-	return post.Message
 }

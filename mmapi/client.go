@@ -12,6 +12,10 @@ type Client interface {
 	GetUser(userID string) (*model.User, error)
 	GetPost(postID string) (*model.Post, error)
 	AddReaction(*model.Reaction) error
+	GetPostThread(postID string) (*model.PostList, error)
+	GetPostsSince(channelID string, since int64) (*model.PostList, error)
+	GetFirstPostBeforeTimeRangeID(channelID string, startTime, endTime int64) (string, error)
+	GetPostsBefore(channelID, postID string, page, perPage int) (*model.PostList, error)
 }
 
 func NewClient(pluginAPI *pluginapi.Client) Client {
@@ -19,12 +23,14 @@ func NewClient(pluginAPI *pluginapi.Client) Client {
 		PostService: pluginAPI.Post,
 		UserService: pluginAPI.User,
 		pluginAPI:   pluginAPI,
+		DBClient:    NewDBClient(pluginAPI),
 	}
 }
 
 type client struct {
 	pluginapi.PostService
 	pluginapi.UserService
+	*DBClient
 	pluginAPI *pluginapi.Client
 }
 

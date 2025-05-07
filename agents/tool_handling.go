@@ -86,11 +86,11 @@ func (p *AgentsService) HandleToolCall(userID string, post *model.Post, channel 
 		return nil
 	}
 
-	previousConversation, err := p.getThreadAndMeta(responseRootID)
+	previousConversation, err := mmapi.GetThreadData(p.mmClient, responseRootID)
 	if err != nil {
 		return fmt.Errorf("failed to get previous conversation: %w", err)
 	}
-	previousConversation.cutoffBeforePostID(post.Id)
+	previousConversation.CutoffBeforePostID(post.Id)
 	previousConversation.Posts = append(previousConversation.Posts, post)
 
 	posts, err := p.existingConversationToLLMPosts(bot, previousConversation, context)
