@@ -221,7 +221,33 @@ func postsToChatCompletionMessages(posts []llm.Post) []openaiClient.ChatCompleti
 			completionMessage.Content = post.Message
 		}
 
+		// Add the original tool calls back to the message
+		if len(post.ToolUse) > 0 {
+			completionMessage.ToolCalls = make([]openaiClient.ToolCall, 0, len(post.ToolUse))
+			for _, tool := range post.ToolUse {
+				completionMessage.ToolCalls = append(completionMessage.ToolCalls, openaiClient.ToolCall{
+					ID:   tool.ID,
+					Type: openaiClient.ToolTypeFunction,
+					Function: openaiClient.FunctionCall{
+						Name:      tool.Name,
+						Arguments: string(tool.Arguments),
+					},
+				})
+			}
+		}
+
 		result = append(result, completionMessage)
+
+		// Add the results of the tool calls in additional messages
+		if len(post.ToolUse) > 0 {
+			for _, tool := range post.ToolUse {
+				result = append(result, openaiClient.ChatCompletionMessage{
+					Role:       openaiClient.ChatMessageRoleTool,
+					ToolCallID: tool.ID,
+					Content:    tool.Result,
+				})
+			}
+		}
 	}
 
 	return result
