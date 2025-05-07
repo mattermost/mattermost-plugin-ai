@@ -50,6 +50,11 @@ type UserClient struct {
 
 // ConnectToAllServers initializes connections to all provided servers
 func (c *UserClient) ConnectToAllServers(servers map[string]ServerConfig) error {
+	if len(servers) == 0 {
+		c.log.Debug("No MCP servers provided for user", "userID", c.userID)
+		return nil
+	}
+
 	// Initialize clients for each server
 	for serverID, serverConfig := range servers {
 		if serverConfig.BaseURL == "" {
