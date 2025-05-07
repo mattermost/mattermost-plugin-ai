@@ -102,14 +102,44 @@ const SuccessIcon = styled(IconCheckCircle)`
     min-width: 12px;
 `;
 
+const DecisionTag = styled.div<{approved?: boolean}>`
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: auto;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 16px;
+    background: ${({approved}) => {
+        if (approved === true) {
+            return 'rgba(var(--center-channel-color-rgb), 0.08)';
+        }
+        if (approved === false) {
+            return 'rgba(var(--error-text-color-rgb), 0.08)';
+        }
+        return 'transparent';
+    }};
+    color: ${({approved}) => {
+        if (approved === true) {
+            return 'var(--online-indicator)';
+        }
+        if (approved === false) {
+            return 'var(--error-text)';
+        }
+        return 'inherit';
+    }};
+`;
+
 const ButtonContainer = styled.div`
     display: flex;
     gap: 8px;
     margin-top: 16px;
 `;
 
-const ApproveButton = styled.button`
-    background: var(--button-bg);
+const ApproveButton = styled.button<{selected?: boolean, otherSelected?: boolean}>`
+    background: ${({selected}) => (selected ? 'var(--online-indicator)' : 'var(--button-bg)')};
     color: var(--button-color);
     border: none;
     padding: 8px 16px;
@@ -119,19 +149,32 @@ const ApproveButton = styled.button`
     line-height: 16px;
     cursor: pointer;
     flex: 1;
+    opacity: ${({otherSelected}) => (otherSelected ? 0.5 : 1)};
+    transition: opacity 0.15s ease-in-out;
     
     &:hover {
-        background: rgba(var(--button-bg-rgb), 0.88);
+        background: ${({selected}) => {
+        if (selected) {
+            return 'rgba(var(--online-indicator-rgb), 0.88)';
+        }
+        return 'rgba(var(--button-bg-rgb), 0.88)';
+    }};
+        opacity: ${({otherSelected}) => (otherSelected ? 0.7 : 1)};
     }
     
     &:active {
-        background: rgba(var(--button-bg-rgb), 0.92);
+        background: ${({selected}) => {
+        if (selected) {
+            return 'rgba(var(--online-indicator-rgb), 0.92)';
+        }
+        return 'rgba(var(--button-bg-rgb), 0.92)';
+    }};
     }
 `;
 
-const RejectButton = styled.button`
-    background: transparent;
-    color: var(--error-text);
+const RejectButton = styled.button<{selected?: boolean, otherSelected?: boolean}>`
+    background: ${({selected}) => (selected ? 'var(--error-text)' : 'transparent')};
+    color: ${({selected}) => (selected ? 'var(--button-color)' : 'var(--error-text)')};
     border: 1px solid var(--error-text);
     padding: 8px 16px;
     border-radius: 4px;
@@ -140,9 +183,18 @@ const RejectButton = styled.button`
     line-height: 16px;
     cursor: pointer;
     flex: 1;
+    opacity: ${({otherSelected}) => (otherSelected ? 0.5 : 1)};
+    transition: opacity 0.15s ease-in-out;
     
     &:hover {
-        background: rgba(var(--error-text-color-rgb), 0.08);
+        background: ${({selected}) => {
+        if (selected) {
+            return 'rgba(var(--error-text-color-rgb), 0.88)';
+        }
+        return 'rgba(var(--error-text-color-rgb), 0.08)';
+    }};
+        color: ${({selected}) => (selected ? 'var(--button-color)' : 'var(--error-text)')};
+        opacity: ${({otherSelected}) => (otherSelected ? 0.7 : 1)};
     }
 `;
 
@@ -165,6 +217,7 @@ interface ToolCardProps {
     onToggleCollapse: () => void;
     onApprove?: () => void;
     onReject?: () => void;
+    decision?: boolean | null; // true = approved, false = rejected, null = undecided
 }
 
 const ToolCard: React.FC<ToolCardProps> = ({
@@ -174,6 +227,7 @@ const ToolCard: React.FC<ToolCardProps> = ({
     onToggleCollapse,
     onApprove,
     onReject,
+    decision,
 }) => {
     const isPending = tool.status === ToolCallStatus.Pending;
     const isAccepted = tool.status === ToolCallStatus.Accepted;
@@ -189,6 +243,22 @@ const ToolCard: React.FC<ToolCardProps> = ({
                 </StyledChevronIcon>
                 <ToolIcon/>
                 <ToolName>{tool.name}</ToolName>
+
+                {isPending && decision !== null && !isProcessing && (
+                    <DecisionTag approved={decision}>
+                        {decision ? (
+                            <FormattedMessage
+                                id='ai.tool_call.will_approve'
+                                defaultMessage='Will Approve'
+                            />
+                        ) : (
+                            <FormattedMessage
+                                id='ai.tool_call.will_reject'
+                                defaultMessage='Will Reject'
+                            />
+                        )}
+                    </DecisionTag>
+                )}
             </ToolCallHeader>
 
             {!isCollapsed && (
@@ -209,13 +279,23 @@ const ToolCard: React.FC<ToolCardProps> = ({
                             </StatusContainer>
                         ) : (
                             <ButtonContainer>
-                                <ApproveButton onClick={onApprove}>
+                                <ApproveButton
+                                    onClick={onApprove}
+                                    selected={decision === true}
+                                    otherSelected={decision === false}
+                                    disabled={isProcessing}
+                                >
                                     <FormattedMessage
                                         id='ai.tool_call.approve'
                                         defaultMessage='Approve'
                                     />
                                 </ApproveButton>
-                                <RejectButton onClick={onReject}>
+                                <RejectButton
+                                    onClick={onReject}
+                                    selected={decision === false}
+                                    otherSelected={decision === true}
+                                    disabled={isProcessing}
+                                >
                                     <FormattedMessage
                                         id='ai.tool_call.reject'
                                         defaultMessage='Reject'

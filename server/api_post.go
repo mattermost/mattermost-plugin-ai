@@ -546,7 +546,7 @@ func (p *Plugin) handleToolCall(c *gin.Context) {
 		return
 	}
 	previousConversation.cutoffBeforePostID(post.Id)
-	previousConversation.Posts[len(previousConversation.Posts)-1] = post
+	previousConversation.Posts = append(previousConversation.Posts, post)
 
 	posts, err := p.existingConversationToLLMPosts(bot, previousConversation, context)
 	if err != nil {

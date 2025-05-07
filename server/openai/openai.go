@@ -357,29 +357,6 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 				})
 			}
 
-			// Add the tool calls to the request
-			/*request.Messages = append(request.Messages, openaiClient.ChatCompletionMessage{
-				Role:      openaiClient.ChatMessageRoleAssistant,
-				ToolCalls: tools,
-			})
-
-			// Resolve the tools and create messages for each
-			for _, tool := range tools {
-				name := tool.Function.Name
-				arguments := tool.Function.Arguments
-				toolID := tool.ID
-				toolResult, err := llmContext.Tools.ResolveTool(name, createFunctionArgumentResolver(arguments), llmContext)
-				if err != nil {
-					fmt.Printf("Error resolving function %s: %s", name, err)
-				}
-				request.Messages = append(request.Messages, openaiClient.ChatCompletionMessage{
-					Role:       openaiClient.ChatMessageRoleTool,
-					Name:       name,
-					Content:    toolResult,
-					ToolCallID: toolID,
-				})
-			}*/
-
 			// Send tool calls event and end the stream
 			pendingToolCalls := make([]llm.ToolCall, 0, len(tools))
 			for _, tool := range tools {
