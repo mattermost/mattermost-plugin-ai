@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/mattermost/mattermost-plugin-ai/agents/threads"
 	"github.com/mattermost/mattermost-plugin-ai/i18n"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
@@ -59,11 +60,11 @@ func (p *AgentsService) processUserRequestWithContext(bot *Bot, postingUser *mod
 		}
 	} else {
 		// Continuing an existing conversation
-		previousConversation, errThread := p.getThreadAndMeta(post.Id)
+		previousConversation, errThread := mmapi.GetThreadData(p.mmClient, post.Id)
 		if errThread != nil {
 			return nil, fmt.Errorf("failed to get previous conversation: %w", errThread)
 		}
-		previousConversation.cutoffBeforePostID(post.Id)
+		previousConversation.CutoffBeforePostID(post.Id)
 
 		var err error
 		posts, err = p.existingConversationToLLMPosts(bot, previousConversation, context)
@@ -129,7 +130,7 @@ func (p *AgentsService) generateTitle(bot *Bot, request string, postID string, c
 	return nil
 }
 
-func (p *AgentsService) existingConversationToLLMPosts(bot *Bot, conversation *ThreadData, context *llm.Context) ([]llm.Post, error) {
+func (p *AgentsService) existingConversationToLLMPosts(bot *Bot, conversation *mmapi.ThreadData, context *llm.Context) ([]llm.Post, error) {
 	// Handle thread summarization requests
 	originalThreadID, ok := conversation.Posts[0].GetProp(ThreadIDProp).(string)
 	if ok && originalThreadID != "" && conversation.Posts[0].UserId == bot.mmBot.UserId {
@@ -161,7 +162,7 @@ func (p *AgentsService) existingConversationToLLMPosts(bot *Bot, conversation *T
 			return nil, fmt.Errorf("missing analysis type")
 		}
 
-		posts, err := p.getAnalyzeThreadPosts(originalThreadID, context, analysisType)
+		posts, err := threads.New(p.GetLLM(bot.cfg), p.prompts, p.mmClient).FollowUpAnalyze(originalThreadID, context, analysisType)
 		if err != nil {
 			return nil, err
 		}

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/mattermost/mattermost-plugin-ai/embeddings"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
@@ -320,4 +321,85 @@ func (p *AgentsService) HandleSearchQuery(userID string, bot *Bot, query, teamID
 		Answer:  answer,
 		Results: ragResults,
 	}, nil
+}
+
+// HandleReindexPosts starts a post reindexing job
+func (p *AgentsService) HandleReindexPosts() (JobStatus, error) {
+	// Check if search is initialized
+	if p.search == nil {
+		return JobStatus{}, fmt.Errorf("search functionality is not configured")
+	}
+
+	// Check if a job is already running
+	var jobStatus JobStatus
+	err := p.pluginAPI.KV.Get(ReindexJobKey, &jobStatus)
+	if err != nil && err.Error() != "not found" {
+		return JobStatus{}, fmt.Errorf("failed to check job status: %w", err)
+	}
+
+	// If we have a valid job status and it's running, return conflict
+	if jobStatus.Status == JobStatusRunning {
+		return jobStatus, fmt.Errorf("job already running")
+	}
+
+	// Get an estimate of total posts for progress tracking
+	var count int64
+	dbErr := p.db.Get(&count, `SELECT COUNT(*) FROM Posts WHERE DeleteAt = 0 AND Message != '' AND Type = ''`)
+	if dbErr != nil {
+		p.pluginAPI.Log.Warn("Failed to get post count for progress tracking", "error", dbErr)
+		count = 0 // Continue with zero estimate
+	}
+
+	// Create initial job status
+	newJobStatus := JobStatus{
+		Status:    JobStatusRunning,
+		StartedAt: time.Now(),
+		TotalRows: count,
+	}
+
+	// Save initial job status
+	_, err = p.pluginAPI.KV.Set(ReindexJobKey, newJobStatus)
+	if err != nil {
+		return JobStatus{}, fmt.Errorf("failed to save job status: %w", err)
+	}
+
+	// Start the reindexing job in background
+	go p.runReindexJob(&newJobStatus)
+
+	return newJobStatus, nil
+}
+
+// GetJobStatus gets the status of the reindex job
+func (p *AgentsService) GetJobStatus() (JobStatus, error) {
+	var jobStatus JobStatus
+	err := p.pluginAPI.KV.Get(ReindexJobKey, &jobStatus)
+	if err != nil {
+		return JobStatus{}, err
+	}
+	return jobStatus, nil
+}
+
+// CancelJob cancels a running reindex job
+func (p *AgentsService) CancelJob() (JobStatus, error) {
+	var jobStatus JobStatus
+	err := p.pluginAPI.KV.Get(ReindexJobKey, &jobStatus)
+	if err != nil {
+		return JobStatus{}, err
+	}
+
+	if jobStatus.Status != JobStatusRunning {
+		return JobStatus{}, fmt.Errorf("not running")
+	}
+
+	// Update status to canceled
+	jobStatus.Status = JobStatusCanceled
+	jobStatus.CompletedAt = time.Now()
+
+	// Save updated status
+	_, err = p.pluginAPI.KV.Set(ReindexJobKey, jobStatus)
+	if err != nil {
+		return JobStatus{}, fmt.Errorf("failed to save job status: %w", err)
+	}
+
+	return jobStatus, nil
 }

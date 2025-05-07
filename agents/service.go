@@ -18,6 +18,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mcp"
 	"github.com/mattermost/mattermost-plugin-ai/metrics"
+	"github.com/mattermost/mattermost-plugin-ai/mmapi"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 )
@@ -36,8 +37,8 @@ type AgentsService struct { //nolint:revive
 	configuration     *Config
 	configurationLock sync.RWMutex
 
-	// Streamlined API client
 	pluginAPI *pluginapi.Client
+	mmClient  mmapi.Client
 	API       plugin.API
 
 	ffmpegPath string
@@ -95,6 +96,7 @@ func NewAgentsService(
 	agentsService := &AgentsService{
 		API:                   originalAPI,
 		pluginAPI:             api,
+		mmClient:              mmapi.NewClient(api),
 		llmUpstreamHTTPClient: llmUpstreamHTTPClient,
 		untrustedHTTPClient:   untrustedHTTPClient,
 		metricsService:        metricsService,

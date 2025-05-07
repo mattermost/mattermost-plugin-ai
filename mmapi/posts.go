@@ -1,12 +1,13 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-package agents
+package mmapi
 
 import (
 	"fmt"
 	"sort"
 
+	sq "github.com/Masterminds/squirrel"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
@@ -15,7 +16,7 @@ type ThreadData struct {
 	UsersByID map[string]*model.User
 }
 
-func (t *ThreadData) cutoffBeforePostID(postID string) {
+func (t *ThreadData) CutoffBeforePostID(postID string) {
 	// Iterate in reverse because it's more likely that the post we are responding to is near the end.
 	for i := len(t.Posts) - 1; i >= 0; i-- {
 		post := t.Posts[i]
@@ -26,15 +27,15 @@ func (t *ThreadData) cutoffBeforePostID(postID string) {
 	}
 }
 
-func (p *AgentsService) getThreadAndMeta(postID string) (*ThreadData, error) {
-	posts, err := p.pluginAPI.Post.GetPostThread(postID)
+func GetThreadData(client Client, postID string) (*ThreadData, error) {
+	posts, err := client.GetPostThread(postID)
 	if err != nil {
 		return nil, err
 	}
-	return p.getMetadataForPosts(posts)
+	return GetMetadataForPosts(client, posts)
 }
 
-func (p *AgentsService) getMetadataForPosts(posts *model.PostList) (*ThreadData, error) {
+func GetMetadataForPosts(client Client, posts *model.PostList) (*ThreadData, error) {
 	sort.Slice(posts.Order, func(i, j int) bool {
 		return posts.Posts[posts.Order[i]].CreateAt < posts.Posts[posts.Order[j]].CreateAt
 	})
@@ -50,7 +51,7 @@ func (p *AgentsService) getMetadataForPosts(posts *model.PostList) (*ThreadData,
 
 	usersByID := make(map[string]*model.User)
 	for _, userID := range userIDs {
-		user, err := p.pluginAPI.User.Get(userID)
+		user, err := client.GetUser(userID)
 		if err != nil {
 			return nil, err
 		}
@@ -65,11 +66,25 @@ func (p *AgentsService) getMetadataForPosts(posts *model.PostList) (*ThreadData,
 	}, nil
 }
 
-func formatThread(data *ThreadData) string {
-	result := ""
-	for _, post := range data.Posts {
-		result += fmt.Sprintf("%s: %s\n\n", data.UsersByID[post.UserId].Username, FormatPostBody(post))
+func (c *client) GetFirstPostBeforeTimeRangeID(channelID string, startTime, endTime int64) (string, error) {
+	var result struct {
+		ID string `db:"id"`
+	}
+	err := c.DoQuery(&result, c.Builder().
+		Select("id").
+		From("Posts").
+		Where(sq.Eq{"ChannelId": channelID}).
+		Where(sq.And{
+			sq.GtOrEq{"CreateAt": startTime},
+			sq.LtOrEq{"CreateAt": endTime},
+			sq.Eq{"DeleteAt": 0},
+		}).
+		OrderBy("CreateAt ASC").
+		Limit(1))
+
+	if err != nil {
+		return "", fmt.Errorf("failed to get first post ID: %w", err)
 	}
 
-	return result
+	return result.ID, nil
 }

@@ -116,13 +116,16 @@ func (a *API) handleThreadAnalysis(c *gin.Context) {
 		return
 	}
 
-	result, err := a.agents.HandleThreadAnalysis(userID, bot, post, channel, data.AnalysisType)
+	createdPost, err := a.agents.ThreadAnalysis(userID, bot, post, channel, data.AnalysisType)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to perform analysis: %w", err))
 		return
 	}
 
-	c.JSON(http.StatusOK, result)
+	c.JSON(http.StatusOK, map[string]string{
+		"postid":    createdPost.Id,
+		"channelid": createdPost.ChannelId,
+	})
 }
 
 func (a *API) handleTranscribeFile(c *gin.Context) {
