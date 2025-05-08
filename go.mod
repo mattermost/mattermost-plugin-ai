@@ -14,6 +14,7 @@ require (
 	github.com/invopop/jsonschema v0.13.0
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/lib/pq v1.10.9
+	github.com/mark3labs/mcp-go v0.20.1
 	github.com/mattermost/mattermost/server/public v0.1.11
 	github.com/nicksnyder/go-i18n/v2 v2.5.1
 	github.com/pgvector/pgvector-go v0.3.0
@@ -23,6 +24,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.10.0
 	github.com/tmc/langchaingo v0.1.13
+	github.com/wk8/go-ordered-map/v2 v2.1.8
 	golang.org/x/text v0.23.0
 )
 
@@ -106,7 +108,7 @@ require (
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	github.com/wiggin77/merror v1.0.5 // indirect
 	github.com/wiggin77/srslog v1.0.1 // indirect
-	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	gitlab.com/golang-commonmark/html v0.0.0-20191124015941-a22733972181 // indirect
 	gitlab.com/golang-commonmark/linkify v0.0.0-20200225224916-64bca66f6ad3 // indirect
 	gitlab.com/golang-commonmark/markdown v0.0.0-20211110145824-bf3e522c626a // indirect

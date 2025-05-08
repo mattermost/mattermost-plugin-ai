@@ -15,3 +15,5 @@ export const PostMessagePreview = (window as any).Components.PostMessagePreview;
 export const Timestamp = (window as any).Components.Timestamp;
 
 export const ThreadViewer = (window as any).Components.ThreadViewer;
+
+export const useWebSocketClient = (window as any).ProductApi.useWebSocketClient;

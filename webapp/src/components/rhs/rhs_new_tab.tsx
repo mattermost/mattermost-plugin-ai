@@ -111,7 +111,7 @@ const RHSNewTab = ({selectPost, setCurrentTab, activeBot}: Props) => {
                 const botId = activeBot.id;
 
                 try {
-                    // This will as a side effect create the direct channel for us
+                    // This will, as a side effect, create the direct channel for us
                     const newChannelID = await getBotDirectChannel(currentUserId, botId);
 
                     // Update the bots list in Redux with the new channel ID

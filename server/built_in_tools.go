@@ -402,7 +402,7 @@ func (p *Plugin) getBuiltInTools(isDM bool, bot *Bot) []llm.Tool {
 			builtInTools = append(builtInTools, llm.Tool{
 				Name:        "SearchServer",
 				Description: "Search the Mattermost chat server the user is on for messages using semantic search. Use this tool whenever the user asks a question and you don't have the context to answer or you think your response would be more accurate with knowage from the Mattermost server",
-				Schema:      SearchServerArgs{},
+				Schema:      llm.NewJSONSchemaFromStruct(SearchServerArgs{}),
 				Resolver:    p.toolSearchServer,
 			})
 		}
@@ -410,7 +410,7 @@ func (p *Plugin) getBuiltInTools(isDM bool, bot *Bot) []llm.Tool {
 		builtInTools = append(builtInTools, llm.Tool{
 			Name:        "LookupMattermostUser",
 			Description: "Lookup a Mattermost user by their username. Available information includes: username, full name, email, nickname, position, locale, timezone, last activity, and status.",
-			Schema:      LookupMattermostUserArgs{},
+			Schema:      llm.NewJSONSchemaFromStruct(LookupMattermostUserArgs{}),
 			Resolver:    p.toolResolveLookupMattermostUser,
 		})
 
@@ -422,7 +422,7 @@ func (p *Plugin) getBuiltInTools(isDM bool, bot *Bot) []llm.Tool {
 			builtInTools = append(builtInTools, llm.Tool{
 				Name:        "GetGithubIssue",
 				Description: "Retrieve a single GitHub issue by owner, repo, and issue number.",
-				Schema:      GetGithubIssueArgs{},
+				Schema:      llm.NewJSONSchemaFromStruct(GetGithubIssueArgs{}),
 				Resolver:    p.toolGetGithubIssue,
 			})
 		}
@@ -431,7 +431,7 @@ func (p *Plugin) getBuiltInTools(isDM bool, bot *Bot) []llm.Tool {
 		builtInTools = append(builtInTools, llm.Tool{
 			Name:        "GetJiraIssue",
 			Description: "Retrieve a single Jira issue by issue key.",
-			Schema:      GetJiraIssueArgs{},
+			Schema:      llm.NewJSONSchemaFromStruct(GetJiraIssueArgs{}),
 			Resolver:    p.toolGetJiraIssue,
 		})
 	}
@@ -439,11 +439,40 @@ func (p *Plugin) getBuiltInTools(isDM bool, bot *Bot) []llm.Tool {
 	return builtInTools
 }
 
-func (p *Plugin) getDefaultToolsStore(bot *Bot, isDM bool) *llm.ToolStore {
-	if bot == nil || bot.cfg.DisableTools {
+// getToolsStoreForUser returns a tool store for a specific user, including MCP tools
+func (p *Plugin) getToolsStoreForUser(bot *Bot, isDM bool, userID string) *llm.ToolStore {
+	// Check for nil bot, which is unexpected
+	if bot == nil {
+		p.pluginAPI.Log.Error("Unexpected nil bot when getting tool store for user", "userID", userID)
 		return llm.NewNoTools()
 	}
+
+	// Check for empty userID, which is unexpected
+	if userID == "" {
+		p.pluginAPI.Log.Error("Unexpected empty userID when getting tool store for user")
+		return llm.NewNoTools()
+	}
+
+	// Check if tools are disabled for this bot
+	if bot.cfg.DisableTools {
+		return llm.NewNoTools()
+	}
+
+	// Create a tool store that requires user approval for tool calls
 	store := llm.NewToolStore(&p.pluginAPI.Log, p.getConfiguration().EnableLLMTrace)
+
+	// Add built-in tools
 	store.AddTools(p.getBuiltInTools(isDM, bot))
+
+	// Add MCP tools if available, enabled, and in a DM
+	if p.mcpClientManager != nil && isDM {
+		mcpTools, err := p.mcpClientManager.GetToolsForUser(userID)
+		if err != nil {
+			p.pluginAPI.Log.Error("Failed to get MCP tools for user", "userID", userID, "error", err)
+		} else if len(mcpTools) > 0 {
+			store.AddTools(mcpTools)
+		}
+	}
+
 	return store
 }

@@ -61,7 +61,7 @@ func (p *Plugin) handleInterPluginSimpleCompletion(c *gin.Context) {
 
 	// Add tools if not disabled
 	if !bot.cfg.DisableTools {
-		context.Tools = p.getDefaultToolsStore(bot, true)
+		context.Tools = p.getToolsStoreForUser(bot, true, userID)
 	}
 
 	// Format system prompt using template

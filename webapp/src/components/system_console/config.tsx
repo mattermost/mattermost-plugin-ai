@@ -6,6 +6,7 @@ import styled from 'styled-components';
 import {FormattedMessage, useIntl} from 'react-intl';
 
 import {setUserProfilePictureByUsername} from '@/client';
+import {Pill} from '../../components/pill';
 
 import {ServiceData} from './service';
 import Panel, {PanelFooterText} from './panel';
@@ -15,6 +16,7 @@ import {BooleanItem, ItemList, SelectionItem, SelectionItemOption, TextItem} fro
 import NoBotsPage from './no_bots_page';
 import EmbeddingSearchPanel from './embedding_search/embedding_search_panel';
 import {EmbeddingSearchConfig} from './embedding_search/types';
+import MCPServers, {MCPConfig} from './mcp_servers';
 
 type Config = {
     services: ServiceData[],
@@ -24,7 +26,8 @@ type Config = {
     enableLLMTrace: boolean,
     enableCallSummary: boolean,
     allowedUpstreamHostnames: string,
-    embeddingSearchConfig: EmbeddingSearchConfig
+    embeddingSearchConfig: EmbeddingSearchConfig,
+    mcp: MCPConfig
 }
 
 type Props = {
@@ -60,6 +63,13 @@ const ConfigContainer = styled.div`
 	gap: 20px;
 `;
 
+const Horizontal = styled.div`
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+`;
+
 const defaultConfig = {
     services: [],
     llmBackend: '',
@@ -82,6 +92,10 @@ const defaultConfig = {
             minChunkSize: 0.75,
             chunkingStrategy: 'sentences',
         },
+    },
+    mcp: {
+        enabled: false,
+        servers: {},
     },
 };
 
@@ -220,6 +234,28 @@ const Config = (props: Props) => {
                     props.setSaveNeeded();
                 }}
             />
+            <Panel
+                title={
+                    <Horizontal>
+                        <FormattedMessage defaultMessage='Model Context Protocol (MCP)'/>
+                        <Pill><FormattedMessage defaultMessage='EXPERIMENTAL'/></Pill>
+                    </Horizontal>
+                }
+                subtitle={intl.formatMessage({defaultMessage: 'Configure MCP servers to enable AI tools.'})}
+            >
+                <MCPServers
+                    value={value.mcp || defaultConfig.mcp}
+                    onChange={(config) => {
+                        // Ensure we're creating a valid structure for the server configuration
+                        const updatedConfig = {
+                            ...config,
+                            servers: config.servers || {},
+                        };
+                        props.onChange(props.id, {...value, mcp: updatedConfig});
+                        props.setSaveNeeded();
+                    }}
+                />
+            </Panel>
         </ConfigContainer>
     );
 };

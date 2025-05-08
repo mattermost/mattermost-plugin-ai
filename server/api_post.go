@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"slices"
@@ -321,6 +322,7 @@ func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, ch
 	analysisTypeProp := post.GetProp(AnalysisTypeProp)
 	referenceRecordingFileIDProp := post.GetProp(ReferencedRecordingFileID)
 	referencedTranscriptPostProp := post.GetProp(ReferencedTranscriptPostID)
+	post.DelProp(ToolCallProp)
 	var result *llm.TextStreamResult
 	switch {
 	case threadIDProp != nil:
@@ -424,7 +426,8 @@ func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, ch
 		}
 
 		var processErr error
-		if result, processErr = p.processUserRequestToBot(bot, user, channel, respondingToPost); processErr != nil {
+		result, processErr = p.processUserRequestToBot(bot, user, channel, respondingToPost)
+		if processErr != nil {
 			return fmt.Errorf("could not continue conversation on regen: %w", processErr)
 		}
 	}
@@ -439,6 +442,138 @@ func (p *Plugin) regeneratePost(bot *Bot, post *model.Post, user *model.User, ch
 	p.streamResultToPost(ctx, result, post, *p.API.GetConfig().LocalizationSettings.DefaultServerLocale)
 
 	return nil
+}
+
+func (p *Plugin) handleToolCall(c *gin.Context) {
+	userID := c.GetHeader("Mattermost-User-Id")
+	post := c.MustGet(ContextPostKey).(*model.Post)
+	channel := c.MustGet(ContextChannelKey).(*model.Channel)
+	bot := p.GetBotByID(post.UserId)
+
+	if !p.licenseChecker.IsBasicsLicensed() {
+		c.AbortWithError(http.StatusForbidden, enterprise.ErrNotLicensed)
+		return
+	}
+
+	user, getUserErr := p.pluginAPI.User.Get(userID)
+	if getUserErr != nil {
+		c.AbortWithError(http.StatusInternalServerError, getUserErr)
+		return
+	}
+
+	// Only the original requester can approve/reject tool calls
+	if post.GetProp(LLMRequesterUserID) != userID {
+		c.AbortWithError(http.StatusForbidden, errors.New("only the original requester can approve/reject tool calls"))
+		return
+	}
+
+	var data struct {
+		AcceptedToolIDs []string `json:"accepted_tool_ids" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&data); err != nil {
+		c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	toolsJSON := post.GetProp(ToolCallProp)
+	if toolsJSON == nil {
+		c.AbortWithError(http.StatusBadRequest, errors.New("post missing pending tool calls"))
+		return
+	}
+
+	var tools []llm.ToolCall
+	if err := json.Unmarshal([]byte(toolsJSON.(string)), &tools); err != nil {
+		c.AbortWithError(http.StatusBadRequest, errors.New("post pending tool calls not valid JSON"))
+		return
+	}
+
+	context := p.BuildLLMContextUserRequest(
+		bot,
+		user,
+		channel,
+		p.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.mmBot.UserId, channel)),
+	)
+
+	for i := range tools {
+		if slices.Contains(data.AcceptedToolIDs, tools[i].ID) {
+			result, err := context.Tools.ResolveTool(tools[i].Name, func(args any) error {
+				return json.Unmarshal(tools[i].Arguments, args)
+			}, context)
+			if err != nil {
+				// Maybe in the future we can return this to the user and have a retry. For now just tell the LLM it failed.
+				tools[i].Result = "Tool call failed"
+				tools[i].Status = llm.ToolCallStatusError
+				continue
+			}
+			tools[i].Result = result
+			tools[i].Status = llm.ToolCallStatusSuccess
+		} else {
+			tools[i].Result = "Tool call rejected by user"
+			tools[i].Status = llm.ToolCallStatusRejected
+		}
+	}
+
+	responseRootID := post.Id
+	if post.RootId != "" {
+		responseRootID = post.RootId
+	}
+
+	// Update post with the tool call results
+	resolvedToolsJSON, marshalErr := json.Marshal(tools)
+	if marshalErr != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to marshal tool call results: %w", marshalErr))
+		return
+	}
+	post.AddProp(ToolCallProp, string(resolvedToolsJSON))
+
+	if err := p.pluginAPI.Post.UpdatePost(post); err != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to update post with tool call results: %w", err))
+		return
+	}
+
+	// Only continue if at lest one tool call was successful
+	if !slices.ContainsFunc(tools, func(tc llm.ToolCall) bool {
+		return tc.Status == llm.ToolCallStatusSuccess
+	}) {
+		c.Status(http.StatusOK)
+		return
+	}
+
+	previousConversation, getThreadAndMetaErr := p.getThreadAndMeta(responseRootID)
+	if getThreadAndMetaErr != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to get previous conversation: %w", getThreadAndMetaErr))
+		return
+	}
+	previousConversation.cutoffBeforePostID(post.Id)
+	previousConversation.Posts = append(previousConversation.Posts, post)
+
+	posts, err := p.existingConversationToLLMPosts(bot, previousConversation, context)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to convert existing conversation to LLM posts: %w", err))
+		return
+	}
+
+	completionRequest := llm.CompletionRequest{
+		Posts:   posts,
+		Context: context,
+	}
+	result, err := p.getLLM(bot.cfg).ChatCompletion(completionRequest)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to get chat completion: %w", err))
+		return
+	}
+
+	responsePost := &model.Post{
+		ChannelId: channel.Id,
+		RootId:    responseRootID,
+	}
+	if err := p.streamResultToNewPost(bot.mmBot.UserId, user.Id, result, responsePost, post.Id); err != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to stream result to new post: %w", err))
+		return
+	}
+
+	c.Status(http.StatusOK)
 }
 
 func (p *Plugin) handlePostbackSummary(c *gin.Context) {
