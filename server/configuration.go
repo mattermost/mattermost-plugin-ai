@@ -78,7 +78,5 @@ func (p *Plugin) OnConfigurationChange() error {
 		return nil
 	}
 
-	p.agentsService.OnConfigurationChange()
-
-	return nil
+	return p.agentsService.OnConfigurationChange()
 }
