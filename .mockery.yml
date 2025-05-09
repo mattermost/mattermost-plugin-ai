@@ -1,0 +1,14 @@
+all: false
+formatter: goimports
+log-level: info
+structname: Mock{{.InterfaceName}}
+pkgname: mocks
+recursive: false
+template: testify
+packages:
+  github.com/mattermost/mattermost-plugin-ai/llm:
+    config:
+      dir: llm/mocks
+      filename: language_model_mock.go
+    interfaces:
+      LanguageModel:

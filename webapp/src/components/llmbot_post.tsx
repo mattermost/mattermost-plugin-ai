@@ -160,14 +160,25 @@ export const LLMBotPost = (props: Props) => {
     }, [toolCallsJson]);
 
     useEffect(() => {
+        if (props.post.message !== '' && props.post.message !== message) {
+            setMessage(props.post.message);
+        }
+    }, [props.post.message]);
+
+    useEffect(() => {
         if (props.websocketRegister && props.websocketUnregister) {
             const listenerID = Math.random().toString(36).substring(7);
 
             props.websocketRegister(props.post.id, listenerID, (msg: WebSocketMessage<PostUpdateWebsocketMessage>) => {
                 const data = msg.data;
 
+                // Ensure we're only processing events for this post
+                if (data.post_id !== props.post.id) {
+                    return;
+                }
+
                 // Handle tool call events from the websocket event
-                if (data.control === 'tool_call' && data.post_id === props.post.id && data.tool_call) {
+                if (data.control === 'tool_call' && data.tool_call) {
                     try {
                         const parsedToolCalls = JSON.parse(data.tool_call);
                         setToolCalls(parsedToolCalls);
@@ -188,6 +199,10 @@ export const LLMBotPost = (props: Props) => {
                 } else if (data.control === 'start') {
                     setGenerating(true);
                     setStopped(false);
+
+                    if (!message) {
+                        setMessage('');
+                    }
                 }
             });
 

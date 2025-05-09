@@ -13,8 +13,9 @@ LICENSE_HEADER="// Copyright (c) ${YEAR}-present Mattermost, Inc. All Rights Res
 # Find all Go files in the repository
 find . -name "*.go" | while read -r file; do
   # Skip files in vendor, node_modules, enterprise, and other generated directories
-  if [[ "$file" == *"/node_modules/"* || "$file" == *"/vendor/"* || "$file" == *"/dist/"* || "$file" == *"/enterprise/"* ]]; then
-    echo "Skipping file in excluded directory: $file"
+  # Also skip mock files that end with _mock.go
+  if [[ "$file" == *"/node_modules/"* || "$file" == *"/vendor/"* || "$file" == *"/dist/"* || "$file" == *"/enterprise/"* || "$file" == *"_mock.go" ]]; then
+    echo "Skipping file in excluded directory or mock file: $file"
     continue
   fi
 
