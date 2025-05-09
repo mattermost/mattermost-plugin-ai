@@ -188,7 +188,7 @@ func (a *Anthropic) streamChatWithTools(state messageState) {
 
 	// Set up parameters for the Anthropic API
 	params := anthropicSDK.MessageNewParams{
-		Model:     anthropicSDK.Model(state.config.Model),
+		Model:     state.config.Model,
 		MaxTokens: int64(state.config.MaxGeneratedTokens),
 		Messages:  state.messages,
 		System: []anthropicSDK.TextBlockParam{{
@@ -210,9 +210,9 @@ func (a *Anthropic) streamChatWithTools(state messageState) {
 		}
 
 		// Stream text content immediately
-		switch eventVariant := event.AsAny().(type) {
+		switch eventVariant := event.AsAny().(type) { //nolint:gocritic
 		case anthropicSDK.ContentBlockDeltaEvent:
-			switch deltaVariant := eventVariant.Delta.AsAny().(type) {
+			switch deltaVariant := eventVariant.Delta.AsAny().(type) { //nolint:gocritic
 			case anthropicSDK.TextDelta:
 				state.output <- llm.TextStreamEvent{
 					Type:  llm.EventTypeText,

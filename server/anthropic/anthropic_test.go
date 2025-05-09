@@ -29,13 +29,13 @@ func TestConversationToMessages(t *testing.T) {
 			wantSystem: "You are a helpful assistant",
 			wantMessages: []anthropicSDK.MessageParam{
 				{
-					Role:    anthropicSDK.MessageParamRoleUser,
+					Role: anthropicSDK.MessageParamRoleUser,
 					Content: []anthropicSDK.ContentBlockParamUnion{
 						anthropicSDK.NewTextBlock("Hello"),
 					},
 				},
 				{
-					Role:    anthropicSDK.MessageParamRoleAssistant,
+					Role: anthropicSDK.MessageParamRoleAssistant,
 					Content: []anthropicSDK.ContentBlockParamUnion{
 						anthropicSDK.NewTextBlock("Hi there!"),
 					},
@@ -53,14 +53,14 @@ func TestConversationToMessages(t *testing.T) {
 			wantSystem: "",
 			wantMessages: []anthropicSDK.MessageParam{
 				{
-					Role:    anthropicSDK.MessageParamRoleUser,
+					Role: anthropicSDK.MessageParamRoleUser,
 					Content: []anthropicSDK.ContentBlockParamUnion{
 						anthropicSDK.NewTextBlock("First message"),
 						anthropicSDK.NewTextBlock("Second message"),
 					},
 				},
 				{
-					Role:    anthropicSDK.MessageParamRoleAssistant,
+					Role: anthropicSDK.MessageParamRoleAssistant,
 					Content: []anthropicSDK.ContentBlockParamUnion{
 						anthropicSDK.NewTextBlock("First response"),
 						anthropicSDK.NewTextBlock("Second response"),
@@ -83,14 +83,14 @@ func TestConversationToMessages(t *testing.T) {
 			wantSystem: "",
 			wantMessages: []anthropicSDK.MessageParam{
 				{
-					Role:    anthropicSDK.MessageParamRoleUser,
+					Role: anthropicSDK.MessageParamRoleUser,
 					Content: []anthropicSDK.ContentBlockParamUnion{
 						anthropicSDK.NewTextBlock("Look at this:"),
 						anthropicSDK.NewImageBlockBase64("image/jpeg", "ZmFrZS1pbWFnZS1kYXRh"),
 					},
 				},
 				{
-					Role:    anthropicSDK.MessageParamRoleAssistant,
+					Role: anthropicSDK.MessageParamRoleAssistant,
 					Content: []anthropicSDK.ContentBlockParamUnion{
 						anthropicSDK.NewTextBlock("I see the image"),
 					},
@@ -110,7 +110,7 @@ func TestConversationToMessages(t *testing.T) {
 			wantSystem: "",
 			wantMessages: []anthropicSDK.MessageParam{
 				{
-					Role:    anthropicSDK.MessageParamRoleUser,
+					Role: anthropicSDK.MessageParamRoleUser,
 					Content: []anthropicSDK.ContentBlockParamUnion{
 						anthropicSDK.NewTextBlock("[Unsupported image type: image/tiff]"),
 					},
@@ -133,19 +133,19 @@ func TestConversationToMessages(t *testing.T) {
 			wantSystem: "",
 			wantMessages: []anthropicSDK.MessageParam{
 				{
-					Role:    anthropicSDK.MessageParamRoleUser,
+					Role: anthropicSDK.MessageParamRoleUser,
 					Content: []anthropicSDK.ContentBlockParamUnion{
 						anthropicSDK.NewTextBlock("First question"),
 					},
 				},
 				{
-					Role:    anthropicSDK.MessageParamRoleAssistant,
+					Role: anthropicSDK.MessageParamRoleAssistant,
 					Content: []anthropicSDK.ContentBlockParamUnion{
 						anthropicSDK.NewTextBlock("First answer"),
 					},
 				},
 				{
-					Role:    anthropicSDK.MessageParamRoleUser,
+					Role: anthropicSDK.MessageParamRoleUser,
 					Content: []anthropicSDK.ContentBlockParamUnion{
 						anthropicSDK.NewTextBlock("Follow up 1"),
 						anthropicSDK.NewTextBlock("Follow up 2"),
@@ -153,7 +153,7 @@ func TestConversationToMessages(t *testing.T) {
 					},
 				},
 				{
-					Role:    anthropicSDK.MessageParamRoleAssistant,
+					Role: anthropicSDK.MessageParamRoleAssistant,
 					Content: []anthropicSDK.ContentBlockParamUnion{
 						anthropicSDK.NewTextBlock("Response 1"),
 						anthropicSDK.NewTextBlock("Response 2"),
@@ -161,7 +161,7 @@ func TestConversationToMessages(t *testing.T) {
 					},
 				},
 				{
-					Role:    anthropicSDK.MessageParamRoleUser,
+					Role: anthropicSDK.MessageParamRoleUser,
 					Content: []anthropicSDK.ContentBlockParamUnion{
 						anthropicSDK.NewTextBlock("Final question"),
 					},
@@ -204,7 +204,7 @@ func TestConversationToMessages(t *testing.T) {
 			wantSystem: "",
 			wantMessages: []anthropicSDK.MessageParam{
 				{
-					Role:    anthropicSDK.MessageParamRoleUser,
+					Role: anthropicSDK.MessageParamRoleUser,
 					Content: []anthropicSDK.ContentBlockParamUnion{
 						anthropicSDK.NewTextBlock("Look at these images:"),
 						anthropicSDK.NewImageBlockBase64("image/jpeg", "aW1hZ2UtMQ=="),
@@ -212,13 +212,13 @@ func TestConversationToMessages(t *testing.T) {
 					},
 				},
 				{
-					Role:    anthropicSDK.MessageParamRoleAssistant,
+					Role: anthropicSDK.MessageParamRoleAssistant,
 					Content: []anthropicSDK.ContentBlockParamUnion{
 						anthropicSDK.NewTextBlock("I see them"),
 					},
 				},
 				{
-					Role:    anthropicSDK.MessageParamRoleUser,
+					Role: anthropicSDK.MessageParamRoleUser,
 					Content: []anthropicSDK.ContentBlockParamUnion{
 						anthropicSDK.NewTextBlock("Here are more:"),
 						anthropicSDK.NewImageBlockBase64("image/webp", "aW1hZ2UtMw=="),
