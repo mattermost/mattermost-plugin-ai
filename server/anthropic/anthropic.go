@@ -33,7 +33,7 @@ type messageState struct {
 }
 
 type Anthropic struct {
-	client           *anthropicSDK.Client
+	client           anthropicSDK.Client
 	defaultModel     string
 	inputTokenLimit  int
 	metricsService   metrics.LLMetrics
@@ -77,8 +77,8 @@ func conversationToMessages(posts []llm.Post) (string, []anthropicSDK.MessagePar
 	flushCurrentMessage := func() {
 		if len(currentBlocks) > 0 {
 			messages = append(messages, anthropicSDK.MessageParam{
-				Role:    anthropicSDK.F(currentRole),
-				Content: anthropicSDK.F(currentBlocks),
+				Role:    currentRole,
+				Content: currentBlocks,
 			})
 			currentBlocks = nil
 		}
@@ -90,84 +90,58 @@ func conversationToMessages(posts []llm.Post) (string, []anthropicSDK.MessagePar
 			systemMessage += post.Message
 			continue
 		case llm.PostRoleBot:
-			if currentRole != "assistant" {
+			if currentRole != anthropicSDK.MessageParamRoleAssistant {
 				flushCurrentMessage()
-				currentRole = "assistant"
+				currentRole = anthropicSDK.MessageParamRoleAssistant
 			}
 		case llm.PostRoleUser:
-			if currentRole != "user" {
+			if currentRole != anthropicSDK.MessageParamRoleUser {
 				flushCurrentMessage()
-				currentRole = "user"
+				currentRole = anthropicSDK.MessageParamRoleUser
 			}
 		default:
 			continue
 		}
 
 		if post.Message != "" {
-			textBlock := anthropicSDK.TextBlockParam{
-				Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
-				Text: anthropicSDK.F(post.Message),
-			}
+			textBlock := anthropicSDK.NewTextBlock(post.Message)
 			currentBlocks = append(currentBlocks, textBlock)
 		}
 
 		for _, file := range post.Files {
 			if !isValidImageType(file.MimeType) {
-				textBlock := anthropicSDK.TextBlockParam{
-					Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
-					Text: anthropicSDK.F(fmt.Sprintf("[Unsupported image type: %s]", file.MimeType)),
-				}
+				textBlock := anthropicSDK.NewTextBlock(fmt.Sprintf("[Unsupported image type: %s]", file.MimeType))
 				currentBlocks = append(currentBlocks, textBlock)
 				continue
 			}
 
 			data, err := io.ReadAll(file.Reader)
 			if err != nil {
-				textBlock := anthropicSDK.TextBlockParam{
-					Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
-					Text: anthropicSDK.F("[Error reading image data]"),
-				}
+				textBlock := anthropicSDK.NewTextBlock("[Error reading image data]")
 				currentBlocks = append(currentBlocks, textBlock)
 				continue
 			}
 
-			imageBlock := anthropicSDK.ImageBlockParam{
-				Type: anthropicSDK.F(anthropicSDK.ImageBlockParamTypeImage),
-				Source: anthropicSDK.F(anthropicSDK.ImageBlockParamSource{
-					Type:      anthropicSDK.F(anthropicSDK.ImageBlockParamSourceTypeBase64),
-					MediaType: anthropicSDK.F(anthropicSDK.ImageBlockParamSourceMediaType(file.MimeType)),
-					Data:      anthropicSDK.F(base64.StdEncoding.EncodeToString(data)),
-				}),
-			}
+			encodedData := base64.StdEncoding.EncodeToString(data)
+			imageBlock := anthropicSDK.NewImageBlockBase64(file.MimeType, encodedData)
 			currentBlocks = append(currentBlocks, imageBlock)
 		}
 
 		if len(post.ToolUse) > 0 {
 			for _, tool := range post.ToolUse {
-				toolBlock := anthropicSDK.ToolUseBlockParam{
-					ID:    anthropicSDK.F(tool.ID),
-					Type:  anthropicSDK.F(anthropicSDK.ToolUseBlockParamTypeToolUse),
-					Name:  anthropicSDK.F(tool.Name),
-					Input: anthropicSDK.Raw[any](tool.Arguments),
-				}
+				toolBlock := anthropicSDK.ContentBlockParamOfRequestToolUseBlock(
+					tool.ID,
+					tool.Arguments,
+					tool.Name,
+				)
 				currentBlocks = append(currentBlocks, toolBlock)
 			}
 
 			resultBlocks := make([]anthropicSDK.ContentBlockParamUnion, 0, len(post.ToolUse))
 			for _, tool := range post.ToolUse {
-				if tool.Result != "" {
-					toolResultBlock := anthropicSDK.ToolResultBlockParam{
-						Type:      anthropicSDK.F(anthropicSDK.ToolResultBlockParamTypeToolResult),
-						ToolUseID: anthropicSDK.F(tool.ID),
-						Content: anthropicSDK.F([]anthropicSDK.ToolResultBlockParamContentUnion{
-							anthropicSDK.TextBlockParam{
-								Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
-								Text: anthropicSDK.F(tool.Result),
-							},
-						}),
-					}
-					resultBlocks = append(resultBlocks, toolResultBlock)
-				}
+				isError := tool.Status != llm.ToolCallStatusSuccess
+				toolResultBlock := anthropicSDK.NewToolResultBlock(tool.ID, tool.Result, isError)
+				resultBlocks = append(resultBlocks, toolResultBlock)
 			}
 
 			if len(resultBlocks) > 0 {
@@ -212,16 +186,17 @@ func (a *Anthropic) streamChatWithTools(state messageState) {
 		return
 	}
 
-	stream := a.client.Messages.NewStreaming(context.Background(), anthropicSDK.MessageNewParams{
-		Model:     anthropicSDK.F(state.config.Model),
-		MaxTokens: anthropicSDK.F(int64(state.config.MaxGeneratedTokens)),
-		Messages:  anthropicSDK.F(state.messages),
-		System: anthropicSDK.F([]anthropicSDK.TextBlockParam{{
-			Type: anthropicSDK.F(anthropicSDK.TextBlockParamTypeText),
-			Text: anthropicSDK.F(state.system),
-		}}),
-		Tools: anthropicSDK.F(convertTools(state.tools)),
-	})
+	// Set up parameters for the Anthropic API
+	params := anthropicSDK.MessageNewParams{
+		Model:     anthropicSDK.Model(state.config.Model),
+		MaxTokens: int64(state.config.MaxGeneratedTokens),
+		Messages:  state.messages,
+		System: []anthropicSDK.TextBlockParam{{
+			Text: state.system,
+		}},
+		Tools: convertTools(state.tools),
+	}
+	stream := a.client.Messages.NewStreaming(context.Background(), params)
 
 	message := anthropicSDK.Message{}
 	for stream.Next() {
@@ -235,12 +210,13 @@ func (a *Anthropic) streamChatWithTools(state messageState) {
 		}
 
 		// Stream text content immediately
-		switch delta := event.Delta.(type) { // nolint: gocritic
-		case anthropicSDK.ContentBlockDeltaEventDelta:
-			if delta.Text != "" {
+		switch eventVariant := event.AsAny().(type) {
+		case anthropicSDK.ContentBlockDeltaEvent:
+			switch deltaVariant := eventVariant.Delta.AsAny().(type) {
+			case anthropicSDK.TextDelta:
 				state.output <- llm.TextStreamEvent{
 					Type:  llm.EventTypeText,
-					Value: delta.Text,
+					Value: deltaVariant.Text,
 				}
 			}
 		}
@@ -254,34 +230,28 @@ func (a *Anthropic) streamChatWithTools(state messageState) {
 		return
 	}
 
-	// Check for tool usage after message is complete
+	// Check for tool usage in the message
 	pendingToolCalls := make([]llm.ToolCall, 0, len(message.Content))
 	for _, block := range message.Content {
-		if block.Type == anthropicSDK.ContentBlockTypeToolUse {
-			// Convert to pending tool calls
-			for _, block := range message.Content {
-				if block.Type == anthropicSDK.ContentBlockTypeToolUse {
-					pendingToolCalls = append(pendingToolCalls, llm.ToolCall{
-						ID:          block.ID,
-						Name:        block.Name,
-						Description: "",
-						Arguments:   block.Input,
-					})
-				}
-			}
+		if block.Type == "tool_use" {
+			pendingToolCalls = append(pendingToolCalls, llm.ToolCall{
+				ID:          block.ID,
+				Name:        block.Name,
+				Description: "",
+				Arguments:   block.Input,
+			})
 		}
 	}
 
-	// If tools were used, send tool calls event and end the stream
+	// If tools were used, send tool calls event
 	if len(pendingToolCalls) > 0 {
-		// Send the tool calls event
 		state.output <- llm.TextStreamEvent{
 			Type:  llm.EventTypeToolCalls,
 			Value: pendingToolCalls,
 		}
 	}
 
-	// Send end event if no tools were used
+	// Send end event
 	state.output <- llm.TextStreamEvent{
 		Type:  llm.EventTypeEnd,
 		Value: nil,
@@ -332,14 +302,16 @@ func (a *Anthropic) CountTokens(text string) int {
 	return 0
 }
 
-// convertTools converts from llm.Tool to anthropicSDK.Tool format
-func convertTools(tools []llm.Tool) []anthropicSDK.ToolParam {
-	converted := make([]anthropicSDK.ToolParam, len(tools))
+// convertTools converts from llm.Tool to anthropicSDK.ToolUnionParam format
+func convertTools(tools []llm.Tool) []anthropicSDK.ToolUnionParam {
+	converted := make([]anthropicSDK.ToolUnionParam, len(tools))
 	for i, tool := range tools {
-		converted[i] = anthropicSDK.ToolParam{
-			Name:        anthropicSDK.F(tool.Name),
-			Description: anthropicSDK.F(tool.Description),
-			InputSchema: anthropicSDK.Raw[any](tool.Schema),
+		converted[i] = anthropicSDK.ToolUnionParam{
+			OfTool: &anthropicSDK.ToolParam{
+				Name:        tool.Name,
+				Description: anthropicSDK.String(tool.Description),
+				InputSchema: anthropicSDK.ToolInputSchemaParam{Properties: tool.Schema.Properties},
+			},
 		}
 	}
 	return converted
