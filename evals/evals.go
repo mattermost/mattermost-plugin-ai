@@ -17,6 +17,7 @@ import (
 )
 
 var runEvals = flag.Bool("eval", false, "Run LLM evals")
+var numEvals = flag.Int("num", 1, "Number of times to run each eval")
 
 type EvalT struct {
 	*testing.T
@@ -69,6 +70,8 @@ func Run(t *testing.T, name string, f func(e *EvalT)) {
 	e := &EvalT{T: t, Eval: eval}
 
 	t.Run(name, func(t *testing.T) {
-		f(e)
+		for range *numEvals {
+			f(e)
+		}
 	})
 }

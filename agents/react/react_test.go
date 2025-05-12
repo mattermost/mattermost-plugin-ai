@@ -84,14 +84,38 @@ func TestReactResolve(t *testing.T) {
 }
 
 func TestReactEval(t *testing.T) {
-	evals.Run(t, "react", func(t *evals.EvalT) {
-		// Create a new React instance
-		r := react.New(t.LLM, t.Prompts)
-		llmContext := llm.NewContext()
-		result, err := r.Resolve("Great job on the presentation! How is it going with yours?", llmContext)
-		require.NoError(t, err)
+	tests := []struct {
+		name    string
+		message string
+		rubric  string
+	}{
+		{
+			name:    "positive message",
+			message: "Great job on the presentation! How is it going with yours?",
+			rubric:  "The word/emoji is positive",
+		},
+		{
+			name:    "negative message",
+			message: "I'm disappointed with your performance on this project.",
+			rubric:  "The word/emoji is negative or sad",
+		},
+		{
+			name:    "cat message",
+			message: "I just love cats! They are so cute and cuddly.",
+			rubric:  "The word/emoji is a cat emoji or a heart/love emoji",
+		},
+	}
 
-		// TODO: Add proper tests if the emoji makes sense
-		assert.NotEmpty(t, result, "Expected a non-empty emoji reaction")
-	})
+	for _, tc := range tests {
+		evals.Run(t, "react "+tc.name, func(t *evals.EvalT) {
+			r := react.New(t.LLM, t.Prompts)
+			llmContext := llm.NewContext()
+
+			result, err := r.Resolve(tc.message, llmContext)
+
+			require.NoError(t, err)
+			assert.NotEmpty(t, result, "Expected a non-empty emoji reaction")
+			evals.LLMRubricT(t, tc.rubric, result)
+		})
+	}
 }

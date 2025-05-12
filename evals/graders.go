@@ -1,3 +1,6 @@
+// Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
+
 package evals
 
 import (
@@ -5,6 +8,8 @@ import (
 	"fmt"
 
 	"github.com/mattermost/mattermost-plugin-ai/llm"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type RubricResult struct {
@@ -20,7 +25,7 @@ Examples:
 {"reasoning": "The output says the clock is broken", "score": 1.0, "pass": true}
 
 <Output>I am sorry I can not find the thread you referenced</Output>
-<Rubric>Contains a refrence to the mentos project</Rubric>
+<Rubric>Contains a reference to the mentos project</Rubric>
 {"reasoning": "The output contains a failure message instead of a reference to the mentos project", "score": 0.0, "pass": false}`
 
 func (e *Eval) LLMRubric(rubric, output string) (*RubricResult, error) {
@@ -50,4 +55,12 @@ func (e *Eval) LLMRubric(rubric, output string) (*RubricResult, error) {
 	}
 
 	return &rubricResult, nil
+}
+
+func LLMRubricT(e *EvalT, rubric, output string) {
+	result, err := e.LLMRubric(rubric, output)
+	require.NoError(e.T, err)
+	e.Log("Rubric result:", result)
+	assert.True(e.T, result.Pass, "LLM Rubric Failed")
+	assert.GreaterOrEqual(e.T, result.Score, 0.6, "LLM Rubric Score is too low")
 }
