@@ -17,63 +17,70 @@ import (
 )
 
 func TestReactResolve(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
-		// Setup
-		mockLLM := mocks.NewMockLanguageModel(t)
-		prompts, err := llm.NewPrompts(llm.PromptsFolder)
-		assert.NoError(t, err)
+	tests := []struct {
+		name          string
+		message       string
+		llmResponse   string
+		llmError      error
+		expectedEmoji string
+		expectedError bool
+		errorContains string
+	}{
+		{
+			name:          "success",
+			message:       "Great job on the presentation!",
+			llmResponse:   "thumbsup",
+			llmError:      nil,
+			expectedEmoji: "thumbsup",
+			expectedError: false,
+		},
+		{
+			name:          "invalid emoji",
+			message:       "Great job on the presentation!",
+			llmResponse:   "not_an_emoji",
+			llmError:      nil,
+			expectedEmoji: "",
+			expectedError: true,
+			errorContains: "LLM returned something other than emoji",
+		},
+		{
+			name:          "llm error",
+			message:       "Great job on the presentation!",
+			llmResponse:   "",
+			llmError:      errors.New("llm error"),
+			expectedEmoji: "",
+			expectedError: true,
+			errorContains: "failed to get emoji from LLM",
+		},
+	}
 
-		mockLLM.EXPECT().ChatCompletionNoStream(mock.Anything, mock.Anything).Return("thumbsup", nil)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Setup
+			mockLLM := mocks.NewMockLanguageModel(t)
+			prompts, err := llm.NewPrompts(llm.PromptsFolder)
+			assert.NoError(t, err)
 
-		r := react.New(mockLLM, prompts)
-		ctx := llm.NewContext()
+			mockLLM.EXPECT().ChatCompletionNoStream(mock.Anything, mock.Anything).Return(tc.llmResponse, tc.llmError)
 
-		// Execute
-		emoji, err := r.Resolve("Great job on the presentation!", ctx)
+			r := react.New(mockLLM, prompts)
+			ctx := llm.NewContext()
 
-		// Assert
-		assert.NoError(t, err)
-		assert.Equal(t, "thumbsup", emoji)
-	})
+			// Execute
+			emoji, err := r.Resolve(tc.message, ctx)
 
-	t.Run("invalid emoji", func(t *testing.T) {
-		// Setup
-		mockLLM := mocks.NewMockLanguageModel(t)
-		prompts, err := llm.NewPrompts(llm.PromptsFolder)
-		assert.NoError(t, err)
-
-		// Return an invalid emoji response that doesn't exist in standard emoji list
-		mockLLM.EXPECT().ChatCompletionNoStream(mock.Anything, mock.Anything).Return("not_an_emoji", nil)
-
-		r := react.New(mockLLM, prompts)
-		ctx := llm.NewContext()
-
-		// Execute
-		_, err = r.Resolve("Great job on the presentation!", ctx)
-
-		// Assert
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "LLM returned something other than emoji")
-	})
-
-	t.Run("llm error", func(t *testing.T) {
-		// Setup
-		mockLLM := mocks.NewMockLanguageModel(t)
-		prompts, err := llm.NewPrompts(llm.PromptsFolder)
-		assert.NoError(t, err)
-
-		mockLLM.EXPECT().ChatCompletionNoStream(mock.Anything, mock.Anything).Return("", errors.New("llm error"))
-
-		r := react.New(mockLLM, prompts)
-		ctx := llm.NewContext()
-
-		// Execute
-		_, err = r.Resolve("Great job on the presentation!", ctx)
-
-		// Assert
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to get emoji from LLM")
-	})
+			// Assert
+			if tc.expectedError {
+				assert.Error(t, err)
+				if tc.errorContains != "" {
+					assert.Contains(t, err.Error(), tc.errorContains)
+				}
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tc.expectedEmoji, emoji)
+			}
+		})
+	}
 }
 
 func TestReactEval(t *testing.T) {
