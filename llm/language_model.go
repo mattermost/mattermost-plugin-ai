@@ -15,6 +15,7 @@ type LanguageModelConfig struct {
 	Model              string
 	MaxGeneratedTokens int
 	EnableVision       bool
+	JSONOutputFormat   any
 }
 
 type LanguageModelOption func(*LanguageModelConfig)
@@ -27,5 +28,10 @@ func WithModel(model string) LanguageModelOption {
 func WithMaxGeneratedTokens(maxGeneratedTokens int) LanguageModelOption {
 	return func(cfg *LanguageModelConfig) {
 		cfg.MaxGeneratedTokens = maxGeneratedTokens
+	}
+}
+func WithJSONOutput(format any) LanguageModelOption {
+	return func(cfg *LanguageModelConfig) {
+		cfg.JSONOutputFormat = format
 	}
 }

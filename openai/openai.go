@@ -450,8 +450,18 @@ func (s *OpenAI) completionRequestFromConfig(cfg llm.LanguageModelConfig) openai
 	request := openaiClient.ChatCompletionRequest{
 		Model: cfg.Model,
 	}
-
 	request.MaxTokens = cfg.MaxGeneratedTokens
+
+	if cfg.JSONOutputFormat != nil {
+		request.ResponseFormat = &openaiClient.ChatCompletionResponseFormat{
+			Type: openaiClient.ChatCompletionResponseFormatTypeJSONSchema,
+			JSONSchema: &openaiClient.ChatCompletionResponseFormatJSONSchema{
+				Name:   "output_format",
+				Schema: llm.NewJSONSchemaFromStruct(cfg.JSONOutputFormat),
+				Strict: true,
+			},
+		}
+	}
 
 	return request
 }

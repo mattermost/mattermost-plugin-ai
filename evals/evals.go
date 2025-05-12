@@ -54,11 +54,14 @@ func NewEval() (*Eval, error) {
 	}, nil
 }
 
-func Run(t *testing.T, name string, f func(e *EvalT)) {
+func SkipWithoutEvalsFlag(t *testing.T) {
 	if !*runEvals {
 		t.Skip("Skipping evals. Use -eval flag to run.")
-		return
 	}
+}
+
+func Run(t *testing.T, name string, f func(e *EvalT)) {
+	SkipWithoutEvalsFlag(t)
 
 	eval, err := NewEval()
 	require.NoError(t, err)
