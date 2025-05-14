@@ -56,6 +56,7 @@ func NewEval() (*Eval, error) {
 }
 
 func SkipWithoutEvalsFlag(t *testing.T) {
+	t.Helper()
 	if !*runEvals {
 		t.Skip("Skipping evals. Use -eval flag to run.")
 	}
