@@ -37,7 +37,6 @@ func (m *NoopMetrics) IncrementHTTPErrors() {
 }
 
 // GetMetricsForAIService returns a no-op implementation of LLMetrics.
-func (m *NoopMetrics) GetMetricsForAIService(llmName string) *llmMetrics {
+func (m *NoopMetrics) GetMetricsForAIService(llmName string) *llmMetrics { //nolint:revive
 	return &llmMetrics{}
 }
-
