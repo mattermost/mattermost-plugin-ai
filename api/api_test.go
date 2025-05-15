@@ -3,7 +3,6 @@
 
 package api
 
-/*
 import (
 	"io"
 	"net/http"
@@ -11,12 +10,42 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/mattermost/mattermost-plugin-ai/agents"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
+	"github.com/mattermost/mattermost-plugin-ai/metrics"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
+	"github.com/mattermost/mattermost/server/public/plugin/plugintest"
+	"github.com/mattermost/mattermost/server/public/pluginapi"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+type TestEnvironment struct {
+	api     *API
+	mockAPI *plugintest.API
+	agents  *agents.AgentsService
+}
+
+func (e *TestEnvironment) Cleanup(t *testing.T) {
+	if e.mockAPI != nil {
+		e.mockAPI.AssertExpectations(t)
+	}
+}
+
+func SetupTestEnvironment(t *testing.T) *TestEnvironment {
+	mockAPI := &plugintest.API{}
+	noopMetrics := &metrics.NoopMetrics{}
+	client := pluginapi.NewClient(mockAPI, nil)
+	agents := &agents.AgentsService{}
+	api := New(agents, client, noopMetrics)
+
+	return &TestEnvironment{
+		api:     api,
+		mockAPI: mockAPI,
+		agents:  agents,
+	}
+}
 
 func TestPostRouter(t *testing.T) {
 	// This just makes gin not output a whole bunch of debug stuff.
@@ -35,14 +64,12 @@ func TestPostRouter(t *testing.T) {
 		for name, test := range map[string]struct {
 			request        *http.Request
 			expectedStatus int
-			config         Config
 			botconfig      llm.BotConfig
 			envSetup       func(e *TestEnvironment)
 		}{
 			"no permission to channel": {
 				request:        httptest.NewRequest(http.MethodPost, url, nil),
 				expectedStatus: http.StatusForbidden,
-				config:         Config{},
 				envSetup: func(e *TestEnvironment) {
 					e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
 						Id:     "channelid",
@@ -73,10 +100,8 @@ func TestPostRouter(t *testing.T) {
 				e := SetupTestEnvironment(t)
 				defer e.Cleanup(t)
 
-				test.config.DefaultBotName = "permtest"
 				test.botconfig.Name = "permtest"
-				e.plugin.setConfiguration(makeConfig(test.config))
-				e.plugin.bots = []*Bot{NewBot(test.botconfig, nil)}
+				e.agents.SetBots([]*agents.Bot{agents.NewBot(test.botconfig, nil)})
 
 				e.mockAPI.On("GetPost", "postid").Return(&model.Post{
 					ChannelId: "channelid",
@@ -87,7 +112,7 @@ func TestPostRouter(t *testing.T) {
 
 				test.request.Header.Add("Mattermost-User-ID", "userid")
 				recorder := httptest.NewRecorder()
-				e.plugin.ServeHTTP(&plugin.Context{}, recorder, test.request)
+				e.api.ServeHTTP(&plugin.Context{}, recorder, test.request)
 				resp := recorder.Result()
 				require.Equal(t, test.expectedStatus, resp.StatusCode)
 			})
@@ -105,13 +130,11 @@ func TestAdminRouter(t *testing.T) {
 		for name, test := range map[string]struct {
 			request        *http.Request
 			expectedStatus int
-			config         Config
 			envSetup       func(e *TestEnvironment)
 		}{
 			"only admins": {
 				request:        httptest.NewRequest(http.MethodGet, url, nil),
 				expectedStatus: http.StatusForbidden,
-				config:         Config{},
 				envSetup: func(e *TestEnvironment) {
 					e.mockAPI.On("HasPermissionTo", "userid", model.PermissionManageSystem).Return(false)
 				},
@@ -121,15 +144,13 @@ func TestAdminRouter(t *testing.T) {
 				e := SetupTestEnvironment(t)
 				defer e.Cleanup(t)
 
-				e.plugin.setConfiguration(makeConfig(test.config))
-
 				e.mockAPI.On("LogError", mock.Anything).Maybe()
 
 				test.envSetup(e)
 
 				test.request.Header.Add("Mattermost-User-ID", "userid")
 				recorder := httptest.NewRecorder()
-				e.plugin.ServeHTTP(&plugin.Context{}, recorder, test.request)
+				e.api.ServeHTTP(&plugin.Context{}, recorder, test.request)
 				resp := recorder.Result()
 				require.Equal(t, test.expectedStatus, resp.StatusCode)
 			})
@@ -149,14 +170,12 @@ func TestChannelRouter(t *testing.T) {
 		for name, test := range map[string]struct {
 			request        *http.Request
 			expectedStatus int
-			config         Config
 			botconfig      llm.BotConfig
 			envSetup       func(e *TestEnvironment)
 		}{
 			"test no permission to channel": {
 				request:        httptest.NewRequest(http.MethodPost, url, nil),
 				expectedStatus: http.StatusForbidden,
-				config:         Config{},
 				envSetup: func(e *TestEnvironment) {
 					e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
 						Id:     "channelid",
@@ -187,10 +206,8 @@ func TestChannelRouter(t *testing.T) {
 				e := SetupTestEnvironment(t)
 				defer e.Cleanup(t)
 
-				test.config.DefaultBotName = "permtest"
 				test.botconfig.Name = "permtest"
-				e.plugin.setConfiguration(makeConfig(test.config))
-				e.plugin.bots = []*Bot{NewBot(test.botconfig, nil)}
+				e.agents.SetBots([]*agents.Bot{agents.NewBot(test.botconfig, nil)})
 
 				e.mockAPI.On("LogError", mock.Anything).Maybe()
 
@@ -198,10 +215,10 @@ func TestChannelRouter(t *testing.T) {
 
 				test.request.Header.Add("Mattermost-User-ID", "userid")
 				recorder := httptest.NewRecorder()
-				e.plugin.ServeHTTP(&plugin.Context{}, recorder, test.request)
+				e.api.ServeHTTP(&plugin.Context{}, recorder, test.request)
 				resp := recorder.Result()
 				require.Equal(t, test.expectedStatus, resp.StatusCode)
 			})
 		}
 	}
-}*/
+}

@@ -189,6 +189,14 @@ func (p *AgentsService) SetAPI(api plugin.API) {
 	p.pluginAPI = pluginapi.NewClient(api, nil)
 }
 
+// SetBots sets the bots for testing
+func (p *AgentsService) SetBots(bots []*Bot) {
+	p.botsLock.Lock()
+	defer p.botsLock.Unlock()
+
+	p.bots = bots
+}
+
 func (p *AgentsService) createExternalHTTPClient() *http.Client {
 	return httpexternal.CreateRestrictedClient(p.untrustedHTTPClient, httpexternal.ParseAllowedHostnames(p.getConfiguration().AllowedUpstreamHostnames))
 }
