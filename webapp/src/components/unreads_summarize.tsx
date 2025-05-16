@@ -87,7 +87,7 @@ const UnreadsSumarize = (props: Props) => {
     const {bots, activeBot, setActiveBot, wasFiltered} = useBotlistForChannel(props.channelId);
 
     const summarizeNew = async () => {
-        const result = await getChannelInterval(props.channelId, props.lastViewedAt, 0, 'unreads_summarize', '', activeBot?.username || '');
+        const result = await getChannelInterval(props.channelId, props.lastViewedAt, 0, 'summarize_unreads', '', activeBot?.username || '');
         selectPost(result.postid, result.channelid);
     };
 
