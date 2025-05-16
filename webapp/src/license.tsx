@@ -5,27 +5,25 @@ import {useSelector} from 'react-redux';
 
 import {GlobalState} from '@mattermost/types/store';
 
-const e10 = 'E10';
-const e20 = 'E20';
 const professional = 'professional';
 const enterprise = 'enterprise';
+const enterpriseAdvanced = 'advanced';
 
 // isValidSkuShortName returns whether the SKU short name is one of the known strings;
-// namely: E10 or professional, or E20 or enterprise
+// namely: professional, enterprise or enterprise advanced.
 const isValidSkuShortName = (license: Record<string, string>) => {
     switch (license?.SkuShortName) {
-    case e10:
-    case e20:
     case professional:
     case enterprise:
+    case enterpriseAdvanced:
         return true;
     default:
         return false;
     }
 };
 
-const checkE20Licensed = (license: Record<string, string>) => {
-    if (license?.SkuShortName === e20 || license?.SkuShortName === enterprise) {
+export const checkEnterpriseLicensed = (license: Record<string, string>) => {
+    if (license?.SkuShortName === enterprise || license?.SkuShortName === enterpriseAdvanced) {
         return true;
     }
 
@@ -40,9 +38,10 @@ const checkE20Licensed = (license: Record<string, string>) => {
     return false;
 };
 
-const checkE10Licensed = (license: Record<string, string>) => {
-    if (license?.SkuShortName === e10 || license?.SkuShortName === professional ||
-        license?.SkuShortName === e20 || license?.SkuShortName === enterprise) {
+export const checkProfessionalLicensed = (license: Record<string, string>) => {
+    if (license?.SkuShortName === professional ||
+        license?.SkuShortName === enterprise ||
+        license?.SkuShortName === enterpriseAdvanced) {
         return true;
     }
 
@@ -63,28 +62,28 @@ const isConfiguredForDevelopment = (state: GlobalState): boolean => {
     return config.EnableTesting === 'true' && config.EnableDeveloper === 'true';
 };
 
-// isE20LicensedOrDevelopment returns true when the server is licensed with a legacy Mattermost
-// Enterprise E20 License or a Mattermost Enterprise License, or has `EnableDeveloper` and
-// `EnableTesting` configuration settings enabled, signaling a non-production, developer mode.
-export const isE20LicensedOrDevelopment = (state: GlobalState): boolean => {
+// isEnterpriseLicensedOrDevelopment returns true when the server is licensed with minimum Mattermost
+// Enterprise License, or has `EnableDeveloper` and `EnableTesting`
+// configuration settings enabled, signaling a non-production, developer mode.
+export const isEnterpriseLicensedOrDevelopment = (state: GlobalState): boolean => {
     const license = state.entities.general.license;
 
-    return checkE20Licensed(license) || isConfiguredForDevelopment(state);
+    return checkEnterpriseLicensed(license) || isConfiguredForDevelopment(state);
 };
 
-// isE10LicensedOrDevelopment returns true when the server is at least licensed with a legacy Mattermost
-// Enterprise E10 License or a Mattermost Professional License, or has `EnableDeveloper` and
-// `EnableTesting` configuration settings enabled, signaling a non-production, developer mode.
-export const isE10LicensedOrDevelopment = (state: GlobalState): boolean => {
+// isProfressionalLicensedOrDevelopment returns true when the server is at least licensed with a Mattermost Professional License,
+// or has `EnableDeveloper` and `EnableTesting` configuration settings enabled,
+// signaling a non-production, developer mode.
+export const isProfessionalLicensedOrDevelopment = (state: GlobalState): boolean => {
     const license = state.entities.general.license;
 
-    return checkE10Licensed(license) || isConfiguredForDevelopment(state);
+    return checkProfessionalLicensed(license) || isConfiguredForDevelopment(state);
 };
 
 export function useIsMultiLLMLicensed() {
-    return useSelector(isE20LicensedOrDevelopment);
+    return useSelector(isEnterpriseLicensedOrDevelopment);
 }
 
 export function useIsBasicsLicensed() {
-    return useSelector(isE20LicensedOrDevelopment);
+    return useSelector(isEnterpriseLicensedOrDevelopment);
 }
