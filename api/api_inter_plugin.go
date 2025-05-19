@@ -20,7 +20,7 @@ type SimpleCompletionRequest struct {
 
 func (a *API) handleInterPluginSimpleCompletion(c *gin.Context) {
 	var req SimpleCompletionRequest
-	if err := c.BindJSON(&req); err != nil {
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid request: %v", err)})
 		return
 	}
