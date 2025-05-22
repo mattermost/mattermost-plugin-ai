@@ -2,6 +2,7 @@ bin/
 dist/
 webapp/src/manifest.ts
 server/manifest.go
+evals.jsonl
 
 # Mac
 .DS_Store

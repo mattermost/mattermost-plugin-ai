@@ -5,9 +5,9 @@ package evals
 
 import (
 	"errors"
-	"flag"
 	"net/http"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -15,9 +15,6 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/openai"
 	"github.com/stretchr/testify/require"
 )
-
-var runEvals = flag.Bool("eval", false, "Run LLM evals")
-var numEvals = flag.Int("num", 1, "Number of times to run each eval")
 
 type EvalT struct {
 	*testing.T
@@ -28,6 +25,8 @@ type Eval struct {
 	LLM       llm.LanguageModel
 	GraderLLM llm.LanguageModel
 	Prompts   *llm.Prompts
+
+	runNumber int
 }
 
 func NewEval() (*Eval, error) {
@@ -55,15 +54,18 @@ func NewEval() (*Eval, error) {
 	}, nil
 }
 
-func SkipWithoutEvalsFlag(t *testing.T) {
+func NumEvalsOrSkip(t *testing.T) int {
 	t.Helper()
-	if !*runEvals {
-		t.Skip("Skipping evals. Use -eval flag to run.")
+	numEvals, err := strconv.Atoi(os.Getenv("GOEVALS"))
+	if err != nil || numEvals < 1 {
+		t.Skip("Skipping evals. Use GOEVALS=1 flag to run.")
 	}
+
+	return numEvals
 }
 
 func Run(t *testing.T, name string, f func(e *EvalT)) {
-	SkipWithoutEvalsFlag(t)
+	numEvals := NumEvalsOrSkip(t)
 
 	eval, err := NewEval()
 	require.NoError(t, err)
@@ -71,7 +73,9 @@ func Run(t *testing.T, name string, f func(e *EvalT)) {
 	e := &EvalT{T: t, Eval: eval}
 
 	t.Run(name, func(t *testing.T) {
-		for range *numEvals {
+		e.T = t
+		for i := range numEvals {
+			e.runNumber = i
 			f(e)
 		}
 	})

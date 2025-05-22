@@ -11,7 +11,7 @@ import (
 )
 
 func TestLLMRubric(t *testing.T) {
-	SkipWithoutEvalsFlag(t)
+	NumEvalsOrSkip(t)
 	eval, err := NewEval()
 	require.NoError(t, err)
 
