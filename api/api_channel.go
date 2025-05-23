@@ -77,7 +77,7 @@ func (a *API) handleInterval(c *gin.Context) {
 	}
 
 	// Process interval request
-	result, err := a.agents.HandleIntervalRequest(userID, bot, channel, data.StartTime, data.EndTime, data.PresetPrompt, data.Prompt)
+	result, err := a.agents.ChannelInterval(userID, bot, channel, data.StartTime, data.EndTime, data.PresetPrompt, data.Prompt)
 	if err != nil {
 		if err.Error() == "invalid preset prompt" {
 			c.AbortWithError(http.StatusBadRequest, err)

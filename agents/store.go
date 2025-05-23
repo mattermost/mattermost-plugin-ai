@@ -7,11 +7,9 @@ import (
 	"database/sql"
 	"fmt"
 
-	"errors"
-
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
-	"github.com/mattermost/mattermost/server/public/model"
+	"github.com/mattermost/mattermost-plugin-ai/mmapi"
 )
 
 type builder interface {
@@ -19,19 +17,9 @@ type builder interface {
 }
 
 func (p *AgentsService) SetupDB() error {
-	if p.pluginAPI.Store.DriverName() != model.DatabaseDriverPostgres {
-		return errors.New("this plugin is only supported on postgres")
-	}
-
-	origDB, err := p.pluginAPI.Store.GetMasterDB()
-	if err != nil {
-		return err
-	}
-	p.db = sqlx.NewDb(origDB, p.pluginAPI.Store.DriverName())
-
-	builder := sq.StatementBuilder.PlaceholderFormat(sq.Question)
-	builder = builder.PlaceholderFormat(sq.Dollar)
-	p.builder = builder
+	client := mmapi.NewDBClient(p.pluginAPI)
+	p.db = client.DB
+	p.builder = client.Builder()
 
 	return p.SetupTables()
 }
@@ -139,27 +127,4 @@ func (p *AgentsService) getAIThreads(dmChannelIDs []string) ([]AIThread, error) 
 	}
 
 	return result, nil
-}
-
-func (p *AgentsService) getFirstPostBeforeTimeRangeID(channelID string, startTime, endTime int64) (string, error) {
-	var result struct {
-		ID string `db:"id"`
-	}
-	err := p.doQuery(&result, p.builder.
-		Select("id").
-		From("Posts").
-		Where(sq.Eq{"ChannelId": channelID}).
-		Where(sq.And{
-			sq.GtOrEq{"CreateAt": startTime},
-			sq.LtOrEq{"CreateAt": endTime},
-			sq.Eq{"DeleteAt": 0},
-		}).
-		OrderBy("CreateAt ASC").
-		Limit(1))
-
-	if err != nil {
-		return "", fmt.Errorf("failed to get first post ID: %w", err)
-	}
-
-	return result.ID, nil
 }
