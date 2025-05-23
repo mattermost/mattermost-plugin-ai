@@ -19,6 +19,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/mcp"
 	"github.com/mattermost/mattermost-plugin-ai/metrics"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
+	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 )
@@ -206,6 +207,21 @@ func (p *AgentsService) createExternalHTTPClient() *http.Client {
 // GetContextBuilder returns the context builder for external use
 func (p *AgentsService) GetContextBuilder() *LLMContextBuilder {
 	return p.contextBuilder
+}
+
+// GetMMClient returns the mmapi client for external use
+func (p *AgentsService) GetMMClient() mmapi.Client {
+	return p.mmClient
+}
+
+// StreamResultToNewDM streams result to a new direct message (exported wrapper)
+func (p *AgentsService) StreamResultToNewDM(botid string, stream *llm.TextStreamResult, userID string, post *model.Post, respondingToPostID string) error {
+	return p.streamResultToNewDM(botid, stream, userID, post, respondingToPostID)
+}
+
+// SaveTitleAsync saves a title asynchronously (exported wrapper)
+func (p *AgentsService) SaveTitleAsync(threadID, title string) {
+	p.saveTitleAsync(threadID, title)
 }
 
 // GetEnableLLMTrace returns whether LLM tracing is enabled

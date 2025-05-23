@@ -12,8 +12,13 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/render"
 	"github.com/mattermost/mattermost-plugin-ai/agents"
+	"github.com/mattermost/mattermost-plugin-ai/agents/channels"
+	"github.com/mattermost/mattermost-plugin-ai/llm"
+	"github.com/mattermost/mattermost-plugin-ai/mmapi"
 	"github.com/mattermost/mattermost/server/public/model"
 )
+
+const NoRegen = "no_regen"
 
 func (a *API) channelAuthorizationRequired(c *gin.Context) {
 	channelID := c.Param("channelid")
@@ -76,15 +81,66 @@ func (a *API) handleInterval(c *gin.Context) {
 		return
 	}
 
-	// Process interval request
-	result, err := a.agents.ChannelInterval(userID, bot, channel, data.StartTime, data.EndTime, data.PresetPrompt, data.Prompt)
+	// Get user
+	user, err := a.pluginAPI.User.Get(userID)
 	if err != nil {
-		if err.Error() == "invalid preset prompt" {
-			c.AbortWithError(http.StatusBadRequest, err)
-		} else {
-			c.AbortWithError(http.StatusInternalServerError, err)
-		}
+		c.AbortWithError(http.StatusInternalServerError, err)
 		return
+	}
+
+	// Build LLM context
+	context := a.contextBuilder.BuildLLMContextUserRequest(
+		bot,
+		user,
+		channel,
+		a.contextBuilder.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.GetMMBot().UserId, channel)),
+	)
+
+	// Map preset prompt to prompt type and title
+	promptPreset := ""
+	promptTitle := ""
+	switch data.PresetPrompt {
+	case "summarize_unreads":
+		promptPreset = llm.PromptSummarizeChannelSinceSystem
+		promptTitle = "Summarize Unreads"
+	case "summarize_range":
+		promptPreset = llm.PromptSummarizeChannelRangeSystem
+		promptTitle = "Summarize Channel"
+	case "action_items":
+		promptPreset = llm.PromptFindActionItemsSystem
+		promptTitle = "Find Action Items"
+	case "open_questions":
+		promptPreset = llm.PromptFindOpenQuestionsSystem
+		promptTitle = "Find Open Questions"
+	default:
+		c.AbortWithError(http.StatusBadRequest, errors.New("invalid preset prompt"))
+		return
+	}
+
+	// Call channels interval processing
+	resultStream, err := channels.New(a.agents.GetLLM(bot.GetConfig()), a.prompts, a.mmClient).Interval(context, channel.Id, data.StartTime, data.EndTime, promptPreset)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	// Create post for the response
+	post := &model.Post{}
+	post.AddProp(NoRegen, "true")
+
+	// Stream result to new DM
+	if err := a.agents.StreamResultToNewDM(bot.GetMMBot().UserId, resultStream, user.Id, post, ""); err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	// Save title asynchronously
+	a.agents.SaveTitleAsync(post.Id, promptTitle)
+
+	// Return result
+	result := map[string]string{
+		"postID":    post.Id,
+		"channelId": post.ChannelId,
 	}
 
 	c.Render(http.StatusOK, render.JSON{Data: result})

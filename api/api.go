@@ -11,7 +11,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/mattermost/mattermost-plugin-ai/agents"
+	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/metrics"
+	"github.com/mattermost/mattermost-plugin-ai/mmapi"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 )
@@ -28,6 +30,9 @@ type API struct {
 	pluginAPI      *pluginapi.Client
 	metricsService metrics.Metrics
 	metricsHandler http.Handler
+	contextBuilder *agents.LLMContextBuilder
+	prompts        *llm.Prompts
+	mmClient       mmapi.Client
 }
 
 // New creates a new API instance
@@ -37,6 +42,9 @@ func New(agentsService *agents.AgentsService, pluginAPI *pluginapi.Client, metri
 		pluginAPI:      pluginAPI,
 		metricsService: metricsService,
 		metricsHandler: metrics.NewMetricsHandler(metricsService),
+		contextBuilder: agentsService.GetContextBuilder(),
+		prompts:        agentsService.GetPrompts(),
+		mmClient:       agentsService.GetMMClient(),
 	}
 }
 
