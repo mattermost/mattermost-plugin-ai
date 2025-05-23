@@ -54,15 +54,24 @@ func (p *AgentsService) HandleRegenerate(userID string, post *model.Post, channe
 		siteURL := config.ServiceSettings.SiteURL
 		post.Message = p.analysisPostMessage(user.Locale, threadID, analysisType, *siteURL)
 
-		var err error
-		result, err = p.analyzeThread(bot, threadID, analysisType, p.contextBuilder.BuildLLMContextUserRequest(
+		threadPost, getPostErr := p.pluginAPI.Post.GetPost(threadID)
+		if getPostErr != nil {
+			return fmt.Errorf("could not get thread post on regen: %w", getPostErr)
+		}
+
+		if !p.pluginAPI.User.HasPermissionToChannel(userID, threadPost.ChannelId, model.PermissionReadChannel) {
+			return errors.New("user doesn't have permission to read channel original thread in in")
+		}
+
+		var analyzeThreadErr error
+		result, analyzeThreadErr = p.analyzeThread(bot, threadID, analysisType, p.contextBuilder.BuildLLMContextUserRequest(
 			bot,
 			user,
 			channel,
 			p.contextBuilder.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.mmBot.UserId, channel)),
 		))
-		if err != nil {
-			return fmt.Errorf("could not summarize post on regen: %w", err)
+		if analyzeThreadErr != nil {
+			return fmt.Errorf("could not summarize post on regen: %w", analyzeThreadErr)
 		}
 	case referenceRecordingFileIDProp != nil:
 		post.Message = ""
