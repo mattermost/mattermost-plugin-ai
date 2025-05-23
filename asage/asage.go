@@ -2,9 +2,7 @@
 // See LICENSE.txt for license information.
 
 // Asage experimental LLM provider.
-// This is not a production-ready implementation and is not supported by Mattermost.
-// It is provided as a proof of concept and for testing purposes only.
-// It has no support for streaming, or tool calling, so most functionality will not behave as expected.
+// Upstream has no support for streaming or tool calling, so some features may be limited.
 package asage
 
 import (
