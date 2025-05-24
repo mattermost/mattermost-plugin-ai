@@ -9,7 +9,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/mattermost/mattermost-plugin-ai/agents"
+	"github.com/mattermost/mattermost-plugin-ai/bots"
 )
 
 type SearchRequest struct {
@@ -38,7 +38,7 @@ type RAGResult struct {
 
 func (a *API) handleRunSearch(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
-	bot := c.MustGet(ContextBotKey).(*agents.Bot)
+	bot := c.MustGet(ContextBotKey).(*bots.Bot)
 
 	if !a.agents.IsSearchEnabled() {
 		c.AbortWithError(http.StatusBadRequest, fmt.Errorf("search functionality is not configured"))
@@ -67,7 +67,7 @@ func (a *API) handleRunSearch(c *gin.Context) {
 
 func (a *API) handleSearchQuery(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
-	bot := c.MustGet(ContextBotKey).(*agents.Bot)
+	bot := c.MustGet(ContextBotKey).(*bots.Bot)
 
 	if !a.agents.IsSearchEnabled() {
 		c.AbortWithError(http.StatusBadRequest, fmt.Errorf("search functionality is not configured"))

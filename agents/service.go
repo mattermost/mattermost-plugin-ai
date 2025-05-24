@@ -11,6 +11,7 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
+	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/embeddings"
 	"github.com/mattermost/mattermost-plugin-ai/enterprise"
 	"github.com/mattermost/mattermost-plugin-ai/httpexternal"
@@ -59,9 +60,6 @@ type AgentsService struct { //nolint:revive
 	licenseChecker *enterprise.LicenseChecker
 	metricsService metrics.Metrics
 
-	botsLock sync.RWMutex
-	bots     []*Bot
-
 	i18n *i18n.Bundle
 
 	llmUpstreamHTTPClient *http.Client
@@ -71,6 +69,8 @@ type AgentsService struct { //nolint:revive
 	mcpClientManager *mcp.ClientManager
 
 	contextBuilder *LLMContextBuilder
+
+	bots *bots.MMBots
 }
 
 func resolveffmpegPath() string {
@@ -93,6 +93,7 @@ func NewAgentsService(
 	untrustedHTTPClient *http.Client,
 	metricsService metrics.Metrics,
 	configuration *Config,
+	bots *bots.MMBots,
 ) (*AgentsService, error) {
 	agentsService := &AgentsService{
 		API:                   originalAPI,
@@ -102,6 +103,7 @@ func NewAgentsService(
 		untrustedHTTPClient:   untrustedHTTPClient,
 		metricsService:        metricsService,
 		configuration:         configuration,
+		bots:                  bots,
 	}
 
 	agentsService.licenseChecker = enterprise.NewLicenseChecker(agentsService.pluginAPI)
@@ -110,17 +112,6 @@ func NewAgentsService(
 	agentsService.i18n = i18n.Init()
 	if agentsService.i18n == nil {
 		return nil, fmt.Errorf("failed to initialize i18n bundle")
-	}
-
-	if err := agentsService.MigrateServicesToBots(); err != nil {
-		agentsService.pluginAPI.Log.Error("failed to migrate services to bots", "error", err)
-		// Don't fail on migration errors
-	}
-
-	if err := agentsService.EnsureBots(); err != nil {
-		agentsService.pluginAPI.Log.Error("Failed to ensure bots", "error", err)
-		// Don't fail on ensure bots errors as this leaves the plugin in an awkward state
-		// where it can't be configured from the system console.
 	}
 
 	if err := agentsService.SetupDB(); err != nil {
@@ -192,14 +183,6 @@ func (p *AgentsService) SetAPI(api plugin.API) {
 	p.pluginAPI = pluginapi.NewClient(api, nil)
 }
 
-// SetBots sets the bots for testing
-func (p *AgentsService) SetBots(bots []*Bot) {
-	p.botsLock.Lock()
-	defer p.botsLock.Unlock()
-
-	p.bots = bots
-}
-
 func (p *AgentsService) createExternalHTTPClient() *http.Client {
 	return httpexternal.CreateRestrictedClient(p.untrustedHTTPClient, httpexternal.ParseAllowedHostnames(p.getConfiguration().AllowedUpstreamHostnames))
 }
@@ -227,4 +210,24 @@ func (p *AgentsService) SaveTitleAsync(threadID, title string) {
 // GetEnableLLMTrace returns whether LLM tracing is enabled
 func (p *AgentsService) GetEnableLLMTrace() bool {
 	return p.getConfiguration().EnableLLMTrace
+}
+
+// IsAnyBot returns true if the given user is an AI bot.
+func (p *AgentsService) IsAnyBot(userID string) bool {
+	return p.bots.IsAnyBot(userID)
+}
+
+// GetBotByUsernameOrFirst retrieves the bot associated with the given bot username or the first bot if not found
+func (p *AgentsService) GetBotByUsernameOrFirst(botUsername string) *bots.Bot {
+	return p.bots.GetBotByUsernameOrFirst(botUsername)
+}
+
+// GetBotByID retrieves the bot associated with the given bot ID
+func (p *AgentsService) GetBotByID(botID string) *bots.Bot {
+	return p.bots.GetBotByID(botID)
+}
+
+// SetBotsForTesting sets the bots instance for testing purposes only
+func (p *AgentsService) SetBotsForTesting(bots *bots.MMBots) {
+	p.bots = bots
 }

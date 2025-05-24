@@ -59,11 +59,11 @@ func (p *AgentsService) HandleRegenerate(userID string, post *model.Post, channe
 			bot,
 			user,
 			channel,
-			p.contextBuilder.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.mmBot.UserId, channel)),
+			p.contextBuilder.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.GetMMBot().UserId, channel)),
 		)
 
 		var err error
-		result, err = threads.New(p.GetLLM(bot.cfg), p.prompts, p.mmClient).Analyze(threadID, llmContext, analysisType)
+		result, err = threads.New(p.GetLLM(bot.GetConfig()), p.prompts, p.mmClient).Analyze(threadID, llmContext, analysisType)
 		if err != nil {
 			return fmt.Errorf("could not summarize post on regen: %w", err)
 		}
@@ -131,7 +131,7 @@ func (p *AgentsService) HandleRegenerate(userID string, post *model.Post, channe
 			bot,
 			user,
 			channel,
-			p.contextBuilder.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.mmBot.UserId, channel)),
+			p.contextBuilder.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.GetMMBot().UserId, channel)),
 		)
 		var summaryErr error
 		result, summaryErr = p.summarizeTranscription(bot, transcription, context)
@@ -156,7 +156,7 @@ func (p *AgentsService) HandleRegenerate(userID string, post *model.Post, channe
 			bot,
 			user,
 			channel,
-			p.contextBuilder.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.mmBot.UserId, channel)),
+			p.contextBuilder.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.GetMMBot().UserId, channel)),
 		)
 
 		// Process the user request with the context that has the callback
@@ -167,8 +167,8 @@ func (p *AgentsService) HandleRegenerate(userID string, post *model.Post, channe
 		}
 	}
 
-	if mmapi.IsDMWith(bot.mmBot.UserId, channel) {
-		if channel.Name == bot.mmBot.UserId+"__"+user.Id || channel.Name == user.Id+"__"+bot.mmBot.UserId {
+	if mmapi.IsDMWith(bot.GetMMBot().UserId, channel) {
+		if channel.Name == bot.GetMMBot().UserId+"__"+user.Id || channel.Name == user.Id+"__"+bot.GetMMBot().UserId {
 			p.streamResultToPost(ctx, result, post, user.Locale)
 			return nil
 		}

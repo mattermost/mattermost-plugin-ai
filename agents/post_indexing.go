@@ -13,7 +13,7 @@ func (p *AgentsService) ShouldIndexPost(post *model.Post, channel *model.Channel
 	}
 
 	// Skip posts from bots
-	if p.IsAnyBot(post.UserId) {
+	if p.bots.IsAnyBot(post.UserId) {
 		return false
 	}
 
@@ -28,7 +28,7 @@ func (p *AgentsService) ShouldIndexPost(post *model.Post, channel *model.Channel
 	}
 
 	// Skip posts in DM channels with the bots
-	if channel != nil && p.GetBotForDMChannel(channel) != nil {
+	if channel != nil && p.bots.GetBotForDMChannel(channel) != nil {
 		return false
 	}
 

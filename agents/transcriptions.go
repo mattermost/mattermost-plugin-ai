@@ -9,6 +9,7 @@ import (
 	"io"
 	"slices"
 
+	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/llm/subtitles"
 	"github.com/mattermost/mattermost/server/public/model"
 )
@@ -24,7 +25,7 @@ type Transcriber interface {
 }
 
 // HandleTranscribeFile handles file transcription requests
-func (p *AgentsService) HandleTranscribeFile(userID string, bot *Bot, post *model.Post, channel *model.Channel, fileID string) (map[string]string, error) {
+func (p *AgentsService) HandleTranscribeFile(userID string, bot *bots.Bot, post *model.Post, channel *model.Channel, fileID string) (map[string]string, error) {
 	user, err := p.pluginAPI.User.Get(userID)
 	if err != nil {
 		return nil, err
@@ -55,7 +56,7 @@ func (p *AgentsService) HandleTranscribeFile(userID string, bot *Bot, post *mode
 }
 
 // HandleSummarizeTranscription handles transcription summarization requests
-func (p *AgentsService) HandleSummarizeTranscription(userID string, bot *Bot, post *model.Post, channel *model.Channel) (map[string]string, error) {
+func (p *AgentsService) HandleSummarizeTranscription(userID string, bot *bots.Bot, post *model.Post, channel *model.Channel) (map[string]string, error) {
 	user, err := p.pluginAPI.User.Get(userID)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get user: %w", err)
@@ -114,7 +115,7 @@ func (p *AgentsService) HandlePostbackSummary(userID string, post *model.Post) (
 	}
 
 	postedSummary := &model.Post{
-		UserId:    bot.mmBot.UserId,
+		UserId:    bot.GetMMBot().UserId,
 		ChannelId: transcriptionPost.ChannelId,
 		RootId:    transcriptionPost.RootId,
 		Message:   post.Message,

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/embeddings"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
@@ -43,7 +44,7 @@ func (p *AgentsService) MessageHasBeenPosted(c *plugin.Context, post *model.Post
 
 func (p *AgentsService) handleMessages(post *model.Post) error {
 	// Don't respond to ourselves
-	if p.IsAnyBot(post.UserId) {
+	if p.bots.IsAnyBot(post.UserId) {
 		return fmt.Errorf("not responding to ourselves: %w", ErrNoResponse)
 	}
 
@@ -83,19 +84,19 @@ func (p *AgentsService) handleMessages(post *model.Post) error {
 	}
 
 	// Check we are mentioned like @ai
-	if bot := p.GetBotMentioned(post.Message); bot != nil {
+	if bot := p.bots.GetBotMentioned(post.Message); bot != nil {
 		return p.handleMentions(bot, post, postingUser, channel)
 	}
 
 	// Check if this is post in the DM channel with any bot
-	if bot := p.GetBotForDMChannel(channel); bot != nil {
+	if bot := p.bots.GetBotForDMChannel(channel); bot != nil {
 		return p.handleDMs(bot, channel, postingUser, post)
 	}
 
 	return nil
 }
 
-func (p *AgentsService) handleMentions(bot *Bot, post *model.Post, postingUser *model.User, channel *model.Channel) error {
+func (p *AgentsService) handleMentions(bot *bots.Bot, post *model.Post, postingUser *model.User, channel *model.Channel) error {
 	if err := p.checkUsageRestrictions(postingUser.Id, bot, channel); err != nil {
 		return err
 	}
@@ -114,14 +115,14 @@ func (p *AgentsService) handleMentions(bot *Bot, post *model.Post, postingUser *
 		ChannelId: channel.Id,
 		RootId:    responseRootID,
 	}
-	if err := p.streamResultToNewPost(bot.mmBot.UserId, postingUser.Id, stream, responsePost, post.Id); err != nil {
+	if err := p.streamResultToNewPost(bot.GetMMBot().UserId, postingUser.Id, stream, responsePost, post.Id); err != nil {
 		return fmt.Errorf("unable to stream response: %w", err)
 	}
 
 	return nil
 }
 
-func (p *AgentsService) handleDMs(bot *Bot, channel *model.Channel, postingUser *model.User, post *model.Post) error {
+func (p *AgentsService) handleDMs(bot *bots.Bot, channel *model.Channel, postingUser *model.User, post *model.Post) error {
 	if err := p.checkUsageRestrictionsForUser(bot, postingUser.Id); err != nil {
 		return err
 	}
@@ -140,7 +141,7 @@ func (p *AgentsService) handleDMs(bot *Bot, channel *model.Channel, postingUser 
 		ChannelId: channel.Id,
 		RootId:    responseRootID,
 	}
-	if err := p.streamResultToNewPost(bot.mmBot.UserId, postingUser.Id, stream, responsePost, post.Id); err != nil {
+	if err := p.streamResultToNewPost(bot.GetMMBot().UserId, postingUser.Id, stream, responsePost, post.Id); err != nil {
 		return fmt.Errorf("unable to stream response: %w", err)
 	}
 

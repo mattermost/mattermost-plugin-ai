@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/stretchr/testify/require"
@@ -18,242 +19,206 @@ func TestUsageRestrictions(t *testing.T) {
 
 	testCases := []struct {
 		name           string
-		bot            *Bot
+		bot            *bots.Bot
 		channel        *model.Channel
 		requestingUser string
 		expectedError  error
 	}{
 		{
 			name: "All allowed",
-			bot: &Bot{
-				cfg: llm.BotConfig{
-					ChannelAccessLevel: llm.ChannelAccessLevelAll,
-					UserAccessLevel:    llm.UserAccessLevelAll,
-				},
-			},
+			bot: bots.NewBot(llm.BotConfig{
+				ChannelAccessLevel: llm.ChannelAccessLevelAll,
+				UserAccessLevel:    llm.UserAccessLevelAll,
+			}, nil),
 			channel:        &model.Channel{Id: "channel1"},
 			requestingUser: "user1",
 			expectedError:  nil,
 		},
 		{
 			name: "Channel blocked",
-			bot: &Bot{
-				cfg: llm.BotConfig{
-					ChannelAccessLevel: llm.ChannelAccessLevelBlock,
-					ChannelIDs:         []string{"channel1"},
-					UserAccessLevel:    llm.UserAccessLevelAll,
-				},
-			},
+			bot: bots.NewBot(llm.BotConfig{
+				ChannelAccessLevel: llm.ChannelAccessLevelBlock,
+				ChannelIDs:         []string{"channel1"},
+				UserAccessLevel:    llm.UserAccessLevelAll,
+			}, nil),
 			channel:        &model.Channel{Id: "channel1"},
 			requestingUser: "user1",
 			expectedError:  ErrUsageRestriction,
 		},
 		{
 			name: "User blocked",
-			bot: &Bot{
-				cfg: llm.BotConfig{
-					ChannelAccessLevel: llm.ChannelAccessLevelAll,
-					UserAccessLevel:    llm.UserAccessLevelBlock,
-					UserIDs:            []string{"user1"},
-				},
-			},
+			bot: bots.NewBot(llm.BotConfig{
+				ChannelAccessLevel: llm.ChannelAccessLevelAll,
+				UserAccessLevel:    llm.UserAccessLevelBlock,
+				UserIDs:            []string{"user1"},
+			}, nil),
 			channel:        &model.Channel{Id: "channel1"},
 			requestingUser: "user1",
 			expectedError:  ErrUsageRestriction,
 		},
 		{
 			name: "Channel allowed",
-			bot: &Bot{
-				cfg: llm.BotConfig{
-					ChannelAccessLevel: llm.ChannelAccessLevelAllow,
-					ChannelIDs:         []string{"channel1"},
-					UserAccessLevel:    llm.UserAccessLevelAll,
-				},
-			},
+			bot: bots.NewBot(llm.BotConfig{
+				ChannelAccessLevel: llm.ChannelAccessLevelAllow,
+				ChannelIDs:         []string{"channel1"},
+				UserAccessLevel:    llm.UserAccessLevelAll,
+			}, nil),
 			channel:        &model.Channel{Id: "channel1"},
 			requestingUser: "user1",
 			expectedError:  nil,
 		},
 		{
 			name: "User allowed",
-			bot: &Bot{
-				cfg: llm.BotConfig{
-					ChannelAccessLevel: llm.ChannelAccessLevelAll,
-					UserAccessLevel:    llm.UserAccessLevelAllow,
-					UserIDs:            []string{"user1"},
-				},
-			},
+			bot: bots.NewBot(llm.BotConfig{
+				ChannelAccessLevel: llm.ChannelAccessLevelAll,
+				UserAccessLevel:    llm.UserAccessLevelAllow,
+				UserIDs:            []string{"user1"},
+			}, nil),
 			channel:        &model.Channel{Id: "channel1"},
 			requestingUser: "user1",
 			expectedError:  nil,
 		},
 		{
 			name: "Channel not allowed",
-			bot: &Bot{
-				cfg: llm.BotConfig{
-					ChannelAccessLevel: llm.ChannelAccessLevelAllow,
-					ChannelIDs:         []string{"channel2"},
-					UserAccessLevel:    llm.UserAccessLevelAll,
-				},
-			},
+			bot: bots.NewBot(llm.BotConfig{
+				ChannelAccessLevel: llm.ChannelAccessLevelAllow,
+				ChannelIDs:         []string{"channel2"},
+				UserAccessLevel:    llm.UserAccessLevelAll,
+			}, nil),
 			channel:        &model.Channel{Id: "channel1"},
 			requestingUser: "user1",
 			expectedError:  ErrUsageRestriction,
 		},
 		{
 			name: "User not allowed",
-			bot: &Bot{
-				cfg: llm.BotConfig{
-					ChannelAccessLevel: llm.ChannelAccessLevelAll,
-					UserAccessLevel:    llm.UserAccessLevelAllow,
-					UserIDs:            []string{"user2"},
-				},
-			},
+			bot: bots.NewBot(llm.BotConfig{
+				ChannelAccessLevel: llm.ChannelAccessLevelAll,
+				UserAccessLevel:    llm.UserAccessLevelAllow,
+				UserIDs:            []string{"user2"},
+			}, nil),
 			channel:        &model.Channel{Id: "channel1"},
 			requestingUser: "user1",
 			expectedError:  ErrUsageRestriction,
 		},
 		{
 			name: "Channel none",
-			bot: &Bot{
-				cfg: llm.BotConfig{
-					ChannelAccessLevel: llm.ChannelAccessLevelNone,
-					UserAccessLevel:    llm.UserAccessLevelAll,
-				},
-			},
+			bot: bots.NewBot(llm.BotConfig{
+				ChannelAccessLevel: llm.ChannelAccessLevelNone,
+				UserAccessLevel:    llm.UserAccessLevelAll,
+			}, nil),
 			channel:        &model.Channel{Id: "channel1"},
 			requestingUser: "user1",
 			expectedError:  ErrUsageRestriction,
 		},
 		{
 			name: "User none",
-			bot: &Bot{
-				cfg: llm.BotConfig{
-					ChannelAccessLevel: llm.ChannelAccessLevelAll,
-					UserAccessLevel:    llm.UserAccessLevelNone,
-				},
-			},
+			bot: bots.NewBot(llm.BotConfig{
+				ChannelAccessLevel: llm.ChannelAccessLevelAll,
+				UserAccessLevel:    llm.UserAccessLevelNone,
+			}, nil),
 			channel:        &model.Channel{Id: "channel1"},
 			requestingUser: "user1",
 			expectedError:  ErrUsageRestriction,
 		},
 		{
 			name: "Channel block but not in list",
-			bot: &Bot{
-				cfg: llm.BotConfig{
-					ChannelAccessLevel: llm.ChannelAccessLevelBlock,
-					ChannelIDs:         []string{"channel2"},
-					UserAccessLevel:    llm.UserAccessLevelAll,
-				},
-			},
+			bot: bots.NewBot(llm.BotConfig{
+				ChannelAccessLevel: llm.ChannelAccessLevelBlock,
+				ChannelIDs:         []string{"channel2"},
+				UserAccessLevel:    llm.UserAccessLevelAll,
+			}, nil),
 			channel:        &model.Channel{Id: "channel1"},
 			requestingUser: "user1",
 			expectedError:  nil,
 		},
 		{
 			name: "User block but not in list",
-			bot: &Bot{
-				cfg: llm.BotConfig{
-					ChannelAccessLevel: llm.ChannelAccessLevelAll,
-					UserAccessLevel:    llm.UserAccessLevelBlock,
-					UserIDs:            []string{"user2"},
-				},
-			},
+			bot: bots.NewBot(llm.BotConfig{
+				ChannelAccessLevel: llm.ChannelAccessLevelAll,
+				UserAccessLevel:    llm.UserAccessLevelBlock,
+				UserIDs:            []string{"user2"},
+			}, nil),
 			channel:        &model.Channel{Id: "channel1"},
 			requestingUser: "user1",
 			expectedError:  nil,
 		},
 		{
 			name: "Channel allow and user allow",
-			bot: &Bot{
-				cfg: llm.BotConfig{
-					ChannelAccessLevel: llm.ChannelAccessLevelAllow,
-					ChannelIDs:         []string{"channel1"},
-					UserAccessLevel:    llm.UserAccessLevelAllow,
-					UserIDs:            []string{"user1"},
-				},
-			},
+			bot: bots.NewBot(llm.BotConfig{
+				ChannelAccessLevel: llm.ChannelAccessLevelAllow,
+				ChannelIDs:         []string{"channel1"},
+				UserAccessLevel:    llm.UserAccessLevelAllow,
+				UserIDs:            []string{"user1"},
+			}, nil),
 			channel:        &model.Channel{Id: "channel1"},
 			requestingUser: "user1",
 			expectedError:  nil,
 		},
 		{
 			name: "Channel allow but user not allowed",
-			bot: &Bot{
-				cfg: llm.BotConfig{
-					ChannelAccessLevel: llm.ChannelAccessLevelAllow,
-					ChannelIDs:         []string{"channel1"},
-					UserAccessLevel:    llm.UserAccessLevelAllow,
-					UserIDs:            []string{"user2"},
-				},
-			},
+			bot: bots.NewBot(llm.BotConfig{
+				ChannelAccessLevel: llm.ChannelAccessLevelAllow,
+				ChannelIDs:         []string{"channel1"},
+				UserAccessLevel:    llm.UserAccessLevelAllow,
+				UserIDs:            []string{"user2"},
+			}, nil),
 			channel:        &model.Channel{Id: "channel1"},
 			requestingUser: "user1",
 			expectedError:  ErrUsageRestriction,
 		},
 		{
 			name: "User allowed via team membership",
-			bot: &Bot{
-				cfg: llm.BotConfig{
-					ChannelAccessLevel: llm.ChannelAccessLevelAll,
-					UserAccessLevel:    llm.UserAccessLevelAllow,
-					TeamIDs:            []string{"team1"},
-				},
-			},
+			bot: bots.NewBot(llm.BotConfig{
+				ChannelAccessLevel: llm.ChannelAccessLevelAll,
+				UserAccessLevel:    llm.UserAccessLevelAllow,
+				TeamIDs:            []string{"team1"},
+			}, nil),
 			channel:        &model.Channel{Id: "channel1"},
 			requestingUser: "user1",
 			expectedError:  nil,
 		},
 		{
 			name: "User blocked via team membership",
-			bot: &Bot{
-				cfg: llm.BotConfig{
-					ChannelAccessLevel: llm.ChannelAccessLevelAll,
-					UserAccessLevel:    llm.UserAccessLevelBlock,
-					TeamIDs:            []string{"team1"},
-				},
-			},
+			bot: bots.NewBot(llm.BotConfig{
+				ChannelAccessLevel: llm.ChannelAccessLevelAll,
+				UserAccessLevel:    llm.UserAccessLevelBlock,
+				TeamIDs:            []string{"team1"},
+			}, nil),
 			channel:        &model.Channel{Id: "channel1"},
 			requestingUser: "user1",
 			expectedError:  ErrUsageRestriction,
 		},
 		{
 			name: "User not in allowed team",
-			bot: &Bot{
-				cfg: llm.BotConfig{
-					ChannelAccessLevel: llm.ChannelAccessLevelAll,
-					UserAccessLevel:    llm.UserAccessLevelAllow,
-					TeamIDs:            []string{"team2"},
-				},
-			},
+			bot: bots.NewBot(llm.BotConfig{
+				ChannelAccessLevel: llm.ChannelAccessLevelAll,
+				UserAccessLevel:    llm.UserAccessLevelAllow,
+				TeamIDs:            []string{"team2"},
+			}, nil),
 			channel:        &model.Channel{Id: "channel1"},
 			requestingUser: "user1",
 			expectedError:  ErrUsageRestriction,
 		},
 		{
 			name: "User allowed via direct ID even if not in team",
-			bot: &Bot{
-				cfg: llm.BotConfig{
-					ChannelAccessLevel: llm.ChannelAccessLevelAll,
-					UserAccessLevel:    llm.UserAccessLevelAllow,
-					UserIDs:            []string{"user1"},
-					TeamIDs:            []string{"team2"},
-				},
-			},
+			bot: bots.NewBot(llm.BotConfig{
+				ChannelAccessLevel: llm.ChannelAccessLevelAll,
+				UserAccessLevel:    llm.UserAccessLevelAllow,
+				UserIDs:            []string{"user1"},
+				TeamIDs:            []string{"team2"},
+			}, nil),
 			channel:        &model.Channel{Id: "channel1"},
 			requestingUser: "user1",
 			expectedError:  nil,
 		},
 		{
 			name: "User blocked via direct ID even if in allowed team",
-			bot: &Bot{
-				cfg: llm.BotConfig{
-					ChannelAccessLevel: llm.ChannelAccessLevelAll,
-					UserAccessLevel:    llm.UserAccessLevelBlock,
-					UserIDs:            []string{"user1"},
-					TeamIDs:            []string{"team1"},
-				},
-			},
+			bot: bots.NewBot(llm.BotConfig{
+				ChannelAccessLevel: llm.ChannelAccessLevelAll,
+				UserAccessLevel:    llm.UserAccessLevelBlock,
+				UserIDs:            []string{"user1"},
+				TeamIDs:            []string{"team1"},
+			}, nil),
 			channel:        &model.Channel{Id: "channel1"},
 			requestingUser: "user1",
 			expectedError:  ErrUsageRestriction,
@@ -263,7 +228,7 @@ func TestUsageRestrictions(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Setup mock responses for team membership checks
-			if len(tc.bot.cfg.TeamIDs) > 0 {
+			if len(tc.bot.GetConfig().TeamIDs) > 0 {
 				member := &model.TeamMember{
 					TeamId: "team1",
 					UserId: "user1",

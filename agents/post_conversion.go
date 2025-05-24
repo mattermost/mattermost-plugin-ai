@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/mattermost/mattermost-plugin-ai/agents/format"
+	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost/server/public/model"
 )
@@ -55,14 +56,14 @@ func isImageMimeType(mimeType string) bool {
 	return strings.HasPrefix(mimeType, "image/")
 }
 
-func (p *AgentsService) PostToAIPost(bot *Bot, post *model.Post) llm.Post {
+func (p *AgentsService) PostToAIPost(bot *bots.Bot, post *model.Post) llm.Post {
 	var filesForUpstream []llm.File
 	message := format.PostBody(post)
 	var extractedFileContents []string
 
 	maxFileSize := defaultMaxFileSize
-	if bot.cfg.MaxFileSize > 0 {
-		maxFileSize = bot.cfg.MaxFileSize
+	if bot.GetConfig().MaxFileSize > 0 {
+		maxFileSize = bot.GetConfig().MaxFileSize
 	}
 
 	for _, fileID := range post.FileIds {
@@ -98,7 +99,7 @@ func (p *AgentsService) PostToAIPost(bot *Bot, post *model.Post) llm.Post {
 			extractedFileContents = append(extractedFileContents, fileContent)
 		}
 
-		if bot.cfg.EnableVision && isImageMimeType(fileInfo.MimeType) {
+		if bot.GetConfig().EnableVision && isImageMimeType(fileInfo.MimeType) {
 			file, err := p.pluginAPI.File.Get(fileID)
 			if err != nil {
 				p.pluginAPI.Log.Error("Error getting file", "error", err)
@@ -118,7 +119,7 @@ func (p *AgentsService) PostToAIPost(bot *Bot, post *model.Post) llm.Post {
 	}
 
 	role := llm.PostRoleUser
-	if p.IsAnyBot(post.UserId) {
+	if p.bots.IsAnyBot(post.UserId) {
 		role = llm.PostRoleBot
 	}
 
@@ -143,7 +144,7 @@ func (p *AgentsService) PostToAIPost(bot *Bot, post *model.Post) llm.Post {
 	}
 }
 
-func (p *AgentsService) ThreadToLLMPosts(bot *Bot, posts []*model.Post) []llm.Post {
+func (p *AgentsService) ThreadToLLMPosts(bot *bots.Bot, posts []*model.Post) []llm.Post {
 	result := make([]llm.Post, 0, len(posts))
 
 	for _, post := range posts {

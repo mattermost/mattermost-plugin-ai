@@ -14,6 +14,7 @@ import (
 
 	"errors"
 
+	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/i18n"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/llm/subtitles"
@@ -102,14 +103,14 @@ func (p *AgentsService) createTranscription(recordingFileID string) (*subtitles.
 	return transcription, nil
 }
 
-func (p *AgentsService) newCallRecordingThread(bot *Bot, requestingUser *model.User, recordingPost *model.Post, channel *model.Channel, fileID string) (*model.Post, error) {
+func (p *AgentsService) newCallRecordingThread(bot *bots.Bot, requestingUser *model.User, recordingPost *model.Post, channel *model.Channel, fileID string) (*model.Post, error) {
 	siteURL := p.pluginAPI.Configuration.GetConfig().ServiceSettings.SiteURL
 	T := i18n.LocalizerFunc(p.i18n, requestingUser.Locale)
 	surePost := &model.Post{
 		Message: T("copilot.summarize_recording", "Sure, I will summarize this recording: %s/_redirect/pl/%s\n", *siteURL, recordingPost.Id),
 	}
 	surePost.AddProp(NoRegen, "true")
-	if err := p.botDMNonResponse(bot.mmBot.UserId, requestingUser.Id, surePost); err != nil {
+	if err := p.botDMNonResponse(bot.GetMMBot().UserId, requestingUser.Id, surePost); err != nil {
 		return nil, err
 	}
 
@@ -120,7 +121,7 @@ func (p *AgentsService) newCallRecordingThread(bot *Bot, requestingUser *model.U
 	return surePost, nil
 }
 
-func (p *AgentsService) newCallTranscriptionSummaryThread(bot *Bot, requestingUser *model.User, transcriptionPost *model.Post, channel *model.Channel) (*model.Post, error) {
+func (p *AgentsService) newCallTranscriptionSummaryThread(bot *bots.Bot, requestingUser *model.User, transcriptionPost *model.Post, channel *model.Channel) (*model.Post, error) {
 	if len(transcriptionPost.FileIds) != 1 {
 		return nil, errors.New("unexpected number of files in calls post")
 	}
@@ -132,7 +133,7 @@ func (p *AgentsService) newCallTranscriptionSummaryThread(bot *Bot, requestingUs
 	}
 	surePost.AddProp(NoRegen, "true")
 	surePost.AddProp(ReferencedTranscriptPostID, transcriptionPost.Id)
-	if err := p.botDMNonResponse(bot.mmBot.UserId, requestingUser.Id, surePost); err != nil {
+	if err := p.botDMNonResponse(bot.GetMMBot().UserId, requestingUser.Id, surePost); err != nil {
 		return nil, err
 	}
 
@@ -185,7 +186,7 @@ func (p *AgentsService) newCallTranscriptionSummaryThread(bot *Bot, requestingUs
 			bot,
 			requestingUser,
 			channel,
-			p.contextBuilder.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.mmBot.UserId, channel)),
+			p.contextBuilder.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.GetMMBot().UserId, channel)),
 		)
 		summaryStream, err := p.summarizeTranscription(bot, transcription, requestContext)
 		if err != nil {
@@ -198,7 +199,7 @@ func (p *AgentsService) newCallTranscriptionSummaryThread(bot *Bot, requestingUs
 			Message:   "",
 		}
 		summaryPost.AddProp(ReferencedTranscriptPostID, transcriptionPost.Id)
-		if err := p.streamResultToNewPost(bot.mmBot.UserId, requestingUser.Id, summaryStream, summaryPost, transcriptionPost.Id); err != nil {
+		if err := p.streamResultToNewPost(bot.GetMMBot().UserId, requestingUser.Id, summaryStream, summaryPost, transcriptionPost.Id); err != nil {
 			return fmt.Errorf("unable to stream result to post: %w", err)
 		}
 
@@ -208,7 +209,7 @@ func (p *AgentsService) newCallTranscriptionSummaryThread(bot *Bot, requestingUs
 	return surePost, nil
 }
 
-func (p *AgentsService) summarizeCallRecording(bot *Bot, rootID string, requestingUser *model.User, recordingFileID string, channel *model.Channel) error {
+func (p *AgentsService) summarizeCallRecording(bot *bots.Bot, rootID string, requestingUser *model.User, recordingFileID string, channel *model.Channel) error {
 	T := i18n.LocalizerFunc(p.i18n, requestingUser.Locale)
 
 	transcriptPost := &model.Post{
@@ -216,7 +217,7 @@ func (p *AgentsService) summarizeCallRecording(bot *Bot, rootID string, requesti
 		Message: T("copilot.summarize_call_recording_processing", "Processing audio into transcription. This will take some time..."),
 	}
 	transcriptPost.AddProp(ReferencedRecordingFileID, recordingFileID)
-	if err := p.botDMNonResponse(bot.mmBot.UserId, requestingUser.Id, transcriptPost); err != nil {
+	if err := p.botDMNonResponse(bot.GetMMBot().UserId, requestingUser.Id, transcriptPost); err != nil {
 		return err
 	}
 
@@ -271,10 +272,10 @@ func (p *AgentsService) summarizeCallRecording(bot *Bot, rootID string, requesti
 	return nil
 }
 
-func (p *AgentsService) summarizeTranscription(bot *Bot, transcription *subtitles.Subtitles, context *llm.Context) (*llm.TextStreamResult, error) {
+func (p *AgentsService) summarizeTranscription(bot *bots.Bot, transcription *subtitles.Subtitles, context *llm.Context) (*llm.TextStreamResult, error) {
 	llmFormattedTranscription := transcription.FormatForLLM()
-	tokens := p.GetLLM(bot.cfg).CountTokens(llmFormattedTranscription)
-	tokenLimitWithMargin := int(float64(p.GetLLM(bot.cfg).InputTokenLimit())*0.75) - ContextTokenMargin
+	tokens := p.GetLLM(bot.GetConfig()).CountTokens(llmFormattedTranscription)
+	tokenLimitWithMargin := int(float64(p.GetLLM(bot.GetConfig()).InputTokenLimit())*0.75) - ContextTokenMargin
 	if tokenLimitWithMargin < 0 {
 		tokenLimitWithMargin = ContextTokenMargin / 2
 	}
@@ -303,7 +304,7 @@ func (p *AgentsService) summarizeTranscription(bot *Bot, transcription *subtitle
 				Context: context,
 			}
 
-			summarizedChunk, err := p.GetLLM(bot.cfg).ChatCompletionNoStream(request)
+			summarizedChunk, err := p.GetLLM(bot.GetConfig()).ChatCompletionNoStream(request)
 			if err != nil {
 				return nil, fmt.Errorf("unable to get summarized chunk: %w", err)
 			}
@@ -313,7 +314,7 @@ func (p *AgentsService) summarizeTranscription(bot *Bot, transcription *subtitle
 
 		llmFormattedTranscription = strings.Join(summarizedChunks, "\n\n")
 		isChunked = true
-		p.pluginAPI.Log.Debug("Completed chunk summarization", "chunks", len(summarizedChunks), "tokens", p.GetLLM(bot.cfg).CountTokens(llmFormattedTranscription))
+		p.pluginAPI.Log.Debug("Completed chunk summarization", "chunks", len(summarizedChunks), "tokens", p.GetLLM(bot.GetConfig()).CountTokens(llmFormattedTranscription))
 	}
 
 	context.Parameters = map[string]any{"IsChunked": fmt.Sprintf("%t", isChunked)}
@@ -336,7 +337,7 @@ func (p *AgentsService) summarizeTranscription(bot *Bot, transcription *subtitle
 		Context: context,
 	}
 
-	summaryStream, err := p.GetLLM(bot.cfg).ChatCompletion(completionRequest)
+	summaryStream, err := p.GetLLM(bot.GetConfig()).ChatCompletion(completionRequest)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get meeting summary: %w", err)
 	}

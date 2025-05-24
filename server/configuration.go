@@ -69,13 +69,18 @@ func (p *Plugin) OnConfigurationChange() error {
 	}
 
 	p.setConfiguration(configuration)
-	if p.agentsService != nil {
-		p.agentsService.SetConfiguration(&configuration.Config)
-	}
 
 	// If OnActivate hasn't run yet then don't do the change tasks
 	if p.pluginAPI == nil {
 		return nil
+	}
+
+	if err := p.bots.EnsureBots(configuration.Config.Bots); err != nil {
+		return fmt.Errorf("failed to ensure bots: %w", err)
+	}
+
+	if p.agentsService != nil {
+		p.agentsService.SetConfiguration(&configuration.Config)
 	}
 
 	return p.agentsService.OnConfigurationChange()

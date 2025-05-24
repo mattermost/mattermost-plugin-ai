@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/mattermost/mattermost-plugin-ai/agents/threads"
+	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/i18n"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
@@ -44,7 +45,7 @@ type AIBotInfo struct {
 }
 
 // processUserRequestWithContext is an internal helper that uses an existing context to process a message
-func (p *AgentsService) processUserRequestWithContext(bot *Bot, postingUser *model.User, channel *model.Channel, post *model.Post, context *llm.Context) (*llm.TextStreamResult, error) {
+func (p *AgentsService) processUserRequestWithContext(bot *bots.Bot, postingUser *model.User, channel *model.Channel, post *model.Post, context *llm.Context) (*llm.TextStreamResult, error) {
 	var posts []llm.Post
 	if post.RootId == "" {
 		// A new conversation
@@ -82,7 +83,7 @@ func (p *AgentsService) processUserRequestWithContext(bot *Bot, postingUser *mod
 		Posts:   posts,
 		Context: context,
 	}
-	result, err := p.GetLLM(bot.cfg).ChatCompletion(completionRequest)
+	result, err := p.GetLLM(bot.GetConfig()).ChatCompletion(completionRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -98,25 +99,25 @@ func (p *AgentsService) processUserRequestWithContext(bot *Bot, postingUser *mod
 	return result, nil
 }
 
-func (p *AgentsService) processUserRequestToBot(bot *Bot, postingUser *model.User, channel *model.Channel, post *model.Post) (*llm.TextStreamResult, error) {
+func (p *AgentsService) processUserRequestToBot(bot *bots.Bot, postingUser *model.User, channel *model.Channel, post *model.Post) (*llm.TextStreamResult, error) {
 	// Create a context with default tools
 	context := p.contextBuilder.BuildLLMContextUserRequest(
 		bot,
 		postingUser,
 		channel,
-		p.contextBuilder.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.mmBot.UserId, channel)),
+		p.contextBuilder.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.GetMMBot().UserId, channel)),
 	)
 
 	return p.processUserRequestWithContext(bot, postingUser, channel, post, context)
 }
 
-func (p *AgentsService) generateTitle(bot *Bot, request string, postID string, context *llm.Context) error {
+func (p *AgentsService) generateTitle(bot *bots.Bot, request string, postID string, context *llm.Context) error {
 	titleRequest := llm.CompletionRequest{
 		Posts:   []llm.Post{{Role: llm.PostRoleUser, Message: request}},
 		Context: context,
 	}
 
-	conversationTitle, err := p.GetLLM(bot.cfg).ChatCompletionNoStream(titleRequest, llm.WithMaxGeneratedTokens(25))
+	conversationTitle, err := p.GetLLM(bot.GetConfig()).ChatCompletionNoStream(titleRequest, llm.WithMaxGeneratedTokens(25))
 	if err != nil {
 		return fmt.Errorf("failed to get title: %w", err)
 	}
@@ -130,10 +131,10 @@ func (p *AgentsService) generateTitle(bot *Bot, request string, postID string, c
 	return nil
 }
 
-func (p *AgentsService) existingConversationToLLMPosts(bot *Bot, conversation *mmapi.ThreadData, context *llm.Context) ([]llm.Post, error) {
+func (p *AgentsService) existingConversationToLLMPosts(bot *bots.Bot, conversation *mmapi.ThreadData, context *llm.Context) ([]llm.Post, error) {
 	// Handle thread summarization requests
 	originalThreadID, ok := conversation.Posts[0].GetProp(ThreadIDProp).(string)
-	if ok && originalThreadID != "" && conversation.Posts[0].UserId == bot.mmBot.UserId {
+	if ok && originalThreadID != "" && conversation.Posts[0].UserId == bot.GetMMBot().UserId {
 		threadPost, err := p.pluginAPI.Post.GetPost(originalThreadID)
 		if err != nil {
 			return nil, err
@@ -151,7 +152,7 @@ func (p *AgentsService) existingConversationToLLMPosts(bot *Bot, conversation *m
 				RootId:    originalThreadID,
 				Message:   T("copilot.no_longer_access_error", "Sorry, you no longer have access to the original thread."),
 			}
-			if err = p.botCreateNonResponsePost(bot.mmBot.UserId, context.RequestingUser.Id, responsePost); err != nil {
+			if err = p.botCreateNonResponsePost(bot.GetMMBot().UserId, context.RequestingUser.Id, responsePost); err != nil {
 				return nil, err
 			}
 			return nil, fmt.Errorf("user no longer has access to original thread")
@@ -162,7 +163,7 @@ func (p *AgentsService) existingConversationToLLMPosts(bot *Bot, conversation *m
 			return nil, fmt.Errorf("missing analysis type")
 		}
 
-		posts, err := threads.New(p.GetLLM(bot.cfg), p.prompts, p.mmClient).FollowUpAnalyze(originalThreadID, context, analysisType)
+		posts, err := threads.New(p.GetLLM(bot.GetConfig()), p.prompts, p.mmClient).FollowUpAnalyze(originalThreadID, context, analysisType)
 		if err != nil {
 			return nil, err
 		}
@@ -188,25 +189,24 @@ func (p *AgentsService) existingConversationToLLMPosts(bot *Bot, conversation *m
 
 // GetAIThreads gets AI conversation threads for a user
 func (p *AgentsService) GetAIThreads(userID string) ([]AIThread, error) {
-	p.botsLock.RLock()
-	defer p.botsLock.RUnlock()
+	allBots := p.bots.GetAllBots()
 
 	dmChannelIDs := []string{}
-	for _, bot := range p.bots {
-		channelName := model.GetDMNameFromIds(userID, bot.mmBot.UserId)
+	for _, bot := range allBots {
+		channelName := model.GetDMNameFromIds(userID, bot.GetMMBot().UserId)
 		botDMChannel, err := p.pluginAPI.Channel.GetByName("", channelName, false)
 		if err != nil {
 			if errors.Is(err, pluginapi.ErrNotFound) {
 				// Channel doesn't exist yet, so we'll skip it
 				continue
 			}
-			p.pluginAPI.Log.Error("unable to get DM channel for bot", "error", err, "bot_id", bot.mmBot.UserId)
+			p.pluginAPI.Log.Error("unable to get DM channel for bot", "error", err, "bot_id", bot.GetMMBot().UserId)
 			continue
 		}
 
 		// Extra permissions checks are not totally necessary since a user should always have permission to read their own DMs
 		if !p.pluginAPI.User.HasPermissionToChannel(userID, botDMChannel.Id, model.PermissionReadChannel) {
-			p.pluginAPI.Log.Debug("user doesn't have permission to read channel", "user_id", userID, "channel_id", botDMChannel.Id, "bot_id", bot.mmBot.UserId)
+			p.pluginAPI.Log.Debug("user doesn't have permission to read channel", "user_id", userID, "channel_id", botDMChannel.Id, "bot_id", bot.GetMMBot().UserId)
 			continue
 		}
 
@@ -218,14 +218,13 @@ func (p *AgentsService) GetAIThreads(userID string) ([]AIThread, error) {
 
 // GetAIBots returns all AI bots available to a user
 func (p *AgentsService) GetAIBots(userID string) ([]AIBotInfo, error) {
-	p.botsLock.RLock()
-	defer p.botsLock.RUnlock()
+	allBots := p.bots.GetAllBots()
 
 	// Get the info from all the bots.
 	// Put the default bot first.
-	bots := make([]AIBotInfo, 0, len(p.bots))
+	bots := make([]AIBotInfo, 0, len(allBots))
 	defaultBotName := p.getConfiguration().DefaultBotName
-	for i, bot := range p.bots {
+	for i, bot := range allBots {
 		// Don't return bots the user is excluded from using.
 		if p.checkUsageRestrictionsForUser(bot, userID) != nil {
 			continue
@@ -234,24 +233,24 @@ func (p *AgentsService) GetAIBots(userID string) ([]AIBotInfo, error) {
 		// Get the bot DM channel ID. To avoid creating the channel unless nessary
 		/// we return "" if the channel doesn't exist.
 		dmChannelID := ""
-		channelName := model.GetDMNameFromIds(userID, bot.mmBot.UserId)
+		channelName := model.GetDMNameFromIds(userID, bot.GetMMBot().UserId)
 		botDMChannel, err := p.pluginAPI.Channel.GetByName("", channelName, false)
 		if err == nil {
 			dmChannelID = botDMChannel.Id
 		}
 
 		bots = append(bots, AIBotInfo{
-			ID:                 bot.mmBot.UserId,
-			DisplayName:        bot.mmBot.DisplayName,
-			Username:           bot.mmBot.Username,
-			LastIconUpdate:     bot.mmBot.LastIconUpdate,
+			ID:                 bot.GetMMBot().UserId,
+			DisplayName:        bot.GetMMBot().DisplayName,
+			Username:           bot.GetMMBot().Username,
+			LastIconUpdate:     bot.GetMMBot().LastIconUpdate,
 			DMChannelID:        dmChannelID,
-			ChannelAccessLevel: bot.cfg.ChannelAccessLevel,
-			ChannelIDs:         bot.cfg.ChannelIDs,
-			UserAccessLevel:    bot.cfg.UserAccessLevel,
-			UserIDs:            bot.cfg.UserIDs,
+			ChannelAccessLevel: bot.GetConfig().ChannelAccessLevel,
+			ChannelIDs:         bot.GetConfig().ChannelIDs,
+			UserAccessLevel:    bot.GetConfig().UserAccessLevel,
+			UserIDs:            bot.GetConfig().UserIDs,
 		})
-		if bot.mmBot.Username == defaultBotName {
+		if bot.GetMMBot().Username == defaultBotName {
 			bots[0], bots[i] = bots[i], bots[0]
 		}
 	}
@@ -275,6 +274,6 @@ func (p *AgentsService) StopPostStreaming(postID string) {
 }
 
 // CheckUsageRestrictions checks if a user can use a bot in a channel
-func (p *AgentsService) CheckUsageRestrictions(userID string, bot *Bot, channel *model.Channel) error {
+func (p *AgentsService) CheckUsageRestrictions(userID string, bot *bots.Bot, channel *model.Channel) error {
 	return p.checkUsageRestrictions(userID, bot, channel)
 }

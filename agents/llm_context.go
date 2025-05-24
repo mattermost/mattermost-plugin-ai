@@ -6,6 +6,7 @@ package agents
 import (
 	"time"
 
+	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
@@ -13,7 +14,7 @@ import (
 
 // BuiltInToolProvider provides built-in tools for a bot and context
 type BuiltInToolProvider interface {
-	GetBuiltInTools(isDM bool, bot *Bot) []llm.Tool
+	GetBuiltInTools(isDM bool, bot *bots.Bot) []llm.Tool
 }
 
 // MCPToolProvider provides MCP tools for a user
@@ -50,7 +51,7 @@ func NewLLMContextBuilder(
 }
 
 // BuildLLMContextUserRequest is a helper function to collect the required context for a user request.
-func (b *LLMContextBuilder) BuildLLMContextUserRequest(bot *Bot, requestingUser *model.User, channel *model.Channel, opts ...llm.ContextOption) *llm.Context {
+func (b *LLMContextBuilder) BuildLLMContextUserRequest(bot *bots.Bot, requestingUser *model.User, channel *model.Channel, opts ...llm.ContextOption) *llm.Context {
 	allOpts := []llm.ContextOption{
 		b.WithLLMContextServerInfo(),
 		b.WithLLMContextRequestingUser(requestingUser),
@@ -106,7 +107,7 @@ func (b *LLMContextBuilder) WithLLMContextRequestingUser(user *model.User) llm.C
 }
 
 // GetToolsStoreForUser returns a tool store for a specific user, including MCP tools
-func (b *LLMContextBuilder) GetToolsStoreForUser(bot *Bot, isDM bool, userID string) *llm.ToolStore {
+func (b *LLMContextBuilder) GetToolsStoreForUser(bot *bots.Bot, isDM bool, userID string) *llm.ToolStore {
 	// Check for nil bot, which is unexpected
 	if bot == nil {
 		b.pluginAPI.Log.Error("Unexpected nil bot when getting tool store for user", "userID", userID)
@@ -120,7 +121,7 @@ func (b *LLMContextBuilder) GetToolsStoreForUser(bot *Bot, isDM bool, userID str
 	}
 
 	// Check if tools are disabled for this bot
-	if bot.cfg.DisableTools {
+	if bot.GetConfig().DisableTools {
 		return llm.NewNoTools()
 	}
 
@@ -144,7 +145,7 @@ func (b *LLMContextBuilder) GetToolsStoreForUser(bot *Bot, isDM bool, userID str
 }
 
 // WithLLMContextDefaultTools adds default tools to the LLM context for the requesting user
-func (b *LLMContextBuilder) WithLLMContextDefaultTools(bot *Bot, isDM bool) llm.ContextOption {
+func (b *LLMContextBuilder) WithLLMContextDefaultTools(bot *bots.Bot, isDM bool) llm.ContextOption {
 	return func(c *llm.Context) {
 		if c.RequestingUser == nil {
 			b.pluginAPI.Log.Error("Cannot add tools to context: RequestingUser is nil")
@@ -161,9 +162,9 @@ func (b *LLMContextBuilder) WithLLMContextParameters(params map[string]interface
 	}
 }
 
-func (b *LLMContextBuilder) WithLLMContextBot(bot *Bot) llm.ContextOption {
+func (b *LLMContextBuilder) WithLLMContextBot(bot *bots.Bot) llm.ContextOption {
 	return func(c *llm.Context) {
-		c.BotName = bot.cfg.DisplayName
-		c.CustomInstructions = bot.cfg.CustomInstructions
+		c.BotName = bot.GetConfig().DisplayName
+		c.CustomInstructions = bot.GetConfig().CustomInstructions
 	}
 }

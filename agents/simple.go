@@ -17,7 +17,7 @@ func (p *AgentsService) HandleInterPluginSimpleCompletion(systemPrompt, userProm
 	}
 
 	// Get the bot by username or use the first available bot
-	bot := p.GetBotByUsernameOrFirst(botUsername)
+	bot := p.bots.GetBotByUsernameOrFirst(botUsername)
 	if bot == nil {
 		return "", fmt.Errorf("failed to get bot: %s", botUsername)
 	}
@@ -37,7 +37,7 @@ func (p *AgentsService) HandleInterPluginSimpleCompletion(systemPrompt, userProm
 	)
 
 	// Add tools if not disabled
-	if !bot.cfg.DisableTools {
+	if !bot.GetConfig().DisableTools {
 		context.Tools = p.contextBuilder.GetToolsStoreForUser(bot, true, userID)
 	}
 
@@ -68,7 +68,7 @@ func (p *AgentsService) HandleInterPluginSimpleCompletion(systemPrompt, userProm
 	}
 
 	// Execute the completion
-	response, err := p.GetLLM(bot.cfg).ChatCompletionNoStream(completionRequest)
+	response, err := p.GetLLM(bot.GetConfig()).ChatCompletionNoStream(completionRequest)
 	if err != nil {
 		return "", fmt.Errorf("completion failed: %v", err)
 	}

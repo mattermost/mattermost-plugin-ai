@@ -41,7 +41,7 @@ func (p *AgentsService) HandleToolCall(userID string, post *model.Post, channel 
 		bot,
 		user,
 		channel,
-		p.contextBuilder.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.mmBot.UserId, channel)),
+		p.contextBuilder.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.GetMMBot().UserId, channel)),
 	)
 
 	for i := range tools {
@@ -102,7 +102,7 @@ func (p *AgentsService) HandleToolCall(userID string, post *model.Post, channel 
 		Posts:   posts,
 		Context: context,
 	}
-	result, err := p.GetLLM(bot.cfg).ChatCompletion(completionRequest)
+	result, err := p.GetLLM(bot.GetConfig()).ChatCompletion(completionRequest)
 	if err != nil {
 		return fmt.Errorf("failed to get chat completion: %w", err)
 	}
@@ -111,7 +111,7 @@ func (p *AgentsService) HandleToolCall(userID string, post *model.Post, channel 
 		ChannelId: channel.Id,
 		RootId:    responseRootID,
 	}
-	if err := p.streamResultToNewPost(bot.mmBot.UserId, user.Id, result, responsePost, post.Id); err != nil {
+	if err := p.streamResultToNewPost(bot.GetMMBot().UserId, user.Id, result, responsePost, post.Id); err != nil {
 		return fmt.Errorf("failed to stream result to new post: %w", err)
 	}
 

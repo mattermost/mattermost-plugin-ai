@@ -9,6 +9,7 @@ import (
 
 	"errors"
 
+	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
@@ -16,7 +17,7 @@ import (
 
 var ErrUsageRestriction = errors.New("usage restriction")
 
-func (p *AgentsService) checkUsageRestrictions(requestingUserID string, bot *Bot, channel *model.Channel) error {
+func (p *AgentsService) checkUsageRestrictions(requestingUserID string, bot *bots.Bot, channel *model.Channel) error {
 	if err := p.checkUsageRestrictionsForUser(bot, requestingUserID); err != nil {
 		return err
 	}
@@ -28,17 +29,17 @@ func (p *AgentsService) checkUsageRestrictions(requestingUserID string, bot *Bot
 	return nil
 }
 
-func (p *AgentsService) checkUsageRestrictionsForChannel(bot *Bot, channel *model.Channel) error {
-	switch bot.cfg.ChannelAccessLevel {
+func (p *AgentsService) checkUsageRestrictionsForChannel(bot *bots.Bot, channel *model.Channel) error {
+	switch bot.GetConfig().ChannelAccessLevel {
 	case llm.ChannelAccessLevelAll:
 		return nil
 	case llm.ChannelAccessLevelAllow:
-		if !slices.Contains(bot.cfg.ChannelIDs, channel.Id) {
+		if !slices.Contains(bot.GetConfig().ChannelIDs, channel.Id) {
 			return fmt.Errorf("channel not allowed: %w", ErrUsageRestriction)
 		}
 		return nil
 	case llm.ChannelAccessLevelBlock:
-		if slices.Contains(bot.cfg.ChannelIDs, channel.Id) {
+		if slices.Contains(bot.GetConfig().ChannelIDs, channel.Id) {
 			return fmt.Errorf("channel blocked: %w", ErrUsageRestriction)
 		}
 		return nil
@@ -60,17 +61,17 @@ func (p *AgentsService) isMemberOfTeam(teamID string, userID string) (bool, erro
 	return member != nil && member.DeleteAt == 0, nil
 }
 
-func (p *AgentsService) checkUsageRestrictionsForUser(bot *Bot, requestingUserID string) error {
-	switch bot.cfg.UserAccessLevel {
+func (p *AgentsService) checkUsageRestrictionsForUser(bot *bots.Bot, requestingUserID string) error {
+	switch bot.GetConfig().UserAccessLevel {
 	case llm.UserAccessLevelAll:
 		return nil
 	case llm.UserAccessLevelAllow:
 		// Check direct user allowlist
-		if slices.Contains(bot.cfg.UserIDs, requestingUserID) {
+		if slices.Contains(bot.GetConfig().UserIDs, requestingUserID) {
 			return nil
 		}
 		// Check team membership
-		for _, teamID := range bot.cfg.TeamIDs {
+		for _, teamID := range bot.GetConfig().TeamIDs {
 			isMember, err := p.isMemberOfTeam(teamID, requestingUserID)
 			if err != nil {
 				return err
@@ -82,11 +83,11 @@ func (p *AgentsService) checkUsageRestrictionsForUser(bot *Bot, requestingUserID
 		return fmt.Errorf("user not allowed: %w", ErrUsageRestriction)
 	case llm.UserAccessLevelBlock:
 		// Check direct user blocklist
-		if slices.Contains(bot.cfg.UserIDs, requestingUserID) {
+		if slices.Contains(bot.GetConfig().UserIDs, requestingUserID) {
 			return fmt.Errorf("user blocked: %w", ErrUsageRestriction)
 		}
 		// Check team membership
-		for _, teamID := range bot.cfg.TeamIDs {
+		for _, teamID := range bot.GetConfig().TeamIDs {
 			isMember, err := p.isMemberOfTeam(teamID, requestingUserID)
 			if err != nil {
 				return err

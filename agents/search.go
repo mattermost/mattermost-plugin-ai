@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/embeddings"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost/server/public/model"
@@ -122,7 +123,7 @@ func (p *AgentsService) formatSearchResults(results []embeddings.SearchResult) (
 }
 
 // HandleRunSearch initiates a search and sends results to a DM
-func (p *AgentsService) HandleRunSearch(userID string, bot *Bot, query, teamID, channelID string, maxResults int) (map[string]string, error) {
+func (p *AgentsService) HandleRunSearch(userID string, bot *bots.Bot, query, teamID, channelID string, maxResults int) (map[string]string, error) {
 	if p.search == nil {
 		return nil, fmt.Errorf("search functionality is not configured")
 	}
@@ -137,7 +138,7 @@ func (p *AgentsService) HandleRunSearch(userID string, bot *Bot, query, teamID, 
 		Message: query,
 	}
 	questionPost.AddProp(SearchQueryProp, "true")
-	if err := p.pluginAPI.Post.DM(userID, bot.mmBot.UserId, questionPost); err != nil {
+	if err := p.pluginAPI.Post.DM(userID, bot.GetMMBot().UserId, questionPost); err != nil {
 		return nil, fmt.Errorf("failed to create question post: %w", err)
 	}
 
@@ -149,7 +150,7 @@ func (p *AgentsService) HandleRunSearch(userID string, bot *Bot, query, teamID, 
 		}
 		responsePost.AddProp(NoRegen, "true")
 
-		if err := p.botDMNonResponse(bot.mmBot.UserId, userID, responsePost); err != nil {
+		if err := p.botDMNonResponse(bot.GetMMBot().UserId, userID, responsePost); err != nil {
 			// Not much point in retrying if this failed. (very unlikely beyond dev)
 			p.pluginAPI.Log.Error("Error creating bot DM", "error", err)
 			return
@@ -220,7 +221,7 @@ func (p *AgentsService) HandleRunSearch(userID string, bot *Bot, query, teamID, 
 			Context: promptCtx,
 		}
 
-		resultStream, err := p.GetLLM(bot.cfg).ChatCompletion(prompt)
+		resultStream, err := p.GetLLM(bot.GetConfig()).ChatCompletion(prompt)
 		if err != nil {
 			p.pluginAPI.Log.Error("Error generating answer", "error", err)
 			processingError = err
@@ -259,7 +260,7 @@ func (p *AgentsService) HandleRunSearch(userID string, bot *Bot, query, teamID, 
 }
 
 // HandleSearchQuery performs a search and returns results immediately
-func (p *AgentsService) HandleSearchQuery(userID string, bot *Bot, query, teamID, channelID string, maxResults int) (SearchResponse, error) {
+func (p *AgentsService) HandleSearchQuery(userID string, bot *bots.Bot, query, teamID, channelID string, maxResults int) (SearchResponse, error) {
 	if p.search == nil {
 		return SearchResponse{}, fmt.Errorf("search functionality is not configured")
 	}
@@ -312,7 +313,7 @@ func (p *AgentsService) HandleSearchQuery(userID string, bot *Bot, query, teamID
 		Context: promptCtx,
 	}
 
-	answer, err := p.GetLLM(bot.cfg).ChatCompletionNoStream(prompt)
+	answer, err := p.GetLLM(bot.GetConfig()).ChatCompletionNoStream(prompt)
 	if err != nil {
 		return SearchResponse{}, fmt.Errorf("failed to generate answer: %w", err)
 	}

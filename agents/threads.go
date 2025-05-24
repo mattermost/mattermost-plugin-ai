@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/mattermost/mattermost-plugin-ai/agents/threads"
+	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/i18n"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
@@ -19,7 +20,7 @@ const (
 	JobStatusError   = "error"
 )
 
-func (p *AgentsService) ThreadAnalysis(userID string, bot *Bot, post *model.Post, channel *model.Channel, analysisType string) (*model.Post, error) {
+func (p *AgentsService) ThreadAnalysis(userID string, bot *bots.Bot, post *model.Post, channel *model.Channel, analysisType string) (*model.Post, error) {
 	user, err := p.pluginAPI.User.Get(userID)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get user: %w", err)
@@ -29,10 +30,10 @@ func (p *AgentsService) ThreadAnalysis(userID string, bot *Bot, post *model.Post
 		bot,
 		user,
 		channel,
-		p.contextBuilder.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.mmBot.UserId, channel)),
+		p.contextBuilder.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.GetMMBot().UserId, channel)),
 	)
 
-	analyzer := threads.New(p.GetLLM(bot.cfg), p.prompts, p.mmClient)
+	analyzer := threads.New(p.GetLLM(bot.GetConfig()), p.prompts, p.mmClient)
 	var analysisStream *llm.TextStreamResult
 	var title string
 	switch analysisType {
@@ -53,7 +54,7 @@ func (p *AgentsService) ThreadAnalysis(userID string, bot *Bot, post *model.Post
 	}
 
 	analysisPost := p.makeAnalysisPost(context.RequestingUser.Locale, post.Id, analysisType)
-	if err := p.streamResultToNewDM(bot.mmBot.UserId, analysisStream, context.RequestingUser.Id, analysisPost, post.Id); err != nil {
+	if err := p.streamResultToNewDM(bot.GetMMBot().UserId, analysisStream, context.RequestingUser.Id, analysisPost, post.Id); err != nil {
 		return nil, err
 	}
 

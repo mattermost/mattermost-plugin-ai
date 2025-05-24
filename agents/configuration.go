@@ -4,8 +4,6 @@
 package agents
 
 import (
-	"fmt"
-
 	"github.com/mattermost/mattermost-plugin-ai/embeddings"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mcp"
@@ -49,11 +47,6 @@ func (p *AgentsService) SetConfiguration(configuration *Config) {
 
 // OnConfigurationChange is invoked when configuration changes may have been made.
 func (p *AgentsService) OnConfigurationChange() error {
-	// Extra config change tasks
-	if err := p.EnsureBots(); err != nil {
-		return fmt.Errorf("failed on config change: %w", err)
-	}
-
 	// Reinitialize search based on new configuration
 	search, err := p.initSearch()
 	if err != nil {

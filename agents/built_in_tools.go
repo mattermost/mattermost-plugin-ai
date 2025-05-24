@@ -18,6 +18,7 @@ import (
 
 	"github.com/andygrunwald/go-jira"
 	"github.com/google/go-github/v41/github"
+	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/embeddings"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost/server/public/model"
@@ -393,7 +394,7 @@ func (p *AgentsService) toolSearchServer(llmContext *llm.Context, argsGetter llm
 
 // getBuiltInTools returns the built-in tools that are available to all users.
 // isDM is true if the response will be in a DM with the user. More tools are available in DMs because of security properties.
-func (p *AgentsService) GetBuiltInTools(isDM bool, bot *Bot) []llm.Tool {
+func (p *AgentsService) GetBuiltInTools(isDM bool, bot *bots.Bot) []llm.Tool {
 	builtInTools := []llm.Tool{}
 
 	if isDM {

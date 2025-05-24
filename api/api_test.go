@@ -11,6 +11,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/mattermost/mattermost-plugin-ai/agents"
+	"github.com/mattermost/mattermost-plugin-ai/bots"
+	"github.com/mattermost/mattermost-plugin-ai/enterprise"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/metrics"
 	"github.com/mattermost/mattermost/server/public/model"
@@ -25,6 +27,7 @@ type TestEnvironment struct {
 	api     *API
 	mockAPI *plugintest.API
 	agents  *agents.AgentsService
+	bots    *bots.MMBots
 }
 
 func (e *TestEnvironment) Cleanup(t *testing.T) {
@@ -33,17 +36,48 @@ func (e *TestEnvironment) Cleanup(t *testing.T) {
 	}
 }
 
+// createTestBots creates a test MMBots instance for testing
+func createTestBots(mockAPI *plugintest.API, client *pluginapi.Client) *bots.MMBots {
+	licenseChecker := enterprise.NewLicenseChecker(client)
+	testBots := bots.New(mockAPI, client, licenseChecker)
+	return testBots
+}
+
+// setupTestBot configures a test bot in the environment
+func (e *TestEnvironment) setupTestBot(botConfig llm.BotConfig) {
+	// Create a mock bot user
+	mmBot := &model.Bot{
+		UserId:      "bot-user-id",
+		Username:    botConfig.Name,
+		DisplayName: botConfig.DisplayName,
+	}
+
+	// Create the bot instance
+	bot := bots.NewBot(botConfig, mmBot)
+
+	// Set the bot directly for testing
+	e.bots.SetBotsForTesting([]*bots.Bot{bot})
+}
+
 func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 	mockAPI := &plugintest.API{}
 	noopMetrics := &metrics.NoopMetrics{}
 	client := pluginapi.NewClient(mockAPI, nil)
+
+	// Create test bots instance
+	testBots := createTestBots(mockAPI, client)
+
+	// Create agents service - we'll pass nil for bots initially and set it via testing method
 	agents := &agents.AgentsService{}
+	agents.SetBotsForTesting(testBots)
+
 	api := New(agents, client, noopMetrics)
 
 	return &TestEnvironment{
 		api:     api,
 		mockAPI: mockAPI,
 		agents:  agents,
+		bots:    testBots,
 	}
 }
 
@@ -101,7 +135,8 @@ func TestPostRouter(t *testing.T) {
 				defer e.Cleanup(t)
 
 				test.botconfig.Name = "permtest"
-				e.agents.SetBots([]*agents.Bot{agents.NewBot(test.botconfig, nil)})
+
+				e.setupTestBot(test.botconfig)
 
 				e.mockAPI.On("GetPost", "postid").Return(&model.Post{
 					ChannelId: "channelid",
@@ -207,7 +242,8 @@ func TestChannelRouter(t *testing.T) {
 				defer e.Cleanup(t)
 
 				test.botconfig.Name = "permtest"
-				e.agents.SetBots([]*agents.Bot{agents.NewBot(test.botconfig, nil)})
+
+				e.setupTestBot(test.botconfig)
 
 				e.mockAPI.On("LogError", mock.Anything).Maybe()
 

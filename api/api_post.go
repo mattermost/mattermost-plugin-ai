@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin/render"
 	"github.com/mattermost/mattermost-plugin-ai/agents"
 	"github.com/mattermost/mattermost-plugin-ai/agents/react"
+	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
@@ -39,7 +40,7 @@ func (a *API) postAuthorizationRequired(c *gin.Context) {
 		return
 	}
 
-	bot := c.MustGet(ContextBotKey).(*agents.Bot)
+	bot := c.MustGet(ContextBotKey).(*bots.Bot)
 	if err := a.agents.CheckUsageRestrictions(userID, bot, channel); err != nil {
 		c.AbortWithError(http.StatusForbidden, err)
 		return
@@ -50,7 +51,7 @@ func (a *API) handleReact(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
-	bot := c.MustGet(ContextBotKey).(*agents.Bot)
+	bot := c.MustGet(ContextBotKey).(*bots.Bot)
 
 	requestingUser, err := a.pluginAPI.User.Get(userID)
 	if err != nil {
@@ -89,7 +90,7 @@ func (a *API) handleThreadAnalysis(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
-	bot := c.MustGet(ContextBotKey).(*agents.Bot)
+	bot := c.MustGet(ContextBotKey).(*bots.Bot)
 
 	if !a.agents.IsBasicsLicensed() {
 		c.AbortWithError(http.StatusForbidden, errors.New("feature not licensed"))
@@ -133,7 +134,7 @@ func (a *API) handleTranscribeFile(c *gin.Context) {
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 	fileID := c.Param("fileid")
-	bot := c.MustGet(ContextBotKey).(*agents.Bot)
+	bot := c.MustGet(ContextBotKey).(*bots.Bot)
 
 	result, err := a.agents.HandleTranscribeFile(userID, bot, post, channel, fileID)
 	if err != nil {
@@ -148,7 +149,7 @@ func (a *API) handleSummarizeTranscription(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
-	bot := c.MustGet(ContextBotKey).(*agents.Bot)
+	bot := c.MustGet(ContextBotKey).(*bots.Bot)
 
 	result, err := a.agents.HandleSummarizeTranscription(userID, bot, post, channel)
 	if err != nil {
