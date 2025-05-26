@@ -12,7 +12,7 @@ Before installing the Agents plugin, ensure your environment meets these require
 - PostgreSQL database
 - For semantic search: PostgreSQL with pgvector extension
 - Network access to your chosen LLM provider
-- API keys for the LLM services you plan to use
+- API keys if using a cloud LLM service
 
 ### Installation Steps
 

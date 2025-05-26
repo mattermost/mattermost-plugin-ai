@@ -2,7 +2,7 @@
 
 # Mattermost Copilot Plugin [![Download Latest Master Build](https://img.shields.io/badge/Download-Latest%20Master%20Build-blue)](https://github.com/mattermost/mattermost-plugin-ai/releases/tag/latest-master)
 
-The Mattermost Copilot Plugin integrates AI capabilities directly into your [Mattermost](https://github.com/mattermost/mattermost) workspace, supporting both self-hosted and vendor-hosted Large Language Models (LLMs).
+The Mattermost Copilot Plugin integrates AI capabilities directly into your [Mattermost](https://github.com/mattermost/mattermost) workspace. **Run any local LLM** on your infrastructure or connect to cloud providers - you control your data and deployment.
 
 </div>
 
@@ -17,7 +17,7 @@ The Mattermost Copilot Plugin integrates AI capabilities directly into your [Mat
 - **Semantic Search**: Find relevant content across your Mattermost instance using natural language
 - **Smart Reactions**: Let AI suggest contextually appropriate emoji reactions
 - **Direct Conversations**: Chat directly with AI assistants in dedicated channels
-- **Multiple LLM Providers**: Support for OpenAI, Anthropic, Azure OpenAI, and compatible providers
+- **Flexible LLM Support**: Use local models (Ollama, vLLM, etc.), cloud providers (OpenAI, Anthropic, Azure), or any OpenAI-compatible API
 
 ## Documentation
 

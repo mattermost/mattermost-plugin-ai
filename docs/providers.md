@@ -6,14 +6,40 @@ This guide covers configuring different Large Language Model (LLM) providers wit
 
 The Mattermost Agents plugin currently supports these LLM providers:
 
+- Local models via OpenAI-compatible APIs (Ollama, vLLM, etc.)
 - OpenAI
 - Anthropic
 - Azure OpenAI
-- OpenAI-compatible APIs (eg. self-hosted models)
 
 ## General Configuration Concepts
 
 For any LLM provider, you'll need to configure API authentication (keys, tokens, or other authentication methods), model selection for different use cases, parameters like context length and token limits, and ensure proper connectivity to provider endpoints.
+
+## Local Models (OpenAI Compatible)
+
+The OpenAI Compatible option allows integration with any OpenAI-compatible LLM provider, such as [Ollama](https://ollama.com/):
+
+### Configuration
+
+1. Deploy your model, for example, on [Ollama](https://ollama.com/)
+2. Select **OpenAI Compatible** in the **AI Service** dropdown
+3. Enter the URL to your AI service from your Mattermost deployment in the **API URL** field. Be sure to include the port, and append `/v1` to the end of the URL if using Ollama. (e.g., `http://localhost:11434/v1` for Ollama, otherwise `http://localhost:11434/`)
+4. If using Ollama, leave the **API Key** field blank
+5. Specify your model name in the **Default Model** field
+
+### Configuration Options
+
+| Setting | Required | Description |
+|---------|----------|-------------|
+| **API URL** | Yes | The endpoint URL for your OpenAI-compatible API |
+| **API Key** | No | API key if your service requires authentication |
+| **Default Model** | Yes | The model to use by default |
+| **Organization ID** | No | Organization ID if your service supports it |
+| **Send User ID** | No | Whether to send user IDs to the service |
+
+### Special Considerations
+
+Ensure your self-hosted solution has sufficient compute resources and test for compatibility with the Mattermost plugin. Some advanced features may not be available with all compatible providers, so adjust token limits based on your deployment's capabilities.
 
 ## OpenAI
 
@@ -69,29 +95,3 @@ For more details about integrating with Microsoft Azure's OpenAI services, see t
 | **API URL** | Yes | Your Azure OpenAI endpoint |
 | **Default Model** | Yes | The model to use by default (see [Azure OpenAI's model documentation](https://learn.microsoft.com/en-us/azure/ai-services/openai/concepts/models)) |
 | **Send User ID** | No | Whether to send user IDs to Azure OpenAI |
-
-## OpenAI Compatible
-
-The OpenAI Compatible option allows integration with any OpenAI-compatible LLM provider, such as [Ollama](https://ollama.com/):
-
-### Configuration
-
-1. Deploy your model, for example, on [Ollama](https://ollama.com/)
-2. Select **OpenAI Compatible** in the **AI Service** dropdown
-3. Enter the URL to your AI service from your Mattermost deployment in the **API URL** field. Be sure to include the port, and append `/v1` to the end of the URL if using Ollama. (e.g., `http://localhost:11434/v1` for Ollama, otherwise `http://localhost:11434/`)
-4. If using Ollama, leave the **API Key** field blank
-5. Specify your model name in the **Default Model** field
-
-### Configuration Options
-
-| Setting | Required | Description |
-|---------|----------|-------------|
-| **API URL** | Yes | The endpoint URL for your OpenAI-compatible API |
-| **API Key** | No | API key if your service requires authentication |
-| **Default Model** | Yes | The model to use by default |
-| **Organization ID** | No | Organization ID if your service supports it |
-| **Send User ID** | No | Whether to send user IDs to the service |
-
-### Special Considerations
-
-Ensure your self-hosted solution has sufficient compute resources and test for compatibility with the Mattermost plugin. Some advanced features may not be available with all compatible providers, so adjust token limits based on your deployment's capabilities.
