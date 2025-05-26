@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/mattermost/mattermost-plugin-ai/agents/threads"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/llm/subtitles"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
@@ -54,13 +55,15 @@ func (p *AgentsService) HandleRegenerate(userID string, post *model.Post, channe
 		siteURL := config.ServiceSettings.SiteURL
 		post.Message = p.analysisPostMessage(user.Locale, threadID, analysisType, *siteURL)
 
-		var err error
-		result, err = p.analyzeThread(bot, threadID, analysisType, p.contextBuilder.BuildLLMContextUserRequest(
+		llmContext := p.contextBuilder.BuildLLMContextUserRequest(
 			bot,
 			user,
 			channel,
 			p.contextBuilder.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.mmBot.UserId, channel)),
-		))
+		)
+
+		var err error
+		result, err = threads.New(p.GetLLM(bot.cfg), p.prompts, p.mmClient).Analyze(threadID, llmContext, analysisType)
 		if err != nil {
 			return fmt.Errorf("could not summarize post on regen: %w", err)
 		}
