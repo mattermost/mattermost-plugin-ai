@@ -71,7 +71,7 @@ func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 	agents := &agents.AgentsService{}
 	agents.SetBotsForTesting(testBots)
 
-	api := New(agents, client, noopMetrics)
+	api := New(agents, nil, nil, client, noopMetrics)
 
 	return &TestEnvironment{
 		api:     api,

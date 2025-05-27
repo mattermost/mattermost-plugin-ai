@@ -5,10 +5,8 @@ package agents
 
 import (
 	"github.com/mattermost/mattermost-plugin-ai/embeddings"
-	"github.com/mattermost/mattermost-plugin-ai/indexer"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mcp"
-	"github.com/mattermost/mattermost-plugin-ai/search"
 )
 
 type Config struct {
@@ -49,42 +47,6 @@ func (p *AgentsService) SetConfiguration(configuration *Config) {
 
 // OnConfigurationChange is invoked when configuration changes may have been made.
 func (p *AgentsService) OnConfigurationChange() error {
-	// Reinitialize search based on new configuration
-	searchConfig := search.Config{
-		EmbeddingSearchConfig: p.getConfiguration().EmbeddingSearchConfig,
-	}
-	newSearch, err := search.InitSearch(p.db, p.llmUpstreamHTTPClient, searchConfig, p.licenseChecker)
-	if err != nil {
-		// Only log the error but don't fail plugin configuration
-		p.pluginAPI.Log.Error("Failed to initialize search, search features will be disabled", "error", err)
-		// Set search to nil to disable search functionality
-		p.search = nil
-		p.searchService = nil
-	} else {
-		p.search = newSearch
-		// Reinitialize search service if search is configured
-		if p.search != nil {
-			p.searchService = search.New(
-				p.search,
-				p.mmClient,
-				p.prompts,
-				p.streamingService,
-				p.GetLLM,
-				p.llmUpstreamHTTPClient,
-				p.db,
-				p.licenseChecker,
-			)
-		}
-	}
-
-	// Reinitialize indexing service with new search
-	p.indexingService = indexer.New(
-		p.search,
-		p.mmClient,
-		p.bots,
-		p.db,
-	)
-
 	// Reinitialize MCP client based on new configuration
 	if p.mcpClientManager != nil {
 		// Close existing client first

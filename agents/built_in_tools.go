@@ -4,7 +4,6 @@
 package agents
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,7 +18,6 @@ import (
 	"github.com/andygrunwald/go-jira"
 	"github.com/google/go-github/v41/github"
 	"github.com/mattermost/mattermost-plugin-ai/bots"
-	"github.com/mattermost/mattermost-plugin-ai/embeddings"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
@@ -349,64 +347,13 @@ func (p *AgentsService) toolGetJiraIssue(context *llm.Context, argsGetter llm.To
 	return result.String(), nil
 }
 
-const MinSearchTermLength = 3
-const MaxSearchTermLength = 300
-
-type SearchServerArgs struct {
-	Term string `jsonschema_description:"The terms to search for in the server. Must be more than 3 and less than 300 characters."`
-}
-
-func (p *AgentsService) toolSearchServer(llmContext *llm.Context, argsGetter llm.ToolArgumentGetter) (string, error) {
-	var args SearchServerArgs
-	err := argsGetter(&args)
-	if err != nil {
-		return "invalid parameters to function", fmt.Errorf("failed to get arguments for tool SearchServer: %w", err)
-	}
-
-	if len(args.Term) < MinSearchTermLength {
-		return "search term too short", errors.New("search term too short")
-	}
-	if len(args.Term) > MaxSearchTermLength {
-		return "search term too long", errors.New("search term too long")
-	}
-
-	// Check if search is initialized
-	if p.search == nil {
-		return "search functionality is not configured", errors.New("search is not configured")
-	}
-
-	ctx := context.Background()
-	searchResults, err := p.search.Search(ctx, args.Term, embeddings.SearchOptions{
-		Limit:  10,
-		UserID: llmContext.RequestingUser.Id,
-	})
-	if err != nil {
-		return "there was an error performing the search", fmt.Errorf("search failed: %w", err)
-	}
-
-	formatted, err := p.formatSearchResults(searchResults)
-	if err != nil {
-		return "there was an error formatting the search results", fmt.Errorf("formatting failed: %w", err)
-	}
-
-	return formatted, nil
-}
-
 // getBuiltInTools returns the built-in tools that are available to all users.
 // isDM is true if the response will be in a DM with the user. More tools are available in DMs because of security properties.
 func (p *AgentsService) GetBuiltInTools(isDM bool, bot *bots.Bot) []llm.Tool {
 	builtInTools := []llm.Tool{}
 
 	if isDM {
-		// Only add the search tool if search is configured
-		if p.search != nil {
-			builtInTools = append(builtInTools, llm.Tool{
-				Name:        "SearchServer",
-				Description: "Search the Mattermost chat server the user is on for messages using semantic search. Use this tool whenever the user asks a question and you don't have the context to answer or you think your response would be more accurate with knowage from the Mattermost server",
-				Schema:      llm.NewJSONSchemaFromStruct(SearchServerArgs{}),
-				Resolver:    p.toolSearchServer,
-			})
-		}
+		// Search tool has been moved to a separate service and is no longer available here
 
 		builtInTools = append(builtInTools, llm.Tool{
 			Name:        "LookupMattermostUser",

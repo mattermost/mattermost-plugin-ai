@@ -13,16 +13,13 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
 	"github.com/mattermost/mattermost-plugin-ai/bots"
-	"github.com/mattermost/mattermost-plugin-ai/embeddings"
 	"github.com/mattermost/mattermost-plugin-ai/enterprise"
 	"github.com/mattermost/mattermost-plugin-ai/httpexternal"
 	"github.com/mattermost/mattermost-plugin-ai/i18n"
-	"github.com/mattermost/mattermost-plugin-ai/indexer"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mcp"
 	"github.com/mattermost/mattermost-plugin-ai/metrics"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
-	"github.com/mattermost/mattermost-plugin-ai/search"
 	"github.com/mattermost/mattermost-plugin-ai/streaming"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
@@ -64,11 +61,6 @@ type AgentsService struct { //nolint:revive
 
 	llmUpstreamHTTPClient *http.Client
 	untrustedHTTPClient   *http.Client
-	search                embeddings.EmbeddingSearch
-
-	// Services
-	indexingService *indexer.Indexer
-	searchService   *search.Search
 
 	mcpClientManager *mcp.ClientManager
 
@@ -140,39 +132,6 @@ func NewAgentsService(
 		func(botid, userID string, post *model.Post, respondingToPostID string) {
 			agentsService.modifyPostForBot(botid, userID, post, respondingToPostID)
 		},
-	)
-
-	// Initialize search if configured
-	searchConfig := search.Config{
-		EmbeddingSearchConfig: configuration.EmbeddingSearchConfig,
-	}
-	agentsService.search, err = search.InitSearch(agentsService.db, agentsService.llmUpstreamHTTPClient, searchConfig, agentsService.licenseChecker)
-	if err != nil {
-		// Only log the error but don't fail plugin activation
-		agentsService.pluginAPI.Log.Error("Failed to initialize search, search features will be disabled", "error", err)
-		agentsService.search = nil
-	}
-
-	// Initialize search service if search is configured
-	if agentsService.search != nil {
-		agentsService.searchService = search.New(
-			agentsService.search,
-			agentsService.mmClient,
-			agentsService.prompts,
-			agentsService.streamingService,
-			agentsService.GetLLM,
-			agentsService.llmUpstreamHTTPClient,
-			agentsService.db,
-			agentsService.licenseChecker,
-		)
-	}
-
-	// Initialize indexing service with a bots adapter
-	agentsService.indexingService = indexer.New(
-		agentsService.search,
-		agentsService.mmClient,
-		agentsService.bots,
-		agentsService.db,
 	)
 
 	// Initialize MCP client manager

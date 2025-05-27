@@ -12,6 +12,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/bots"
 )
 
+// SearchRequest represents a search query request from the API
 type SearchRequest struct {
 	Query      string `json:"query"`
 	TeamID     string `json:"teamId"`
@@ -19,28 +20,11 @@ type SearchRequest struct {
 	MaxResults int    `json:"maxResults"`
 }
 
-type SearchResponse struct {
-	Answer    string      `json:"answer"`
-	Results   []RAGResult `json:"results"`
-	PostID    string      `json:"postId,omitempty"`
-	ChannelID string      `json:"channelId,omitempty"`
-}
-
-type RAGResult struct {
-	PostID      string  `json:"postId"`
-	ChannelID   string  `json:"channelId"`
-	ChannelName string  `json:"channelName"`
-	UserID      string  `json:"userId"`
-	Username    string  `json:"username"`
-	Content     string  `json:"content"`
-	Score       float32 `json:"score"`
-}
-
 func (a *API) handleRunSearch(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	bot := c.MustGet(ContextBotKey).(*bots.Bot)
 
-	if !a.agents.IsSearchEnabled() {
+	if a.searchService == nil {
 		c.AbortWithError(http.StatusBadRequest, fmt.Errorf("search functionality is not configured"))
 		return
 	}
@@ -56,7 +40,7 @@ func (a *API) handleRunSearch(c *gin.Context) {
 		return
 	}
 
-	result, err := a.agents.HandleRunSearch(userID, bot, req.Query, req.TeamID, req.ChannelID, req.MaxResults)
+	result, err := a.searchService.RunSearch(c.Request.Context(), userID, bot, req.Query, req.TeamID, req.ChannelID, req.MaxResults)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
@@ -69,7 +53,7 @@ func (a *API) handleSearchQuery(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	bot := c.MustGet(ContextBotKey).(*bots.Bot)
 
-	if !a.agents.IsSearchEnabled() {
+	if a.searchService == nil {
 		c.AbortWithError(http.StatusBadRequest, fmt.Errorf("search functionality is not configured"))
 		return
 	}
@@ -80,7 +64,7 @@ func (a *API) handleSearchQuery(c *gin.Context) {
 		return
 	}
 
-	response, err := a.agents.HandleSearchQuery(userID, bot, req.Query, req.TeamID, req.ChannelID, req.MaxResults)
+	response, err := a.searchService.SearchQuery(c.Request.Context(), userID, bot, req.Query, req.TeamID, req.ChannelID, req.MaxResults)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return

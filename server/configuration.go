@@ -8,6 +8,15 @@ import (
 	"reflect"
 
 	"github.com/mattermost/mattermost-plugin-ai/agents"
+	"github.com/mattermost/mattermost-plugin-ai/embeddings"
+	"github.com/mattermost/mattermost-plugin-ai/enterprise"
+	"github.com/mattermost/mattermost-plugin-ai/i18n"
+	"github.com/mattermost/mattermost-plugin-ai/indexer"
+	"github.com/mattermost/mattermost-plugin-ai/llm"
+	"github.com/mattermost/mattermost-plugin-ai/mmapi"
+	"github.com/mattermost/mattermost-plugin-ai/search"
+	"github.com/mattermost/mattermost-plugin-ai/streaming"
+	"github.com/mattermost/mattermost/server/public/shared/httpservice"
 )
 
 // configuration captures the plugin's external configuration as exposed in the Mattermost server
@@ -75,13 +84,66 @@ func (p *Plugin) OnConfigurationChange() error {
 		return nil
 	}
 
-	if err := p.bots.EnsureBots(configuration.Config.Bots); err != nil {
+	if err := p.bots.EnsureBots(configuration.Bots); err != nil {
 		return fmt.Errorf("failed to ensure bots: %w", err)
 	}
 
 	if p.agentsService != nil {
 		p.agentsService.SetConfiguration(&configuration.Config)
+		if err := p.agentsService.OnConfigurationChange(); err != nil {
+			return err
+		}
 	}
 
-	return p.agentsService.OnConfigurationChange()
+	// Recreate search/indexer services if embedding configuration changed
+	oldEmbedConfig := p.configuration.EmbeddingSearchConfig
+	newEmbedConfig := configuration.EmbeddingSearchConfig
+
+	if !reflect.DeepEqual(oldEmbedConfig, newEmbedConfig) {
+		// Reinitialize search infrastructure
+		var searchInfrastructure embeddings.EmbeddingSearch
+		licenseChecker := enterprise.NewLicenseChecker(p.pluginAPI)
+		if newEmbedConfig.Type != "" {
+			untrustedHTTPClient := httpservice.MakeHTTPServicePlugin(p.API).MakeClient(false)
+
+			var err error
+			searchInfrastructure, err = search.InitSearch(p.db, untrustedHTTPClient, search.Config{
+				EmbeddingSearchConfig: newEmbedConfig,
+			}, licenseChecker)
+			if err != nil {
+				p.pluginAPI.Log.Error("failed to reinitialize search infrastructure", "error", err)
+				// Continue without search functionality
+			}
+		}
+
+		// Recreate indexer service
+		mmClient := mmapi.NewClient(p.pluginAPI)
+		p.indexerService = indexer.New(searchInfrastructure, mmClient, p.bots, p.db)
+
+		// Recreate search service if search infrastructure is available
+		if searchInfrastructure != nil {
+			prompts, err := llm.NewPrompts(llm.PromptsFolder)
+			if err != nil {
+				p.pluginAPI.Log.Error("failed to initialize prompts", "error", err)
+				return err
+			}
+			i18nBundle := i18n.Init()
+			streamingService := streaming.NewMMPostStreamService(mmClient, i18nBundle, nil)
+
+			p.searchService = search.New(
+				searchInfrastructure,
+				mmClient,
+				prompts,
+				streamingService,
+				p.agentsService.GetLLM,
+				p.llmUpstreamHTTPClient,
+				p.db,
+				licenseChecker,
+			)
+		} else {
+			p.searchService = nil
+		}
+	}
+
+	return nil
 }

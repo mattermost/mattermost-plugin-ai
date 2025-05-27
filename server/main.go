@@ -4,16 +4,25 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"sync"
 	"time"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/mattermost/mattermost-plugin-ai/agents"
 	"github.com/mattermost/mattermost-plugin-ai/api"
 	"github.com/mattermost/mattermost-plugin-ai/bots"
+	"github.com/mattermost/mattermost-plugin-ai/embeddings"
 	"github.com/mattermost/mattermost-plugin-ai/enterprise"
+	"github.com/mattermost/mattermost-plugin-ai/i18n"
+	"github.com/mattermost/mattermost-plugin-ai/indexer"
+	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/metrics"
+	"github.com/mattermost/mattermost-plugin-ai/mmapi"
+	"github.com/mattermost/mattermost-plugin-ai/search"
+	"github.com/mattermost/mattermost-plugin-ai/streaming"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
@@ -36,10 +45,13 @@ type Plugin struct {
 
 	pluginAPI             *pluginapi.Client
 	llmUpstreamHTTPClient *http.Client
+	db                    *sqlx.DB
 
-	agentsService *agents.AgentsService
-	apiService    *api.API
-	bots          *bots.MMBots
+	agentsService  *agents.AgentsService
+	indexerService *indexer.Indexer
+	searchService  *search.Search
+	apiService     *api.API
+	bots           *bots.MMBots
 }
 
 func (p *Plugin) OnActivate() error {
@@ -66,22 +78,64 @@ func (p *Plugin) OnActivate() error {
 
 	p.bots = bots.New(p.API, p.pluginAPI, licenseChecker)
 
-	if err := p.bots.EnsureBots(newCfg.Bots); err != nil {
+	if ensureBotsErr := p.bots.EnsureBots(newCfg.Bots); ensureBotsErr != nil {
 		// If we fail to ensure bots, we log the error but do not return
 		// as it would leave the plugin in a state where it can't be configured from the system console.
-		p.pluginAPI.Log.Error("failed to ensure bots", "error", err)
+		p.pluginAPI.Log.Error("failed to ensure bots", "error", ensureBotsErr)
 	}
 
-	// Initialize the agents service
+	// Set up database
+	mmClient := mmapi.NewClient(p.pluginAPI)
+	dbClient := mmapi.NewDBClient(p.pluginAPI)
+	p.db = dbClient.DB
+
+	// Initialize search and indexer services independently
+	var searchInfrastructure embeddings.EmbeddingSearch
+	if p.configuration.EmbeddingSearchConfig.Type != "" {
+		searchInfrastructure, err = search.InitSearch(p.db, p.llmUpstreamHTTPClient, search.Config{
+			EmbeddingSearchConfig: p.configuration.EmbeddingSearchConfig,
+		}, licenseChecker)
+		if err != nil {
+			p.pluginAPI.Log.Error("failed to initialize search infrastructure", "error", err)
+			// Continue without search functionality
+		}
+	}
+
+	// Initialize indexer service (always created, handles nil search gracefully)
+	p.indexerService = indexer.New(searchInfrastructure, mmClient, p.bots, p.db)
+
+	// Initialize the agents service first (no longer needs search/indexer)
 	agentsService, err := agents.NewAgentsService(p.API, p.pluginAPI, p.llmUpstreamHTTPClient, untrustedHTTPClient, metricsService, &p.configuration.Config, p.bots)
 	if err != nil {
 		return err
 	}
-
 	p.agentsService = agentsService
 
-	// Initialize the API service
-	p.apiService = api.New(agentsService, p.pluginAPI, metricsService)
+	// Initialize search service if search infrastructure is available
+	if searchInfrastructure != nil {
+		prompts, err := llm.NewPrompts(llm.PromptsFolder)
+		if err != nil {
+			p.pluginAPI.Log.Error("failed to initialize prompts", "error", err)
+			return nil
+		}
+		// Create i18n bundle
+		i18nBundle := i18n.Init()
+		streamingService := streaming.NewMMPostStreamService(mmClient, i18nBundle, nil)
+
+		p.searchService = search.New(
+			searchInfrastructure,
+			mmClient,
+			prompts,
+			streamingService,
+			p.agentsService.GetLLM, // Now we can use the actual LLM function
+			p.llmUpstreamHTTPClient,
+			p.db,
+			licenseChecker,
+		)
+	}
+
+	// Initialize the API service with all services
+	p.apiService = api.New(p.agentsService, p.indexerService, p.searchService, p.pluginAPI, metricsService)
 
 	return nil
 }
@@ -97,11 +151,42 @@ func (p *Plugin) OnDeactivate() error {
 }
 
 func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
+	// Index the new message in the vector database
+	if p.indexerService != nil {
+		// Get channel to retrieve team ID
+		channel, err := p.API.GetChannel(post.ChannelId)
+		if err != nil {
+			p.pluginAPI.Log.Error("Failed to get channel for post indexing", "error", err)
+		} else {
+			if err := p.indexerService.IndexPost(context.Background(), post, channel); err != nil {
+				p.pluginAPI.Log.Error("Failed to index post in vector database", "error", err)
+			}
+		}
+	}
+
+	// Keep existing AgentsService calls for other functionality
 	p.agentsService.MessageHasBeenPosted(c, post)
 }
 
 func (p *Plugin) MessageHasBeenUpdated(c *plugin.Context, newPost, oldPost *model.Post) {
-	p.agentsService.MessageHasBeenUpdated(c, newPost, oldPost)
+	// Handle indexing of updated posts
+	if p.indexerService != nil {
+		// Delete the old post from index
+		if err := p.indexerService.DeletePost(context.Background(), oldPost.Id); err != nil {
+			p.pluginAPI.Log.Error("Failed to delete post from vector database", "error", err)
+		}
+
+		// Get channel to retrieve team ID
+		channel, err := p.API.GetChannel(newPost.ChannelId)
+		if err != nil {
+			p.pluginAPI.Log.Error("Failed to get channel for post indexing", "error", err)
+		} else {
+			// Index the updated post
+			if err := p.indexerService.IndexPost(context.Background(), newPost, channel); err != nil {
+				p.pluginAPI.Log.Error("Failed to index updated post in vector database", "error", err)
+			}
+		}
+	}
 }
 
 func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Request) {

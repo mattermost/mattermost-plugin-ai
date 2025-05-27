@@ -257,11 +257,6 @@ func (p *AgentsService) GetAIBots(userID string) ([]AIBotInfo, error) {
 	return bots, nil
 }
 
-// IsSearchEnabled returns whether search functionality is enabled
-func (p *AgentsService) IsSearchEnabled() bool {
-	return p.search != nil && p.searchService != nil && p.getConfiguration().EmbeddingSearchConfig.Type != ""
-}
-
 // IsBasicsLicensed returns whether the basic features are licensed
 func (p *AgentsService) IsBasicsLicensed() bool {
 	return p.licenseChecker.IsBasicsLicensed()

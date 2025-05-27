@@ -28,16 +28,16 @@ const (
 	UnsafeLinksPostProp = "unsafe_links"
 )
 
-// SearchRequest represents a search query request
-type SearchRequest struct {
+// Request represents a search query request
+type Request struct {
 	Query      string `json:"query"`
 	TeamID     string `json:"teamId"`
 	ChannelID  string `json:"channelId"`
 	MaxResults int    `json:"maxResults"`
 }
 
-// SearchResponse represents a response to a search query
-type SearchResponse struct {
+// Response represents a response to a search query
+type Response struct {
 	Answer    string      `json:"answer"`
 	Results   []RAGResult `json:"results"`
 	PostID    string      `json:"postId,omitempty"`
@@ -146,25 +146,6 @@ func (s *Search) convertToRAGResults(searchResults []embeddings.SearchResult) []
 	}
 
 	return ragResults
-}
-
-// formatSearchResults formats search results using the template system
-func (s *Search) formatSearchResults(results []embeddings.SearchResult) (string, error) {
-	ragResults := s.convertToRAGResults(results)
-
-	// Create context for the prompt
-	ctx := llm.NewContext()
-	ctx.Parameters = map[string]interface{}{
-		"Results": ragResults,
-	}
-
-	// Format using the search_results template
-	formatted, err := s.prompts.Format("search_results", ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to format search results: %w", err)
-	}
-
-	return formatted, nil
 }
 
 // RunSearch initiates a search and sends results to a DM
@@ -305,9 +286,9 @@ func (s *Search) RunSearch(ctx context.Context, userID string, bot *bots.Bot, qu
 }
 
 // SearchQuery performs a search and returns results immediately
-func (s *Search) SearchQuery(ctx context.Context, userID string, bot *bots.Bot, query, teamID, channelID string, maxResults int) (SearchResponse, error) {
+func (s *Search) SearchQuery(ctx context.Context, userID string, bot *bots.Bot, query, teamID, channelID string, maxResults int) (Response, error) {
 	if s.search == nil {
-		return SearchResponse{}, fmt.Errorf("search functionality is not configured")
+		return Response{}, fmt.Errorf("search functionality is not configured")
 	}
 
 	if maxResults == 0 {
@@ -322,12 +303,12 @@ func (s *Search) SearchQuery(ctx context.Context, userID string, bot *bots.Bot, 
 		UserID:    userID,
 	})
 	if err != nil {
-		return SearchResponse{}, fmt.Errorf("search failed: %w", err)
+		return Response{}, fmt.Errorf("search failed: %w", err)
 	}
 
 	ragResults := s.convertToRAGResults(searchResults)
 	if len(ragResults) == 0 {
-		return SearchResponse{
+		return Response{
 			Answer:  "I couldn't find any relevant messages for your query. Please try a different search term.",
 			Results: []RAGResult{},
 		}, nil
@@ -341,7 +322,7 @@ func (s *Search) SearchQuery(ctx context.Context, userID string, bot *bots.Bot, 
 
 	systemMessage, err := s.prompts.Format("search_system", promptCtx)
 	if err != nil {
-		return SearchResponse{}, fmt.Errorf("failed to format system message: %w", err)
+		return Response{}, fmt.Errorf("failed to format system message: %w", err)
 	}
 
 	prompt := llm.CompletionRequest{
@@ -360,10 +341,10 @@ func (s *Search) SearchQuery(ctx context.Context, userID string, bot *bots.Bot, 
 
 	answer, err := s.llmService(bot.GetConfig()).ChatCompletionNoStream(prompt)
 	if err != nil {
-		return SearchResponse{}, fmt.Errorf("failed to generate answer: %w", err)
+		return Response{}, fmt.Errorf("failed to generate answer: %w", err)
 	}
 
-	return SearchResponse{
+	return Response{
 		Answer:  answer,
 		Results: ragResults,
 	}, nil

@@ -11,9 +11,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/mattermost/mattermost-plugin-ai/agents"
+	"github.com/mattermost/mattermost-plugin-ai/indexer"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/metrics"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
+	"github.com/mattermost/mattermost-plugin-ai/search"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 )
@@ -27,6 +29,8 @@ const (
 // API represents the HTTP API functionality for the plugin
 type API struct {
 	agents         *agents.AgentsService
+	indexerService *indexer.Indexer
+	searchService  *search.Search
 	pluginAPI      *pluginapi.Client
 	metricsService metrics.Metrics
 	metricsHandler http.Handler
@@ -36,9 +40,17 @@ type API struct {
 }
 
 // New creates a new API instance
-func New(agentsService *agents.AgentsService, pluginAPI *pluginapi.Client, metricsService metrics.Metrics) *API {
+func New(
+	agentsService *agents.AgentsService,
+	indexerService *indexer.Indexer,
+	searchService *search.Search,
+	pluginAPI *pluginapi.Client,
+	metricsService metrics.Metrics,
+) *API {
 	return &API{
 		agents:         agentsService,
+		indexerService: indexerService,
+		searchService:  searchService,
 		pluginAPI:      pluginAPI,
 		metricsService: metricsService,
 		metricsHandler: metrics.NewMetricsHandler(metricsService),
@@ -179,7 +191,7 @@ func (a *API) handleGetAIBots(c *gin.Context) {
 	}
 
 	// Check if search is enabled
-	searchEnabled := a.agents.IsSearchEnabled()
+	searchEnabled := a.searchService != nil
 
 	c.JSON(http.StatusOK, AIBotsResponse{
 		Bots:          bots,
