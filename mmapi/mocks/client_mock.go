@@ -81,6 +81,257 @@ func (_c *MockClient_AddReaction_Call) RunAndReturn(run func(reaction *model.Rea
 	return _c
 }
 
+// CreatePost provides a mock function for the type MockClient
+func (_mock *MockClient) CreatePost(post *model.Post) error {
+	ret := _mock.Called(post)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CreatePost")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(*model.Post) error); ok {
+		r0 = returnFunc(post)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockClient_CreatePost_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CreatePost'
+type MockClient_CreatePost_Call struct {
+	*mock.Call
+}
+
+// CreatePost is a helper method to define mock.On call
+//   - post
+func (_e *MockClient_Expecter) CreatePost(post interface{}) *MockClient_CreatePost_Call {
+	return &MockClient_CreatePost_Call{Call: _e.mock.On("CreatePost", post)}
+}
+
+func (_c *MockClient_CreatePost_Call) Run(run func(post *model.Post)) *MockClient_CreatePost_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(*model.Post))
+	})
+	return _c
+}
+
+func (_c *MockClient_CreatePost_Call) Return(err error) *MockClient_CreatePost_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockClient_CreatePost_Call) RunAndReturn(run func(post *model.Post) error) *MockClient_CreatePost_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// DM provides a mock function for the type MockClient
+func (_mock *MockClient) DM(senderID string, receiverID string, post *model.Post) error {
+	ret := _mock.Called(senderID, receiverID, post)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DM")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(string, string, *model.Post) error); ok {
+		r0 = returnFunc(senderID, receiverID, post)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockClient_DM_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DM'
+type MockClient_DM_Call struct {
+	*mock.Call
+}
+
+// DM is a helper method to define mock.On call
+//   - senderID
+//   - receiverID
+//   - post
+func (_e *MockClient_Expecter) DM(senderID interface{}, receiverID interface{}, post interface{}) *MockClient_DM_Call {
+	return &MockClient_DM_Call{Call: _e.mock.On("DM", senderID, receiverID, post)}
+}
+
+func (_c *MockClient_DM_Call) Run(run func(senderID string, receiverID string, post *model.Post)) *MockClient_DM_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(string), args[1].(string), args[2].(*model.Post))
+	})
+	return _c
+}
+
+func (_c *MockClient_DM_Call) Return(err error) *MockClient_DM_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockClient_DM_Call) RunAndReturn(run func(senderID string, receiverID string, post *model.Post) error) *MockClient_DM_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetChannel provides a mock function for the type MockClient
+func (_mock *MockClient) GetChannel(channelID string) (*model.Channel, error) {
+	ret := _mock.Called(channelID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetChannel")
+	}
+
+	var r0 *model.Channel
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(string) (*model.Channel, error)); ok {
+		return returnFunc(channelID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(string) *model.Channel); ok {
+		r0 = returnFunc(channelID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*model.Channel)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(string) error); ok {
+		r1 = returnFunc(channelID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockClient_GetChannel_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetChannel'
+type MockClient_GetChannel_Call struct {
+	*mock.Call
+}
+
+// GetChannel is a helper method to define mock.On call
+//   - channelID
+func (_e *MockClient_Expecter) GetChannel(channelID interface{}) *MockClient_GetChannel_Call {
+	return &MockClient_GetChannel_Call{Call: _e.mock.On("GetChannel", channelID)}
+}
+
+func (_c *MockClient_GetChannel_Call) Run(run func(channelID string)) *MockClient_GetChannel_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(string))
+	})
+	return _c
+}
+
+func (_c *MockClient_GetChannel_Call) Return(channel *model.Channel, err error) *MockClient_GetChannel_Call {
+	_c.Call.Return(channel, err)
+	return _c
+}
+
+func (_c *MockClient_GetChannel_Call) RunAndReturn(run func(channelID string) (*model.Channel, error)) *MockClient_GetChannel_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetConfig provides a mock function for the type MockClient
+func (_mock *MockClient) GetConfig() *model.Config {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetConfig")
+	}
+
+	var r0 *model.Config
+	if returnFunc, ok := ret.Get(0).(func() *model.Config); ok {
+		r0 = returnFunc()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*model.Config)
+		}
+	}
+	return r0
+}
+
+// MockClient_GetConfig_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetConfig'
+type MockClient_GetConfig_Call struct {
+	*mock.Call
+}
+
+// GetConfig is a helper method to define mock.On call
+func (_e *MockClient_Expecter) GetConfig() *MockClient_GetConfig_Call {
+	return &MockClient_GetConfig_Call{Call: _e.mock.On("GetConfig")}
+}
+
+func (_c *MockClient_GetConfig_Call) Run(run func()) *MockClient_GetConfig_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockClient_GetConfig_Call) Return(config *model.Config) *MockClient_GetConfig_Call {
+	_c.Call.Return(config)
+	return _c
+}
+
+func (_c *MockClient_GetConfig_Call) RunAndReturn(run func() *model.Config) *MockClient_GetConfig_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetDirectChannel provides a mock function for the type MockClient
+func (_mock *MockClient) GetDirectChannel(userID1 string, userID2 string) (*model.Channel, error) {
+	ret := _mock.Called(userID1, userID2)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetDirectChannel")
+	}
+
+	var r0 *model.Channel
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(string, string) (*model.Channel, error)); ok {
+		return returnFunc(userID1, userID2)
+	}
+	if returnFunc, ok := ret.Get(0).(func(string, string) *model.Channel); ok {
+		r0 = returnFunc(userID1, userID2)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*model.Channel)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(string, string) error); ok {
+		r1 = returnFunc(userID1, userID2)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockClient_GetDirectChannel_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetDirectChannel'
+type MockClient_GetDirectChannel_Call struct {
+	*mock.Call
+}
+
+// GetDirectChannel is a helper method to define mock.On call
+//   - userID1
+//   - userID2
+func (_e *MockClient_Expecter) GetDirectChannel(userID1 interface{}, userID2 interface{}) *MockClient_GetDirectChannel_Call {
+	return &MockClient_GetDirectChannel_Call{Call: _e.mock.On("GetDirectChannel", userID1, userID2)}
+}
+
+func (_c *MockClient_GetDirectChannel_Call) Run(run func(userID1 string, userID2 string)) *MockClient_GetDirectChannel_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(string), args[1].(string))
+	})
+	return _c
+}
+
+func (_c *MockClient_GetDirectChannel_Call) Return(channel *model.Channel, err error) *MockClient_GetDirectChannel_Call {
+	_c.Call.Return(channel, err)
+	return _c
+}
+
+func (_c *MockClient_GetDirectChannel_Call) RunAndReturn(run func(userID1 string, userID2 string) (*model.Channel, error)) *MockClient_GetDirectChannel_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetFirstPostBeforeTimeRangeID provides a mock function for the type MockClient
 func (_mock *MockClient) GetFirstPostBeforeTimeRangeID(channelID string, startTime int64, endTime int64) (string, error) {
 	ret := _mock.Called(channelID, startTime, endTime)
@@ -417,6 +668,129 @@ func (_c *MockClient_GetUser_Call) Return(user *model.User, err error) *MockClie
 }
 
 func (_c *MockClient_GetUser_Call) RunAndReturn(run func(userID string) (*model.User, error)) *MockClient_GetUser_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// LogError provides a mock function for the type MockClient
+func (_mock *MockClient) LogError(msg string, keyValuePairs ...interface{}) {
+	if len(keyValuePairs) > 0 {
+		_mock.Called(msg, keyValuePairs)
+	} else {
+		_mock.Called(msg)
+	}
+
+	return
+}
+
+// MockClient_LogError_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'LogError'
+type MockClient_LogError_Call struct {
+	*mock.Call
+}
+
+// LogError is a helper method to define mock.On call
+//   - msg
+//   - keyValuePairs
+func (_e *MockClient_Expecter) LogError(msg interface{}, keyValuePairs ...interface{}) *MockClient_LogError_Call {
+	return &MockClient_LogError_Call{Call: _e.mock.On("LogError",
+		append([]interface{}{msg}, keyValuePairs...)...)}
+}
+
+func (_c *MockClient_LogError_Call) Run(run func(msg string, keyValuePairs ...interface{})) *MockClient_LogError_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		variadicArgs := args[1].([]interface{})
+		run(args[0].(string), variadicArgs...)
+	})
+	return _c
+}
+
+func (_c *MockClient_LogError_Call) Return() *MockClient_LogError_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *MockClient_LogError_Call) RunAndReturn(run func(msg string, keyValuePairs ...interface{})) *MockClient_LogError_Call {
+	_c.Run(run)
+	return _c
+}
+
+// PublishWebSocketEvent provides a mock function for the type MockClient
+func (_mock *MockClient) PublishWebSocketEvent(event string, payload map[string]interface{}, broadcast *model.WebsocketBroadcast) {
+	_mock.Called(event, payload, broadcast)
+	return
+}
+
+// MockClient_PublishWebSocketEvent_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'PublishWebSocketEvent'
+type MockClient_PublishWebSocketEvent_Call struct {
+	*mock.Call
+}
+
+// PublishWebSocketEvent is a helper method to define mock.On call
+//   - event
+//   - payload
+//   - broadcast
+func (_e *MockClient_Expecter) PublishWebSocketEvent(event interface{}, payload interface{}, broadcast interface{}) *MockClient_PublishWebSocketEvent_Call {
+	return &MockClient_PublishWebSocketEvent_Call{Call: _e.mock.On("PublishWebSocketEvent", event, payload, broadcast)}
+}
+
+func (_c *MockClient_PublishWebSocketEvent_Call) Run(run func(event string, payload map[string]interface{}, broadcast *model.WebsocketBroadcast)) *MockClient_PublishWebSocketEvent_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(string), args[1].(map[string]interface{}), args[2].(*model.WebsocketBroadcast))
+	})
+	return _c
+}
+
+func (_c *MockClient_PublishWebSocketEvent_Call) Return() *MockClient_PublishWebSocketEvent_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *MockClient_PublishWebSocketEvent_Call) RunAndReturn(run func(event string, payload map[string]interface{}, broadcast *model.WebsocketBroadcast)) *MockClient_PublishWebSocketEvent_Call {
+	_c.Run(run)
+	return _c
+}
+
+// UpdatePost provides a mock function for the type MockClient
+func (_mock *MockClient) UpdatePost(post *model.Post) error {
+	ret := _mock.Called(post)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdatePost")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(*model.Post) error); ok {
+		r0 = returnFunc(post)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockClient_UpdatePost_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdatePost'
+type MockClient_UpdatePost_Call struct {
+	*mock.Call
+}
+
+// UpdatePost is a helper method to define mock.On call
+//   - post
+func (_e *MockClient_Expecter) UpdatePost(post interface{}) *MockClient_UpdatePost_Call {
+	return &MockClient_UpdatePost_Call{Call: _e.mock.On("UpdatePost", post)}
+}
+
+func (_c *MockClient_UpdatePost_Call) Run(run func(post *model.Post)) *MockClient_UpdatePost_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(*model.Post))
+	})
+	return _c
+}
+
+func (_c *MockClient_UpdatePost_Call) Return(err error) *MockClient_UpdatePost_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockClient_UpdatePost_Call) RunAndReturn(run func(post *model.Post) error) *MockClient_UpdatePost_Call {
 	_c.Call.Return(run)
 	return _c
 }

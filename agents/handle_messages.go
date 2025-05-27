@@ -115,7 +115,7 @@ func (p *AgentsService) handleMentions(bot *bots.Bot, post *model.Post, postingU
 		ChannelId: channel.Id,
 		RootId:    responseRootID,
 	}
-	if err := p.streamResultToNewPost(bot.GetMMBot().UserId, postingUser.Id, stream, responsePost, post.Id); err != nil {
+	if err := p.streamingService.StreamToNewPost(context.Background(), bot.GetMMBot().UserId, postingUser.Id, stream, responsePost, post.Id); err != nil {
 		return fmt.Errorf("unable to stream response: %w", err)
 	}
 
@@ -141,7 +141,7 @@ func (p *AgentsService) handleDMs(bot *bots.Bot, channel *model.Channel, posting
 		ChannelId: channel.Id,
 		RootId:    responseRootID,
 	}
-	if err := p.streamResultToNewPost(bot.GetMMBot().UserId, postingUser.Id, stream, responsePost, post.Id); err != nil {
+	if err := p.streamingService.StreamToNewPost(context.Background(), bot.GetMMBot().UserId, postingUser.Id, stream, responsePost, post.Id); err != nil {
 		return fmt.Errorf("unable to stream response: %w", err)
 	}
 

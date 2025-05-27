@@ -12,6 +12,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/agents/format"
 	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
+	"github.com/mattermost/mattermost-plugin-ai/streaming"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
@@ -124,7 +125,7 @@ func (p *AgentsService) PostToAIPost(bot *bots.Bot, post *model.Post) llm.Post {
 	}
 
 	// Check for tools
-	pendingToolsProp := post.GetProp(ToolCallProp)
+	pendingToolsProp := post.GetProp(streaming.ToolCallProp)
 	tools := []llm.ToolCall{}
 	pendingTools, ok := pendingToolsProp.(string)
 	if ok {

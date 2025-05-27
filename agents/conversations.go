@@ -20,7 +20,6 @@ import (
 const RespondingToProp = "responding_to"
 const LLMRequesterUserID = "llm_requester_user_id"
 const NoRegen = "no_regen"
-const ToolCallProp = "pending_tool_call"
 
 // AIThread represents a user's conversation with an AI
 type AIThread struct {
@@ -270,7 +269,7 @@ func (p *AgentsService) IsBasicsLicensed() bool {
 
 // StopPostStreaming stops streaming to a post
 func (p *AgentsService) StopPostStreaming(postID string) {
-	p.stopPostStreaming(postID)
+	p.streamingService.StopStreaming(postID)
 }
 
 // CheckUsageRestrictions checks if a user can use a bot in a channel

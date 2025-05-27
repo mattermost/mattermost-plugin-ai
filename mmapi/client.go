@@ -16,24 +16,48 @@ type Client interface {
 	GetPostsSince(channelID string, since int64) (*model.PostList, error)
 	GetFirstPostBeforeTimeRangeID(channelID string, startTime, endTime int64) (string, error)
 	GetPostsBefore(channelID, postID string, page, perPage int) (*model.PostList, error)
+	CreatePost(post *model.Post) error
+	UpdatePost(post *model.Post) error
+	DM(senderID, receiverID string, post *model.Post) error
+	GetChannel(channelID string) (*model.Channel, error)
+	GetDirectChannel(userID1, userID2 string) (*model.Channel, error)
+	PublishWebSocketEvent(event string, payload map[string]interface{}, broadcast *model.WebsocketBroadcast)
+	GetConfig() *model.Config
+	LogError(msg string, keyValuePairs ...interface{})
 }
 
 func NewClient(pluginAPI *pluginapi.Client) Client {
 	return &client{
-		PostService: pluginAPI.Post,
-		UserService: pluginAPI.User,
-		pluginAPI:   pluginAPI,
-		DBClient:    NewDBClient(pluginAPI),
+		PostService:          pluginAPI.Post,
+		UserService:          pluginAPI.User,
+		FrontendService:      pluginAPI.Frontend,
+		ConfigurationService: pluginAPI.Configuration,
+		pluginAPI:            pluginAPI,
+		DBClient:             NewDBClient(pluginAPI),
 	}
 }
 
 type client struct {
 	pluginapi.PostService
 	pluginapi.UserService
+	pluginapi.FrontendService
+	pluginapi.ConfigurationService
 	*DBClient
 	pluginAPI *pluginapi.Client
 }
 
 func (m *client) GetUser(userID string) (*model.User, error) {
 	return m.pluginAPI.User.Get(userID)
+}
+
+func (m *client) GetChannel(channelID string) (*model.Channel, error) {
+	return m.pluginAPI.Channel.Get(channelID)
+}
+
+func (m *client) GetDirectChannel(userID1, userID2 string) (*model.Channel, error) {
+	return m.pluginAPI.Channel.GetDirect(userID1, userID2)
+}
+
+func (m *client) LogError(msg string, keyValuePairs ...interface{}) {
+	m.pluginAPI.Log.Error(msg, keyValuePairs...)
 }

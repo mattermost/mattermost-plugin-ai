@@ -4,6 +4,7 @@
 package agents
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os/exec"
@@ -20,6 +21,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/mcp"
 	"github.com/mattermost/mattermost-plugin-ai/metrics"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
+	"github.com/mattermost/mattermost-plugin-ai/streaming"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
@@ -50,12 +52,8 @@ type AgentsService struct { //nolint:revive
 
 	prompts *llm.Prompts
 
-	// streamingContexts maps post IDs to their streaming contexts
-	// All operations on this map MUST be protected by streamingContextsMutex
-	// The map is initialized in OnActivate and its accesses are protected
-	// in stopPostStreaming, getPostStreamingContext, and finishPostStreaming
-	streamingContexts      map[string]PostStreamContext
-	streamingContextsMutex sync.Mutex
+	// streamingService handles all post streaming functionality
+	streamingService streaming.Service
 
 	licenseChecker *enterprise.LicenseChecker
 	metricsService metrics.Metrics
@@ -129,7 +127,14 @@ func NewAgentsService(
 		agentsService.pluginAPI.Log.Error("ffmpeg not installed, transcriptions will be disabled.", "error", err)
 	}
 
-	agentsService.streamingContexts = map[string]PostStreamContext{}
+	// Initialize streaming service
+	agentsService.streamingService = streaming.NewMMPostStreamService(
+		agentsService.mmClient,
+		agentsService.i18n,
+		func(botid, userID string, post *model.Post, respondingToPostID string) {
+			agentsService.modifyPostForBot(botid, userID, post, respondingToPostID)
+		},
+	)
 
 	// Initialize search if configured
 	agentsService.search, err = agentsService.initSearch()
@@ -199,7 +204,7 @@ func (p *AgentsService) GetMMClient() mmapi.Client {
 
 // StreamResultToNewDM streams result to a new direct message (exported wrapper)
 func (p *AgentsService) StreamResultToNewDM(botid string, stream *llm.TextStreamResult, userID string, post *model.Post, respondingToPostID string) error {
-	return p.streamResultToNewDM(botid, stream, userID, post, respondingToPostID)
+	return p.streamingService.StreamToNewDM(context.TODO(), botid, stream, userID, post, respondingToPostID)
 }
 
 // SaveTitleAsync saves a title asynchronously (exported wrapper)

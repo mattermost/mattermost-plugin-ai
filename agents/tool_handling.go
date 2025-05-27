@@ -4,6 +4,7 @@
 package agents
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
+	"github.com/mattermost/mattermost-plugin-ai/streaming"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
@@ -26,7 +28,7 @@ func (p *AgentsService) HandleToolCall(userID string, post *model.Post, channel 
 		return err
 	}
 
-	toolsJSON := post.GetProp(ToolCallProp)
+	toolsJSON := post.GetProp(streaming.ToolCallProp)
 	if toolsJSON == nil {
 		return errors.New("post missing pending tool calls")
 	}
@@ -37,7 +39,7 @@ func (p *AgentsService) HandleToolCall(userID string, post *model.Post, channel 
 		return errors.New("post pending tool calls not valid JSON")
 	}
 
-	context := p.contextBuilder.BuildLLMContextUserRequest(
+	llmContext := p.contextBuilder.BuildLLMContextUserRequest(
 		bot,
 		user,
 		channel,
@@ -46,9 +48,9 @@ func (p *AgentsService) HandleToolCall(userID string, post *model.Post, channel 
 
 	for i := range tools {
 		if slices.Contains(acceptedToolIDs, tools[i].ID) {
-			result, resolveErr := context.Tools.ResolveTool(tools[i].Name, func(args any) error {
+			result, resolveErr := llmContext.Tools.ResolveTool(tools[i].Name, func(args any) error {
 				return json.Unmarshal(tools[i].Arguments, args)
-			}, context)
+			}, llmContext)
 			if resolveErr != nil {
 				// Maybe in the future we can return this to the user and have a retry. For now just tell the LLM it failed.
 				tools[i].Result = "Tool call failed"
@@ -73,7 +75,7 @@ func (p *AgentsService) HandleToolCall(userID string, post *model.Post, channel 
 	if err != nil {
 		return fmt.Errorf("failed to marshal tool call results: %w", err)
 	}
-	post.AddProp(ToolCallProp, string(resolvedToolsJSON))
+	post.AddProp(streaming.ToolCallProp, string(resolvedToolsJSON))
 
 	if updateErr := p.pluginAPI.Post.UpdatePost(post); updateErr != nil {
 		return fmt.Errorf("failed to update post with tool call results: %w", updateErr)
@@ -93,14 +95,14 @@ func (p *AgentsService) HandleToolCall(userID string, post *model.Post, channel 
 	previousConversation.CutoffBeforePostID(post.Id)
 	previousConversation.Posts = append(previousConversation.Posts, post)
 
-	posts, err := p.existingConversationToLLMPosts(bot, previousConversation, context)
+	posts, err := p.existingConversationToLLMPosts(bot, previousConversation, llmContext)
 	if err != nil {
 		return fmt.Errorf("failed to convert existing conversation to LLM posts: %w", err)
 	}
 
 	completionRequest := llm.CompletionRequest{
 		Posts:   posts,
-		Context: context,
+		Context: llmContext,
 	}
 	result, err := p.GetLLM(bot.GetConfig()).ChatCompletion(completionRequest)
 	if err != nil {
@@ -111,7 +113,7 @@ func (p *AgentsService) HandleToolCall(userID string, post *model.Post, channel 
 		ChannelId: channel.Id,
 		RootId:    responseRootID,
 	}
-	if err := p.streamResultToNewPost(bot.GetMMBot().UserId, user.Id, result, responsePost, post.Id); err != nil {
+	if err := p.streamingService.StreamToNewPost(context.Background(), bot.GetMMBot().UserId, user.Id, result, responsePost, post.Id); err != nil {
 		return fmt.Errorf("failed to stream result to new post: %w", err)
 	}
 

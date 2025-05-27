@@ -4,6 +4,7 @@
 package agents
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/mattermost/mattermost-plugin-ai/agents/threads"
@@ -26,7 +27,7 @@ func (p *AgentsService) ThreadAnalysis(userID string, bot *bots.Bot, post *model
 		return nil, fmt.Errorf("unable to get user: %w", err)
 	}
 
-	context := p.contextBuilder.BuildLLMContextUserRequest(
+	llmContext := p.contextBuilder.BuildLLMContextUserRequest(
 		bot,
 		user,
 		channel,
@@ -39,13 +40,13 @@ func (p *AgentsService) ThreadAnalysis(userID string, bot *bots.Bot, post *model
 	switch analysisType {
 	case "summarize_thread":
 		title = "Thread Summary"
-		analysisStream, err = analyzer.Summarize(post.Id, context)
+		analysisStream, err = analyzer.Summarize(post.Id, llmContext)
 	case "action_items":
 		title = "Action Items"
-		analysisStream, err = analyzer.FindActionItems(post.Id, context)
+		analysisStream, err = analyzer.FindActionItems(post.Id, llmContext)
 	case "open_questions":
 		title = "Open Questions"
-		analysisStream, err = analyzer.FindOpenQuestions(post.Id, context)
+		analysisStream, err = analyzer.FindOpenQuestions(post.Id, llmContext)
 	default:
 		return nil, fmt.Errorf("invalid analysis type: %s", analysisType)
 	}
@@ -53,8 +54,8 @@ func (p *AgentsService) ThreadAnalysis(userID string, bot *bots.Bot, post *model
 		return nil, fmt.Errorf("failed to analyze thread: %w", err)
 	}
 
-	analysisPost := p.makeAnalysisPost(context.RequestingUser.Locale, post.Id, analysisType)
-	if err := p.streamResultToNewDM(bot.GetMMBot().UserId, analysisStream, context.RequestingUser.Id, analysisPost, post.Id); err != nil {
+	analysisPost := p.makeAnalysisPost(llmContext.RequestingUser.Locale, post.Id, analysisType)
+	if err := p.streamingService.StreamToNewDM(context.Background(), bot.GetMMBot().UserId, analysisStream, llmContext.RequestingUser.Id, analysisPost, post.Id); err != nil {
 		return nil, err
 	}
 

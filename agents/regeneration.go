@@ -12,6 +12,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/llm/subtitles"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
+	"github.com/mattermost/mattermost-plugin-ai/streaming"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
@@ -35,17 +36,17 @@ func (p *AgentsService) HandleRegenerate(userID string, post *model.Post, channe
 		return fmt.Errorf("unable to get user to regen post: %w", err)
 	}
 
-	ctx, err := p.getPostStreamingContext(context.Background(), post.Id)
+	ctx, err := p.streamingService.GetStreamingContext(context.Background(), post.Id)
 	if err != nil {
 		return fmt.Errorf("unable to get post streaming context: %w", err)
 	}
-	defer p.finishPostStreaming(post.Id)
+	defer p.streamingService.FinishStreaming(post.Id)
 
 	threadIDProp := post.GetProp(ThreadIDProp)
 	analysisTypeProp := post.GetProp(AnalysisTypeProp)
 	referenceRecordingFileIDProp := post.GetProp(ReferencedRecordingFileID)
 	referencedTranscriptPostProp := post.GetProp(ReferencedTranscriptPostID)
-	post.DelProp(ToolCallProp)
+	post.DelProp(streaming.ToolCallProp)
 	var result *llm.TextStreamResult
 	switch {
 	case threadIDProp != nil:
@@ -169,13 +170,13 @@ func (p *AgentsService) HandleRegenerate(userID string, post *model.Post, channe
 
 	if mmapi.IsDMWith(bot.GetMMBot().UserId, channel) {
 		if channel.Name == bot.GetMMBot().UserId+"__"+user.Id || channel.Name == user.Id+"__"+bot.GetMMBot().UserId {
-			p.streamResultToPost(ctx, result, post, user.Locale)
+			p.streamingService.StreamToPost(ctx, result, post, user.Locale)
 			return nil
 		}
 	}
 
 	config := p.pluginAPI.Configuration.GetConfig()
-	p.streamResultToPost(ctx, result, post, *config.LocalizationSettings.DefaultServerLocale)
+	p.streamingService.StreamToPost(ctx, result, post, *config.LocalizationSettings.DefaultServerLocale)
 
 	return nil
 }

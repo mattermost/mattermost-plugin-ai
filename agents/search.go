@@ -243,14 +243,14 @@ func (p *AgentsService) HandleRunSearch(userID string, bot *bots.Bot, query, tea
 			return
 		}
 
-		streamContext, err := p.getPostStreamingContext(ctx, responsePost.Id)
+		streamContext, err := p.streamingService.GetStreamingContext(ctx, responsePost.Id)
 		if err != nil {
 			p.pluginAPI.Log.Error("Error getting post streaming context", "error", err)
 			processingError = err
 			return
 		}
-		defer p.finishPostStreaming(responsePost.Id)
-		p.streamResultToPost(streamContext, resultStream, responsePost, "")
+		defer p.streamingService.FinishStreaming(responsePost.Id)
+		p.streamingService.StreamToPost(streamContext, resultStream, responsePost, "")
 	}(context.Background(), query, teamID, channelID, maxResults)
 
 	return map[string]string{

@@ -199,7 +199,7 @@ func (p *AgentsService) newCallTranscriptionSummaryThread(bot *bots.Bot, request
 			Message:   "",
 		}
 		summaryPost.AddProp(ReferencedTranscriptPostID, transcriptionPost.Id)
-		if err := p.streamResultToNewPost(bot.GetMMBot().UserId, requestingUser.Id, summaryStream, summaryPost, transcriptionPost.Id); err != nil {
+		if err := p.streamingService.StreamToNewPost(context.Background(), bot.GetMMBot().UserId, requestingUser.Id, summaryStream, summaryPost, transcriptionPost.Id); err != nil {
 			return fmt.Errorf("unable to stream result to post: %w", err)
 		}
 
@@ -258,13 +258,13 @@ func (p *AgentsService) summarizeCallRecording(bot *bots.Bot, rootID string, req
 			return fmt.Errorf("unable to update transcript post: %w", err)
 		}
 
-		ctx, err := p.getPostStreamingContext(context.Background(), transcriptPost.Id)
+		ctx, err := p.streamingService.GetStreamingContext(context.Background(), transcriptPost.Id)
 		if err != nil {
 			return fmt.Errorf("unable to get post streaming context: %w", err)
 		}
-		defer p.finishPostStreaming(transcriptPost.Id)
+		defer p.streamingService.FinishStreaming(transcriptPost.Id)
 
-		p.streamResultToPost(ctx, summaryStream, transcriptPost, requestingUser.Locale)
+		p.streamingService.StreamToPost(ctx, summaryStream, transcriptPost, requestingUser.Locale)
 
 		return nil
 	}() //nolint:errcheck
