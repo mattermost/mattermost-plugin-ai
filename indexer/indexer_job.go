@@ -1,7 +1,7 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-package indexing
+package indexer
 
 import (
 	"context"
@@ -48,7 +48,7 @@ type JobStatus struct {
 }
 
 // runReindexJob runs the reindexing process
-func (s *Service) runReindexJob(jobStatus *JobStatus) {
+func (s *Indexer) runReindexJob(jobStatus *JobStatus) {
 	defer func() {
 		if r := recover(); r != nil {
 			s.pluginAPI.LogError("Reindex job panicked", "panic", r)
@@ -190,7 +190,7 @@ func (s *Service) runReindexJob(jobStatus *JobStatus) {
 }
 
 // saveJobStatus saves the job status to KV store
-func (s *Service) saveJobStatus(status *JobStatus) {
+func (s *Indexer) saveJobStatus(status *JobStatus) {
 	if err := s.pluginAPI.KVSet(ReindexJobKey, status); err != nil {
 		s.pluginAPI.LogError("Failed to save job status", "error", err)
 	}

@@ -6,30 +6,30 @@ package agents
 import (
 	"fmt"
 
-	"github.com/mattermost/mattermost-plugin-ai/indexing"
+	"github.com/mattermost/mattermost-plugin-ai/indexer"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
 // HandleReindexPosts delegates to the indexing service
-func (p *AgentsService) HandleReindexPosts() (indexing.JobStatus, error) {
+func (p *AgentsService) HandleReindexPosts() (indexer.JobStatus, error) {
 	if p.indexingService == nil {
-		return indexing.JobStatus{}, fmt.Errorf("indexing functionality is not configured")
+		return indexer.JobStatus{}, fmt.Errorf("indexing functionality is not configured")
 	}
 	return p.indexingService.StartReindexJob()
 }
 
 // GetJobStatus delegates to the indexing service
-func (p *AgentsService) GetJobStatus() (indexing.JobStatus, error) {
+func (p *AgentsService) GetJobStatus() (indexer.JobStatus, error) {
 	if p.indexingService == nil {
-		return indexing.JobStatus{}, fmt.Errorf("indexing functionality is not configured")
+		return indexer.JobStatus{}, fmt.Errorf("indexing functionality is not configured")
 	}
 	return p.indexingService.GetJobStatus()
 }
 
 // CancelJob delegates to the indexing service
-func (p *AgentsService) CancelJob() (indexing.JobStatus, error) {
+func (p *AgentsService) CancelJob() (indexer.JobStatus, error) {
 	if p.indexingService == nil {
-		return indexing.JobStatus{}, fmt.Errorf("indexing functionality is not configured")
+		return indexer.JobStatus{}, fmt.Errorf("indexing functionality is not configured")
 	}
 	return p.indexingService.CancelJob()
 }

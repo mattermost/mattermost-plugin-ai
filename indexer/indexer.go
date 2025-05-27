@@ -1,7 +1,7 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-package indexing
+package indexer
 
 import (
 	"context"
@@ -15,28 +15,20 @@ import (
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
-type IndexingService interface {
-	IndexPost(ctx context.Context, post *model.Post, channel *model.Channel) error
-	DeletePost(ctx context.Context, postID string) error
-	StartReindexJob() (JobStatus, error)
-	GetJobStatus() (JobStatus, error)
-	CancelJob() (JobStatus, error)
-}
-
-type Service struct {
+type Indexer struct {
 	search    embeddings.EmbeddingSearch
 	pluginAPI mmapi.Client
 	bots      *bots.MMBots
 	db        *sqlx.DB
 }
 
-func NewService(
+func New(
 	search embeddings.EmbeddingSearch,
 	pluginAPI mmapi.Client,
 	bots *bots.MMBots,
 	db *sqlx.DB,
-) *Service {
-	return &Service{
+) *Indexer {
+	return &Indexer{
 		search:    search,
 		pluginAPI: pluginAPI,
 		bots:      bots,
@@ -45,7 +37,7 @@ func NewService(
 }
 
 // IndexPost indexes a post if it meets the criteria
-func (s *Service) IndexPost(ctx context.Context, post *model.Post, channel *model.Channel) error {
+func (s *Indexer) IndexPost(ctx context.Context, post *model.Post, channel *model.Channel) error {
 	if !s.shouldIndexPost(post, channel) {
 		return nil
 	}
@@ -69,7 +61,7 @@ func (s *Service) IndexPost(ctx context.Context, post *model.Post, channel *mode
 }
 
 // DeletePost deletes a post from the index
-func (s *Service) DeletePost(ctx context.Context, postID string) error {
+func (s *Indexer) DeletePost(ctx context.Context, postID string) error {
 	if s.search == nil {
 		return nil // Search not configured
 	}
@@ -78,7 +70,7 @@ func (s *Service) DeletePost(ctx context.Context, postID string) error {
 }
 
 // StartReindexJob starts a post reindexing job
-func (s *Service) StartReindexJob() (JobStatus, error) {
+func (s *Indexer) StartReindexJob() (JobStatus, error) {
 	// Check if search is initialized
 	if s.search == nil {
 		return JobStatus{}, fmt.Errorf("search functionality is not configured")
@@ -124,7 +116,7 @@ func (s *Service) StartReindexJob() (JobStatus, error) {
 }
 
 // GetJobStatus gets the status of the reindex job
-func (s *Service) GetJobStatus() (JobStatus, error) {
+func (s *Indexer) GetJobStatus() (JobStatus, error) {
 	var jobStatus JobStatus
 	err := s.pluginAPI.KVGet(ReindexJobKey, &jobStatus)
 	if err != nil {
@@ -134,7 +126,7 @@ func (s *Service) GetJobStatus() (JobStatus, error) {
 }
 
 // CancelJob cancels a running reindex job
-func (s *Service) CancelJob() (JobStatus, error) {
+func (s *Indexer) CancelJob() (JobStatus, error) {
 	var jobStatus JobStatus
 	err := s.pluginAPI.KVGet(ReindexJobKey, &jobStatus)
 	if err != nil {
@@ -156,4 +148,34 @@ func (s *Service) CancelJob() (JobStatus, error) {
 	}
 
 	return jobStatus, nil
+}
+
+// shouldIndexPost returns whether a post should be indexed based on consistent criteria
+func (s *Indexer) shouldIndexPost(post *model.Post, channel *model.Channel) bool {
+	// Skip posts that don't have content
+	if post.Message == "" {
+		return false
+	}
+
+	// Skip posts from bots
+	if s.bots.IsAnyBot(post.UserId) {
+		return false
+	}
+
+	// Skip non-regular posts
+	if post.Type != model.PostTypeDefault {
+		return false
+	}
+
+	// Skip deleted posts
+	if post.DeleteAt != 0 {
+		return false
+	}
+
+	// Skip posts in DM channels with the bots
+	if channel != nil && s.bots.GetBotForDMChannel(channel) != nil {
+		return false
+	}
+
+	return true
 }

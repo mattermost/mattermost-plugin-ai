@@ -17,7 +17,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/enterprise"
 	"github.com/mattermost/mattermost-plugin-ai/httpexternal"
 	"github.com/mattermost/mattermost-plugin-ai/i18n"
-	"github.com/mattermost/mattermost-plugin-ai/indexing"
+	"github.com/mattermost/mattermost-plugin-ai/indexer"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mcp"
 	"github.com/mattermost/mattermost-plugin-ai/metrics"
@@ -67,7 +67,7 @@ type AgentsService struct { //nolint:revive
 	search                embeddings.EmbeddingSearch
 
 	// Services
-	indexingService indexing.IndexingService
+	indexingService *indexer.Indexer
 	searchService   *search.Search
 
 	mcpClientManager *mcp.ClientManager
@@ -168,7 +168,7 @@ func NewAgentsService(
 	}
 
 	// Initialize indexing service with a bots adapter
-	agentsService.indexingService = indexing.NewService(
+	agentsService.indexingService = indexer.New(
 		agentsService.search,
 		agentsService.mmClient,
 		agentsService.bots,

@@ -5,7 +5,7 @@ package agents
 
 import (
 	"github.com/mattermost/mattermost-plugin-ai/embeddings"
-	"github.com/mattermost/mattermost-plugin-ai/indexing"
+	"github.com/mattermost/mattermost-plugin-ai/indexer"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mcp"
 	"github.com/mattermost/mattermost-plugin-ai/search"
@@ -78,7 +78,7 @@ func (p *AgentsService) OnConfigurationChange() error {
 	}
 
 	// Reinitialize indexing service with new search
-	p.indexingService = indexing.NewService(
+	p.indexingService = indexer.New(
 		p.search,
 		p.mmClient,
 		p.bots,
