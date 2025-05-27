@@ -1,23 +1,31 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-package agents
+package search
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
+	"net/http"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/embeddings"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
+	"github.com/mattermost/mattermost-plugin-ai/mmapi"
+	"github.com/mattermost/mattermost-plugin-ai/streaming"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
 const (
 	SearchResultsProp = "search_results"
 	SearchQueryProp   = "search_query"
+
+	// Constants for post properties
+	NoRegen             = "no_regen"
+	LLMRequesterUserID  = "llm_requester_user_id"
+	UnsafeLinksPostProp = "unsafe_links"
 )
 
 // SearchRequest represents a search query request
@@ -47,15 +55,52 @@ type RAGResult struct {
 	Score       float32 `json:"score"`
 }
 
+type Search struct {
+	search                embeddings.EmbeddingSearch
+	pluginAPI             mmapi.Client
+	prompts               *llm.Prompts
+	streamingService      streaming.Service
+	llmService            func(llm.BotConfig) llm.LanguageModel
+	llmUpstreamHTTPClient *http.Client
+	db                    *sqlx.DB
+	licenseChecker        LicenseChecker
+}
+
+type LicenseChecker interface {
+	IsBasicsLicensed() bool
+}
+
+func New(
+	search embeddings.EmbeddingSearch,
+	pluginAPI mmapi.Client,
+	prompts *llm.Prompts,
+	streamingService streaming.Service,
+	llmService func(llm.BotConfig) llm.LanguageModel,
+	llmUpstreamHTTPClient *http.Client,
+	db *sqlx.DB,
+	licenseChecker LicenseChecker,
+) *Search {
+	return &Search{
+		search:                search,
+		pluginAPI:             pluginAPI,
+		prompts:               prompts,
+		streamingService:      streamingService,
+		llmService:            llmService,
+		llmUpstreamHTTPClient: llmUpstreamHTTPClient,
+		db:                    db,
+		licenseChecker:        licenseChecker,
+	}
+}
+
 // convertToRAGResults converts embeddings.SearchResult to RAGResult with enriched metadata
-func (p *AgentsService) convertToRAGResults(searchResults []embeddings.SearchResult) []RAGResult {
+func (s *Search) convertToRAGResults(searchResults []embeddings.SearchResult) []RAGResult {
 	var ragResults []RAGResult
 	for _, result := range searchResults {
 		// Get channel name
 		var channelName string
-		channel, chErr := p.pluginAPI.Channel.Get(result.Document.ChannelID)
+		channel, chErr := s.pluginAPI.GetChannel(result.Document.ChannelID)
 		if chErr != nil {
-			p.pluginAPI.Log.Warn("Failed to get channel", "error", chErr, "channelID", result.Document.ChannelID)
+			s.pluginAPI.LogWarn("Failed to get channel", "error", chErr, "channelID", result.Document.ChannelID)
 			channelName = "Unknown Channel"
 		} else {
 			switch channel.Type {
@@ -70,9 +115,9 @@ func (p *AgentsService) convertToRAGResults(searchResults []embeddings.SearchRes
 
 		// Get username
 		var username string
-		user, userErr := p.pluginAPI.User.Get(result.Document.UserID)
+		user, userErr := s.pluginAPI.GetUser(result.Document.UserID)
 		if userErr != nil {
-			p.pluginAPI.Log.Warn("Failed to get user", "error", userErr, "userID", result.Document.UserID)
+			s.pluginAPI.LogWarn("Failed to get user", "error", userErr, "userID", result.Document.UserID)
 			username = "Unknown User"
 		} else {
 			username = user.Username
@@ -104,8 +149,8 @@ func (p *AgentsService) convertToRAGResults(searchResults []embeddings.SearchRes
 }
 
 // formatSearchResults formats search results using the template system
-func (p *AgentsService) formatSearchResults(results []embeddings.SearchResult) (string, error) {
-	ragResults := p.convertToRAGResults(results)
+func (s *Search) formatSearchResults(results []embeddings.SearchResult) (string, error) {
+	ragResults := s.convertToRAGResults(results)
 
 	// Create context for the prompt
 	ctx := llm.NewContext()
@@ -114,7 +159,7 @@ func (p *AgentsService) formatSearchResults(results []embeddings.SearchResult) (
 	}
 
 	// Format using the search_results template
-	formatted, err := p.prompts.Format("search_results", ctx)
+	formatted, err := s.prompts.Format("search_results", ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to format search results: %w", err)
 	}
@@ -122,9 +167,9 @@ func (p *AgentsService) formatSearchResults(results []embeddings.SearchResult) (
 	return formatted, nil
 }
 
-// HandleRunSearch initiates a search and sends results to a DM
-func (p *AgentsService) HandleRunSearch(userID string, bot *bots.Bot, query, teamID, channelID string, maxResults int) (map[string]string, error) {
-	if p.search == nil {
+// RunSearch initiates a search and sends results to a DM
+func (s *Search) RunSearch(ctx context.Context, userID string, bot *bots.Bot, query, teamID, channelID string, maxResults int) (map[string]string, error) {
+	if s.search == nil {
 		return nil, fmt.Errorf("search functionality is not configured")
 	}
 
@@ -138,21 +183,21 @@ func (p *AgentsService) HandleRunSearch(userID string, bot *bots.Bot, query, tea
 		Message: query,
 	}
 	questionPost.AddProp(SearchQueryProp, "true")
-	if err := p.pluginAPI.Post.DM(userID, bot.GetMMBot().UserId, questionPost); err != nil {
+	if err := s.pluginAPI.DM(userID, bot.GetMMBot().UserId, questionPost); err != nil {
 		return nil, fmt.Errorf("failed to create question post: %w", err)
 	}
 
 	// Start processing the search asynchronously
-	go func(ctx context.Context, query, teamID, channelID string, maxResults int) {
+	go func(query, teamID, channelID string, maxResults int) {
 		// Create response post as a reply
 		responsePost := &model.Post{
 			RootId: questionPost.Id,
 		}
 		responsePost.AddProp(NoRegen, "true")
 
-		if err := p.botDMNonResponse(bot.GetMMBot().UserId, userID, responsePost); err != nil {
+		if err := s.botDMNonResponse(bot.GetMMBot().UserId, userID, responsePost); err != nil {
 			// Not much point in retrying if this failed. (very unlikely beyond dev)
-			p.pluginAPI.Log.Error("Error creating bot DM", "error", err)
+			s.pluginAPI.LogError("Error creating bot DM", "error", err)
 			return
 		}
 
@@ -161,8 +206,8 @@ func (p *AgentsService) HandleRunSearch(userID string, bot *bots.Bot, query, tea
 		defer func() {
 			if processingError != nil {
 				responsePost.Message = "I encountered an error while searching. Please try again later. See server logs for details."
-				if err := p.pluginAPI.Post.UpdatePost(responsePost); err != nil {
-					p.pluginAPI.Log.Error("Error updating post on error", "error", err)
+				if err := s.pluginAPI.UpdatePost(responsePost); err != nil {
+					s.pluginAPI.LogError("Error updating post on error", "error", err)
 				}
 			}
 		}()
@@ -172,23 +217,23 @@ func (p *AgentsService) HandleRunSearch(userID string, bot *bots.Bot, query, tea
 			maxResults = 5
 		}
 
-		searchResults, err := p.search.Search(ctx, query, embeddings.SearchOptions{
+		searchResults, err := s.search.Search(context.Background(), query, embeddings.SearchOptions{
 			Limit:     maxResults,
 			TeamID:    teamID,
 			ChannelID: channelID,
 			UserID:    userID,
 		})
 		if err != nil {
-			p.pluginAPI.Log.Error("Error performing search", "error", err)
+			s.pluginAPI.LogError("Error performing search", "error", err)
 			processingError = err
 			return
 		}
 
-		ragResults := p.convertToRAGResults(searchResults)
+		ragResults := s.convertToRAGResults(searchResults)
 		if len(ragResults) == 0 {
 			responsePost.Message = "I couldn't find any relevant messages for your query. Please try a different search term."
-			if updateErr := p.pluginAPI.Post.UpdatePost(responsePost); updateErr != nil {
-				p.pluginAPI.Log.Error("Error updating post on error", "error", updateErr)
+			if updateErr := s.pluginAPI.UpdatePost(responsePost); updateErr != nil {
+				s.pluginAPI.LogError("Error updating post on error", "error", updateErr)
 			}
 			return
 		}
@@ -200,9 +245,9 @@ func (p *AgentsService) HandleRunSearch(userID string, bot *bots.Bot, query, tea
 			"Results": ragResults,
 		}
 
-		systemMessage, err := p.prompts.Format("search_system", promptCtx)
+		systemMessage, err := s.prompts.Format("search_system", promptCtx)
 		if err != nil {
-			p.pluginAPI.Log.Error("Error formatting system message", "error", err)
+			s.pluginAPI.LogError("Error formatting system message", "error", err)
 			processingError = err
 			return
 		}
@@ -221,37 +266,37 @@ func (p *AgentsService) HandleRunSearch(userID string, bot *bots.Bot, query, tea
 			Context: promptCtx,
 		}
 
-		resultStream, err := p.GetLLM(bot.GetConfig()).ChatCompletion(prompt)
+		resultStream, err := s.llmService(bot.GetConfig()).ChatCompletion(prompt)
 		if err != nil {
-			p.pluginAPI.Log.Error("Error generating answer", "error", err)
+			s.pluginAPI.LogError("Error generating answer", "error", err)
 			processingError = err
 			return
 		}
 
 		resultsJSON, err := json.Marshal(ragResults)
 		if err != nil {
-			p.pluginAPI.Log.Error("Error marshaling results", "error", err)
+			s.pluginAPI.LogError("Error marshaling results", "error", err)
 			processingError = err
 			return
 		}
 
 		// Update post to add sources
 		responsePost.AddProp(SearchResultsProp, string(resultsJSON))
-		if updateErr := p.pluginAPI.Post.UpdatePost(responsePost); updateErr != nil {
-			p.pluginAPI.Log.Error("Error updating post for search results", "error", updateErr)
+		if updateErr := s.pluginAPI.UpdatePost(responsePost); updateErr != nil {
+			s.pluginAPI.LogError("Error updating post for search results", "error", updateErr)
 			processingError = updateErr
 			return
 		}
 
-		streamContext, err := p.streamingService.GetStreamingContext(ctx, responsePost.Id)
+		streamContext, err := s.streamingService.GetStreamingContext(context.Background(), responsePost.Id)
 		if err != nil {
-			p.pluginAPI.Log.Error("Error getting post streaming context", "error", err)
+			s.pluginAPI.LogError("Error getting post streaming context", "error", err)
 			processingError = err
 			return
 		}
-		defer p.streamingService.FinishStreaming(responsePost.Id)
-		p.streamingService.StreamToPost(streamContext, resultStream, responsePost, "")
-	}(context.Background(), query, teamID, channelID, maxResults)
+		defer s.streamingService.FinishStreaming(responsePost.Id)
+		s.streamingService.StreamToPost(streamContext, resultStream, responsePost, "")
+	}(query, teamID, channelID, maxResults)
 
 	return map[string]string{
 		"PostID":    questionPost.Id,
@@ -259,9 +304,9 @@ func (p *AgentsService) HandleRunSearch(userID string, bot *bots.Bot, query, tea
 	}, nil
 }
 
-// HandleSearchQuery performs a search and returns results immediately
-func (p *AgentsService) HandleSearchQuery(userID string, bot *bots.Bot, query, teamID, channelID string, maxResults int) (SearchResponse, error) {
-	if p.search == nil {
+// SearchQuery performs a search and returns results immediately
+func (s *Search) SearchQuery(ctx context.Context, userID string, bot *bots.Bot, query, teamID, channelID string, maxResults int) (SearchResponse, error) {
+	if s.search == nil {
 		return SearchResponse{}, fmt.Errorf("search functionality is not configured")
 	}
 
@@ -270,7 +315,7 @@ func (p *AgentsService) HandleSearchQuery(userID string, bot *bots.Bot, query, t
 	}
 
 	// Search for relevant posts using embeddings
-	searchResults, err := p.search.Search(context.Background(), query, embeddings.SearchOptions{
+	searchResults, err := s.search.Search(ctx, query, embeddings.SearchOptions{
 		Limit:     maxResults,
 		TeamID:    teamID,
 		ChannelID: channelID,
@@ -280,7 +325,7 @@ func (p *AgentsService) HandleSearchQuery(userID string, bot *bots.Bot, query, t
 		return SearchResponse{}, fmt.Errorf("search failed: %w", err)
 	}
 
-	ragResults := p.convertToRAGResults(searchResults)
+	ragResults := s.convertToRAGResults(searchResults)
 	if len(ragResults) == 0 {
 		return SearchResponse{
 			Answer:  "I couldn't find any relevant messages for your query. Please try a different search term.",
@@ -294,7 +339,7 @@ func (p *AgentsService) HandleSearchQuery(userID string, bot *bots.Bot, query, t
 		"Results": ragResults,
 	}
 
-	systemMessage, err := p.prompts.Format("search_system", promptCtx)
+	systemMessage, err := s.prompts.Format("search_system", promptCtx)
 	if err != nil {
 		return SearchResponse{}, fmt.Errorf("failed to format system message: %w", err)
 	}
@@ -313,7 +358,7 @@ func (p *AgentsService) HandleSearchQuery(userID string, bot *bots.Bot, query, t
 		Context: promptCtx,
 	}
 
-	answer, err := p.GetLLM(bot.GetConfig()).ChatCompletionNoStream(prompt)
+	answer, err := s.llmService(bot.GetConfig()).ChatCompletionNoStream(prompt)
 	if err != nil {
 		return SearchResponse{}, fmt.Errorf("failed to generate answer: %w", err)
 	}
@@ -324,83 +369,22 @@ func (p *AgentsService) HandleSearchQuery(userID string, bot *bots.Bot, query, t
 	}, nil
 }
 
-// HandleReindexPosts starts a post reindexing job
-func (p *AgentsService) HandleReindexPosts() (JobStatus, error) {
-	// Check if search is initialized
-	if p.search == nil {
-		return JobStatus{}, fmt.Errorf("search functionality is not configured")
-	}
-
-	// Check if a job is already running
-	var jobStatus JobStatus
-	err := p.pluginAPI.KV.Get(ReindexJobKey, &jobStatus)
-	if err != nil && err.Error() != "not found" {
-		return JobStatus{}, fmt.Errorf("failed to check job status: %w", err)
-	}
-
-	// If we have a valid job status and it's running, return conflict
-	if jobStatus.Status == JobStatusRunning {
-		return jobStatus, fmt.Errorf("job already running")
-	}
-
-	// Get an estimate of total posts for progress tracking
-	var count int64
-	dbErr := p.db.Get(&count, `SELECT COUNT(*) FROM Posts WHERE DeleteAt = 0 AND Message != '' AND Type = ''`)
-	if dbErr != nil {
-		p.pluginAPI.Log.Warn("Failed to get post count for progress tracking", "error", dbErr)
-		count = 0 // Continue with zero estimate
-	}
-
-	// Create initial job status
-	newJobStatus := JobStatus{
-		Status:    JobStatusRunning,
-		StartedAt: time.Now(),
-		TotalRows: count,
-	}
-
-	// Save initial job status
-	_, err = p.pluginAPI.KV.Set(ReindexJobKey, newJobStatus)
-	if err != nil {
-		return JobStatus{}, fmt.Errorf("failed to save job status: %w", err)
-	}
-
-	// Start the reindexing job in background
-	go p.runReindexJob(&newJobStatus)
-
-	return newJobStatus, nil
+// Helper functions for post creation
+func (s *Search) modifyPostForBot(botid string, requesterUserID string, post *model.Post) {
+	post.UserId = botid
+	post.Type = "custom_llmbot" // This must be the only place we add this type for security.
+	post.AddProp(LLMRequesterUserID, requesterUserID)
+	// This tags that the post has unsafe links since they could have been generated by a prompt injection.
+	// This will prevent the server from making OpenGraph requests and markdown images being rendered.
+	post.AddProp(UnsafeLinksPostProp, "true")
 }
 
-// GetJobStatus gets the status of the reindex job
-func (p *AgentsService) GetJobStatus() (JobStatus, error) {
-	var jobStatus JobStatus
-	err := p.pluginAPI.KV.Get(ReindexJobKey, &jobStatus)
-	if err != nil {
-		return JobStatus{}, err
-	}
-	return jobStatus, nil
-}
+func (s *Search) botDMNonResponse(botid string, userID string, post *model.Post) error {
+	s.modifyPostForBot(botid, userID, post)
 
-// CancelJob cancels a running reindex job
-func (p *AgentsService) CancelJob() (JobStatus, error) {
-	var jobStatus JobStatus
-	err := p.pluginAPI.KV.Get(ReindexJobKey, &jobStatus)
-	if err != nil {
-		return JobStatus{}, err
+	if err := s.pluginAPI.DM(botid, userID, post); err != nil {
+		return fmt.Errorf("failed to post DM: %w", err)
 	}
 
-	if jobStatus.Status != JobStatusRunning {
-		return JobStatus{}, fmt.Errorf("not running")
-	}
-
-	// Update status to canceled
-	jobStatus.Status = JobStatusCanceled
-	jobStatus.CompletedAt = time.Now()
-
-	// Save updated status
-	_, err = p.pluginAPI.KV.Set(ReindexJobKey, jobStatus)
-	if err != nil {
-		return JobStatus{}, fmt.Errorf("failed to save job status: %w", err)
-	}
-
-	return jobStatus, nil
+	return nil
 }

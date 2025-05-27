@@ -672,6 +672,98 @@ func (_c *MockClient_GetUser_Call) RunAndReturn(run func(userID string) (*model.
 	return _c
 }
 
+// KVGet provides a mock function for the type MockClient
+func (_mock *MockClient) KVGet(key string, value interface{}) error {
+	ret := _mock.Called(key, value)
+
+	if len(ret) == 0 {
+		panic("no return value specified for KVGet")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(string, interface{}) error); ok {
+		r0 = returnFunc(key, value)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockClient_KVGet_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'KVGet'
+type MockClient_KVGet_Call struct {
+	*mock.Call
+}
+
+// KVGet is a helper method to define mock.On call
+//   - key
+//   - value
+func (_e *MockClient_Expecter) KVGet(key interface{}, value interface{}) *MockClient_KVGet_Call {
+	return &MockClient_KVGet_Call{Call: _e.mock.On("KVGet", key, value)}
+}
+
+func (_c *MockClient_KVGet_Call) Run(run func(key string, value interface{})) *MockClient_KVGet_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(string), args[1].(interface{}))
+	})
+	return _c
+}
+
+func (_c *MockClient_KVGet_Call) Return(err error) *MockClient_KVGet_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockClient_KVGet_Call) RunAndReturn(run func(key string, value interface{}) error) *MockClient_KVGet_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// KVSet provides a mock function for the type MockClient
+func (_mock *MockClient) KVSet(key string, value interface{}) error {
+	ret := _mock.Called(key, value)
+
+	if len(ret) == 0 {
+		panic("no return value specified for KVSet")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(string, interface{}) error); ok {
+		r0 = returnFunc(key, value)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockClient_KVSet_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'KVSet'
+type MockClient_KVSet_Call struct {
+	*mock.Call
+}
+
+// KVSet is a helper method to define mock.On call
+//   - key
+//   - value
+func (_e *MockClient_Expecter) KVSet(key interface{}, value interface{}) *MockClient_KVSet_Call {
+	return &MockClient_KVSet_Call{Call: _e.mock.On("KVSet", key, value)}
+}
+
+func (_c *MockClient_KVSet_Call) Run(run func(key string, value interface{})) *MockClient_KVSet_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(string), args[1].(interface{}))
+	})
+	return _c
+}
+
+func (_c *MockClient_KVSet_Call) Return(err error) *MockClient_KVSet_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockClient_KVSet_Call) RunAndReturn(run func(key string, value interface{}) error) *MockClient_KVSet_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // LogError provides a mock function for the type MockClient
 func (_mock *MockClient) LogError(msg string, keyValuePairs ...interface{}) {
 	if len(keyValuePairs) > 0 {
@@ -710,6 +802,48 @@ func (_c *MockClient_LogError_Call) Return() *MockClient_LogError_Call {
 }
 
 func (_c *MockClient_LogError_Call) RunAndReturn(run func(msg string, keyValuePairs ...interface{})) *MockClient_LogError_Call {
+	_c.Run(run)
+	return _c
+}
+
+// LogWarn provides a mock function for the type MockClient
+func (_mock *MockClient) LogWarn(msg string, keyValuePairs ...interface{}) {
+	if len(keyValuePairs) > 0 {
+		_mock.Called(msg, keyValuePairs)
+	} else {
+		_mock.Called(msg)
+	}
+
+	return
+}
+
+// MockClient_LogWarn_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'LogWarn'
+type MockClient_LogWarn_Call struct {
+	*mock.Call
+}
+
+// LogWarn is a helper method to define mock.On call
+//   - msg
+//   - keyValuePairs
+func (_e *MockClient_Expecter) LogWarn(msg interface{}, keyValuePairs ...interface{}) *MockClient_LogWarn_Call {
+	return &MockClient_LogWarn_Call{Call: _e.mock.On("LogWarn",
+		append([]interface{}{msg}, keyValuePairs...)...)}
+}
+
+func (_c *MockClient_LogWarn_Call) Run(run func(msg string, keyValuePairs ...interface{})) *MockClient_LogWarn_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		variadicArgs := args[1].([]interface{})
+		run(args[0].(string), variadicArgs...)
+	})
+	return _c
+}
+
+func (_c *MockClient_LogWarn_Call) Return() *MockClient_LogWarn_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *MockClient_LogWarn_Call) RunAndReturn(run func(msg string, keyValuePairs ...interface{})) *MockClient_LogWarn_Call {
 	_c.Run(run)
 	return _c
 }

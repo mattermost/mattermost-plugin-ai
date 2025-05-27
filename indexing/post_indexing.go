@@ -1,19 +1,19 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-package agents
+package indexing
 
 import "github.com/mattermost/mattermost/server/public/model"
 
-// ShouldIndexPost returns whether a post should be indexed based on consistent criteria
-func (p *AgentsService) ShouldIndexPost(post *model.Post, channel *model.Channel) bool {
+// shouldIndexPost returns whether a post should be indexed based on consistent criteria
+func (s *Service) shouldIndexPost(post *model.Post, channel *model.Channel) bool {
 	// Skip posts that don't have content
 	if post.Message == "" {
 		return false
 	}
 
 	// Skip posts from bots
-	if p.bots.IsAnyBot(post.UserId) {
+	if s.bots.IsAnyBot(post.UserId) {
 		return false
 	}
 
@@ -28,7 +28,7 @@ func (p *AgentsService) ShouldIndexPost(post *model.Post, channel *model.Channel
 	}
 
 	// Skip posts in DM channels with the bots
-	if channel != nil && p.bots.GetBotForDMChannel(channel) != nil {
+	if channel != nil && s.bots.GetBotForDMChannel(channel) != nil {
 		return false
 	}
 

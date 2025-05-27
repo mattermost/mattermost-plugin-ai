@@ -9,7 +9,6 @@ import (
 	"fmt"
 
 	"github.com/mattermost/mattermost-plugin-ai/bots"
-	"github.com/mattermost/mattermost-plugin-ai/embeddings"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
 )
@@ -29,8 +28,16 @@ var (
 
 func (p *AgentsService) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 	// Index the new message in the vector database
-	if err := p.indexPost(post); err != nil {
-		p.pluginAPI.Log.Error("Failed to index post in vector database", "error", err)
+	if p.indexingService != nil {
+		// Get channel to retrieve team ID
+		channel, err := p.pluginAPI.Channel.Get(post.ChannelId)
+		if err != nil {
+			p.pluginAPI.Log.Error("Failed to get channel for post indexing", "error", err)
+		} else {
+			if err := p.indexingService.IndexPost(context.Background(), post, channel); err != nil {
+				p.pluginAPI.Log.Error("Failed to index post in vector database", "error", err)
+			}
+		}
 	}
 
 	if err := p.handleMessages(post); err != nil {
@@ -148,55 +155,29 @@ func (p *AgentsService) handleDMs(bot *bots.Bot, channel *model.Channel, posting
 	return nil
 }
 
-// indexPost adds a post to the vector database for future searches
-func (p *AgentsService) indexPost(post *model.Post) error {
-	// If search is not configured, skip indexing
-	if p.search == nil {
-		return nil
-	}
-
-	// Get channel to retrieve team ID
-	channel, err := p.pluginAPI.Channel.Get(post.ChannelId)
-	if err != nil {
-		return fmt.Errorf("failed to get channel for post: %w", err)
-	}
-
-	if !p.ShouldIndexPost(post, channel) {
-		return nil
-	}
-
-	// Create document for vector db
-	doc := embeddings.PostDocument{
-		PostID:    post.Id,
-		CreateAt:  post.CreateAt,
-		TeamID:    channel.TeamId,
-		ChannelID: post.ChannelId,
-		UserID:    post.UserId,
-		Content:   post.Message,
-	}
-
-	// Store in vector DB
-	if err := p.search.Store(context.Background(), []embeddings.PostDocument{doc}); err != nil {
-		return fmt.Errorf("failed to store post in vector database: %w", err)
-	}
-
-	return nil
-}
-
 // MessageHasBeenUpdated is called when a message is updated
 // For updated posts, we remove the old version and add the new version
 func (p *AgentsService) MessageHasBeenUpdated(c *plugin.Context, newPost, oldPost *model.Post) {
-	// If search is not configured, skip indexing
-	if p.search == nil {
+	// If indexing service is not configured, skip indexing
+	if p.indexingService == nil {
 		return
 	}
 
-	if err := p.search.Delete(context.Background(), []string{oldPost.Id}); err != nil {
+	// Delete the old post from index
+	if err := p.indexingService.DeletePost(context.Background(), oldPost.Id); err != nil {
 		p.pluginAPI.Log.Error("Failed to delete post from vector database", "error", err)
 		return
 	}
 
-	if err := p.indexPost(newPost); err != nil {
+	// Get channel to retrieve team ID
+	channel, err := p.pluginAPI.Channel.Get(newPost.ChannelId)
+	if err != nil {
+		p.pluginAPI.Log.Error("Failed to get channel for post indexing", "error", err)
+		return
+	}
+
+	// Index the updated post
+	if err := p.indexingService.IndexPost(context.Background(), newPost, channel); err != nil {
 		p.pluginAPI.Log.Error("Failed to index updated post in vector database", "error", err)
 		return
 	}

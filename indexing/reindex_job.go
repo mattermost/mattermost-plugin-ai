@@ -1,11 +1,10 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-package agents
+package indexing
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -49,25 +48,25 @@ type JobStatus struct {
 }
 
 // runReindexJob runs the reindexing process
-func (p *AgentsService) runReindexJob(jobStatus *JobStatus) {
+func (s *Service) runReindexJob(jobStatus *JobStatus) {
 	defer func() {
 		if r := recover(); r != nil {
-			p.pluginAPI.Log.Error("Reindex job panicked", "panic", r)
+			s.pluginAPI.LogError("Reindex job panicked", "panic", r)
 			jobStatus.Status = JobStatusFailed
 			jobStatus.Error = fmt.Sprintf("Job panicked: %v", r)
 			jobStatus.CompletedAt = time.Now()
-			p.saveJobStatus(jobStatus)
+			s.saveJobStatus(jobStatus)
 		}
 	}()
 
 	ctx := context.Background()
 
 	// Clear the existing index
-	if err := p.search.Clear(ctx); err != nil {
+	if err := s.search.Clear(ctx); err != nil {
 		jobStatus.Status = JobStatusFailed
 		jobStatus.Error = fmt.Sprintf("Failed to clear search index: %s", err)
 		jobStatus.CompletedAt = time.Now()
-		p.saveJobStatus(jobStatus)
+		s.saveJobStatus(jobStatus)
 		return
 	}
 
@@ -79,15 +78,11 @@ func (p *AgentsService) runReindexJob(jobStatus *JobStatus) {
 
 	for {
 		// Check if the job was canceled
-		var data []byte
-		_ = p.pluginAPI.KV.Get(ReindexJobKey, &data)
-		if data != nil {
-			var currentStatus JobStatus
-			if err := json.Unmarshal(data, &currentStatus); err == nil {
-				if currentStatus.Status == JobStatusCanceled {
-					p.pluginAPI.Log.Info("Reindex job was canceled")
-					return
-				}
+		var currentStatus JobStatus
+		if err := s.pluginAPI.KVGet(ReindexJobKey, &currentStatus); err == nil {
+			if currentStatus.Status == JobStatusCanceled {
+				s.pluginAPI.LogWarn("Reindex job was canceled")
+				return
 			}
 		}
 
@@ -108,12 +103,12 @@ func (p *AgentsService) runReindexJob(jobStatus *JobStatus) {
 		ORDER BY Posts.CreateAt ASC, Posts.Id ASC
 		LIMIT $3`
 
-		err := p.db.Select(&posts, query, lastCreateAt, lastID, defaultBatchSize)
+		err := s.db.Select(&posts, query, lastCreateAt, lastID, defaultBatchSize)
 		if err != nil {
 			jobStatus.Status = JobStatusFailed
 			jobStatus.Error = fmt.Sprintf("Failed to fetch posts: %s", err)
 			jobStatus.CompletedAt = time.Now()
-			p.saveJobStatus(jobStatus)
+			s.saveJobStatus(jobStatus)
 			return
 		}
 
@@ -142,7 +137,7 @@ func (p *AgentsService) runReindexJob(jobStatus *JobStatus) {
 			}
 
 			// Apply same indexing rules as indexPost
-			if !p.ShouldIndexPost(modelPost, channel) {
+			if !s.shouldIndexPost(modelPost, channel) {
 				continue
 			}
 
@@ -158,11 +153,11 @@ func (p *AgentsService) runReindexJob(jobStatus *JobStatus) {
 
 		// Store the batch
 		if len(docs) > 0 {
-			if err := p.search.Store(ctx, docs); err != nil {
+			if err := s.search.Store(ctx, docs); err != nil {
 				jobStatus.Status = JobStatusFailed
 				jobStatus.Error = fmt.Sprintf("Failed to store documents: %s", err)
 				jobStatus.CompletedAt = time.Now()
-				p.saveJobStatus(jobStatus)
+				s.saveJobStatus(jobStatus)
 				return
 			}
 		}
@@ -178,8 +173,8 @@ func (p *AgentsService) runReindexJob(jobStatus *JobStatus) {
 
 		// Save progress every 500 additional processed records
 		if processedCount >= lastSavedCount+500 {
-			p.saveJobStatus(jobStatus)
-			p.pluginAPI.Log.Info("Reindexing progress",
+			s.saveJobStatus(jobStatus)
+			s.pluginAPI.LogWarn("Reindexing progress",
 				"processed", processedCount,
 				"estimated_total", jobStatus.TotalRows)
 			lastSavedCount = processedCount
@@ -189,15 +184,14 @@ func (p *AgentsService) runReindexJob(jobStatus *JobStatus) {
 	// Completed successfully
 	jobStatus.Status = JobStatusCompleted
 	jobStatus.CompletedAt = time.Now()
-	p.saveJobStatus(jobStatus)
+	s.saveJobStatus(jobStatus)
 
-	p.pluginAPI.Log.Info("Reindexing completed", "processed_posts", processedCount)
+	s.pluginAPI.LogWarn("Reindexing completed", "processed_posts", processedCount)
 }
 
 // saveJobStatus saves the job status to KV store
-func (p *AgentsService) saveJobStatus(status *JobStatus) {
-	data, _ := json.Marshal(status)
-	if _, err := p.pluginAPI.KV.Set(ReindexJobKey, data); err != nil {
-		p.pluginAPI.Log.Error("Failed to save job status", "error", err)
+func (s *Service) saveJobStatus(status *JobStatus) {
+	if err := s.pluginAPI.KVSet(ReindexJobKey, status); err != nil {
+		s.pluginAPI.LogError("Failed to save job status", "error", err)
 	}
 }

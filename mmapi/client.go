@@ -24,6 +24,9 @@ type Client interface {
 	PublishWebSocketEvent(event string, payload map[string]interface{}, broadcast *model.WebsocketBroadcast)
 	GetConfig() *model.Config
 	LogError(msg string, keyValuePairs ...interface{})
+	LogWarn(msg string, keyValuePairs ...interface{})
+	KVGet(key string, value interface{}) error
+	KVSet(key string, value interface{}) error
 }
 
 func NewClient(pluginAPI *pluginapi.Client) Client {
@@ -60,4 +63,17 @@ func (m *client) GetDirectChannel(userID1, userID2 string) (*model.Channel, erro
 
 func (m *client) LogError(msg string, keyValuePairs ...interface{}) {
 	m.pluginAPI.Log.Error(msg, keyValuePairs...)
+}
+
+func (m *client) LogWarn(msg string, keyValuePairs ...interface{}) {
+	m.pluginAPI.Log.Warn(msg, keyValuePairs...)
+}
+
+func (m *client) KVGet(key string, value interface{}) error {
+	return m.pluginAPI.KV.Get(key, value)
+}
+
+func (m *client) KVSet(key string, value interface{}) error {
+	_, err := m.pluginAPI.KV.Set(key, value)
+	return err
 }

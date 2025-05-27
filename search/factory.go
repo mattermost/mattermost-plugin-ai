@@ -1,19 +1,26 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-package agents
+package search
 
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/mattermost/mattermost-plugin-ai/embeddings"
 	"github.com/mattermost/mattermost-plugin-ai/openai"
 	"github.com/mattermost/mattermost-plugin-ai/postgres"
 )
 
-// NewVectorStore creates a new vector store based on the provided configuration
-func (p *AgentsService) newVectorStore(config embeddings.UpstreamConfig, dimensions int) (embeddings.VectorStore, error) {
+// Config represents the configuration needed for search initialization
+type Config struct {
+	EmbeddingSearchConfig embeddings.EmbeddingSearchConfig
+}
+
+// newVectorStore creates a new vector store based on the provided configuration
+func newVectorStore(db *sqlx.DB, config embeddings.UpstreamConfig, dimensions int) (embeddings.VectorStore, error) {
 	switch config.Type { //nolint:gocritic
 	case embeddings.VectorStoreTypePGVector:
 		pgVectorConfig := postgres.PGVectorConfig{
@@ -22,50 +29,50 @@ func (p *AgentsService) newVectorStore(config embeddings.UpstreamConfig, dimensi
 		if err := json.Unmarshal(config.Parameters, &pgVectorConfig); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal pgvector config: %w", err)
 		}
-		return postgres.NewPGVector(p.db, pgVectorConfig)
+		return postgres.NewPGVector(db, pgVectorConfig)
 	}
 
 	return nil, fmt.Errorf("unsupported vector store type: %s", config.Type)
 }
 
-// NewEmbeddingProvider creates a new embedding provider based on the provided configuration
-func (p *AgentsService) newEmbeddingProvider(config embeddings.UpstreamConfig) (embeddings.EmbeddingProvider, error) {
+// newEmbeddingProvider creates a new embedding provider based on the provided configuration
+func newEmbeddingProvider(config embeddings.UpstreamConfig, httpClient *http.Client) (embeddings.EmbeddingProvider, error) {
 	switch config.Type {
 	case embeddings.ProviderTypeOpenAICompatible:
 		compatibleConfig := openai.Config{}
 		if err := json.Unmarshal(config.Parameters, &compatibleConfig); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal OpenAI-compatible config: %w", err)
 		}
-		return openai.NewCompatibleEmbeddings(compatibleConfig, p.llmUpstreamHTTPClient), nil
+		return openai.NewCompatibleEmbeddings(compatibleConfig, httpClient), nil
 	case embeddings.ProviderTypeOpenAI:
 		var openaiConfig openai.Config
 		if err := json.Unmarshal(config.Parameters, &openaiConfig); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal OpenAI config: %w", err)
 		}
-		return openai.NewCompatibleEmbeddings(openaiConfig, p.llmUpstreamHTTPClient), nil
+		return openai.NewCompatibleEmbeddings(openaiConfig, httpClient), nil
 	}
 
 	return nil, fmt.Errorf("unsupported embedding provider type: %s", config.Type)
 }
 
-func (p *AgentsService) initSearch() (embeddings.EmbeddingSearch, error) {
-	cfg := p.getConfiguration()
+// InitSearch creates and initializes the embedding search system
+func InitSearch(db *sqlx.DB, httpClient *http.Client, cfg Config, licenseChecker LicenseChecker) (embeddings.EmbeddingSearch, error) {
 
 	if cfg.EmbeddingSearchConfig.Type == "" {
 		return nil, fmt.Errorf("search is disabled")
 	}
 
-	if !p.licenseChecker.IsBasicsLicensed() {
+	if !licenseChecker.IsBasicsLicensed() {
 		return nil, fmt.Errorf("search is unavailable without a valid license")
 	}
 
 	switch cfg.EmbeddingSearchConfig.Type { //nolint:gocritic
 	case embeddings.SearchTypeComposite:
-		vector, err := p.newVectorStore(cfg.EmbeddingSearchConfig.VectorStore, cfg.EmbeddingSearchConfig.Dimensions)
+		vector, err := newVectorStore(db, cfg.EmbeddingSearchConfig.VectorStore, cfg.EmbeddingSearchConfig.Dimensions)
 		if err != nil {
 			return nil, err
 		}
-		embeddor, err := p.newEmbeddingProvider(cfg.EmbeddingSearchConfig.EmbeddingProvider)
+		embeddor, err := newEmbeddingProvider(cfg.EmbeddingSearchConfig.EmbeddingProvider, httpClient)
 		if err != nil {
 			return nil, err
 		}
