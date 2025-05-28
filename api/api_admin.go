@@ -15,6 +15,11 @@ import (
 
 // handleReindexPosts starts a background job to reindex all posts
 func (a *API) handleReindexPosts(c *gin.Context) {
+	if err := a.enforceEmptyBody(c); err != nil {
+		c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
 	jobStatus, err := a.agents.HandleReindexPosts()
 	if err != nil {
 		switch err.Error() {
@@ -52,6 +57,11 @@ func (a *API) handleGetJobStatus(c *gin.Context) {
 
 // handleCancelJob cancels a running reindex job
 func (a *API) handleCancelJob(c *gin.Context) {
+	if err := a.enforceEmptyBody(c); err != nil {
+		c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
 	jobStatus, err := a.agents.CancelJob()
 	if err != nil {
 		switch err.Error() {
