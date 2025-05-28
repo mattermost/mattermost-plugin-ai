@@ -1,7 +1,7 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-package agents
+package chunking
 
 import (
 	"strconv"
@@ -41,21 +41,21 @@ func TestSplitPlaintextOnSentences(t *testing.T) {
 		},
 	} {
 		t.Run("test "+strconv.Itoa(i), func(t *testing.T) {
-			actual := splitPlaintextOnSentences(test.input, test.size)
+			actual := SplitPlaintextOnSentences(test.input, test.size)
 			require.Equal(t, test.output, actual)
 		})
 	}
 
 	// Additional test cases testing the intended behavior
 	t.Run("Empty string", func(t *testing.T) {
-		chunks := splitPlaintextOnSentences("", 100)
+		chunks := SplitPlaintextOnSentences("", 100)
 		assert.Equal(t, 1, len(chunks), "Should return a single chunk for empty string")
 		assert.Equal(t, "", chunks[0], "Empty string should return empty chunk")
 	})
 
 	t.Run("Text with various sentence boundaries", func(t *testing.T) {
 		input := "This is a statement. Is this a question? Yes, it is! This ends with ellipsis..."
-		chunks := splitPlaintextOnSentences(input, 20)
+		chunks := SplitPlaintextOnSentences(input, 20)
 
 		// Find at least one chunk ending with each type of sentence boundary
 		foundPeriod := false
@@ -87,7 +87,7 @@ func TestSplitPlaintextOnSentences(t *testing.T) {
 	t.Run("Very long sentence beyond chunk size", func(t *testing.T) {
 		input := "This is an extremely long sentence without any sentence boundaries that should be split based purely on the chunk size limit and not on sentence boundaries because there are none to be found here"
 		chunkSize := 30
-		chunks := splitPlaintextOnSentences(input, chunkSize)
+		chunks := SplitPlaintextOnSentences(input, chunkSize)
 
 		// Verify no chunk exceeds the maximum size
 		for i, chunk := range chunks {
@@ -104,7 +104,7 @@ func TestSplitPlaintextOnSentences(t *testing.T) {
 		input := "Short. Another. Third. Fourth. Fifth. A slightly longer sentence to end with."
 		chunkSize := 30
 		minSize := int(float64(chunkSize) * 0.75)
-		chunks := splitPlaintextOnSentences(input, chunkSize)
+		chunks := SplitPlaintextOnSentences(input, chunkSize)
 
 		// Verify that chunks (except possibly the last one) meet the minimum size
 		for i, chunk := range chunks[:len(chunks)-1] {

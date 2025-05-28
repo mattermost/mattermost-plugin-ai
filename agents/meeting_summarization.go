@@ -15,6 +15,7 @@ import (
 	"errors"
 
 	"github.com/mattermost/mattermost-plugin-ai/bots"
+	"github.com/mattermost/mattermost-plugin-ai/chunking"
 	"github.com/mattermost/mattermost-plugin-ai/i18n"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
@@ -282,7 +283,7 @@ func (p *AgentsService) summarizeTranscription(bot *bots.Bot, transcription *sub
 	isChunked := false
 	if tokens > tokenLimitWithMargin {
 		p.pluginAPI.Log.Debug("Transcription too long, summarizing in chunks.", "tokens", tokens, "limit", tokenLimitWithMargin)
-		chunks := splitPlaintextOnSentences(llmFormattedTranscription, tokenLimitWithMargin*4)
+		chunks := chunking.SplitPlaintextOnSentences(llmFormattedTranscription, tokenLimitWithMargin*4)
 		summarizedChunks := make([]string, 0, len(chunks))
 		p.pluginAPI.Log.Debug("Split into chunks", "chunks", len(chunks))
 		for _, chunk := range chunks {

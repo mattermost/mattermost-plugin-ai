@@ -1,18 +1,18 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-package agents
+package chunking
 
 import (
 	"strings"
 )
 
-// splitPlaintextOnSentences splits a string into chunks of the given size.
+// SplitPlaintextOnSentences splits a string into chunks of the given size.
 // It intelligently splits on sentence boundaries assuming that ., !, and ? are sentence endings.
 // It guarantees that each chunk is no larger than the given size, therefore it may split in the middle of a sentence.
 // It limits the amount a chunk can be smaller than the given size to 3/4 of the given size. There for the number
 // of chunks may be 25% greater than expected in worst case.
-func splitPlaintextOnSentences(text string, chunksize int) []string {
+func SplitPlaintextOnSentences(text string, chunksize int) []string {
 	chunks := make([]string, 0, (len(text)/chunksize)+1)
 	chunkSizeLowerBound := int(float64(chunksize) * 0.75)
 	remainingText := text

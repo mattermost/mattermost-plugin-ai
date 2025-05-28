@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/mattermost/mattermost-plugin-ai/chunking"
 	"github.com/mattermost/mattermost-plugin-ai/embeddings"
 	"github.com/mattermost/mattermost-plugin-ai/openai"
 	"github.com/mattermost/mattermost-plugin-ai/postgres"
@@ -79,7 +80,7 @@ func InitSearch(db *sqlx.DB, httpClient *http.Client, cfg Config, licenseChecker
 		// Check if we have specific chunking options configured
 		chunkingOpts := cfg.EmbeddingSearchConfig.ChunkingOptions
 		if chunkingOpts.ChunkSize == 0 {
-			chunkingOpts = embeddings.DefaultChunkingOptions()
+			chunkingOpts = chunking.DefaultOptions()
 		}
 
 		return embeddings.NewCompositeSearch(vector, embeddor, chunkingOpts), nil
