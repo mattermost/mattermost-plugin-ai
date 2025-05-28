@@ -4,6 +4,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 
@@ -35,10 +36,27 @@ type configuration struct {
 	agents.Config `json:"config"`
 }
 
-// Clone shallow copies the configuration. Your implementation may require a deep copy if
-// your configuration has reference types.
+// DeepCopyJSON creates a deep copy of JSON-serializable structs
+func DeepCopyJSON[T any](src T) (T, error) {
+	var dst T
+	data, err := json.Marshal(src)
+	if err != nil {
+		return dst, err
+	}
+	err = json.Unmarshal(data, &dst)
+	return dst, err
+}
+
+// Clone deep copies the configuration to handle reference types properly.
 func (c *configuration) Clone() *configuration {
-	var clone = *c
+	if c == nil {
+		return nil
+	}
+
+	clone, err := DeepCopyJSON(*c)
+	if err != nil {
+		panic(fmt.Sprintf("failed to clone configuration: %v", err))
+	}
 	return &clone
 }
 
@@ -71,6 +89,8 @@ func (p *Plugin) setConfiguration(configuration *configuration) {
 
 // OnConfigurationChange is invoked when configuration changes may have been made.
 func (p *Plugin) OnConfigurationChange() error {
+	oldConfiguration := p.configuration.Clone()
+
 	var configuration = new(configuration)
 
 	// Load the public configuration fields from the Mattermost server configuration.
@@ -97,9 +117,8 @@ func (p *Plugin) OnConfigurationChange() error {
 	}
 
 	// Handle MCP configuration changes
-	oldMCPConfig := p.configuration.MCP
 	newMCPConfig := configuration.MCP
-	if !reflect.DeepEqual(oldMCPConfig, newMCPConfig) {
+	if !reflect.DeepEqual(oldConfiguration.MCP, configuration.MCP) {
 		// Close existing MCP client manager
 		if p.mcpClientManager != nil {
 			if err := p.mcpClientManager.Close(); err != nil {
@@ -119,10 +138,8 @@ func (p *Plugin) OnConfigurationChange() error {
 	}
 
 	// Recreate search/indexer services if embedding configuration changed
-	oldEmbedConfig := p.configuration.EmbeddingSearchConfig
 	newEmbedConfig := configuration.EmbeddingSearchConfig
-
-	if !reflect.DeepEqual(oldEmbedConfig, newEmbedConfig) {
+	if !reflect.DeepEqual(oldConfiguration.EmbeddingSearchConfig, newEmbedConfig) {
 		// Reinitialize search infrastructure
 		var searchInfrastructure embeddings.EmbeddingSearch
 		licenseChecker := enterprise.NewLicenseChecker(p.pluginAPI)
