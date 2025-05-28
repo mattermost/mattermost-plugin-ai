@@ -19,6 +19,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/i18n"
 	"github.com/mattermost/mattermost-plugin-ai/indexer"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
+	"github.com/mattermost/mattermost-plugin-ai/mcp"
 	"github.com/mattermost/mattermost-plugin-ai/metrics"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
 	"github.com/mattermost/mattermost-plugin-ai/mmtools"
@@ -48,12 +49,13 @@ type Plugin struct {
 	llmUpstreamHTTPClient *http.Client
 	db                    *sqlx.DB
 
-	agentsService  *agents.AgentsService
-	indexerService *indexer.Indexer
-	searchService  *search.Search
-	apiService     *api.API
-	bots           *bots.MMBots
-	toolProvider   *mmtools.MMToolProvider
+	agentsService    *agents.AgentsService
+	indexerService   *indexer.Indexer
+	searchService    *search.Search
+	apiService       *api.API
+	bots             *bots.MMBots
+	toolProvider     *mmtools.MMToolProvider
+	mcpClientManager *mcp.ClientManager
 }
 
 func (p *Plugin) OnActivate() error {
@@ -135,10 +137,18 @@ func (p *Plugin) OnActivate() error {
 		untrustedHTTPClient,
 	)
 
+	// Initialize MCP client manager at plugin level
+	mcpClient, err := mcp.NewClientManager(p.configuration.MCP, p.pluginAPI.Log)
+	if err != nil {
+		p.pluginAPI.Log.Error("Failed to initialize MCP client manager, MCP tools will be disabled", "error", err)
+	} else {
+		p.mcpClientManager = mcpClient
+	}
+
 	contextBuilder := agents.NewLLMContextBuilder(
 		p.pluginAPI,
 		p.toolProvider,
-		nil, //TODO: this will break MCP tools, need to fix by etracting the mcpclient manger from the agents service
+		p.mcpClientManager,
 		&p.configuration.Config,
 	)
 
@@ -156,6 +166,13 @@ func (p *Plugin) OnActivate() error {
 }
 
 func (p *Plugin) OnDeactivate() error {
+	// Clean up MCP client manager if it exists
+	if p.mcpClientManager != nil {
+		if err := p.mcpClientManager.Close(); err != nil {
+			p.pluginAPI.Log.Error("Failed to close MCP client manager during deactivation", "error", err)
+		}
+	}
+
 	if p.agentsService != nil {
 		if err := p.agentsService.OnDeactivate(); err != nil {
 			p.pluginAPI.Log.Error("Error during AgentsService deactivation", "error", err)

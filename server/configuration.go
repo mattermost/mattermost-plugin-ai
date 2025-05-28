@@ -13,6 +13,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/i18n"
 	"github.com/mattermost/mattermost-plugin-ai/indexer"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
+	"github.com/mattermost/mattermost-plugin-ai/mcp"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
 	"github.com/mattermost/mattermost-plugin-ai/search"
 	"github.com/mattermost/mattermost-plugin-ai/streaming"
@@ -92,6 +93,28 @@ func (p *Plugin) OnConfigurationChange() error {
 		p.agentsService.SetConfiguration(&configuration.Config)
 		if err := p.agentsService.OnConfigurationChange(); err != nil {
 			return err
+		}
+	}
+
+	// Handle MCP configuration changes
+	oldMCPConfig := p.configuration.MCP
+	newMCPConfig := configuration.MCP
+	if !reflect.DeepEqual(oldMCPConfig, newMCPConfig) {
+		// Close existing MCP client manager
+		if p.mcpClientManager != nil {
+			if err := p.mcpClientManager.Close(); err != nil {
+				p.pluginAPI.Log.Error("Failed to close MCP client manager during configuration change", "error", err)
+			}
+		}
+
+		// Reinitialize MCP client manager with new configuration
+		mcpClient, err := mcp.NewClientManager(newMCPConfig, p.pluginAPI.Log)
+		if err != nil {
+			p.pluginAPI.Log.Error("Failed to reinitialize MCP client manager, MCP tools will be disabled", "error", err)
+			p.mcpClientManager = nil
+		} else {
+			p.mcpClientManager = mcpClient
+			p.pluginAPI.Log.Debug("MCP client manager reinitialized successfully")
 		}
 	}
 

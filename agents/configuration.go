@@ -51,24 +51,5 @@ func (p *AgentsService) SetConfiguration(configuration *Config) {
 
 // OnConfigurationChange is invoked when configuration changes may have been made.
 func (p *AgentsService) OnConfigurationChange() error {
-	// Reinitialize MCP client based on new configuration
-	if p.mcpClientManager != nil {
-		// Close existing client first
-		closeErr := p.mcpClientManager.Close()
-		if closeErr != nil {
-			p.pluginAPI.Log.Error("Failed to close MCP client manager", "error", closeErr)
-		}
-	}
-
-	mcpClient, err := mcp.NewClientManager(p.getConfiguration().MCP, p.pluginAPI.Log)
-	if err != nil {
-		// Log the error but don't fail plugin configuration
-		p.pluginAPI.Log.Error("Failed to initialize MCP client manager, MCP tools will be disabled", "error", err)
-		p.mcpClientManager = nil
-	} else {
-		p.mcpClientManager = mcpClient
-		p.pluginAPI.Log.Debug("MCP client manager reinitialized successfully")
-	}
-
 	return nil
 }

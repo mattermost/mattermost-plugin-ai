@@ -16,7 +16,6 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/enterprise"
 	"github.com/mattermost/mattermost-plugin-ai/i18n"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
-	"github.com/mattermost/mattermost-plugin-ai/mcp"
 	"github.com/mattermost/mattermost-plugin-ai/metrics"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
 	"github.com/mattermost/mattermost-plugin-ai/streaming"
@@ -60,8 +59,6 @@ type AgentsService struct { //nolint:revive
 
 	llmUpstreamHTTPClient *http.Client
 	untrustedHTTPClient   *http.Client
-
-	mcpClientManager *mcp.ClientManager
 
 	contextBuilder *LLMContextBuilder
 
@@ -135,15 +132,6 @@ func NewAgentsService(
 		},
 	)
 
-	// Initialize MCP client manager
-	cfg := agentsService.getConfiguration()
-	mcpClient, err := mcp.NewClientManager(cfg.MCP, agentsService.pluginAPI.Log)
-	if err != nil {
-		agentsService.pluginAPI.Log.Error("Failed to initialize MCP client manager, MCP tools will be disabled", "error", err)
-	} else {
-		agentsService.mcpClientManager = mcpClient
-	}
-
 	return agentsService, nil
 }
 
@@ -152,13 +140,6 @@ func (p *AgentsService) GetPrompts() *llm.Prompts {
 }
 
 func (p *AgentsService) OnDeactivate() error {
-	// Clean up MCP client manager if it exists
-	if p.mcpClientManager != nil {
-		if err := p.mcpClientManager.Close(); err != nil {
-			p.pluginAPI.Log.Error("Failed to close MCP client manager during deactivation", "error", err)
-		}
-	}
-
 	return nil
 }
 
