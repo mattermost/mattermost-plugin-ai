@@ -20,6 +20,10 @@ type Config struct {
 	MCP                      mcp.Config                       `json:"mcp"`
 }
 
+func (c *Config) GetEnableLLMTrace() bool {
+	return c.EnableLLMTrace
+}
+
 // Clone shallow copies the configuration. Your implementation may require a deep copy if
 // your configuration has reference types.
 func (c *Config) Clone() *Config {

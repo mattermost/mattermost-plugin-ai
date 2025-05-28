@@ -14,7 +14,6 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/enterprise"
-	"github.com/mattermost/mattermost-plugin-ai/httpexternal"
 	"github.com/mattermost/mattermost-plugin-ai/i18n"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mcp"
@@ -90,6 +89,7 @@ func NewAgentsService(
 	metricsService metrics.Metrics,
 	configuration *Config,
 	bots *bots.MMBots,
+	contextBuilder *LLMContextBuilder,
 ) (*AgentsService, error) {
 	agentsService := &AgentsService{
 		API:                   originalAPI,
@@ -100,6 +100,7 @@ func NewAgentsService(
 		metricsService:        metricsService,
 		configuration:         configuration,
 		bots:                  bots,
+		contextBuilder:        contextBuilder,
 	}
 
 	agentsService.licenseChecker = enterprise.NewLicenseChecker(agentsService.pluginAPI)
@@ -143,19 +144,6 @@ func NewAgentsService(
 		agentsService.mcpClientManager = mcpClient
 	}
 
-	// Determine which MCP tool provider to use
-	var mcpToolProvider MCPToolProvider
-	if agentsService.mcpClientManager != nil {
-		mcpToolProvider = agentsService.mcpClientManager
-	}
-
-	agentsService.contextBuilder = NewLLMContextBuilder(
-		agentsService.pluginAPI,
-		agentsService,   // builtInProvider
-		mcpToolProvider, // mcpToolProvider - only pass if not nil
-		agentsService,   // configProvider
-	)
-
 	return agentsService, nil
 }
 
@@ -177,10 +165,6 @@ func (p *AgentsService) OnDeactivate() error {
 // SetAPI sets the API for testing
 func (p *AgentsService) SetAPI(api plugin.API) {
 	p.pluginAPI = pluginapi.NewClient(api, nil)
-}
-
-func (p *AgentsService) createExternalHTTPClient() *http.Client {
-	return httpexternal.CreateRestrictedClient(p.untrustedHTTPClient, httpexternal.ParseAllowedHostnames(p.getConfiguration().AllowedUpstreamHostnames))
 }
 
 // GetContextBuilder returns the context builder for external use

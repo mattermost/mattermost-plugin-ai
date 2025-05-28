@@ -12,9 +12,9 @@ import (
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 )
 
-// BuiltInToolProvider provides built-in tools for a bot and context
-type BuiltInToolProvider interface {
-	GetBuiltInTools(isDM bool, bot *bots.Bot) []llm.Tool
+// ToolProvider provides built-in tools for a bot and context
+type ToolProvider interface {
+	GetTools(isDM bool, bot *bots.Bot) []llm.Tool
 }
 
 // MCPToolProvider provides MCP tools for a user
@@ -30,7 +30,7 @@ type ConfigProvider interface {
 // LLMContextBuilder builds contexts for LLM requests
 type LLMContextBuilder struct {
 	pluginAPI       *pluginapi.Client
-	builtInProvider BuiltInToolProvider
+	toolProvider    ToolProvider
 	mcpToolProvider MCPToolProvider
 	configProvider  ConfigProvider
 }
@@ -38,13 +38,13 @@ type LLMContextBuilder struct {
 // NewLLMContextBuilder creates a new LLM context builder
 func NewLLMContextBuilder(
 	pluginAPI *pluginapi.Client,
-	builtInProvider BuiltInToolProvider,
+	toolProvider ToolProvider,
 	mcpToolProvider MCPToolProvider,
 	configProvider ConfigProvider,
 ) *LLMContextBuilder {
 	return &LLMContextBuilder{
 		pluginAPI:       pluginAPI,
-		builtInProvider: builtInProvider,
+		toolProvider:    toolProvider,
 		mcpToolProvider: mcpToolProvider,
 		configProvider:  configProvider,
 	}
@@ -129,7 +129,7 @@ func (b *LLMContextBuilder) GetToolsStoreForUser(bot *bots.Bot, isDM bool, userI
 	store := llm.NewToolStore(&b.pluginAPI.Log, b.configProvider.GetEnableLLMTrace())
 
 	// Add built-in tools
-	store.AddTools(b.builtInProvider.GetBuiltInTools(isDM, bot))
+	store.AddTools(b.toolProvider.GetTools(isDM, bot))
 
 	// Add MCP tools if available, enabled, and in a DM
 	if b.mcpToolProvider != nil && isDM {

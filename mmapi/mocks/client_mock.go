@@ -5,6 +5,8 @@
 package mocks
 
 import (
+	"net/http"
+
 	"github.com/mattermost/mattermost/server/public/model"
 	mock "github.com/stretchr/testify/mock"
 )
@@ -388,6 +390,62 @@ func (_c *MockClient_GetFirstPostBeforeTimeRangeID_Call) RunAndReturn(run func(c
 	return _c
 }
 
+// GetPluginStatus provides a mock function for the type MockClient
+func (_mock *MockClient) GetPluginStatus(pluginID string) (*model.PluginStatus, error) {
+	ret := _mock.Called(pluginID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetPluginStatus")
+	}
+
+	var r0 *model.PluginStatus
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(string) (*model.PluginStatus, error)); ok {
+		return returnFunc(pluginID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(string) *model.PluginStatus); ok {
+		r0 = returnFunc(pluginID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*model.PluginStatus)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(string) error); ok {
+		r1 = returnFunc(pluginID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockClient_GetPluginStatus_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetPluginStatus'
+type MockClient_GetPluginStatus_Call struct {
+	*mock.Call
+}
+
+// GetPluginStatus is a helper method to define mock.On call
+//   - pluginID
+func (_e *MockClient_Expecter) GetPluginStatus(pluginID interface{}) *MockClient_GetPluginStatus_Call {
+	return &MockClient_GetPluginStatus_Call{Call: _e.mock.On("GetPluginStatus", pluginID)}
+}
+
+func (_c *MockClient_GetPluginStatus_Call) Run(run func(pluginID string)) *MockClient_GetPluginStatus_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(string))
+	})
+	return _c
+}
+
+func (_c *MockClient_GetPluginStatus_Call) Return(pluginStatus *model.PluginStatus, err error) *MockClient_GetPluginStatus_Call {
+	_c.Call.Return(pluginStatus, err)
+	return _c
+}
+
+func (_c *MockClient_GetPluginStatus_Call) RunAndReturn(run func(pluginID string) (*model.PluginStatus, error)) *MockClient_GetPluginStatus_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetPost provides a mock function for the type MockClient
 func (_mock *MockClient) GetPost(postID string) (*model.Post, error) {
 	ret := _mock.Called(postID)
@@ -672,6 +730,164 @@ func (_c *MockClient_GetUser_Call) RunAndReturn(run func(userID string) (*model.
 	return _c
 }
 
+// GetUserByUsername provides a mock function for the type MockClient
+func (_mock *MockClient) GetUserByUsername(username string) (*model.User, error) {
+	ret := _mock.Called(username)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetUserByUsername")
+	}
+
+	var r0 *model.User
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(string) (*model.User, error)); ok {
+		return returnFunc(username)
+	}
+	if returnFunc, ok := ret.Get(0).(func(string) *model.User); ok {
+		r0 = returnFunc(username)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*model.User)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(string) error); ok {
+		r1 = returnFunc(username)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockClient_GetUserByUsername_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetUserByUsername'
+type MockClient_GetUserByUsername_Call struct {
+	*mock.Call
+}
+
+// GetUserByUsername is a helper method to define mock.On call
+//   - username
+func (_e *MockClient_Expecter) GetUserByUsername(username interface{}) *MockClient_GetUserByUsername_Call {
+	return &MockClient_GetUserByUsername_Call{Call: _e.mock.On("GetUserByUsername", username)}
+}
+
+func (_c *MockClient_GetUserByUsername_Call) Run(run func(username string)) *MockClient_GetUserByUsername_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(string))
+	})
+	return _c
+}
+
+func (_c *MockClient_GetUserByUsername_Call) Return(user *model.User, err error) *MockClient_GetUserByUsername_Call {
+	_c.Call.Return(user, err)
+	return _c
+}
+
+func (_c *MockClient_GetUserByUsername_Call) RunAndReturn(run func(username string) (*model.User, error)) *MockClient_GetUserByUsername_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetUserStatus provides a mock function for the type MockClient
+func (_mock *MockClient) GetUserStatus(userID string) (*model.Status, error) {
+	ret := _mock.Called(userID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetUserStatus")
+	}
+
+	var r0 *model.Status
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(string) (*model.Status, error)); ok {
+		return returnFunc(userID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(string) *model.Status); ok {
+		r0 = returnFunc(userID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*model.Status)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(string) error); ok {
+		r1 = returnFunc(userID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockClient_GetUserStatus_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetUserStatus'
+type MockClient_GetUserStatus_Call struct {
+	*mock.Call
+}
+
+// GetUserStatus is a helper method to define mock.On call
+//   - userID
+func (_e *MockClient_Expecter) GetUserStatus(userID interface{}) *MockClient_GetUserStatus_Call {
+	return &MockClient_GetUserStatus_Call{Call: _e.mock.On("GetUserStatus", userID)}
+}
+
+func (_c *MockClient_GetUserStatus_Call) Run(run func(userID string)) *MockClient_GetUserStatus_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(string))
+	})
+	return _c
+}
+
+func (_c *MockClient_GetUserStatus_Call) Return(status *model.Status, err error) *MockClient_GetUserStatus_Call {
+	_c.Call.Return(status, err)
+	return _c
+}
+
+func (_c *MockClient_GetUserStatus_Call) RunAndReturn(run func(userID string) (*model.Status, error)) *MockClient_GetUserStatus_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// HasPermissionTo provides a mock function for the type MockClient
+func (_mock *MockClient) HasPermissionTo(userID string, permission *model.Permission) bool {
+	ret := _mock.Called(userID, permission)
+
+	if len(ret) == 0 {
+		panic("no return value specified for HasPermissionTo")
+	}
+
+	var r0 bool
+	if returnFunc, ok := ret.Get(0).(func(string, *model.Permission) bool); ok {
+		r0 = returnFunc(userID, permission)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	return r0
+}
+
+// MockClient_HasPermissionTo_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'HasPermissionTo'
+type MockClient_HasPermissionTo_Call struct {
+	*mock.Call
+}
+
+// HasPermissionTo is a helper method to define mock.On call
+//   - userID
+//   - permission
+func (_e *MockClient_Expecter) HasPermissionTo(userID interface{}, permission interface{}) *MockClient_HasPermissionTo_Call {
+	return &MockClient_HasPermissionTo_Call{Call: _e.mock.On("HasPermissionTo", userID, permission)}
+}
+
+func (_c *MockClient_HasPermissionTo_Call) Run(run func(userID string, permission *model.Permission)) *MockClient_HasPermissionTo_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(string), args[1].(*model.Permission))
+	})
+	return _c
+}
+
+func (_c *MockClient_HasPermissionTo_Call) Return(b bool) *MockClient_HasPermissionTo_Call {
+	_c.Call.Return(b)
+	return _c
+}
+
+func (_c *MockClient_HasPermissionTo_Call) RunAndReturn(run func(userID string, permission *model.Permission) bool) *MockClient_HasPermissionTo_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // KVGet provides a mock function for the type MockClient
 func (_mock *MockClient) KVGet(key string, value interface{}) error {
 	ret := _mock.Called(key, value)
@@ -845,6 +1061,53 @@ func (_c *MockClient_LogWarn_Call) Return() *MockClient_LogWarn_Call {
 
 func (_c *MockClient_LogWarn_Call) RunAndReturn(run func(msg string, keyValuePairs ...interface{})) *MockClient_LogWarn_Call {
 	_c.Run(run)
+	return _c
+}
+
+// PluginHTTP provides a mock function for the type MockClient
+func (_mock *MockClient) PluginHTTP(req *http.Request) *http.Response {
+	ret := _mock.Called(req)
+
+	if len(ret) == 0 {
+		panic("no return value specified for PluginHTTP")
+	}
+
+	var r0 *http.Response
+	if returnFunc, ok := ret.Get(0).(func(*http.Request) *http.Response); ok {
+		r0 = returnFunc(req)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*http.Response)
+		}
+	}
+	return r0
+}
+
+// MockClient_PluginHTTP_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'PluginHTTP'
+type MockClient_PluginHTTP_Call struct {
+	*mock.Call
+}
+
+// PluginHTTP is a helper method to define mock.On call
+//   - req
+func (_e *MockClient_Expecter) PluginHTTP(req interface{}) *MockClient_PluginHTTP_Call {
+	return &MockClient_PluginHTTP_Call{Call: _e.mock.On("PluginHTTP", req)}
+}
+
+func (_c *MockClient_PluginHTTP_Call) Run(run func(req *http.Request)) *MockClient_PluginHTTP_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(*http.Request))
+	})
+	return _c
+}
+
+func (_c *MockClient_PluginHTTP_Call) Return(response *http.Response) *MockClient_PluginHTTP_Call {
+	_c.Call.Return(response)
+	return _c
+}
+
+func (_c *MockClient_PluginHTTP_Call) RunAndReturn(run func(req *http.Request) *http.Response) *MockClient_PluginHTTP_Call {
+	_c.Call.Return(run)
 	return _c
 }
 

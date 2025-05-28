@@ -21,6 +21,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/metrics"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
+	"github.com/mattermost/mattermost-plugin-ai/mmtools"
 	"github.com/mattermost/mattermost-plugin-ai/search"
 	"github.com/mattermost/mattermost-plugin-ai/streaming"
 	"github.com/mattermost/mattermost/server/public/model"
@@ -52,6 +53,7 @@ type Plugin struct {
 	searchService  *search.Search
 	apiService     *api.API
 	bots           *bots.MMBots
+	toolProvider   *mmtools.MMToolProvider
 }
 
 func (p *Plugin) OnActivate() error {
@@ -104,18 +106,11 @@ func (p *Plugin) OnActivate() error {
 	// Initialize indexer service (always created, handles nil search gracefully)
 	p.indexerService = indexer.New(searchInfrastructure, mmClient, p.bots, p.db)
 
-	// Initialize the agents service first (no longer needs search/indexer)
-	agentsService, err := agents.NewAgentsService(p.API, p.pluginAPI, p.llmUpstreamHTTPClient, untrustedHTTPClient, metricsService, &p.configuration.Config, p.bots)
-	if err != nil {
-		return err
-	}
-	p.agentsService = agentsService
-
 	// Initialize search service if search infrastructure is available
 	if searchInfrastructure != nil {
-		prompts, err := llm.NewPrompts(llm.PromptsFolder)
-		if err != nil {
-			p.pluginAPI.Log.Error("failed to initialize prompts", "error", err)
+		prompts, promptManagerErr := llm.NewPrompts(llm.PromptsFolder)
+		if promptManagerErr != nil {
+			p.pluginAPI.Log.Error("failed to initialize prompts", "error", promptManagerErr)
 			return nil
 		}
 		// Create i18n bundle
@@ -133,6 +128,26 @@ func (p *Plugin) OnActivate() error {
 			licenseChecker,
 		)
 	}
+
+	p.toolProvider = mmtools.NewMMToolProvider(
+		mmClient,
+		p.searchService,
+		untrustedHTTPClient,
+	)
+
+	contextBuilder := agents.NewLLMContextBuilder(
+		p.pluginAPI,
+		p.toolProvider,
+		nil, //TODO: this will break MCP tools, need to fix by etracting the mcpclient manger from the agents service
+		&p.configuration.Config,
+	)
+
+	// Initialize the agents service first (no longer needs search/indexer)
+	agentsService, err := agents.NewAgentsService(p.API, p.pluginAPI, p.llmUpstreamHTTPClient, untrustedHTTPClient, metricsService, &p.configuration.Config, p.bots, contextBuilder)
+	if err != nil {
+		return err
+	}
+	p.agentsService = agentsService
 
 	// Initialize the API service with all services
 	p.apiService = api.New(p.agentsService, p.indexerService, p.searchService, p.pluginAPI, metricsService)

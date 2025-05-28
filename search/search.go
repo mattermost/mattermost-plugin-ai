@@ -56,7 +56,7 @@ type RAGResult struct {
 }
 
 type Search struct {
-	search                embeddings.EmbeddingSearch
+	embeddings.EmbeddingSearch
 	pluginAPI             mmapi.Client
 	prompts               *llm.Prompts
 	streamingService      streaming.Service
@@ -81,7 +81,7 @@ func New(
 	licenseChecker LicenseChecker,
 ) *Search {
 	return &Search{
-		search:                search,
+		EmbeddingSearch:       search,
 		pluginAPI:             pluginAPI,
 		prompts:               prompts,
 		streamingService:      streamingService,
@@ -92,7 +92,7 @@ func New(
 	}
 }
 
-// convertToRAGResults converts embeddings.SearchResult to RAGResult with enriched metadata
+// convertToRAGResults converts embeddings.EmbeddingSearchResult to RAGResult with enriched metadata
 func (s *Search) convertToRAGResults(searchResults []embeddings.SearchResult) []RAGResult {
 	var ragResults []RAGResult
 	for _, result := range searchResults {
@@ -150,7 +150,7 @@ func (s *Search) convertToRAGResults(searchResults []embeddings.SearchResult) []
 
 // RunSearch initiates a search and sends results to a DM
 func (s *Search) RunSearch(ctx context.Context, userID string, bot *bots.Bot, query, teamID, channelID string, maxResults int) (map[string]string, error) {
-	if s.search == nil {
+	if s.EmbeddingSearch == nil {
 		return nil, fmt.Errorf("search functionality is not configured")
 	}
 
@@ -198,7 +198,7 @@ func (s *Search) RunSearch(ctx context.Context, userID string, bot *bots.Bot, qu
 			maxResults = 5
 		}
 
-		searchResults, err := s.search.Search(context.Background(), query, embeddings.SearchOptions{
+		searchResults, err := s.Search(context.Background(), query, embeddings.SearchOptions{
 			Limit:     maxResults,
 			TeamID:    teamID,
 			ChannelID: channelID,
@@ -287,7 +287,7 @@ func (s *Search) RunSearch(ctx context.Context, userID string, bot *bots.Bot, qu
 
 // SearchQuery performs a search and returns results immediately
 func (s *Search) SearchQuery(ctx context.Context, userID string, bot *bots.Bot, query, teamID, channelID string, maxResults int) (Response, error) {
-	if s.search == nil {
+	if s.EmbeddingSearch == nil {
 		return Response{}, fmt.Errorf("search functionality is not configured")
 	}
 
@@ -296,7 +296,7 @@ func (s *Search) SearchQuery(ctx context.Context, userID string, bot *bots.Bot, 
 	}
 
 	// Search for relevant posts using embeddings
-	searchResults, err := s.search.Search(ctx, query, embeddings.SearchOptions{
+	searchResults, err := s.Search(ctx, query, embeddings.SearchOptions{
 		Limit:     maxResults,
 		TeamID:    teamID,
 		ChannelID: channelID,
