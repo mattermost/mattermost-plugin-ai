@@ -2,11 +2,31 @@
 
 # Mattermost Copilot Plugin [![Download Latest Master Build](https://img.shields.io/badge/Download-Latest%20Master%20Build-blue)](https://github.com/mattermost/mattermost-plugin-ai/releases/tag/latest-master)
 
-The Mattermost Copilot Plugin integrates AI capabilities directly into your [Mattermost](https://github.com/mattermost/mattermost) workspace, supporting both self-hosted and vendor-hosted Large Language Models (LLMs).
+The Mattermost Copilot Plugin integrates AI capabilities directly into your [Mattermost](https://github.com/mattermost/mattermost) workspace. **Run any local LLM** on your infrastructure or connect to cloud providers - you control your data and deployment.
 
 </div>
 
 ![The Mattermost Copilot AI Plugin is an extension for mattermost that provides functionality for self-hosted and vendor-hosted LLMs](img/mattermost-ai-llm-access.webp)
+
+## Key Features
+
+- **Multiple AI Assistants**: Configure different bots with specialized personalities and capabilities
+- **Thread & Channel Summarization**: Get concise summaries of long discussions with a single click
+- **Action Item Extraction**: Automatically identify and extract action items from threads
+- **Meeting Transcription**: Transcribe and summarize meeting recordings
+- **Semantic Search**: Find relevant content across your Mattermost instance using natural language
+- **Smart Reactions**: Let AI suggest contextually appropriate emoji reactions
+- **Direct Conversations**: Chat directly with AI assistants in dedicated channels
+- **Flexible LLM Support**: Use local models (Ollama, vLLM, etc.), cloud providers (OpenAI, Anthropic, Azure), or any OpenAI-compatible API
+
+## Documentation
+
+Comprehensive documentation is available in the `/docs` directory:
+
+- [User Guide](docs/user_guide.md): Learn how to interact with AI features
+- [Admin Guide](docs/admin_guide.md): Detailed installation and configuration instructions
+- [Provider Setup](docs/providers.md): Configuration for supported LLM providers
+- [Feature Documentation](docs/features/): Detailed guides for individual features
 
 ## Installation
 
@@ -14,26 +34,25 @@ The Mattermost Copilot Plugin integrates AI capabilities directly into your [Mat
 2. Upload and enable the plugin through the Mattermost System Console
 3. Configure your desired LLM provider settings
 
-More details on the [Mattermost documentation site](https://docs.mattermost.com/configure/enable-copilot.html)
-
 ### System Requirements
 
 - Mattermost Server versions:
   - v10.0 or later recommended
   - v9.11+ (ESR)
-- PostgreSQL database
+- PostgreSQL database with pgvector extension for semantic search capabilities
 - Network access to your chosen LLM provider
 
-## Configuration
+## Quick Start
 
-After installation, you'll need to configure the plugin through the System Console:
+After installation, complete these steps to get started:
 
 1. Navigate to **System Console > Plugins > Copilot**
-2. Create a bot
-3. Select and setup an upstream provider
-4. Check it's working in the copilot RHS
+2. Create a bot and configure it with your LLM provider credentials
+3. Set permissions for who can access the bot
+4. Open the Copilot panel from any channel using the AI icon in the right sidebar
+5. Start interacting with your AI assistant
 
-For detailed configuration instructions, see the [Mattermost Product Documentation](https://docs.mattermost.com/configure/enable-copilot.html#mattermost-configuration).
+For detailed configuration instructions, see the [Admin Guide](docs/admin_guide.md).
 
 ## Development
 
