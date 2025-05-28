@@ -45,7 +45,7 @@ func NewLLMContextBuilder(
 	return &LLMContextBuilder{
 		pluginAPI:       pluginAPI,
 		toolProvider:    toolProvider,
-		mcpToolProvider: mcpToolProvider,
+		mcpToolProvider: nil, /// mcpToolProvider,
 		configProvider:  configProvider,
 	}
 }

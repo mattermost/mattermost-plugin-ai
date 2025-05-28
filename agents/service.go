@@ -18,6 +18,8 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/metrics"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
+	"github.com/mattermost/mattermost-plugin-ai/openai"
+	"github.com/mattermost/mattermost-plugin-ai/providers"
 	"github.com/mattermost/mattermost-plugin-ai/streaming"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
@@ -191,4 +193,63 @@ func (p *AgentsService) GetBotByID(botID string) *bots.Bot {
 // SetBotsForTesting sets the bots instance for testing purposes only
 func (p *AgentsService) SetBotsForTesting(bots *bots.MMBots) {
 	p.bots = bots
+}
+
+// GetLLM creates and returns a language model for the given bot configuration
+func (p *AgentsService) GetLLM(botConfig llm.BotConfig) llm.LanguageModel {
+	llmMetrics := p.metricsService.GetMetricsForAIService(botConfig.Name)
+
+	result := providers.CreateLanguageModel(botConfig, p.llmUpstreamHTTPClient, llmMetrics)
+
+	cfg := p.getConfiguration()
+	if cfg.EnableLLMTrace {
+		result = providers.NewLanguageModelLogWrapper(p.pluginAPI.Log, result)
+	}
+
+	result = providers.NewLLMTruncationWrapper(result)
+
+	return result
+}
+
+// getTranscribe creates a transcriber for the configured transcript generator bot
+func (p *AgentsService) getTranscribe() Transcriber {
+	cfg := p.getConfiguration()
+	var botConfig llm.BotConfig
+
+	// Find the bot configuration for transcript generation
+	found := false
+	for _, bot := range cfg.Bots {
+		if bot.Name == cfg.TranscriptGenerator {
+			botConfig = bot
+			found = true
+			break
+		}
+	}
+
+	// Check if a valid bot configuration was found
+	if !found || cfg.TranscriptGenerator == "" {
+		p.pluginAPI.Log.Error("No transcript generator bot found", "configured_generator", cfg.TranscriptGenerator)
+		return nil
+	}
+
+	// Check if the service type is configured
+	if botConfig.Service.Type == "" {
+		p.pluginAPI.Log.Error("Transcript generator bot has no service type configured", "bot_name", botConfig.Name)
+		return nil
+	}
+
+	llmMetrics := p.metricsService.GetMetricsForAIService(botConfig.Name)
+	switch botConfig.Service.Type {
+	case llm.ServiceTypeOpenAI:
+		return openai.New(providers.OpenAIConfigFromServiceConfig(botConfig.Service), p.llmUpstreamHTTPClient, llmMetrics)
+	case llm.ServiceTypeOpenAICompatible:
+		return openai.NewCompatible(providers.OpenAIConfigFromServiceConfig(botConfig.Service), p.llmUpstreamHTTPClient, llmMetrics)
+	case llm.ServiceTypeAzure:
+		return openai.NewAzure(providers.OpenAIConfigFromServiceConfig(botConfig.Service), p.llmUpstreamHTTPClient, llmMetrics)
+	default:
+		p.pluginAPI.Log.Error("Unsupported service type for transcript generator",
+			"bot_name", botConfig.Name,
+			"service_type", botConfig.Service.Type)
+		return nil
+	}
 }

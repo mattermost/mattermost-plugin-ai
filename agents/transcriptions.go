@@ -10,7 +10,7 @@ import (
 	"slices"
 
 	"github.com/mattermost/mattermost-plugin-ai/bots"
-	"github.com/mattermost/mattermost-plugin-ai/llm/subtitles"
+	"github.com/mattermost/mattermost-plugin-ai/subtitles"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 

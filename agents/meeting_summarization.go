@@ -17,8 +17,8 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/i18n"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
-	"github.com/mattermost/mattermost-plugin-ai/llm/subtitles"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
+	"github.com/mattermost/mattermost-plugin-ai/subtitles"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
@@ -169,14 +169,14 @@ func (p *AgentsService) newCallTranscriptionSummaryThread(bot *bots.Bot, request
 			return fmt.Errorf("unable to read calls file: %w", err)
 		}
 
-		var transcription *subtitles.Subtitles
+		var text *subtitles.Subtitles
 		if transcriptionFilePost.Type == "custom_zoom_chat" {
-			transcription, err = subtitles.NewSubtitlesFromZoomChat(transcriptionFileReader)
+			text, err = subtitles.NewSubtitlesFromZoomChat(transcriptionFileReader)
 			if err != nil {
 				return fmt.Errorf("unable to parse transcription file: %w", err)
 			}
 		} else {
-			transcription, err = subtitles.NewSubtitlesFromVTT(transcriptionFileReader)
+			text, err = subtitles.NewSubtitlesFromVTT(transcriptionFileReader)
 			if err != nil {
 				return fmt.Errorf("unable to parse transcription file: %w", err)
 			}
@@ -188,7 +188,7 @@ func (p *AgentsService) newCallTranscriptionSummaryThread(bot *bots.Bot, request
 			channel,
 			p.contextBuilder.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.GetMMBot().UserId, channel)),
 		)
-		summaryStream, err := p.summarizeTranscription(bot, transcription, requestContext)
+		summaryStream, err := p.summarizeTranscription(bot, text, requestContext)
 		if err != nil {
 			return fmt.Errorf("unable to summarize transcription: %w", err)
 		}

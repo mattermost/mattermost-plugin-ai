@@ -18,8 +18,8 @@ import (
 	"errors"
 
 	"github.com/mattermost/mattermost-plugin-ai/llm"
-	"github.com/mattermost/mattermost-plugin-ai/llm/subtitles"
 	"github.com/mattermost/mattermost-plugin-ai/metrics"
+	"github.com/mattermost/mattermost-plugin-ai/subtitles"
 	openaiClient "github.com/sashabaranov/go-openai"
 )
 
