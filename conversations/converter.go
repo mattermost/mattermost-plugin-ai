@@ -1,25 +1,29 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-package agents
+package conversations
 
 import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
+
+	"errors"
 
 	"github.com/mattermost/mattermost-plugin-ai/agents/format"
 	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/streaming"
 	"github.com/mattermost/mattermost/server/public/model"
+	"github.com/mattermost/mattermost/server/public/pluginapi"
 )
 
 const defaultMaxFileSize = int64(1024 * 1024 * 5) // 5MB
 const UnsafeLinksPostProp = "unsafe_links"
 
-func (p *AgentsService) modifyPostForBot(botid string, requesterUserID string, post *model.Post, respondingToPostID string) {
+func (c *Conversations) modifyPostForBot(botid string, requesterUserID string, post *model.Post, respondingToPostID string) {
 	post.UserId = botid
 	post.Type = "custom_llmbot" // This must be the only place we add this type for security.
 	post.AddProp(LLMRequesterUserID, requesterUserID)
@@ -33,11 +37,12 @@ func (p *AgentsService) modifyPostForBot(botid string, requesterUserID string, p
 	}
 }
 
-func (p *AgentsService) botDMNonResponse(botid string, userID string, post *model.Post) error {
-	p.modifyPostForBot(botid, userID, post, "")
+func (c *Conversations) botCreateNonResponsePost(botid string, requesterUserID string, post *model.Post) error {
+	c.modifyPostForBot(botid, requesterUserID, post, "")
+	post.AddProp(NoRegen, true)
 
-	if err := p.pluginAPI.Post.DM(botid, userID, post); err != nil {
-		return fmt.Errorf("failed to post DM: %w", err)
+	if err := c.pluginAPI.Post.CreatePost(post); err != nil {
+		return err
 	}
 
 	return nil
@@ -47,7 +52,7 @@ func isImageMimeType(mimeType string) bool {
 	return strings.HasPrefix(mimeType, "image/")
 }
 
-func (p *AgentsService) PostToAIPost(bot *bots.Bot, post *model.Post) llm.Post {
+func (c *Conversations) PostToAIPost(bot *bots.Bot, post *model.Post) llm.Post {
 	var filesForUpstream []llm.File
 	message := format.PostBody(post)
 	var extractedFileContents []string
@@ -58,9 +63,9 @@ func (p *AgentsService) PostToAIPost(bot *bots.Bot, post *model.Post) llm.Post {
 	}
 
 	for _, fileID := range post.FileIds {
-		fileInfo, err := p.pluginAPI.File.GetInfo(fileID)
+		fileInfo, err := c.pluginAPI.File.GetInfo(fileID)
 		if err != nil {
-			p.pluginAPI.Log.Error("Error getting file info", "error", err)
+			c.pluginAPI.Log.Error("Error getting file info", "error", err)
 			continue
 		}
 
@@ -69,14 +74,14 @@ func (p *AgentsService) PostToAIPost(bot *bots.Bot, post *model.Post) llm.Post {
 		if trimmedContent := strings.TrimSpace(fileInfo.Content); trimmedContent != "" {
 			content = trimmedContent
 		} else if strings.HasPrefix(fileInfo.MimeType, "text/") {
-			file, err := p.pluginAPI.File.Get(fileID)
+			file, err := c.pluginAPI.File.Get(fileID)
 			if err != nil {
-				p.pluginAPI.Log.Error("Error getting file", "error", err)
+				c.pluginAPI.Log.Error("Error getting file", "error", err)
 				continue
 			}
 			contentBytes, err := io.ReadAll(io.LimitReader(file, maxFileSize))
 			if err != nil {
-				p.pluginAPI.Log.Error("Error reading file content", "error", err)
+				c.pluginAPI.Log.Error("Error reading file content", "error", err)
 				continue
 			}
 			content = string(contentBytes)
@@ -91,9 +96,9 @@ func (p *AgentsService) PostToAIPost(bot *bots.Bot, post *model.Post) llm.Post {
 		}
 
 		if bot.GetConfig().EnableVision && isImageMimeType(fileInfo.MimeType) {
-			file, err := p.pluginAPI.File.Get(fileID)
+			file, err := c.pluginAPI.File.Get(fileID)
 			if err != nil {
-				p.pluginAPI.Log.Error("Error getting file", "error", err)
+				c.pluginAPI.Log.Error("Error getting file", "error", err)
 				continue
 			}
 			filesForUpstream = append(filesForUpstream, llm.File{
@@ -110,7 +115,7 @@ func (p *AgentsService) PostToAIPost(bot *bots.Bot, post *model.Post) llm.Post {
 	}
 
 	role := llm.PostRoleUser
-	if p.bots.IsAnyBot(post.UserId) {
+	if c.bots.IsAnyBot(post.UserId) {
 		role = llm.PostRoleBot
 	}
 
@@ -121,7 +126,7 @@ func (p *AgentsService) PostToAIPost(bot *bots.Bot, post *model.Post) llm.Post {
 	if ok {
 		var toolCalls []llm.ToolCall
 		if err := json.Unmarshal([]byte(pendingTools), &toolCalls); err != nil {
-			p.pluginAPI.Log.Error("Error unmarshalling tool calls", "error", err)
+			c.pluginAPI.Log.Error("Error unmarshalling tool calls", "error", err)
 		} else {
 			tools = toolCalls
 		}
@@ -135,12 +140,66 @@ func (p *AgentsService) PostToAIPost(bot *bots.Bot, post *model.Post) llm.Post {
 	}
 }
 
-func (p *AgentsService) ThreadToLLMPosts(bot *bots.Bot, posts []*model.Post) []llm.Post {
+func (c *Conversations) ThreadToLLMPosts(bot *bots.Bot, posts []*model.Post) []llm.Post {
 	result := make([]llm.Post, 0, len(posts))
 
 	for _, post := range posts {
-		result = append(result, p.PostToAIPost(bot, post))
+		result = append(result, c.PostToAIPost(bot, post))
 	}
 
 	return result
+}
+
+func (c *Conversations) checkUsageRestrictionsForUser(bot *bots.Bot, requestingUserID string) error {
+	switch bot.GetConfig().UserAccessLevel {
+	case llm.UserAccessLevelAll:
+		return nil
+	case llm.UserAccessLevelAllow:
+		// Check direct user allowlist
+		if slices.Contains(bot.GetConfig().UserIDs, requestingUserID) {
+			return nil
+		}
+		// Check team membership
+		for _, teamID := range bot.GetConfig().TeamIDs {
+			isMember, err := c.isMemberOfTeam(teamID, requestingUserID)
+			if err != nil {
+				return err
+			}
+			if isMember {
+				return nil
+			}
+		}
+		return fmt.Errorf("user not allowed")
+	case llm.UserAccessLevelBlock:
+		// Check direct user blocklist
+		if slices.Contains(bot.GetConfig().UserIDs, requestingUserID) {
+			return fmt.Errorf("user blocked")
+		}
+		// Check team membership
+		for _, teamID := range bot.GetConfig().TeamIDs {
+			isMember, err := c.isMemberOfTeam(teamID, requestingUserID)
+			if err != nil {
+				return err
+			}
+			if isMember {
+				return fmt.Errorf("user's team blocked")
+			}
+		}
+		return nil
+	case llm.UserAccessLevelNone:
+		return fmt.Errorf("user usage block for bot")
+	}
+
+	return fmt.Errorf("unknown user assistance level")
+}
+
+func (c *Conversations) isMemberOfTeam(teamID string, userID string) (bool, error) {
+	member, err := c.pluginAPI.Team.GetMember(teamID, userID)
+	if errors.Is(err, pluginapi.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return member != nil && member.DeleteAt == 0, nil
 }

@@ -5,6 +5,7 @@ package agents
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"os/exec"
@@ -13,6 +14,7 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
 	"github.com/mattermost/mattermost-plugin-ai/bots"
+	"github.com/mattermost/mattermost-plugin-ai/conversations"
 	"github.com/mattermost/mattermost-plugin-ai/enterprise"
 	"github.com/mattermost/mattermost-plugin-ai/i18n"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
@@ -65,6 +67,9 @@ type AgentsService struct { //nolint:revive
 	contextBuilder *LLMContextBuilder
 
 	bots *bots.MMBots
+
+	// conversationService handles all conversation-related functionality
+	conversationService *conversations.Conversations
 }
 
 func resolveffmpegPath() string {
@@ -89,6 +94,8 @@ func NewAgentsService(
 	configuration *Config,
 	bots *bots.MMBots,
 	contextBuilder *LLMContextBuilder,
+	db *sqlx.DB,
+	builder sq.StatementBuilderType,
 ) (*AgentsService, error) {
 	agentsService := &AgentsService{
 		API:                   originalAPI,
@@ -100,6 +107,8 @@ func NewAgentsService(
 		configuration:         configuration,
 		bots:                  bots,
 		contextBuilder:        contextBuilder,
+		db:                    db,
+		builder:               builder,
 	}
 
 	agentsService.licenseChecker = enterprise.NewLicenseChecker(agentsService.pluginAPI)
@@ -108,10 +117,6 @@ func NewAgentsService(
 	agentsService.i18n = i18n.Init()
 	if agentsService.i18n == nil {
 		return nil, fmt.Errorf("failed to initialize i18n bundle")
-	}
-
-	if err := agentsService.SetupDB(); err != nil {
-		return nil, err
 	}
 
 	var err error
@@ -134,6 +139,25 @@ func NewAgentsService(
 		},
 	)
 
+	// Initialize conversations service
+	agentsService.conversationService = conversations.New(
+		agentsService.GetLLM,
+		agentsService.prompts,
+		agentsService.mmClient,
+		agentsService.pluginAPI,
+		agentsService.streamingService,
+		agentsService.contextBuilder,
+		agentsService.bots,
+		agentsService.db,
+		agentsService.builder,
+		agentsService.licenseChecker,
+		agentsService.i18n,
+		func() string {
+			return agentsService.getConfiguration().DefaultBotName
+		},
+		agentsService.checkUsageRestrictions,
+	)
+
 	return agentsService, nil
 }
 
@@ -148,6 +172,7 @@ func (p *AgentsService) OnDeactivate() error {
 // SetAPI sets the API for testing
 func (p *AgentsService) SetAPI(api plugin.API) {
 	p.pluginAPI = pluginapi.NewClient(api, nil)
+	p.mmClient = mmapi.NewClient(p.pluginAPI)
 }
 
 // GetContextBuilder returns the context builder for external use
@@ -167,7 +192,12 @@ func (p *AgentsService) StreamResultToNewDM(botid string, stream *llm.TextStream
 
 // SaveTitleAsync saves a title asynchronously (exported wrapper)
 func (p *AgentsService) SaveTitleAsync(threadID, title string) {
-	p.saveTitleAsync(threadID, title)
+	p.conversationService.SaveTitleAsync(threadID, title)
+}
+
+// saveTitleAsync is a compatibility wrapper for internal use
+func (p *AgentsService) saveTitleAsync(threadID, title string) {
+	p.conversationService.SaveTitleAsync(threadID, title)
 }
 
 // GetEnableLLMTrace returns whether LLM tracing is enabled
@@ -191,8 +221,32 @@ func (p *AgentsService) GetBotByID(botID string) *bots.Bot {
 }
 
 // SetBotsForTesting sets the bots instance for testing purposes only
-func (p *AgentsService) SetBotsForTesting(bots *bots.MMBots) {
-	p.bots = bots
+func (p *AgentsService) SetBotsForTesting(botsInstance *bots.MMBots, pluginAPI *pluginapi.Client) {
+	p.bots = botsInstance
+	p.pluginAPI = pluginAPI
+
+	// Initialize a minimal conversations service for testing if not already initialized
+	if p.conversationService == nil {
+		p.conversationService = conversations.New(
+			func(cfg llm.BotConfig) llm.LanguageModel { return nil },
+			&llm.Prompts{},
+			nil,
+			p.pluginAPI,
+			nil,
+			nil,
+			botsInstance,
+			nil,
+			sq.StatementBuilder,
+			nil,
+			nil,
+			func() string { return "ai" },
+			// Provide a mock checkUsageRestrictions function for testing
+			func(userID string, bot *bots.Bot, channel *model.Channel) error {
+				// This is a simplified version for testing - the actual logic is in permissions.go
+				return p.checkUsageRestrictions(userID, bot, channel)
+			},
+		)
+	}
 }
 
 // GetLLM creates and returns a language model for the given bot configuration
@@ -252,4 +306,82 @@ func (p *AgentsService) getTranscribe() Transcriber {
 			"service_type", botConfig.Service.Type)
 		return nil
 	}
+}
+
+// Delegate methods to conversations service
+
+// GetAIThreads delegates to the conversations service
+func (p *AgentsService) GetAIThreads(userID string) ([]conversations.AIThread, error) {
+	return p.conversationService.GetAIThreads(userID)
+}
+
+// GetAIBots delegates to the conversations service
+func (p *AgentsService) GetAIBots(userID string) ([]conversations.AIBotInfo, error) {
+	return p.conversationService.GetAIBots(userID)
+}
+
+// IsBasicsLicensed delegates to the conversations service
+func (p *AgentsService) IsBasicsLicensed() bool {
+	return p.conversationService.IsBasicsLicensed()
+}
+
+// StopPostStreaming delegates to the conversations service
+func (p *AgentsService) StopPostStreaming(postID string) {
+	p.conversationService.StopPostStreaming(postID)
+}
+
+// CheckUsageRestrictions delegates to the conversations service
+func (p *AgentsService) CheckUsageRestrictions(userID string, bot *bots.Bot, channel *model.Channel) error {
+	return p.conversationService.CheckUsageRestrictions(userID, bot, channel)
+}
+
+// ProcessUserRequestToBot delegates to the conversations service
+func (p *AgentsService) processUserRequestToBot(bot *bots.Bot, postingUser *model.User, channel *model.Channel, post *model.Post) (*llm.TextStreamResult, error) {
+	return p.conversationService.ProcessUserRequest(bot, postingUser, channel, post)
+}
+
+// HandleRegenerate delegates to the conversations service
+func (p *AgentsService) HandleRegenerate(userID string, post *model.Post, channel *model.Channel) error {
+	return p.conversationService.HandleRegenerate(userID, post, channel)
+}
+
+// GetI18nBundle returns the i18n bundle for external use
+func (p *AgentsService) GetI18nBundle() *i18n.Bundle {
+	return p.i18n
+}
+
+// Constants moved to conversations package - re-export for compatibility
+const (
+	LLMRequesterUserID = conversations.LLMRequesterUserID
+	NoRegen            = conversations.NoRegen
+	RespondingToProp   = conversations.RespondingToProp
+)
+
+// Type aliases for compatibility
+type AIThread = conversations.AIThread
+type AIBotInfo = conversations.AIBotInfo
+
+// ExistingConversationToLLMPosts delegates to the conversations service
+func (p *AgentsService) existingConversationToLLMPosts(bot *bots.Bot, conversation *mmapi.ThreadData, context *llm.Context) ([]llm.Post, error) {
+	return p.conversationService.ExistingConversationToLLMPosts(bot, conversation, context)
+}
+
+// saveTitle saves a title for a thread
+func (p *AgentsService) saveTitle(threadID, title string) error {
+	// Delegate to conversations service
+	return p.conversationService.SaveTitle(threadID, title)
+}
+
+// execBuilder is a helper for executing SQL builders
+func (p *AgentsService) execBuilder(b interface {
+	ToSql() (string, []interface{}, error)
+}) (sql.Result, error) {
+	sqlString, args, err := b.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build sql: %w", err)
+	}
+
+	sqlString = p.db.Rebind(sqlString)
+
+	return p.db.Exec(sqlString, args...)
 }

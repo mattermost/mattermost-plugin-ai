@@ -14,6 +14,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/agents"
 	"github.com/mattermost/mattermost-plugin-ai/api"
 	"github.com/mattermost/mattermost-plugin-ai/bots"
+	"github.com/mattermost/mattermost-plugin-ai/database"
 	"github.com/mattermost/mattermost-plugin-ai/embeddings"
 	"github.com/mattermost/mattermost-plugin-ai/enterprise"
 	"github.com/mattermost/mattermost-plugin-ai/i18n"
@@ -93,6 +94,12 @@ func (p *Plugin) OnActivate() error {
 	dbClient := mmapi.NewDBClient(p.pluginAPI)
 	p.db = dbClient.DB
 
+	// Set up database tables
+	if setupTablesErr := database.SetupTables(p.db); setupTablesErr != nil {
+		p.pluginAPI.Log.Error("failed to setup database tables", "error", setupTablesErr)
+		return setupTablesErr
+	}
+
 	// Initialize search and indexer services independently
 	var searchInfrastructure embeddings.EmbeddingSearch
 	if p.configuration.EmbeddingSearchConfig.Type != "" {
@@ -153,7 +160,7 @@ func (p *Plugin) OnActivate() error {
 	)
 
 	// Initialize the agents service first (no longer needs search/indexer)
-	agentsService, err := agents.NewAgentsService(p.API, p.pluginAPI, p.llmUpstreamHTTPClient, untrustedHTTPClient, metricsService, &p.configuration.Config, p.bots, contextBuilder)
+	agentsService, err := agents.NewAgentsService(p.API, p.pluginAPI, p.llmUpstreamHTTPClient, untrustedHTTPClient, metricsService, &p.configuration.Config, p.bots, contextBuilder, p.db, dbClient.Builder())
 	if err != nil {
 		return err
 	}

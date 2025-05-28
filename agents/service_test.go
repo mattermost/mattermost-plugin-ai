@@ -38,7 +38,7 @@ func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 	// Create agents service
 	p := AgentsService{}
 	p.pluginAPI = client
-	p.SetBotsForTesting(testBots)
+	p.SetBotsForTesting(testBots, client)
 
 	var promptErr error
 	p.prompts, promptErr = llm.NewPrompts(llm.PromptsFolder)

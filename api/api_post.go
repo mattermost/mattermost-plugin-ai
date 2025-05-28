@@ -13,7 +13,12 @@ import (
 	"github.com/gin-gonic/gin/render"
 	"github.com/mattermost/mattermost-plugin-ai/agents"
 	"github.com/mattermost/mattermost-plugin-ai/agents/react"
+	"github.com/mattermost/mattermost-plugin-ai/agents/threads"
 	"github.com/mattermost/mattermost-plugin-ai/bots"
+	"github.com/mattermost/mattermost-plugin-ai/conversations"
+	"github.com/mattermost/mattermost-plugin-ai/i18n"
+	"github.com/mattermost/mattermost-plugin-ai/llm"
+	"github.com/mattermost/mattermost-plugin-ai/mmapi"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
@@ -117,15 +122,54 @@ func (a *API) handleThreadAnalysis(c *gin.Context) {
 		return
 	}
 
-	createdPost, err := a.agents.ThreadAnalysis(userID, bot, post, channel, data.AnalysisType)
+	// Get the user to build context
+	user, err := a.pluginAPI.User.Get(userID)
 	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to perform analysis: %w", err))
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to get user: %w", err))
 		return
 	}
 
+	// Build LLM context
+	llmContext := a.contextBuilder.BuildLLMContextUserRequest(
+		bot,
+		user,
+		channel,
+		a.contextBuilder.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.GetMMBot().UserId, channel)),
+	)
+
+	// Create thread analyzer
+	analyzer := threads.New(a.agents.GetLLM(bot.GetConfig()), a.prompts, a.mmClient)
+	var analysisStream *llm.TextStreamResult
+	var title string
+	switch data.AnalysisType {
+	case "summarize_thread":
+		title = "Thread Summary"
+		analysisStream, err = analyzer.Summarize(post.Id, llmContext)
+	case "action_items":
+		title = "Action Items"
+		analysisStream, err = analyzer.FindActionItems(post.Id, llmContext)
+	case "open_questions":
+		title = "Open Questions"
+		analysisStream, err = analyzer.FindOpenQuestions(post.Id, llmContext)
+	}
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to analyze thread: %w", err))
+		return
+	}
+
+	// Create analysis post
+	siteURL := a.pluginAPI.Configuration.GetConfig().ServiceSettings.SiteURL
+	analysisPost := a.makeAnalysisPost(user.Locale, post.Id, data.AnalysisType, *siteURL)
+	if err := a.agents.StreamResultToNewDM(bot.GetMMBot().UserId, analysisStream, user.Id, analysisPost, post.Id); err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	a.agents.SaveTitleAsync(post.Id, title)
+
 	c.JSON(http.StatusOK, map[string]string{
-		"postid":    createdPost.Id,
-		"channelid": createdPost.ChannelId,
+		"postid":    analysisPost.Id,
+		"channelid": analysisPost.ChannelId,
 	})
 }
 
@@ -250,4 +294,29 @@ func (a *API) handlePostbackSummary(c *gin.Context) {
 	}
 
 	c.Render(http.StatusOK, render.JSON{Data: result})
+}
+
+// makeAnalysisPost creates a post for thread analysis results
+func (a *API) makeAnalysisPost(locale string, postIDToAnalyze string, analysisType string, siteURL string) *model.Post {
+	post := &model.Post{
+		Message: a.analysisPostMessage(locale, postIDToAnalyze, analysisType, siteURL),
+	}
+	post.AddProp(conversations.ThreadIDProp, postIDToAnalyze)
+	post.AddProp(conversations.AnalysisTypeProp, analysisType)
+
+	return post
+}
+
+func (a *API) analysisPostMessage(locale string, postIDToAnalyze string, analysisType string, siteURL string) string {
+	T := i18n.LocalizerFunc(a.agents.GetI18nBundle(), locale)
+	switch analysisType {
+	case "summarize_thread":
+		return T("copilot.summarize_thread", "Sure, I will summarize this thread: %s/_redirect/pl/%s\n", siteURL, postIDToAnalyze)
+	case "action_items":
+		return T("copilot.find_action_items", "Sure, I will find action items in this thread: %s/_redirect/pl/%s\n", siteURL, postIDToAnalyze)
+	case "open_questions":
+		return T("copilot.find_open_questions", "Sure, I will find open questions in this thread: %s/_redirect/pl/%s\n", siteURL, postIDToAnalyze)
+	default:
+		return T("copilot.analyze_thread", "Sure, I will analyze this thread: %s/_redirect/pl/%s\n", siteURL, postIDToAnalyze)
+	}
 }

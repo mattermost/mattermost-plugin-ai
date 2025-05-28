@@ -62,14 +62,16 @@ func (e *TestEnvironment) setupTestBot(botConfig llm.BotConfig) {
 func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 	mockAPI := &plugintest.API{}
 	noopMetrics := &metrics.NoopMetrics{}
+
 	client := pluginapi.NewClient(mockAPI, nil)
 
 	// Create test bots instance
 	testBots := createTestBots(mockAPI, client)
 
-	// Create agents service - we'll pass nil for bots initially and set it via testing method
+	// Create agents service with minimal setup for testing
 	agents := &agents.AgentsService{}
-	agents.SetBotsForTesting(testBots)
+	// Don't call SetAPI for tests - just set the fields we need
+	agents.SetBotsForTesting(testBots, client)
 
 	api := New(agents, nil, nil, client, noopMetrics)
 

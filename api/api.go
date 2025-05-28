@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/mattermost/mattermost-plugin-ai/agents"
+	"github.com/mattermost/mattermost-plugin-ai/conversations"
 	"github.com/mattermost/mattermost-plugin-ai/indexer"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/metrics"
@@ -178,8 +179,8 @@ func (a *API) handleGetAIThreads(c *gin.Context) {
 }
 
 type AIBotsResponse struct {
-	Bots          []agents.AIBotInfo `json:"bots"`
-	SearchEnabled bool               `json:"searchEnabled"`
+	Bots          []conversations.AIBotInfo `json:"bots"`
+	SearchEnabled bool                      `json:"searchEnabled"`
 }
 
 func (a *API) handleGetAIBots(c *gin.Context) {
