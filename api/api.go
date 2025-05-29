@@ -14,6 +14,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/conversations"
 	"github.com/mattermost/mattermost-plugin-ai/indexer"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
+	"github.com/mattermost/mattermost-plugin-ai/meetings"
 	"github.com/mattermost/mattermost-plugin-ai/metrics"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
 	"github.com/mattermost/mattermost-plugin-ai/search"
@@ -29,35 +30,38 @@ const (
 
 // API represents the HTTP API functionality for the plugin
 type API struct {
-	agents         *agents.AgentsService
-	indexerService *indexer.Indexer
-	searchService  *search.Search
-	pluginAPI      *pluginapi.Client
-	metricsService metrics.Metrics
-	metricsHandler http.Handler
-	contextBuilder *agents.LLMContextBuilder
-	prompts        *llm.Prompts
-	mmClient       mmapi.Client
+	agents          *agents.AgentsService
+	meetingsService *meetings.Service
+	indexerService  *indexer.Indexer
+	searchService   *search.Search
+	pluginAPI       *pluginapi.Client
+	metricsService  metrics.Metrics
+	metricsHandler  http.Handler
+	contextBuilder  *agents.LLMContextBuilder
+	prompts         *llm.Prompts
+	mmClient        mmapi.Client
 }
 
 // New creates a new API instance
 func New(
 	agentsService *agents.AgentsService,
+	meetingsService *meetings.Service,
 	indexerService *indexer.Indexer,
 	searchService *search.Search,
 	pluginAPI *pluginapi.Client,
 	metricsService metrics.Metrics,
 ) *API {
 	return &API{
-		agents:         agentsService,
-		indexerService: indexerService,
-		searchService:  searchService,
-		pluginAPI:      pluginAPI,
-		metricsService: metricsService,
-		metricsHandler: metrics.NewMetricsHandler(metricsService),
-		contextBuilder: agentsService.GetContextBuilder(),
-		prompts:        agentsService.GetPrompts(),
-		mmClient:       agentsService.GetMMClient(),
+		agents:          agentsService,
+		meetingsService: meetingsService,
+		indexerService:  indexerService,
+		searchService:   searchService,
+		pluginAPI:       pluginAPI,
+		metricsService:  metricsService,
+		metricsHandler:  metrics.NewMetricsHandler(metricsService),
+		contextBuilder:  agentsService.GetContextBuilder(),
+		prompts:         agentsService.GetPrompts(),
+		mmClient:        agentsService.GetMMClient(),
 	}
 }
 

@@ -1,0 +1,183 @@
+// Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
+
+package meetings
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"slices"
+
+	"github.com/mattermost/mattermost-plugin-ai/bots"
+	"github.com/mattermost/mattermost-plugin-ai/conversations"
+	"github.com/mattermost/mattermost-plugin-ai/llm"
+	"github.com/mattermost/mattermost-plugin-ai/openai"
+	"github.com/mattermost/mattermost-plugin-ai/providers"
+	"github.com/mattermost/mattermost-plugin-ai/subtitles"
+	"github.com/mattermost/mattermost/server/public/model"
+)
+
+const (
+	ReferencedRecordingFileID  = "referenced_recording_file_id"
+	ReferencedTranscriptPostID = "referenced_transcript_post_id"
+
+	// Import constants from conversations package
+	LLMRequesterUserID = conversations.LLMRequesterUserID
+)
+
+// Transcriber interface defines the contract for transcription services
+type Transcriber interface {
+	Transcribe(file io.Reader) (*subtitles.Subtitles, error)
+}
+
+// getTranscribe creates a transcriber for the configured transcript generator bot
+func (s *Service) getTranscribe() Transcriber {
+	cfg := s.getConfiguration()
+	var botConfig llm.BotConfig
+
+	// Find the bot configuration for transcript generation
+	found := false
+	for _, bot := range cfg.GetBots() {
+		if bot.Name == cfg.GetTranscriptGenerator() {
+			botConfig = bot
+			found = true
+			break
+		}
+	}
+
+	// Check if a valid bot configuration was found
+	if !found || cfg.GetTranscriptGenerator() == "" {
+		s.pluginAPI.Log.Error("No transcript generator bot found", "configured_generator", cfg.GetTranscriptGenerator())
+		return nil
+	}
+
+	// Check if the service type is configured
+	if botConfig.Service.Type == "" {
+		s.pluginAPI.Log.Error("Transcript generator bot has no service type configured", "bot_name", botConfig.Name)
+		return nil
+	}
+
+	llmMetrics := s.metricsService.GetMetricsForAIService(botConfig.Name)
+	switch botConfig.Service.Type {
+	case llm.ServiceTypeOpenAI:
+		return openai.New(providers.OpenAIConfigFromServiceConfig(botConfig.Service), nil, llmMetrics)
+	case llm.ServiceTypeOpenAICompatible:
+		return openai.NewCompatible(providers.OpenAIConfigFromServiceConfig(botConfig.Service), nil, llmMetrics)
+	case llm.ServiceTypeAzure:
+		return openai.NewAzure(providers.OpenAIConfigFromServiceConfig(botConfig.Service), nil, llmMetrics)
+	default:
+		s.pluginAPI.Log.Error("Unsupported service type for transcript generator",
+			"bot_name", botConfig.Name,
+			"service_type", botConfig.Service.Type)
+		return nil
+	}
+}
+
+// HandleTranscribeFile handles file transcription requests
+func (s *Service) HandleTranscribeFile(userID string, bot *bots.Bot, post *model.Post, channel *model.Channel, fileID string) (map[string]string, error) {
+	user, err := s.pluginAPI.User.Get(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	recordingFileInfo, err := s.pluginAPI.File.GetInfo(fileID)
+	if err != nil {
+		return nil, err
+	}
+
+	if recordingFileInfo.ChannelId != channel.Id || !slices.Contains(post.FileIds, fileID) {
+		return nil, errors.New("file not attached to specified post")
+	}
+
+	createdPost, err := s.newCallRecordingThread(bot, user, post, channel, fileID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.saveTitle(createdPost.Id, "Meeting Summary"); err != nil {
+		return nil, fmt.Errorf("failed to save title: %w", err)
+	}
+
+	return map[string]string{
+		"postid":    createdPost.Id,
+		"channelid": createdPost.ChannelId,
+	}, nil
+}
+
+// HandleSummarizeTranscription handles transcription summarization requests
+func (s *Service) HandleSummarizeTranscription(userID string, bot *bots.Bot, post *model.Post, channel *model.Channel) (map[string]string, error) {
+	user, err := s.pluginAPI.User.Get(userID)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get user: %w", err)
+	}
+
+	targetPostUser, err := s.pluginAPI.User.Get(post.UserId)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get calls user: %w", err)
+	}
+
+	if !targetPostUser.IsBot || (targetPostUser.Username != CallsBotUsername && targetPostUser.Username != ZoomBotUsername) {
+		return nil, errors.New("not a calls or zoom bot post")
+	}
+
+	createdPost, err := s.newCallTranscriptionSummaryThread(bot, user, post, channel)
+	if err != nil {
+		return nil, fmt.Errorf("unable to summarize transcription: %w", err)
+	}
+
+	s.saveTitleAsync(createdPost.Id, "Meeting Summary")
+
+	return map[string]string{
+		"postid":    createdPost.Id,
+		"channelid": createdPost.ChannelId,
+	}, nil
+}
+
+// HandlePostbackSummary handles posting back a summary to the original channel
+func (s *Service) HandlePostbackSummary(userID string, post *model.Post) (map[string]string, error) {
+	bot := s.getBotByID(post.UserId)
+	if bot == nil {
+		return nil, fmt.Errorf("unable to get bot")
+	}
+
+	if post.GetProp(LLMRequesterUserID) != userID {
+		return nil, errors.New("only the original requester can post back")
+	}
+
+	transcriptThreadRootPost, err := s.pluginAPI.Post.GetPost(post.RootId)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get transcript thread root post: %w", err)
+	}
+
+	originalTranscriptPostID, ok := transcriptThreadRootPost.GetProp(ReferencedTranscriptPostID).(string)
+	if !ok || originalTranscriptPostID == "" {
+		return nil, errors.New("post missing reference to transcription post ID")
+	}
+
+	transcriptionPost, err := s.pluginAPI.Post.GetPost(originalTranscriptPostID)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get transcription post: %w", err)
+	}
+
+	if !s.pluginAPI.User.HasPermissionToChannel(userID, transcriptionPost.ChannelId, model.PermissionCreatePost) {
+		return nil, errors.New("user doesn't have permission to create a post in the transcript channel")
+	}
+
+	postedSummary := &model.Post{
+		UserId:    bot.GetMMBot().UserId,
+		ChannelId: transcriptionPost.ChannelId,
+		RootId:    transcriptionPost.RootId,
+		Message:   post.Message,
+		Type:      "custom_llm_postback",
+	}
+	postedSummary.AddProp("userid", userID)
+	if err := s.pluginAPI.Post.CreatePost(postedSummary); err != nil {
+		return nil, fmt.Errorf("unable to post back summary: %w", err)
+	}
+
+	return map[string]string{
+		"rootid":    postedSummary.RootId,
+		"channelid": postedSummary.ChannelId,
+	}, nil
+}

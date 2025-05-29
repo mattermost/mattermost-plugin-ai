@@ -44,8 +44,6 @@ func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 	p.prompts, promptErr = llm.NewPrompts(llm.PromptsFolder)
 	require.NoError(t, promptErr)
 
-	p.ffmpegPath = ""
-
 	e := &TestEnvironment{
 		plugin:  &p,
 		mockAPI: mockAPI,

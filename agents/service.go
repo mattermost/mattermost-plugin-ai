@@ -8,7 +8,6 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
-	"os/exec"
 	"sync"
 
 	sq "github.com/Masterminds/squirrel"
@@ -20,7 +19,6 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/metrics"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
-	"github.com/mattermost/mattermost-plugin-ai/openai"
 	"github.com/mattermost/mattermost-plugin-ai/providers"
 	"github.com/mattermost/mattermost-plugin-ai/streaming"
 	"github.com/mattermost/mattermost/server/public/model"
@@ -30,12 +28,6 @@ import (
 
 const (
 	BotUsername = "ai"
-
-	CallsRecordingPostType = "custom_calls_recording"
-	CallsBotUsername       = "calls"
-	ZoomBotUsername        = "zoom"
-
-	ffmpegPluginPath = "./plugins/mattermost-ai/dist/ffmpeg"
 )
 
 type AgentsService struct { //nolint:revive
@@ -45,8 +37,6 @@ type AgentsService struct { //nolint:revive
 	pluginAPI *pluginapi.Client
 	mmClient  mmapi.Client
 	API       plugin.API
-
-	ffmpegPath string
 
 	db      *sqlx.DB
 	builder sq.StatementBuilderType
@@ -70,19 +60,6 @@ type AgentsService struct { //nolint:revive
 
 	// conversationService handles all conversation-related functionality
 	conversationService *conversations.Conversations
-}
-
-func resolveffmpegPath() string {
-	_, standardPathErr := exec.LookPath("ffmpeg")
-	if standardPathErr != nil {
-		_, pluginPathErr := exec.LookPath(ffmpegPluginPath)
-		if pluginPathErr != nil {
-			return ""
-		}
-		return ffmpegPluginPath
-	}
-
-	return "ffmpeg"
 }
 
 func NewAgentsService(
@@ -123,11 +100,6 @@ func NewAgentsService(
 	agentsService.prompts, err = llm.NewPrompts(llm.PromptsFolder)
 	if err != nil {
 		return nil, err
-	}
-
-	agentsService.ffmpegPath = resolveffmpegPath()
-	if agentsService.ffmpegPath == "" {
-		agentsService.pluginAPI.Log.Error("ffmpeg not installed, transcriptions will be disabled.", "error", err)
 	}
 
 	// Initialize streaming service
@@ -265,49 +237,6 @@ func (p *AgentsService) GetLLM(botConfig llm.BotConfig) llm.LanguageModel {
 	return result
 }
 
-// getTranscribe creates a transcriber for the configured transcript generator bot
-func (p *AgentsService) getTranscribe() Transcriber {
-	cfg := p.getConfiguration()
-	var botConfig llm.BotConfig
-
-	// Find the bot configuration for transcript generation
-	found := false
-	for _, bot := range cfg.Bots {
-		if bot.Name == cfg.TranscriptGenerator {
-			botConfig = bot
-			found = true
-			break
-		}
-	}
-
-	// Check if a valid bot configuration was found
-	if !found || cfg.TranscriptGenerator == "" {
-		p.pluginAPI.Log.Error("No transcript generator bot found", "configured_generator", cfg.TranscriptGenerator)
-		return nil
-	}
-
-	// Check if the service type is configured
-	if botConfig.Service.Type == "" {
-		p.pluginAPI.Log.Error("Transcript generator bot has no service type configured", "bot_name", botConfig.Name)
-		return nil
-	}
-
-	llmMetrics := p.metricsService.GetMetricsForAIService(botConfig.Name)
-	switch botConfig.Service.Type {
-	case llm.ServiceTypeOpenAI:
-		return openai.New(providers.OpenAIConfigFromServiceConfig(botConfig.Service), p.llmUpstreamHTTPClient, llmMetrics)
-	case llm.ServiceTypeOpenAICompatible:
-		return openai.NewCompatible(providers.OpenAIConfigFromServiceConfig(botConfig.Service), p.llmUpstreamHTTPClient, llmMetrics)
-	case llm.ServiceTypeAzure:
-		return openai.NewAzure(providers.OpenAIConfigFromServiceConfig(botConfig.Service), p.llmUpstreamHTTPClient, llmMetrics)
-	default:
-		p.pluginAPI.Log.Error("Unsupported service type for transcript generator",
-			"bot_name", botConfig.Name,
-			"service_type", botConfig.Service.Type)
-		return nil
-	}
-}
-
 // Delegate methods to conversations service
 
 // GetAIThreads delegates to the conversations service
@@ -348,6 +277,31 @@ func (p *AgentsService) HandleRegenerate(userID string, post *model.Post, channe
 // GetI18nBundle returns the i18n bundle for external use
 func (p *AgentsService) GetI18nBundle() *i18n.Bundle {
 	return p.i18n
+}
+
+func (p *AgentsService) GetI18n() *i18n.Bundle {
+	return p.i18n
+}
+
+func (p *AgentsService) GetStreamingService() streaming.Service {
+	return p.streamingService
+}
+
+// Public wrappers for methods needed by meetings service
+func (p *AgentsService) BotDMNonResponse(botUserID, userID string, post *model.Post) error {
+	return p.botDMNonResponse(botUserID, userID, post)
+}
+
+func (p *AgentsService) ModifyPostForBot(botID, userID string, post *model.Post, respondingToPostID string) {
+	p.modifyPostForBot(botID, userID, post, respondingToPostID)
+}
+
+func (p *AgentsService) SaveTitle(postID, title string) error {
+	return p.saveTitle(postID, title)
+}
+
+func (p *AgentsService) ExecBuilder(query sq.Sqlizer) (sql.Result, error) {
+	return p.execBuilder(query)
 }
 
 // Constants moved to conversations package - re-export for compatibility

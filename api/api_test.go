@@ -73,7 +73,7 @@ func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 	// Don't call SetAPI for tests - just set the fields we need
 	agents.SetBotsForTesting(testBots, client)
 
-	api := New(agents, nil, nil, client, noopMetrics)
+	api := New(agents, nil, nil, nil, client, noopMetrics)
 
 	return &TestEnvironment{
 		api:     api,

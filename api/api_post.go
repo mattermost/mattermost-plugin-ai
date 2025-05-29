@@ -180,7 +180,7 @@ func (a *API) handleTranscribeFile(c *gin.Context) {
 	fileID := c.Param("fileid")
 	bot := c.MustGet(ContextBotKey).(*bots.Bot)
 
-	result, err := a.agents.HandleTranscribeFile(userID, bot, post, channel, fileID)
+	result, err := a.meetingsService.HandleTranscribeFile(userID, bot, post, channel, fileID)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
@@ -195,7 +195,7 @@ func (a *API) handleSummarizeTranscription(c *gin.Context) {
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 	bot := c.MustGet(ContextBotKey).(*bots.Bot)
 
-	result, err := a.agents.HandleSummarizeTranscription(userID, bot, post, channel)
+	result, err := a.meetingsService.HandleSummarizeTranscription(userID, bot, post, channel)
 	if err != nil {
 		if err.Error() == "not a calls or zoom bot post" {
 			c.AbortWithError(http.StatusBadRequest, errors.New("not a calls or zoom bot post"))
@@ -283,7 +283,7 @@ func (a *API) handlePostbackSummary(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
 
-	result, err := a.agents.HandlePostbackSummary(userID, post)
+	result, err := a.meetingsService.HandlePostbackSummary(userID, post)
 	if err != nil {
 		if err.Error() == "post missing reference to transcription post ID" {
 			c.AbortWithError(http.StatusBadRequest, err)

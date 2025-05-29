@@ -21,6 +21,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/indexer"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mcp"
+	"github.com/mattermost/mattermost-plugin-ai/meetings"
 	"github.com/mattermost/mattermost-plugin-ai/metrics"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
 	"github.com/mattermost/mattermost-plugin-ai/mmtools"
@@ -51,6 +52,7 @@ type Plugin struct {
 	db                    *sqlx.DB
 
 	agentsService    *agents.AgentsService
+	meetingsService  *meetings.Service
 	indexerService   *indexer.Indexer
 	searchService    *search.Search
 	apiService       *api.API
@@ -166,8 +168,29 @@ func (p *Plugin) OnActivate() error {
 	}
 	p.agentsService = agentsService
 
+	// Initialize the meetings service
+	p.meetingsService = meetings.NewService(
+		p.pluginAPI,
+		agentsService.GetStreamingService(),
+		agentsService.GetPrompts(),
+		p.bots,
+		agentsService.GetI18n(),
+		metricsService,
+		p.db,
+		dbClient.Builder(),
+		func() meetings.Config { return &p.configuration.Config },
+		agentsService.GetLLM,
+		contextBuilder,
+		agentsService.BotDMNonResponse,
+		agentsService.ModifyPostForBot,
+		agentsService.SaveTitle,
+		agentsService.SaveTitleAsync,
+		agentsService.GetBotByID,
+		agentsService.ExecBuilder,
+	)
+
 	// Initialize the API service with all services
-	p.apiService = api.New(p.agentsService, p.indexerService, p.searchService, p.pluginAPI, metricsService)
+	p.apiService = api.New(p.agentsService, p.meetingsService, p.indexerService, p.searchService, p.pluginAPI, metricsService)
 
 	return nil
 }

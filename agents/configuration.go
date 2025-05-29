@@ -24,6 +24,14 @@ func (c *Config) GetEnableLLMTrace() bool {
 	return c.EnableLLMTrace
 }
 
+func (c *Config) GetTranscriptGenerator() string {
+	return c.TranscriptGenerator
+}
+
+func (c *Config) GetBots() []llm.BotConfig {
+	return c.Bots
+}
+
 // Clone shallow copies the configuration. Your implementation may require a deep copy if
 // your configuration has reference types.
 func (c *Config) Clone() *Config {
