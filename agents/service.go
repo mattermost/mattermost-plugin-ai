@@ -192,6 +192,21 @@ func (p *AgentsService) GetBotByID(botID string) *bots.Bot {
 	return p.bots.GetBotByID(botID)
 }
 
+// GetAllBots returns all bots
+func (p *AgentsService) GetAllBots() []*bots.Bot {
+	return p.bots.GetAllBots()
+}
+
+// GetDefaultBotName returns the default bot name
+func (p *AgentsService) GetDefaultBotName() string {
+	return p.getConfiguration().DefaultBotName
+}
+
+// CheckUsageRestrictionsForUser checks if a user can use a bot
+func (p *AgentsService) CheckUsageRestrictionsForUser(bot *bots.Bot, userID string) error {
+	return p.checkUsageRestrictionsForUser(bot, userID)
+}
+
 // SetBotsForTesting sets the bots instance for testing purposes only
 func (p *AgentsService) SetBotsForTesting(botsInstance *bots.MMBots, pluginAPI *pluginapi.Client) {
 	p.bots = botsInstance
@@ -242,11 +257,6 @@ func (p *AgentsService) GetLLM(botConfig llm.BotConfig) llm.LanguageModel {
 // GetAIThreads delegates to the conversations service
 func (p *AgentsService) GetAIThreads(userID string) ([]conversations.AIThread, error) {
 	return p.conversationService.GetAIThreads(userID)
-}
-
-// GetAIBots delegates to the conversations service
-func (p *AgentsService) GetAIBots(userID string) ([]conversations.AIBotInfo, error) {
-	return p.conversationService.GetAIBots(userID)
 }
 
 // IsBasicsLicensed delegates to the conversations service
@@ -313,7 +323,6 @@ const (
 
 // Type aliases for compatibility
 type AIThread = conversations.AIThread
-type AIBotInfo = conversations.AIBotInfo
 
 // ExistingConversationToLLMPosts delegates to the conversations service
 func (p *AgentsService) existingConversationToLLMPosts(bot *bots.Bot, conversation *mmapi.ThreadData, context *llm.Context) ([]llm.Post, error) {

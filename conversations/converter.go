@@ -7,17 +7,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"slices"
 	"strings"
-
-	"errors"
 
 	"github.com/mattermost/mattermost-plugin-ai/agents/format"
 	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/streaming"
 	"github.com/mattermost/mattermost/server/public/model"
-	"github.com/mattermost/mattermost/server/public/pluginapi"
 )
 
 const defaultMaxFileSize = int64(1024 * 1024 * 5) // 5MB
@@ -148,58 +144,4 @@ func (c *Conversations) ThreadToLLMPosts(bot *bots.Bot, posts []*model.Post) []l
 	}
 
 	return result
-}
-
-func (c *Conversations) checkUsageRestrictionsForUser(bot *bots.Bot, requestingUserID string) error {
-	switch bot.GetConfig().UserAccessLevel {
-	case llm.UserAccessLevelAll:
-		return nil
-	case llm.UserAccessLevelAllow:
-		// Check direct user allowlist
-		if slices.Contains(bot.GetConfig().UserIDs, requestingUserID) {
-			return nil
-		}
-		// Check team membership
-		for _, teamID := range bot.GetConfig().TeamIDs {
-			isMember, err := c.isMemberOfTeam(teamID, requestingUserID)
-			if err != nil {
-				return err
-			}
-			if isMember {
-				return nil
-			}
-		}
-		return fmt.Errorf("user not allowed")
-	case llm.UserAccessLevelBlock:
-		// Check direct user blocklist
-		if slices.Contains(bot.GetConfig().UserIDs, requestingUserID) {
-			return fmt.Errorf("user blocked")
-		}
-		// Check team membership
-		for _, teamID := range bot.GetConfig().TeamIDs {
-			isMember, err := c.isMemberOfTeam(teamID, requestingUserID)
-			if err != nil {
-				return err
-			}
-			if isMember {
-				return fmt.Errorf("user's team blocked")
-			}
-		}
-		return nil
-	case llm.UserAccessLevelNone:
-		return fmt.Errorf("user usage block for bot")
-	}
-
-	return fmt.Errorf("unknown user assistance level")
-}
-
-func (c *Conversations) isMemberOfTeam(teamID string, userID string) (bool, error) {
-	member, err := c.pluginAPI.Team.GetMember(teamID, userID)
-	if errors.Is(err, pluginapi.ErrNotFound) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	return member != nil && member.DeleteAt == 0, nil
 }

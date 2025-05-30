@@ -4,6 +4,8 @@ webapp/src/manifest.ts
 server/manifest.go
 evals.jsonl
 
+.claude/settings.local.json
+
 # Mac
 .DS_Store
 

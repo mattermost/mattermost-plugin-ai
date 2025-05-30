@@ -38,19 +38,6 @@ type AIThread struct {
 	UpdatedAt int64  `json:"updated_at"`
 }
 
-// AIBotInfo contains information about an AI bot - not using the one in types.go since it has different JSON fields
-type AIBotInfo struct {
-	ID                 string                 `json:"id"`
-	DisplayName        string                 `json:"displayName"`
-	Username           string                 `json:"username"`
-	LastIconUpdate     int64                  `json:"lastIconUpdate"`
-	DMChannelID        string                 `json:"dmChannelID"`
-	ChannelAccessLevel llm.ChannelAccessLevel `json:"channelAccessLevel"`
-	ChannelIDs         []string               `json:"channelIDs"`
-	UserAccessLevel    llm.UserAccessLevel    `json:"userAccessLevel"`
-	UserIDs            []string               `json:"userIDs"`
-}
-
 // LLMContextBuilderInterface is an interface for building LLM contexts
 type LLMContextBuilderInterface interface {
 	BuildLLMContextUserRequest(bot *bots.Bot, user *model.User, channel *model.Channel, options ...llm.ContextOption) *llm.Context
@@ -277,48 +264,6 @@ func (c *Conversations) GetAIThreads(userID string) ([]AIThread, error) {
 	}
 
 	return c.getAIThreads(dmChannelIDs)
-}
-
-// GetAIBots returns all AI bots available to a user
-func (c *Conversations) GetAIBots(userID string) ([]AIBotInfo, error) {
-	allBots := c.bots.GetAllBots()
-
-	// Get the info from all the bots.
-	// Put the default bot first.
-	bots := make([]AIBotInfo, 0, len(allBots))
-	defaultBotName := c.getDefaultBotName()
-	for i, bot := range allBots {
-		// Don't return bots the user is excluded from using.
-		if c.checkUsageRestrictionsForUser(bot, userID) != nil {
-			continue
-		}
-
-		// Get the bot DM channel ID. To avoid creating the channel unless nessary
-		/// we return "" if the channel doesn't exist.
-		dmChannelID := ""
-		channelName := model.GetDMNameFromIds(userID, bot.GetMMBot().UserId)
-		botDMChannel, err := c.pluginAPI.Channel.GetByName("", channelName, false)
-		if err == nil {
-			dmChannelID = botDMChannel.Id
-		}
-
-		bots = append(bots, AIBotInfo{
-			ID:                 bot.GetMMBot().UserId,
-			DisplayName:        bot.GetMMBot().DisplayName,
-			Username:           bot.GetMMBot().Username,
-			LastIconUpdate:     bot.GetMMBot().LastIconUpdate,
-			DMChannelID:        dmChannelID,
-			ChannelAccessLevel: bot.GetConfig().ChannelAccessLevel,
-			ChannelIDs:         bot.GetConfig().ChannelIDs,
-			UserAccessLevel:    bot.GetConfig().UserAccessLevel,
-			UserIDs:            bot.GetConfig().UserIDs,
-		})
-		if bot.GetMMBot().Username == defaultBotName {
-			bots[0], bots[i] = bots[i], bots[0]
-		}
-	}
-
-	return bots, nil
 }
 
 // IsBasicsLicensed returns whether the basic features are licensed
