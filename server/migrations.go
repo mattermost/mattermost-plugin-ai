@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/mattermost/mattermost-plugin-ai/agents"
+	"github.com/mattermost/mattermost-plugin-ai/config"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 	"github.com/mattermost/mattermost/server/public/pluginapi/cluster"
@@ -27,10 +27,10 @@ type BotMigrationConfig struct {
 	} `json:"config"`
 }
 
-func MigrateServicesToBots(mutexAPI cluster.MutexPluginAPI, pluginAPI *pluginapi.Client, cfg agents.Config) (agents.Config, error) {
+func MigrateServicesToBots(mutexAPI cluster.MutexPluginAPI, pluginAPI *pluginapi.Client, cfg config.Config) (bool, config.Config, error) {
 	mtx, err := cluster.NewMutex(mutexAPI, "migrate_services_to_bots")
 	if err != nil {
-		return cfg, fmt.Errorf("failed to create mutex: %w", err)
+		return false, cfg, fmt.Errorf("failed to create mutex: %w", err)
 	}
 	mtx.Lock()
 	defer mtx.Unlock()
@@ -38,7 +38,7 @@ func MigrateServicesToBots(mutexAPI cluster.MutexPluginAPI, pluginAPI *pluginapi
 	migrationDone := false
 	_ = pluginAPI.KV.Get("migrate_services_to_bots_done", &migrationDone)
 	if migrationDone {
-		return cfg, nil
+		return false, cfg, nil
 	}
 
 	pluginAPI.Log.Debug("Migrating services to bots")
@@ -47,13 +47,13 @@ func MigrateServicesToBots(mutexAPI cluster.MutexPluginAPI, pluginAPI *pluginapi
 
 	if len(existingConfig.Bots) != 0 {
 		_, _ = pluginAPI.KV.Set("migrate_services_to_bots_done", true)
-		return cfg, nil
+		return false, cfg, nil
 	}
 
 	oldConfig := BotMigrationConfig{}
 	err = pluginAPI.Configuration.LoadPluginConfiguration(&oldConfig)
 	if err != nil {
-		return cfg, fmt.Errorf("failed to load plugin configuration for migration: %w", err)
+		return false, cfg, fmt.Errorf("failed to load plugin configuration for migration: %w", err)
 	}
 
 	existingConfig.Bots = make([]llm.BotConfig, 0, len(oldConfig.Config.Services))
@@ -81,16 +81,16 @@ func MigrateServicesToBots(mutexAPI cluster.MutexPluginAPI, pluginAPI *pluginapi
 	out := map[string]any{}
 	marshalBytes, err := json.Marshal(existingConfig)
 	if err != nil {
-		return cfg, fmt.Errorf("failed to marshal configuration: %w", err)
+		return false, cfg, fmt.Errorf("failed to marshal configuration: %w", err)
 	}
 	if err := json.Unmarshal(marshalBytes, &out); err != nil {
-		return cfg, fmt.Errorf("failed to unmarshal configuration to output: %w", err)
+		return false, cfg, fmt.Errorf("failed to unmarshal configuration to output: %w", err)
 	}
 
 	if err := pluginAPI.Configuration.SavePluginConfig(out); err != nil {
-		return cfg, fmt.Errorf("failed to save plugin configuration: %w", err)
+		return false, cfg, fmt.Errorf("failed to save plugin configuration: %w", err)
 	}
 	_, _ = pluginAPI.KV.Set("migrate_services_to_bots_done", true)
 
-	return cfg, nil
+	return true, cfg, nil
 }

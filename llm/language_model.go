@@ -52,3 +52,5 @@ func WithJSONOutput(format any) LanguageModelOption {
 		cfg.JSONOutputFormat = format
 	}
 }
+
+type LanguageModelWrapper func(LanguageModel) LanguageModel

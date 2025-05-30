@@ -46,7 +46,7 @@ func (a *API) postAuthorizationRequired(c *gin.Context) {
 	}
 
 	bot := c.MustGet(ContextBotKey).(*bots.Bot)
-	if err := a.agents.CheckUsageRestrictions(userID, bot, channel); err != nil {
+	if err := a.conversationsService.CheckUsageRestrictions(userID, bot, channel); err != nil {
 		c.AbortWithError(http.StatusForbidden, err)
 		return
 	}
@@ -71,7 +71,7 @@ func (a *API) handleReact(c *gin.Context) {
 	)
 
 	emojiName, err := react.New(
-		a.agents.GetLLM(bot.GetConfig()),
+		bot.LLM(),
 		a.agents.GetPrompts(),
 	).Resolve(post.Message, context)
 	if err != nil {
@@ -97,7 +97,7 @@ func (a *API) handleThreadAnalysis(c *gin.Context) {
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 	bot := c.MustGet(ContextBotKey).(*bots.Bot)
 
-	if !a.agents.IsBasicsLicensed() {
+	if !a.conversationsService.IsBasicsLicensed() {
 		c.AbortWithError(http.StatusForbidden, errors.New("feature not licensed"))
 		return
 	}
@@ -138,7 +138,7 @@ func (a *API) handleThreadAnalysis(c *gin.Context) {
 	)
 
 	// Create thread analyzer
-	analyzer := threads.New(a.agents.GetLLM(bot.GetConfig()), a.prompts, a.mmClient)
+	analyzer := threads.New(bot.LLM(), a.prompts, a.mmClient)
 	var analysisStream *llm.TextStreamResult
 	var title string
 	switch data.AnalysisType {
@@ -223,7 +223,7 @@ func (a *API) handleStop(c *gin.Context) {
 		return
 	}
 
-	a.agents.StopPostStreaming(post.Id)
+	a.conversationsService.StopPostStreaming(post.Id)
 	c.Status(http.StatusOK)
 }
 
@@ -232,7 +232,7 @@ func (a *API) handleRegenerate(c *gin.Context) {
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 
-	err := a.agents.HandleRegenerate(userID, post, channel)
+	err := a.conversationsService.HandleRegenerate(userID, post, channel)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to regenerate post: %w", err))
 		return
@@ -246,7 +246,7 @@ func (a *API) handleToolCall(c *gin.Context) {
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 
-	if !a.agents.IsBasicsLicensed() {
+	if !a.conversationsService.IsBasicsLicensed() {
 		c.AbortWithError(http.StatusForbidden, errors.New("feature not licensed"))
 		return
 	}

@@ -45,19 +45,18 @@ type LLMContextBuilderInterface interface {
 }
 
 type Conversations struct {
-	llm               func(cfg llm.BotConfig) llm.LanguageModel
-	prompts           *llm.Prompts
-	mmClient          mmapi.Client
-	pluginAPI         *pluginapi.Client
-	streamingService  streaming.Service
-	contextBuilder    LLMContextBuilderInterface
-	bots              *bots.MMBots
-	db                *sqlx.DB
-	builder           sq.StatementBuilderType
-	licenseChecker    *enterprise.LicenseChecker
-	i18n              *i18n.Bundle
-	getDefaultBotName func() string
-	checkUsageFunc    func(userID string, bot *bots.Bot, channel *model.Channel) error
+	llm              func(cfg llm.BotConfig) llm.LanguageModel
+	prompts          *llm.Prompts
+	mmClient         mmapi.Client
+	pluginAPI        *pluginapi.Client
+	streamingService streaming.Service
+	contextBuilder   LLMContextBuilderInterface
+	bots             *bots.MMBots
+	db               *sqlx.DB
+	builder          sq.StatementBuilderType
+	licenseChecker   *enterprise.LicenseChecker
+	i18n             *i18n.Bundle
+	checkUsageFunc   func(userID string, bot *bots.Bot, channel *model.Channel) error
 }
 
 func New(
@@ -72,23 +71,21 @@ func New(
 	builder sq.StatementBuilderType,
 	licenseChecker *enterprise.LicenseChecker,
 	i18nBundle *i18n.Bundle,
-	getDefaultBotName func() string,
 	checkUsageFunc func(userID string, bot *bots.Bot, channel *model.Channel) error,
 ) *Conversations {
 	return &Conversations{
-		llm:               llmGetter,
-		prompts:           prompts,
-		mmClient:          mmClient,
-		pluginAPI:         pluginAPI,
-		streamingService:  streamingService,
-		contextBuilder:    contextBuilder,
-		bots:              botsService,
-		db:                db,
-		builder:           builder,
-		licenseChecker:    licenseChecker,
-		i18n:              i18nBundle,
-		getDefaultBotName: getDefaultBotName,
-		checkUsageFunc:    checkUsageFunc,
+		llm:              llmGetter,
+		prompts:          prompts,
+		mmClient:         mmClient,
+		pluginAPI:        pluginAPI,
+		streamingService: streamingService,
+		contextBuilder:   contextBuilder,
+		bots:             botsService,
+		db:               db,
+		builder:          builder,
+		licenseChecker:   licenseChecker,
+		i18n:             i18nBundle,
+		checkUsageFunc:   checkUsageFunc,
 	}
 }
 

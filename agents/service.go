@@ -19,7 +19,6 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/metrics"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
-	"github.com/mattermost/mattermost-plugin-ai/providers"
 	"github.com/mattermost/mattermost-plugin-ai/streaming"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
@@ -31,7 +30,6 @@ const (
 )
 
 type AgentsService struct { //nolint:revive
-	configuration     *Config
 	configurationLock sync.RWMutex
 
 	pluginAPI *pluginapi.Client
@@ -68,11 +66,11 @@ func NewAgentsService(
 	llmUpstreamHTTPClient *http.Client,
 	untrustedHTTPClient *http.Client,
 	metricsService metrics.Metrics,
-	configuration *Config,
 	bots *bots.MMBots,
 	contextBuilder *LLMContextBuilder,
 	db *sqlx.DB,
 	builder sq.StatementBuilderType,
+	conversationService *conversations.Conversations,
 ) (*AgentsService, error) {
 	agentsService := &AgentsService{
 		API:                   originalAPI,
@@ -81,11 +79,11 @@ func NewAgentsService(
 		llmUpstreamHTTPClient: llmUpstreamHTTPClient,
 		untrustedHTTPClient:   untrustedHTTPClient,
 		metricsService:        metricsService,
-		configuration:         configuration,
 		bots:                  bots,
 		contextBuilder:        contextBuilder,
 		db:                    db,
 		builder:               builder,
+		conversationService:   conversationService,
 	}
 
 	agentsService.licenseChecker = enterprise.NewLicenseChecker(agentsService.pluginAPI)
@@ -109,25 +107,6 @@ func NewAgentsService(
 		func(botid, userID string, post *model.Post, respondingToPostID string) {
 			agentsService.modifyPostForBot(botid, userID, post, respondingToPostID)
 		},
-	)
-
-	// Initialize conversations service
-	agentsService.conversationService = conversations.New(
-		agentsService.GetLLM,
-		agentsService.prompts,
-		agentsService.mmClient,
-		agentsService.pluginAPI,
-		agentsService.streamingService,
-		agentsService.contextBuilder,
-		agentsService.bots,
-		agentsService.db,
-		agentsService.builder,
-		agentsService.licenseChecker,
-		agentsService.i18n,
-		func() string {
-			return agentsService.getConfiguration().DefaultBotName
-		},
-		agentsService.checkUsageRestrictions,
 	)
 
 	return agentsService, nil
@@ -172,11 +151,6 @@ func (p *AgentsService) saveTitleAsync(threadID, title string) {
 	p.conversationService.SaveTitleAsync(threadID, title)
 }
 
-// GetEnableLLMTrace returns whether LLM tracing is enabled
-func (p *AgentsService) GetEnableLLMTrace() bool {
-	return p.getConfiguration().EnableLLMTrace
-}
-
 // IsAnyBot returns true if the given user is an AI bot.
 func (p *AgentsService) IsAnyBot(userID string) bool {
 	return p.bots.IsAnyBot(userID)
@@ -197,11 +171,6 @@ func (p *AgentsService) GetAllBots() []*bots.Bot {
 	return p.bots.GetAllBots()
 }
 
-// GetDefaultBotName returns the default bot name
-func (p *AgentsService) GetDefaultBotName() string {
-	return p.getConfiguration().DefaultBotName
-}
-
 // CheckUsageRestrictionsForUser checks if a user can use a bot
 func (p *AgentsService) CheckUsageRestrictionsForUser(bot *bots.Bot, userID string) error {
 	return p.checkUsageRestrictionsForUser(bot, userID)
@@ -211,77 +180,11 @@ func (p *AgentsService) CheckUsageRestrictionsForUser(bot *bots.Bot, userID stri
 func (p *AgentsService) SetBotsForTesting(botsInstance *bots.MMBots, pluginAPI *pluginapi.Client) {
 	p.bots = botsInstance
 	p.pluginAPI = pluginAPI
-
-	// Initialize a minimal conversations service for testing if not already initialized
-	if p.conversationService == nil {
-		p.conversationService = conversations.New(
-			func(cfg llm.BotConfig) llm.LanguageModel { return nil },
-			&llm.Prompts{},
-			nil,
-			p.pluginAPI,
-			nil,
-			nil,
-			botsInstance,
-			nil,
-			sq.StatementBuilder,
-			nil,
-			nil,
-			func() string { return "ai" },
-			// Provide a mock checkUsageRestrictions function for testing
-			func(userID string, bot *bots.Bot, channel *model.Channel) error {
-				// This is a simplified version for testing - the actual logic is in permissions.go
-				return p.checkUsageRestrictions(userID, bot, channel)
-			},
-		)
-	}
-}
-
-// GetLLM creates and returns a language model for the given bot configuration
-func (p *AgentsService) GetLLM(botConfig llm.BotConfig) llm.LanguageModel {
-	llmMetrics := p.metricsService.GetMetricsForAIService(botConfig.Name)
-
-	result := providers.CreateLanguageModel(botConfig, p.llmUpstreamHTTPClient, llmMetrics)
-
-	cfg := p.getConfiguration()
-	if cfg.EnableLLMTrace {
-		result = providers.NewLanguageModelLogWrapper(p.pluginAPI.Log, result)
-	}
-
-	result = providers.NewLLMTruncationWrapper(result)
-
-	return result
-}
-
-// Delegate methods to conversations service
-
-// GetAIThreads delegates to the conversations service
-func (p *AgentsService) GetAIThreads(userID string) ([]conversations.AIThread, error) {
-	return p.conversationService.GetAIThreads(userID)
-}
-
-// IsBasicsLicensed delegates to the conversations service
-func (p *AgentsService) IsBasicsLicensed() bool {
-	return p.conversationService.IsBasicsLicensed()
-}
-
-// StopPostStreaming delegates to the conversations service
-func (p *AgentsService) StopPostStreaming(postID string) {
-	p.conversationService.StopPostStreaming(postID)
-}
-
-// CheckUsageRestrictions delegates to the conversations service
-func (p *AgentsService) CheckUsageRestrictions(userID string, bot *bots.Bot, channel *model.Channel) error {
-	return p.conversationService.CheckUsageRestrictions(userID, bot, channel)
 }
 
 // ProcessUserRequestToBot delegates to the conversations service
 func (p *AgentsService) processUserRequestToBot(bot *bots.Bot, postingUser *model.User, channel *model.Channel, post *model.Post) (*llm.TextStreamResult, error) {
 	return p.conversationService.ProcessUserRequest(bot, postingUser, channel, post)
-}
-
-// HandleRegenerate delegates to the conversations service
-func (p *AgentsService) HandleRegenerate(userID string, post *model.Post, channel *model.Channel) error {
-	return p.conversationService.HandleRegenerate(userID, post, channel)
 }
 
 // GetI18nBundle returns the i18n bundle for external use

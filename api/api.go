@@ -11,6 +11,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/mattermost/mattermost-plugin-ai/agents"
+	"github.com/mattermost/mattermost-plugin-ai/bots"
+	"github.com/mattermost/mattermost-plugin-ai/conversations"
 	"github.com/mattermost/mattermost-plugin-ai/indexer"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/meetings"
@@ -28,40 +30,53 @@ const (
 	ContextBotKey     = "bot"
 )
 
+type Config interface {
+	GetDefaultBotName() string
+}
+
 // API represents the HTTP API functionality for the plugin
 type API struct {
-	agents          *agents.AgentsService
-	meetingsService *meetings.Service
-	indexerService  *indexer.Indexer
-	searchService   *search.Search
-	pluginAPI       *pluginapi.Client
-	metricsService  metrics.Metrics
-	metricsHandler  http.Handler
-	contextBuilder  *agents.LLMContextBuilder
-	prompts         *llm.Prompts
-	mmClient        mmapi.Client
+	agents               *agents.AgentsService
+	bots                 *bots.MMBots
+	conversationsService *conversations.Conversations
+	meetingsService      *meetings.Service
+	indexerService       *indexer.Indexer
+	searchService        *search.Search
+	pluginAPI            *pluginapi.Client
+	metricsService       metrics.Metrics
+	metricsHandler       http.Handler
+	contextBuilder       *agents.LLMContextBuilder
+	prompts              *llm.Prompts
+	config               Config
+	mmClient             mmapi.Client
 }
 
 // New creates a new API instance
 func New(
 	agentsService *agents.AgentsService,
+	bots *bots.MMBots,
+	conversationsService *conversations.Conversations,
 	meetingsService *meetings.Service,
 	indexerService *indexer.Indexer,
 	searchService *search.Search,
 	pluginAPI *pluginapi.Client,
 	metricsService metrics.Metrics,
+	config Config,
 ) *API {
 	return &API{
-		agents:          agentsService,
-		meetingsService: meetingsService,
-		indexerService:  indexerService,
-		searchService:   searchService,
-		pluginAPI:       pluginAPI,
-		metricsService:  metricsService,
-		metricsHandler:  metrics.NewMetricsHandler(metricsService),
-		contextBuilder:  agentsService.GetContextBuilder(),
-		prompts:         agentsService.GetPrompts(),
-		mmClient:        agentsService.GetMMClient(),
+		agents:               agentsService,
+		bots:                 bots,
+		conversationsService: conversationsService,
+		meetingsService:      meetingsService,
+		indexerService:       indexerService,
+		searchService:        searchService,
+		pluginAPI:            pluginAPI,
+		metricsService:       metricsService,
+		metricsHandler:       metrics.NewMetricsHandler(metricsService),
+		contextBuilder:       agentsService.GetContextBuilder(),
+		prompts:              agentsService.GetPrompts(),
+		config:               config,
+		mmClient:             agentsService.GetMMClient(),
 	}
 }
 
@@ -137,6 +152,7 @@ func (a *API) metricsMiddleware(c *gin.Context) {
 }
 
 func (a *API) aiBotRequired(c *gin.Context) {
+	// We should integreate LLM here
 	botUsername := c.Query("botUsername")
 	bot := a.agents.GetBotByUsernameOrFirst(botUsername)
 	if bot == nil {
@@ -173,7 +189,7 @@ func (a *API) interPluginAuthorizationRequired(c *gin.Context) {
 func (a *API) handleGetAIThreads(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 
-	threads, err := a.agents.GetAIThreads(userID)
+	threads, err := a.conversationsService.GetAIThreads(userID)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to get posts for bot DM: %w", err))
 		return
@@ -206,7 +222,7 @@ func (a *API) getAIBotsForUser(userID string) ([]AIBotInfo, error) {
 	// Get the info from all the bots.
 	// Put the default bot first.
 	bots := make([]AIBotInfo, 0, len(allBots))
-	defaultBotName := a.agents.GetDefaultBotName()
+	defaultBotName := a.config.GetDefaultBotName()
 	for i, bot := range allBots {
 		// Don't return bots the user is excluded from using.
 		if a.agents.CheckUsageRestrictionsForUser(bot, userID) != nil {

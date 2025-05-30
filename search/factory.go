@@ -15,11 +15,6 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/postgres"
 )
 
-// Config represents the configuration needed for search initialization
-type Config struct {
-	EmbeddingSearchConfig embeddings.EmbeddingSearchConfig
-}
-
 // newVectorStore creates a new vector store based on the provided configuration
 func newVectorStore(db *sqlx.DB, config embeddings.UpstreamConfig, dimensions int) (embeddings.VectorStore, error) {
 	switch config.Type { //nolint:gocritic
@@ -57,8 +52,8 @@ func newEmbeddingProvider(config embeddings.UpstreamConfig, httpClient *http.Cli
 }
 
 // InitSearch creates and initializes the embedding search system
-func InitSearch(db *sqlx.DB, httpClient *http.Client, cfg Config, licenseChecker LicenseChecker) (embeddings.EmbeddingSearch, error) {
-	if cfg.EmbeddingSearchConfig.Type == "" {
+func InitSearch(db *sqlx.DB, httpClient *http.Client, cfg embeddings.EmbeddingSearchConfig, licenseChecker LicenseChecker) (embeddings.EmbeddingSearch, error) {
+	if cfg.Type == "" {
 		return nil, fmt.Errorf("search is disabled")
 	}
 
@@ -66,19 +61,19 @@ func InitSearch(db *sqlx.DB, httpClient *http.Client, cfg Config, licenseChecker
 		return nil, fmt.Errorf("search is unavailable without a valid license")
 	}
 
-	switch cfg.EmbeddingSearchConfig.Type { //nolint:gocritic
+	switch cfg.Type { //nolint:gocritic
 	case embeddings.SearchTypeComposite:
-		vector, err := newVectorStore(db, cfg.EmbeddingSearchConfig.VectorStore, cfg.EmbeddingSearchConfig.Dimensions)
+		vector, err := newVectorStore(db, cfg.VectorStore, cfg.Dimensions)
 		if err != nil {
 			return nil, err
 		}
-		embeddor, err := newEmbeddingProvider(cfg.EmbeddingSearchConfig.EmbeddingProvider, httpClient)
+		embeddor, err := newEmbeddingProvider(cfg.EmbeddingProvider, httpClient)
 		if err != nil {
 			return nil, err
 		}
 
 		// Check if we have specific chunking options configured
-		chunkingOpts := cfg.EmbeddingSearchConfig.ChunkingOptions
+		chunkingOpts := cfg.ChunkingOptions
 		if chunkingOpts.ChunkSize == 0 {
 			chunkingOpts = chunking.DefaultOptions()
 		}
@@ -86,5 +81,5 @@ func InitSearch(db *sqlx.DB, httpClient *http.Client, cfg Config, licenseChecker
 		return embeddings.NewCompositeSearch(vector, embeddor, chunkingOpts), nil
 	}
 
-	return nil, fmt.Errorf("unsupported search type: %s", cfg.EmbeddingSearchConfig.Type)
+	return nil, fmt.Errorf("unsupported search type: %s", cfg.Type)
 }

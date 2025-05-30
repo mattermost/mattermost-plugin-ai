@@ -5,35 +5,57 @@ package bots
 
 import (
 	"fmt"
+	"io"
+	"net/http"
 	"sync"
 
+	"github.com/mattermost/mattermost-plugin-ai/anthropic"
+	"github.com/mattermost/mattermost-plugin-ai/asage"
+	"github.com/mattermost/mattermost-plugin-ai/config"
 	"github.com/mattermost/mattermost-plugin-ai/enterprise"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
+	"github.com/mattermost/mattermost-plugin-ai/openai"
+	"github.com/mattermost/mattermost-plugin-ai/subtitles"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 	"github.com/mattermost/mattermost/server/public/pluginapi/cluster"
 )
 
+type Config interface {
+	GetDefaultBotName() string
+	EnableLLMLogging() bool
+	GetTranscriptGenerator() string
+}
+
+// Transcriber interface defines the contract for transcription services
+type Transcriber interface {
+	Transcribe(file io.Reader) (*subtitles.Subtitles, error)
+}
+
 type MMBots struct {
-	mutexPluginAPI cluster.MutexPluginAPI
-	pluginAPI      *pluginapi.Client
-	licenseChecker *enterprise.LicenseChecker
+	ensureBotsClusterMutex cluster.MutexPluginAPI
+	pluginAPI              *pluginapi.Client
+	licenseChecker         *enterprise.LicenseChecker
+	config                 Config
+	llmUpstreamHTTPClient  *http.Client
 
 	botsLock sync.RWMutex
 	bots     []*Bot
 }
 
-func New(mutexPluginAPI cluster.MutexPluginAPI, pluginAPI *pluginapi.Client, licenseChecker *enterprise.LicenseChecker) *MMBots {
+func New(mutexPluginAPI cluster.MutexPluginAPI, pluginAPI *pluginapi.Client, licenseChecker *enterprise.LicenseChecker, config Config, llmUpstreamHTTPClient *http.Client) *MMBots {
 	return &MMBots{
-		mutexPluginAPI: mutexPluginAPI,
-		pluginAPI:      pluginAPI,
-		licenseChecker: licenseChecker,
+		ensureBotsClusterMutex: mutexPluginAPI,
+		pluginAPI:              pluginAPI,
+		licenseChecker:         licenseChecker,
+		config:                 config,
+		llmUpstreamHTTPClient:  llmUpstreamHTTPClient,
 	}
 }
 
 func (b *MMBots) EnsureBots(cfgBots []llm.BotConfig) error {
-	mtx, err := cluster.NewMutex(b.mutexPluginAPI, "ai_ensure_bots")
+	mtx, err := cluster.NewMutex(b.ensureBotsClusterMutex, "ai_ensure_bots")
 	if err != nil {
 		return fmt.Errorf("failed to create mutex: %w", err)
 	}
@@ -133,6 +155,75 @@ func (b *MMBots) UpdateBotsCache(cfgBots []llm.BotConfig) error {
 				createdBot := NewBot(botCfg, bot)
 				b.bots = append(b.bots, createdBot)
 			}
+		}
+	}
+
+	for _, bot := range b.bots {
+		bot.llm = b.getLLM(bot.cfg.Service)
+	}
+
+	return nil
+}
+
+func (a *MMBots) getLLM(serviceConfig llm.ServiceConfig) llm.LanguageModel {
+	// Create the correct model
+	var result llm.LanguageModel
+	switch serviceConfig.Type {
+	case llm.ServiceTypeOpenAI:
+		result = openai.New(config.OpenAIConfigFromServiceConfig(serviceConfig), a.llmUpstreamHTTPClient)
+	case llm.ServiceTypeOpenAICompatible:
+		result = openai.NewCompatible(config.OpenAIConfigFromServiceConfig(serviceConfig), a.llmUpstreamHTTPClient)
+	case llm.ServiceTypeAzure:
+		result = openai.NewAzure(config.OpenAIConfigFromServiceConfig(serviceConfig), a.llmUpstreamHTTPClient)
+	case llm.ServiceTypeAnthropic:
+		result = anthropic.New(serviceConfig, a.llmUpstreamHTTPClient)
+	case llm.ServiceTypeASage:
+		result = asage.New(serviceConfig, a.llmUpstreamHTTPClient)
+	}
+
+	// Truncation Support
+	result = llm.NewLLMTruncationWrapper(result)
+
+	// Logging
+	if a.config.EnableLLMLogging() {
+		result = llm.NewLanguageModelLogWrapper(a.pluginAPI.Log, result)
+	}
+
+	return result
+}
+
+// TODO: This really doesn't belong here. Figure out where to put this.
+func (a *MMBots) GetTranscribe() Transcriber {
+	// Get the configured transcript generator bot
+	bot := a.getTrasncriberBot()
+	if bot == nil {
+		a.pluginAPI.Log.Error("No transcript generator bot found")
+		return nil
+	}
+
+	service := bot.GetConfig().Service
+	switch service.Type {
+	case llm.ServiceTypeOpenAI:
+		return openai.New(config.OpenAIConfigFromServiceConfig(service), a.llmUpstreamHTTPClient)
+	case llm.ServiceTypeOpenAICompatible:
+		return openai.NewCompatible(config.OpenAIConfigFromServiceConfig(service), a.llmUpstreamHTTPClient)
+	case llm.ServiceTypeAzure:
+		return openai.NewAzure(config.OpenAIConfigFromServiceConfig(service), a.llmUpstreamHTTPClient)
+	default:
+		a.pluginAPI.Log.Error("Unsupported service type for transcript generator",
+			"bot_name", bot.GetMMBot().Username,
+			"service_type", service.Type)
+		return nil
+	}
+}
+
+func (b *MMBots) getTrasncriberBot() *Bot {
+	b.botsLock.RLock()
+	defer b.botsLock.RUnlock()
+
+	for _, bot := range b.bots {
+		if bot.cfg.Name == b.config.GetTranscriptGenerator() {
+			return bot
 		}
 	}
 

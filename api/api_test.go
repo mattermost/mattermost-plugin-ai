@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/mattermost/mattermost-plugin-ai/agents"
 	"github.com/mattermost/mattermost-plugin-ai/bots"
+	"github.com/mattermost/mattermost-plugin-ai/conversations"
 	"github.com/mattermost/mattermost-plugin-ai/enterprise"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/metrics"
@@ -39,7 +40,7 @@ func (e *TestEnvironment) Cleanup(t *testing.T) {
 // createTestBots creates a test MMBots instance for testing
 func createTestBots(mockAPI *plugintest.API, client *pluginapi.Client) *bots.MMBots {
 	licenseChecker := enterprise.NewLicenseChecker(client)
-	testBots := bots.New(mockAPI, client, licenseChecker)
+	testBots := bots.New(mockAPI, client, licenseChecker, nil, &http.Client{})
 	return testBots
 }
 
@@ -73,7 +74,10 @@ func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 	// Don't call SetAPI for tests - just set the fields we need
 	agents.SetBotsForTesting(testBots, client)
 
-	api := New(agents, nil, nil, nil, client, noopMetrics)
+	// Create minimal conversations service for testing
+	conversationsService := &conversations.Conversations{}
+
+	api := New(agents, testBots, conversationsService, nil, nil, nil, client, noopMetrics, nil)
 
 	return &TestEnvironment{
 		api:     api,

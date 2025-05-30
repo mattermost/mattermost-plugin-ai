@@ -37,10 +37,6 @@ type Service struct {
 	builder          sq.StatementBuilderType
 	contextBuilder   ContextBuilder
 
-	// Configuration access - we'll need this for getTranscribe
-	getConfiguration func() Config
-	// LLM service provider access
-	getLLM func(config llm.BotConfig) llm.LanguageModel
 	// Function for botDMNonResponse
 	botDMNonResponse func(botUserID, userID string, post *model.Post) error
 	// Function for modifying posts
@@ -53,12 +49,6 @@ type Service struct {
 	getBotByID func(userID string) *bots.Bot
 	// Function for executing database queries
 	execBuilder func(query sq.Sqlizer) (sql.Result, error)
-}
-
-// Config represents the configuration needed by the meetings service
-type Config interface {
-	GetTranscriptGenerator() string
-	GetBots() []llm.BotConfig
 }
 
 // ContextBuilder represents the interface for building LLM contexts
@@ -77,8 +67,6 @@ func NewService(
 	metricsService metrics.Metrics,
 	db *sqlx.DB,
 	builder sq.StatementBuilderType,
-	getConfiguration func() Config,
-	getLLM func(config llm.BotConfig) llm.LanguageModel,
 	contextBuilder ContextBuilder,
 	botDMNonResponse func(botUserID, userID string, post *model.Post) error,
 	modifyPostForBot func(botID, userID string, post *model.Post, respondingToPostID string),
@@ -96,8 +84,6 @@ func NewService(
 		metricsService:   metricsService,
 		db:               db,
 		builder:          builder,
-		getConfiguration: getConfiguration,
-		getLLM:           getLLM,
 		contextBuilder:   contextBuilder,
 		botDMNonResponse: botDMNonResponse,
 		modifyPostForBot: modifyPostForBot,

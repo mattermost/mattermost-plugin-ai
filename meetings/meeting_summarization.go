@@ -89,7 +89,7 @@ func (s *Service) createTranscription(recordingFileID string) (*subtitles.Subtit
 		return nil, fmt.Errorf("couldn't run ffmpeg: %w", err)
 	}
 
-	transcriber := s.getTranscribe()
+	transcriber := s.bots.GetTranscribe()
 	// Limit reader should probably error out instead of just silently failing
 	transcription, err := transcriber.Transcribe(io.LimitReader(audioReader, WhisperAPILimit))
 	if err != nil {
@@ -280,8 +280,8 @@ func (s *Service) summarizeCallRecording(bot *bots.Bot, rootID string, requestin
 
 func (s *Service) summarizeTranscription(bot *bots.Bot, transcription *subtitles.Subtitles, context *llm.Context) (*llm.TextStreamResult, error) {
 	llmFormattedTranscription := transcription.FormatForLLM()
-	tokens := s.getLLM(bot.GetConfig()).CountTokens(llmFormattedTranscription)
-	tokenLimitWithMargin := int(float64(s.getLLM(bot.GetConfig()).InputTokenLimit())*0.75) - ContextTokenMargin
+	tokens := bot.LLM().CountTokens(llmFormattedTranscription)
+	tokenLimitWithMargin := int(float64(bot.LLM().InputTokenLimit())*0.75) - ContextTokenMargin
 	if tokenLimitWithMargin < 0 {
 		tokenLimitWithMargin = ContextTokenMargin / 2
 	}
@@ -310,7 +310,7 @@ func (s *Service) summarizeTranscription(bot *bots.Bot, transcription *subtitles
 				Context: context,
 			}
 
-			summarizedChunk, err := s.getLLM(bot.GetConfig()).ChatCompletionNoStream(request)
+			summarizedChunk, err := bot.LLM().ChatCompletionNoStream(request)
 			if err != nil {
 				return nil, fmt.Errorf("unable to get summarized chunk: %w", err)
 			}
@@ -320,7 +320,7 @@ func (s *Service) summarizeTranscription(bot *bots.Bot, transcription *subtitles
 
 		llmFormattedTranscription = strings.Join(summarizedChunks, "\n\n")
 		isChunked = true
-		s.pluginAPI.Log.Debug("Completed chunk summarization", "chunks", len(summarizedChunks), "tokens", s.getLLM(bot.GetConfig()).CountTokens(llmFormattedTranscription))
+		s.pluginAPI.Log.Debug("Completed chunk summarization", "chunks", len(summarizedChunks), "tokens", bot.LLM().CountTokens(llmFormattedTranscription))
 	}
 
 	context.Parameters = map[string]any{"IsChunked": fmt.Sprintf("%t", isChunked)}
@@ -343,7 +343,7 @@ func (s *Service) summarizeTranscription(bot *bots.Bot, transcription *subtitles
 		Context: context,
 	}
 
-	summaryStream, err := s.getLLM(bot.GetConfig()).ChatCompletion(completionRequest)
+	summaryStream, err := bot.LLM().ChatCompletion(completionRequest)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get meeting summary: %w", err)
 	}

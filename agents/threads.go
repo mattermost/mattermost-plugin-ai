@@ -34,7 +34,7 @@ func (p *AgentsService) ThreadAnalysis(userID string, bot *bots.Bot, post *model
 		p.contextBuilder.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.GetMMBot().UserId, channel)),
 	)
 
-	analyzer := threads.New(p.GetLLM(bot.GetConfig()), p.prompts, p.mmClient)
+	analyzer := threads.New(bot.LLM(), p.prompts, p.mmClient)
 	var analysisStream *llm.TextStreamResult
 	var title string
 	switch analysisType {

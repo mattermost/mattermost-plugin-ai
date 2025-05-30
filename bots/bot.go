@@ -11,6 +11,7 @@ import (
 type Bot struct {
 	cfg   llm.BotConfig
 	mmBot *model.Bot
+	llm   llm.LanguageModel
 }
 
 func NewBot(cfg llm.BotConfig, bot *model.Bot) *Bot {
@@ -26,4 +27,8 @@ func (b *Bot) GetConfig() llm.BotConfig {
 
 func (b *Bot) GetMMBot() *model.Bot {
 	return b.mmBot
+}
+
+func (b *Bot) LLM() llm.LanguageModel {
+	return b.llm
 }

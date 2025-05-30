@@ -6,15 +6,10 @@ package meetings
 import (
 	"errors"
 	"fmt"
-	"io"
 	"slices"
 
 	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/conversations"
-	"github.com/mattermost/mattermost-plugin-ai/llm"
-	"github.com/mattermost/mattermost-plugin-ai/openai"
-	"github.com/mattermost/mattermost-plugin-ai/providers"
-	"github.com/mattermost/mattermost-plugin-ai/subtitles"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
@@ -25,54 +20,6 @@ const (
 	// Import constants from conversations package
 	LLMRequesterUserID = conversations.LLMRequesterUserID
 )
-
-// Transcriber interface defines the contract for transcription services
-type Transcriber interface {
-	Transcribe(file io.Reader) (*subtitles.Subtitles, error)
-}
-
-// getTranscribe creates a transcriber for the configured transcript generator bot
-func (s *Service) getTranscribe() Transcriber {
-	cfg := s.getConfiguration()
-	var botConfig llm.BotConfig
-
-	// Find the bot configuration for transcript generation
-	found := false
-	for _, bot := range cfg.GetBots() {
-		if bot.Name == cfg.GetTranscriptGenerator() {
-			botConfig = bot
-			found = true
-			break
-		}
-	}
-
-	// Check if a valid bot configuration was found
-	if !found || cfg.GetTranscriptGenerator() == "" {
-		s.pluginAPI.Log.Error("No transcript generator bot found", "configured_generator", cfg.GetTranscriptGenerator())
-		return nil
-	}
-
-	// Check if the service type is configured
-	if botConfig.Service.Type == "" {
-		s.pluginAPI.Log.Error("Transcript generator bot has no service type configured", "bot_name", botConfig.Name)
-		return nil
-	}
-
-	llmMetrics := s.metricsService.GetMetricsForAIService(botConfig.Name)
-	switch botConfig.Service.Type {
-	case llm.ServiceTypeOpenAI:
-		return openai.New(providers.OpenAIConfigFromServiceConfig(botConfig.Service), nil, llmMetrics)
-	case llm.ServiceTypeOpenAICompatible:
-		return openai.NewCompatible(providers.OpenAIConfigFromServiceConfig(botConfig.Service), nil, llmMetrics)
-	case llm.ServiceTypeAzure:
-		return openai.NewAzure(providers.OpenAIConfigFromServiceConfig(botConfig.Service), nil, llmMetrics)
-	default:
-		s.pluginAPI.Log.Error("Unsupported service type for transcript generator",
-			"bot_name", botConfig.Name,
-			"service_type", botConfig.Service.Type)
-		return nil
-	}
-}
 
 // HandleTranscribeFile handles file transcription requests
 func (s *Service) HandleTranscribeFile(userID string, bot *bots.Bot, post *model.Post, channel *model.Channel, fileID string) (map[string]string, error) {

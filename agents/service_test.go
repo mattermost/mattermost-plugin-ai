@@ -4,6 +4,7 @@
 package agents
 
 import (
+	"net/http"
 	"testing"
 
 	"github.com/mattermost/mattermost-plugin-ai/bots"
@@ -24,7 +25,7 @@ type TestEnvironment struct {
 // createTestBots creates a test MMBots instance for testing
 func createTestBots(mockAPI *plugintest.API, client *pluginapi.Client) *bots.MMBots {
 	licenseChecker := enterprise.NewLicenseChecker(client)
-	testBots := bots.New(mockAPI, client, licenseChecker)
+	testBots := bots.New(mockAPI, client, licenseChecker, nil, &http.Client{})
 	return testBots
 }
 

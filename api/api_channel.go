@@ -37,7 +37,7 @@ func (a *API) channelAuthorizationRequired(c *gin.Context) {
 	}
 
 	bot := c.MustGet(ContextBotKey).(*bots.Bot)
-	if err := a.agents.CheckUsageRestrictions(userID, bot, channel); err != nil {
+	if err := a.conversationsService.CheckUsageRestrictions(userID, bot, channel); err != nil {
 		c.AbortWithError(http.StatusForbidden, err)
 		return
 	}
@@ -49,7 +49,7 @@ func (a *API) handleInterval(c *gin.Context) {
 	bot := c.MustGet(ContextBotKey).(*bots.Bot)
 
 	// Check license
-	if !a.agents.IsBasicsLicensed() {
+	if !a.conversationsService.IsBasicsLicensed() {
 		c.AbortWithError(http.StatusForbidden, errors.New("feature not licensed"))
 		return
 	}
@@ -118,7 +118,7 @@ func (a *API) handleInterval(c *gin.Context) {
 	}
 
 	// Call channels interval processing
-	resultStream, err := channels.New(a.agents.GetLLM(bot.GetConfig()), a.prompts, a.mmClient).Interval(context, channel.Id, data.StartTime, data.EndTime, promptPreset)
+	resultStream, err := channels.New(bot.LLM(), a.prompts, a.mmClient).Interval(context, channel.Id, data.StartTime, data.EndTime, promptPreset)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return

@@ -14,7 +14,6 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 
 	"github.com/mattermost/mattermost-plugin-ai/llm"
-	"github.com/mattermost/mattermost-plugin-ai/metrics"
 )
 
 const (
@@ -37,11 +36,10 @@ type Anthropic struct {
 	client           anthropicSDK.Client
 	defaultModel     string
 	inputTokenLimit  int
-	metricsService   metrics.LLMetrics
 	outputTokenLimit int
 }
 
-func New(llmService llm.ServiceConfig, httpClient *http.Client, metricsService metrics.LLMetrics) *Anthropic {
+func New(llmService llm.ServiceConfig, httpClient *http.Client) *Anthropic {
 	client := anthropicSDK.NewClient(
 		option.WithAPIKey(llmService.APIKey),
 		option.WithHTTPClient(httpClient),
@@ -51,7 +49,6 @@ func New(llmService llm.ServiceConfig, httpClient *http.Client, metricsService m
 		client:           client,
 		defaultModel:     llmService.DefaultModel,
 		inputTokenLimit:  llmService.InputTokenLimit,
-		metricsService:   metricsService,
 		outputTokenLimit: llmService.OutputTokenLimit,
 	}
 }
@@ -260,8 +257,6 @@ func (a *Anthropic) streamChatWithTools(state messageState) {
 }
 
 func (a *Anthropic) ChatCompletion(request llm.CompletionRequest, opts ...llm.LanguageModelOption) (*llm.TextStreamResult, error) {
-	a.metricsService.IncrementLLMRequests()
-
 	eventStream := make(chan llm.TextStreamEvent)
 
 	cfg := a.createConfig(opts)

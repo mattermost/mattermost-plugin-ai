@@ -104,7 +104,7 @@ func (p *AgentsService) HandleToolCall(userID string, post *model.Post, channel 
 		Posts:   posts,
 		Context: llmContext,
 	}
-	result, err := p.GetLLM(bot.GetConfig()).ChatCompletion(completionRequest)
+	result, err := bot.LLM().ChatCompletion(completionRequest)
 	if err != nil {
 		return fmt.Errorf("failed to get chat completion: %w", err)
 	}

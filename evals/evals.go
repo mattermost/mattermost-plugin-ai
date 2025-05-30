@@ -42,7 +42,7 @@ func NewEval() (*Eval, error) {
 		APIKey:           os.Getenv("OPENAI_API_KEY"),
 		DefaultModel:     "gpt-4o",
 		StreamingTimeout: 20 * time.Second,
-	}, &httpClient, nil)
+	}, &httpClient)
 	if provider == nil {
 		return nil, errors.New("failed to create LLM provider")
 	}

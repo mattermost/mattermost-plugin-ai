@@ -60,7 +60,6 @@ type Search struct {
 	pluginAPI             mmapi.Client
 	prompts               *llm.Prompts
 	streamingService      streaming.Service
-	llmService            func(llm.BotConfig) llm.LanguageModel
 	llmUpstreamHTTPClient *http.Client
 	db                    *sqlx.DB
 	licenseChecker        LicenseChecker
@@ -75,7 +74,6 @@ func New(
 	pluginAPI mmapi.Client,
 	prompts *llm.Prompts,
 	streamingService streaming.Service,
-	llmService func(llm.BotConfig) llm.LanguageModel,
 	llmUpstreamHTTPClient *http.Client,
 	db *sqlx.DB,
 	licenseChecker LicenseChecker,
@@ -85,7 +83,6 @@ func New(
 		pluginAPI:             pluginAPI,
 		prompts:               prompts,
 		streamingService:      streamingService,
-		llmService:            llmService,
 		llmUpstreamHTTPClient: llmUpstreamHTTPClient,
 		db:                    db,
 		licenseChecker:        licenseChecker,
@@ -247,7 +244,7 @@ func (s *Search) RunSearch(ctx context.Context, userID string, bot *bots.Bot, qu
 			Context: promptCtx,
 		}
 
-		resultStream, err := s.llmService(bot.GetConfig()).ChatCompletion(prompt)
+		resultStream, err := bot.LLM().ChatCompletion(prompt)
 		if err != nil {
 			s.pluginAPI.LogError("Error generating answer", "error", err)
 			processingError = err
@@ -339,7 +336,7 @@ func (s *Search) SearchQuery(ctx context.Context, userID string, bot *bots.Bot, 
 		Context: promptCtx,
 	}
 
-	answer, err := s.llmService(bot.GetConfig()).ChatCompletionNoStream(prompt)
+	answer, err := bot.LLM().ChatCompletionNoStream(prompt)
 	if err != nil {
 		return Response{}, fmt.Errorf("failed to generate answer: %w", err)
 	}

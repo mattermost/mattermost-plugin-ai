@@ -18,7 +18,6 @@ import (
 	"errors"
 
 	"github.com/mattermost/mattermost-plugin-ai/llm"
-	"github.com/mattermost/mattermost-plugin-ai/metrics"
 	"github.com/mattermost/mattermost-plugin-ai/subtitles"
 	openaiClient "github.com/sashabaranov/go-openai"
 )
@@ -37,9 +36,8 @@ type Config struct {
 }
 
 type OpenAI struct {
-	client         *openaiClient.Client
-	config         Config
-	metricsService metrics.LLMetrics
+	client *openaiClient.Client
+	config Config
 }
 
 const (
@@ -49,8 +47,8 @@ const (
 
 var ErrStreamingTimeout = errors.New("timeout streaming")
 
-func NewAzure(config Config, httpClient *http.Client, metricsService metrics.LLMetrics) *OpenAI {
-	return newOpenAI(config, httpClient, metricsService,
+func NewAzure(config Config, httpClient *http.Client) *OpenAI {
+	return newOpenAI(config, httpClient,
 		func(apiKey string) openaiClient.ClientConfig {
 			clientConfig := openaiClient.DefaultAzureConfig(apiKey, strings.TrimSuffix(config.APIURL, "/"))
 			clientConfig.APIVersion = "2024-06-01"
@@ -59,8 +57,8 @@ func NewAzure(config Config, httpClient *http.Client, metricsService metrics.LLM
 	)
 }
 
-func NewCompatible(config Config, httpClient *http.Client, metricsService metrics.LLMetrics) *OpenAI {
-	return newOpenAI(config, httpClient, metricsService,
+func NewCompatible(config Config, httpClient *http.Client) *OpenAI {
+	return newOpenAI(config, httpClient,
 		func(apiKey string) openaiClient.ClientConfig {
 			clientConfig := openaiClient.DefaultConfig(apiKey)
 			clientConfig.BaseURL = strings.TrimSuffix(config.APIURL, "/")
@@ -69,8 +67,8 @@ func NewCompatible(config Config, httpClient *http.Client, metricsService metric
 	)
 }
 
-func New(config Config, httpClient *http.Client, metricsService metrics.LLMetrics) *OpenAI {
-	return newOpenAI(config, httpClient, metricsService,
+func New(config Config, httpClient *http.Client) *OpenAI {
+	return newOpenAI(config, httpClient,
 		func(apiKey string) openaiClient.ClientConfig {
 			clientConfig := openaiClient.DefaultConfig(apiKey)
 			clientConfig.OrgID = config.OrgID
@@ -85,7 +83,7 @@ func NewEmbeddings(config Config, httpClient *http.Client) *OpenAI {
 		config.EmbeddingModel = string(openaiClient.LargeEmbedding3)
 		config.EmbeddingDimentions = 3072
 	}
-	return newOpenAI(config, httpClient, nil,
+	return newOpenAI(config, httpClient,
 		func(apiKey string) openaiClient.ClientConfig {
 			clientConfig := openaiClient.DefaultConfig(apiKey)
 			return clientConfig
@@ -100,7 +98,7 @@ func NewCompatibleEmbeddings(config Config, httpClient *http.Client) *OpenAI {
 		config.EmbeddingDimentions = 3072
 	}
 
-	return newOpenAI(config, httpClient, nil,
+	return newOpenAI(config, httpClient,
 		func(apiKey string) openaiClient.ClientConfig {
 			clientConfig := openaiClient.DefaultConfig(apiKey)
 			clientConfig.BaseURL = strings.TrimSuffix(config.APIURL, "/")
@@ -112,16 +110,14 @@ func NewCompatibleEmbeddings(config Config, httpClient *http.Client) *OpenAI {
 func newOpenAI(
 	config Config,
 	httpClient *http.Client,
-	metricsService metrics.LLMetrics,
 	baseConfigFunc func(apiKey string) openaiClient.ClientConfig,
 ) *OpenAI {
 	clientConfig := baseConfigFunc(config.APIKey)
 	clientConfig.HTTPClient = httpClient
 
 	return &OpenAI{
-		client:         openaiClient.NewClientWithConfig(clientConfig),
-		config:         config,
-		metricsService: metricsService,
+		client: openaiClient.NewClientWithConfig(clientConfig),
+		config: config,
 	}
 }
 
@@ -467,10 +463,6 @@ func (s *OpenAI) completionRequestFromConfig(cfg llm.LanguageModelConfig) openai
 }
 
 func (s *OpenAI) ChatCompletion(request llm.CompletionRequest, opts ...llm.LanguageModelOption) (*llm.TextStreamResult, error) {
-	if s.metricsService != nil {
-		s.metricsService.IncrementLLMRequests()
-	}
-
 	openAIRequest := s.completionRequestFromConfig(s.createConfig(opts))
 	openAIRequest = modifyCompletionRequestWithRequest(openAIRequest, request)
 	openAIRequest.Stream = true
