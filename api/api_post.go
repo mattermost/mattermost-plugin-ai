@@ -64,7 +64,7 @@ func (a *API) handleReact(c *gin.Context) {
 		return
 	}
 
-	context := a.agents.GetContextBuilder().BuildLLMContextUserRequest(
+	context := a.contextBuilder.BuildLLMContextUserRequest(
 		bot,
 		requestingUser,
 		channel,

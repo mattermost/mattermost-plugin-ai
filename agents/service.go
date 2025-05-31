@@ -17,6 +17,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/enterprise"
 	"github.com/mattermost/mattermost-plugin-ai/i18n"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
+	"github.com/mattermost/mattermost-plugin-ai/llmcontext"
 	"github.com/mattermost/mattermost-plugin-ai/metrics"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
 	"github.com/mattermost/mattermost-plugin-ai/streaming"
@@ -52,7 +53,7 @@ type AgentsService struct { //nolint:revive
 	llmUpstreamHTTPClient *http.Client
 	untrustedHTTPClient   *http.Client
 
-	contextBuilder *LLMContextBuilder
+	contextBuilder *llmcontext.LLMContextBuilder
 
 	bots *bots.MMBots
 
@@ -67,7 +68,7 @@ func NewAgentsService(
 	untrustedHTTPClient *http.Client,
 	metricsService metrics.Metrics,
 	bots *bots.MMBots,
-	contextBuilder *LLMContextBuilder,
+	contextBuilder *llmcontext.LLMContextBuilder,
 	db *sqlx.DB,
 	builder sq.StatementBuilderType,
 	conversationService *conversations.Conversations,
@@ -124,11 +125,6 @@ func (p *AgentsService) OnDeactivate() error {
 func (p *AgentsService) SetAPI(api plugin.API) {
 	p.pluginAPI = pluginapi.NewClient(api, nil)
 	p.mmClient = mmapi.NewClient(p.pluginAPI)
-}
-
-// GetContextBuilder returns the context builder for external use
-func (p *AgentsService) GetContextBuilder() *LLMContextBuilder {
-	return p.contextBuilder
 }
 
 // GetMMClient returns the mmapi client for external use

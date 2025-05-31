@@ -20,6 +20,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/i18n"
 	"github.com/mattermost/mattermost-plugin-ai/indexer"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
+	"github.com/mattermost/mattermost-plugin-ai/llmcontext"
 	"github.com/mattermost/mattermost-plugin-ai/mcp"
 	"github.com/mattermost/mattermost-plugin-ai/meetings"
 	"github.com/mattermost/mattermost-plugin-ai/metrics"
@@ -166,7 +167,7 @@ func (p *Plugin) OnActivate() error {
 		}
 	})
 
-	contextBuilder := agents.NewLLMContextBuilder(
+	contextBuilder := llmcontext.NewLLMContextBuilder(
 		p.pluginAPI,
 		p.toolProvider,
 		p.mcpClientManager,
@@ -220,7 +221,18 @@ func (p *Plugin) OnActivate() error {
 	)
 
 	// Initialize the API service with all services
-	p.apiService = api.New(p.agentsService, p.bots, conversationsService, p.meetingsService, p.indexerService, p.searchService, p.pluginAPI, metricsService, &p.configuration)
+	p.apiService = api.New(
+		p.agentsService,
+		p.bots,
+		conversationsService,
+		p.meetingsService,
+		p.indexerService,
+		p.searchService,
+		p.pluginAPI,
+		metricsService,
+		contextBuilder,
+		&p.configuration,
+	)
 
 	return nil
 }

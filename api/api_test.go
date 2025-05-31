@@ -77,7 +77,7 @@ func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 	// Create minimal conversations service for testing
 	conversationsService := &conversations.Conversations{}
 
-	api := New(agents, testBots, conversationsService, nil, nil, nil, client, noopMetrics, nil)
+	api := New(agents, testBots, conversationsService, nil, nil, nil, client, noopMetrics, nil, nil)
 
 	return &TestEnvironment{
 		api:     api,

@@ -15,6 +15,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/conversations"
 	"github.com/mattermost/mattermost-plugin-ai/indexer"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
+	"github.com/mattermost/mattermost-plugin-ai/llmcontext"
 	"github.com/mattermost/mattermost-plugin-ai/meetings"
 	"github.com/mattermost/mattermost-plugin-ai/metrics"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
@@ -45,7 +46,7 @@ type API struct {
 	pluginAPI            *pluginapi.Client
 	metricsService       metrics.Metrics
 	metricsHandler       http.Handler
-	contextBuilder       *agents.LLMContextBuilder
+	contextBuilder       *llmcontext.LLMContextBuilder
 	prompts              *llm.Prompts
 	config               Config
 	mmClient             mmapi.Client
@@ -61,6 +62,7 @@ func New(
 	searchService *search.Search,
 	pluginAPI *pluginapi.Client,
 	metricsService metrics.Metrics,
+	llmContextBuilder *llmcontext.LLMContextBuilder,
 	config Config,
 ) *API {
 	return &API{
@@ -73,7 +75,7 @@ func New(
 		pluginAPI:            pluginAPI,
 		metricsService:       metricsService,
 		metricsHandler:       metrics.NewMetricsHandler(metricsService),
-		contextBuilder:       agentsService.GetContextBuilder(),
+		contextBuilder:       llmContextBuilder,
 		prompts:              agentsService.GetPrompts(),
 		config:               config,
 		mmClient:             agentsService.GetMMClient(),
