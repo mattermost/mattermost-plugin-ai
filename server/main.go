@@ -192,7 +192,7 @@ func (p *Plugin) OnActivate() error {
 		},
 	)
 
-	//TODO: add listener for search related reinitalization
+	//TODO: add listener for search related reinitialization
 
 	// Initialize the agents service
 	agentsService, err := agents.NewAgentsService(p.API, p.pluginAPI, p.llmUpstreamHTTPClient, untrustedHTTPClient, metricsService, p.bots, contextBuilder, p.db, dbClient.Builder(), conversationsService)
