@@ -47,14 +47,15 @@ type Plugin struct {
 	llmUpstreamHTTPClient *http.Client
 	db                    *sqlx.DB
 
-	agentsService    *agents.AgentsService
-	meetingsService  *meetings.Service
-	indexerService   *indexer.Indexer
-	searchService    *search.Search
-	apiService       *api.API
-	bots             *bots.MMBots
-	toolProvider     *mmtools.MMToolProvider
-	mcpClientManager *mcp.ClientManager
+	agentsService        *agents.AgentsService
+	meetingsService      *meetings.Service
+	indexerService       *indexer.Indexer
+	searchService        *search.Search
+	apiService           *api.API
+	bots                 *bots.MMBots
+	toolProvider         *mmtools.MMToolProvider
+	mcpClientManager     *mcp.ClientManager
+	conversationsService *conversations.Conversations
 }
 
 func (p *Plugin) OnActivate() error {
@@ -185,7 +186,7 @@ func (p *Plugin) OnActivate() error {
 	p.agentsService = agentsService
 
 	// Now initialize conversations service with bots service checkUsageRestrictions method
-	conversationsService := conversations.New(
+	p.conversationsService = conversations.New(
 		prompts,
 		mmapi.NewClient(p.pluginAPI),
 		p.pluginAPI,
@@ -200,13 +201,13 @@ func (p *Plugin) OnActivate() error {
 	)
 
 	// Now create the real streaming service with the correct postModifier
-	streamingService := streaming.NewMMPostStreamService(mmClient, i18nBundle, conversationsService.ModifyPostForBot)
+	streamingService := streaming.NewMMPostStreamService(mmClient, i18nBundle, p.conversationsService.ModifyPostForBot)
 
 	// Update the conversations service with the real streaming service
-	conversationsService.SetStreamingService(streamingService)
+	p.conversationsService.SetStreamingService(streamingService)
 
 	// Update the agents service with the conversation service
-	agentsService.SetConversationService(conversationsService)
+	agentsService.SetConversationService(p.conversationsService)
 
 	// Initialize the meetings service
 	p.meetingsService = meetings.NewService(
@@ -219,10 +220,10 @@ func (p *Plugin) OnActivate() error {
 		p.db,
 		dbClient.Builder(),
 		contextBuilder,
-		conversationsService.BotCreateNonResponsePost,
-		conversationsService.ModifyPostForBot,
-		conversationsService.SaveTitle,
-		conversationsService.SaveTitleAsync,
+		p.conversationsService.BotCreateNonResponsePost,
+		p.conversationsService.ModifyPostForBot,
+		p.conversationsService.SaveTitle,
+		p.conversationsService.SaveTitleAsync,
 		p.bots.GetBotByID,
 		agentsService.ExecBuilder,
 	)
@@ -231,7 +232,7 @@ func (p *Plugin) OnActivate() error {
 	p.apiService = api.New(
 		p.agentsService,
 		p.bots,
-		conversationsService,
+		p.conversationsService,
 		p.meetingsService,
 		p.indexerService,
 		p.searchService,
@@ -271,6 +272,8 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 			}
 		}
 	}
+
+	p.conversationsService.MessageHasBeenPosted(c, post)
 }
 
 func (p *Plugin) MessageHasBeenUpdated(c *plugin.Context, newPost, oldPost *model.Post) {
