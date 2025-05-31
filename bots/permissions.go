@@ -1,7 +1,7 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-package agents
+package bots
 
 import (
 	"fmt"
@@ -9,7 +9,6 @@ import (
 
 	"errors"
 
-	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
@@ -17,19 +16,19 @@ import (
 
 var ErrUsageRestriction = errors.New("usage restriction")
 
-func (p *AgentsService) CheckUsageRestrictions(requestingUserID string, bot *bots.Bot, channel *model.Channel) error {
-	if err := p.CheckUsageRestrictionsForUser(bot, requestingUserID); err != nil {
+func (m *MMBots) CheckUsageRestrictions(requestingUserID string, bot *Bot, channel *model.Channel) error {
+	if err := m.CheckUsageRestrictionsForUser(bot, requestingUserID); err != nil {
 		return err
 	}
 
-	if err := p.checkUsageRestrictionsForChannel(bot, channel); err != nil {
+	if err := m.checkUsageRestrictionsForChannel(bot, channel); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (p *AgentsService) checkUsageRestrictionsForChannel(bot *bots.Bot, channel *model.Channel) error {
+func (m *MMBots) checkUsageRestrictionsForChannel(bot *Bot, channel *model.Channel) error {
 	switch bot.GetConfig().ChannelAccessLevel {
 	case llm.ChannelAccessLevelAll:
 		return nil
@@ -50,8 +49,8 @@ func (p *AgentsService) checkUsageRestrictionsForChannel(bot *bots.Bot, channel 
 	return fmt.Errorf("unknown channel assistance level")
 }
 
-func (p *AgentsService) isMemberOfTeam(teamID string, userID string) (bool, error) {
-	member, err := p.pluginAPI.Team.GetMember(teamID, userID)
+func (m *MMBots) isMemberOfTeam(teamID string, userID string) (bool, error) {
+	member, err := m.pluginAPI.Team.GetMember(teamID, userID)
 	if errors.Is(err, pluginapi.ErrNotFound) {
 		return false, nil
 	}
@@ -61,7 +60,7 @@ func (p *AgentsService) isMemberOfTeam(teamID string, userID string) (bool, erro
 	return member != nil && member.DeleteAt == 0, nil
 }
 
-func (p *AgentsService) CheckUsageRestrictionsForUser(bot *bots.Bot, requestingUserID string) error {
+func (m *MMBots) CheckUsageRestrictionsForUser(bot *Bot, requestingUserID string) error {
 	switch bot.GetConfig().UserAccessLevel {
 	case llm.UserAccessLevelAll:
 		return nil
@@ -72,7 +71,7 @@ func (p *AgentsService) CheckUsageRestrictionsForUser(bot *bots.Bot, requestingU
 		}
 		// Check team membership
 		for _, teamID := range bot.GetConfig().TeamIDs {
-			isMember, err := p.isMemberOfTeam(teamID, requestingUserID)
+			isMember, err := m.isMemberOfTeam(teamID, requestingUserID)
 			if err != nil {
 				return err
 			}
@@ -88,7 +87,7 @@ func (p *AgentsService) CheckUsageRestrictionsForUser(bot *bots.Bot, requestingU
 		}
 		// Check team membership
 		for _, teamID := range bot.GetConfig().TeamIDs {
-			isMember, err := p.isMemberOfTeam(teamID, requestingUserID)
+			isMember, err := m.isMemberOfTeam(teamID, requestingUserID)
 			if err != nil {
 				return err
 			}

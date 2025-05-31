@@ -229,7 +229,7 @@ func (a *API) getAIBotsForUser(userID string) ([]AIBotInfo, error) {
 	defaultBotName := a.config.GetDefaultBotName()
 	for i, bot := range allBots {
 		// Don't return bots the user is excluded from using.
-		if a.agents.CheckUsageRestrictionsForUser(bot, userID) != nil {
+		if a.bots.CheckUsageRestrictionsForUser(bot, userID) != nil {
 			continue
 		}
 

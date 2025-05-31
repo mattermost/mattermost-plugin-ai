@@ -184,7 +184,7 @@ func (p *Plugin) OnActivate() error {
 	}
 	p.agentsService = agentsService
 
-	// Now initialize conversations service with agents service checkUsageRestrictions method
+	// Now initialize conversations service with bots service checkUsageRestrictions method
 	conversationsService := conversations.New(
 		prompts,
 		mmapi.NewClient(p.pluginAPI),
@@ -196,7 +196,7 @@ func (p *Plugin) OnActivate() error {
 		dbClient.Builder(),
 		enterprise.NewLicenseChecker(p.pluginAPI),
 		i18nBundle,
-		agentsService.CheckUsageRestrictions,
+		p.bots.CheckUsageRestrictions,
 	)
 
 	// Now create the real streaming service with the correct postModifier

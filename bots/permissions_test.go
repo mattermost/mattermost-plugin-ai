@@ -1,17 +1,43 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-package agents
+package bots
 
 import (
 	"net/http"
 	"testing"
 
-	"github.com/mattermost/mattermost-plugin-ai/bots"
+	"github.com/mattermost/mattermost-plugin-ai/enterprise"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost/server/public/model"
+	"github.com/mattermost/mattermost/server/public/plugin/plugintest"
+	"github.com/mattermost/mattermost/server/public/pluginapi"
 	"github.com/stretchr/testify/require"
 )
+
+type TestEnvironment struct {
+	bots    *MMBots
+	mockAPI *plugintest.API
+}
+
+func SetupTestEnvironment(t *testing.T) *TestEnvironment {
+	mockAPI := &plugintest.API{}
+	client := pluginapi.NewClient(mockAPI, nil)
+
+	licenseChecker := enterprise.NewLicenseChecker(client)
+	mmBots := New(mockAPI, client, licenseChecker, nil, &http.Client{})
+
+	e := &TestEnvironment{
+		bots:    mmBots,
+		mockAPI: mockAPI,
+	}
+
+	return e
+}
+
+func (e *TestEnvironment) Cleanup(t *testing.T) {
+	e.mockAPI.AssertExpectations(t)
+}
 
 func TestUsageRestrictions(t *testing.T) {
 	e := SetupTestEnvironment(t)
@@ -19,14 +45,14 @@ func TestUsageRestrictions(t *testing.T) {
 
 	testCases := []struct {
 		name           string
-		bot            *bots.Bot
+		bot            *Bot
 		channel        *model.Channel
 		requestingUser string
 		expectedError  error
 	}{
 		{
 			name: "All allowed",
-			bot: bots.NewBot(llm.BotConfig{
+			bot: NewBot(llm.BotConfig{
 				ChannelAccessLevel: llm.ChannelAccessLevelAll,
 				UserAccessLevel:    llm.UserAccessLevelAll,
 			}, nil),
@@ -36,7 +62,7 @@ func TestUsageRestrictions(t *testing.T) {
 		},
 		{
 			name: "Channel blocked",
-			bot: bots.NewBot(llm.BotConfig{
+			bot: NewBot(llm.BotConfig{
 				ChannelAccessLevel: llm.ChannelAccessLevelBlock,
 				ChannelIDs:         []string{"channel1"},
 				UserAccessLevel:    llm.UserAccessLevelAll,
@@ -47,7 +73,7 @@ func TestUsageRestrictions(t *testing.T) {
 		},
 		{
 			name: "User blocked",
-			bot: bots.NewBot(llm.BotConfig{
+			bot: NewBot(llm.BotConfig{
 				ChannelAccessLevel: llm.ChannelAccessLevelAll,
 				UserAccessLevel:    llm.UserAccessLevelBlock,
 				UserIDs:            []string{"user1"},
@@ -58,7 +84,7 @@ func TestUsageRestrictions(t *testing.T) {
 		},
 		{
 			name: "Channel allowed",
-			bot: bots.NewBot(llm.BotConfig{
+			bot: NewBot(llm.BotConfig{
 				ChannelAccessLevel: llm.ChannelAccessLevelAllow,
 				ChannelIDs:         []string{"channel1"},
 				UserAccessLevel:    llm.UserAccessLevelAll,
@@ -69,7 +95,7 @@ func TestUsageRestrictions(t *testing.T) {
 		},
 		{
 			name: "User allowed",
-			bot: bots.NewBot(llm.BotConfig{
+			bot: NewBot(llm.BotConfig{
 				ChannelAccessLevel: llm.ChannelAccessLevelAll,
 				UserAccessLevel:    llm.UserAccessLevelAllow,
 				UserIDs:            []string{"user1"},
@@ -80,7 +106,7 @@ func TestUsageRestrictions(t *testing.T) {
 		},
 		{
 			name: "Channel not allowed",
-			bot: bots.NewBot(llm.BotConfig{
+			bot: NewBot(llm.BotConfig{
 				ChannelAccessLevel: llm.ChannelAccessLevelAllow,
 				ChannelIDs:         []string{"channel2"},
 				UserAccessLevel:    llm.UserAccessLevelAll,
@@ -91,7 +117,7 @@ func TestUsageRestrictions(t *testing.T) {
 		},
 		{
 			name: "User not allowed",
-			bot: bots.NewBot(llm.BotConfig{
+			bot: NewBot(llm.BotConfig{
 				ChannelAccessLevel: llm.ChannelAccessLevelAll,
 				UserAccessLevel:    llm.UserAccessLevelAllow,
 				UserIDs:            []string{"user2"},
@@ -102,7 +128,7 @@ func TestUsageRestrictions(t *testing.T) {
 		},
 		{
 			name: "Channel none",
-			bot: bots.NewBot(llm.BotConfig{
+			bot: NewBot(llm.BotConfig{
 				ChannelAccessLevel: llm.ChannelAccessLevelNone,
 				UserAccessLevel:    llm.UserAccessLevelAll,
 			}, nil),
@@ -112,7 +138,7 @@ func TestUsageRestrictions(t *testing.T) {
 		},
 		{
 			name: "User none",
-			bot: bots.NewBot(llm.BotConfig{
+			bot: NewBot(llm.BotConfig{
 				ChannelAccessLevel: llm.ChannelAccessLevelAll,
 				UserAccessLevel:    llm.UserAccessLevelNone,
 			}, nil),
@@ -122,7 +148,7 @@ func TestUsageRestrictions(t *testing.T) {
 		},
 		{
 			name: "Channel block but not in list",
-			bot: bots.NewBot(llm.BotConfig{
+			bot: NewBot(llm.BotConfig{
 				ChannelAccessLevel: llm.ChannelAccessLevelBlock,
 				ChannelIDs:         []string{"channel2"},
 				UserAccessLevel:    llm.UserAccessLevelAll,
@@ -133,7 +159,7 @@ func TestUsageRestrictions(t *testing.T) {
 		},
 		{
 			name: "User block but not in list",
-			bot: bots.NewBot(llm.BotConfig{
+			bot: NewBot(llm.BotConfig{
 				ChannelAccessLevel: llm.ChannelAccessLevelAll,
 				UserAccessLevel:    llm.UserAccessLevelBlock,
 				UserIDs:            []string{"user2"},
@@ -144,7 +170,7 @@ func TestUsageRestrictions(t *testing.T) {
 		},
 		{
 			name: "Channel allow and user allow",
-			bot: bots.NewBot(llm.BotConfig{
+			bot: NewBot(llm.BotConfig{
 				ChannelAccessLevel: llm.ChannelAccessLevelAllow,
 				ChannelIDs:         []string{"channel1"},
 				UserAccessLevel:    llm.UserAccessLevelAllow,
@@ -156,7 +182,7 @@ func TestUsageRestrictions(t *testing.T) {
 		},
 		{
 			name: "Channel allow but user not allowed",
-			bot: bots.NewBot(llm.BotConfig{
+			bot: NewBot(llm.BotConfig{
 				ChannelAccessLevel: llm.ChannelAccessLevelAllow,
 				ChannelIDs:         []string{"channel1"},
 				UserAccessLevel:    llm.UserAccessLevelAllow,
@@ -168,7 +194,7 @@ func TestUsageRestrictions(t *testing.T) {
 		},
 		{
 			name: "User allowed via team membership",
-			bot: bots.NewBot(llm.BotConfig{
+			bot: NewBot(llm.BotConfig{
 				ChannelAccessLevel: llm.ChannelAccessLevelAll,
 				UserAccessLevel:    llm.UserAccessLevelAllow,
 				TeamIDs:            []string{"team1"},
@@ -179,7 +205,7 @@ func TestUsageRestrictions(t *testing.T) {
 		},
 		{
 			name: "User blocked via team membership",
-			bot: bots.NewBot(llm.BotConfig{
+			bot: NewBot(llm.BotConfig{
 				ChannelAccessLevel: llm.ChannelAccessLevelAll,
 				UserAccessLevel:    llm.UserAccessLevelBlock,
 				TeamIDs:            []string{"team1"},
@@ -190,7 +216,7 @@ func TestUsageRestrictions(t *testing.T) {
 		},
 		{
 			name: "User not in allowed team",
-			bot: bots.NewBot(llm.BotConfig{
+			bot: NewBot(llm.BotConfig{
 				ChannelAccessLevel: llm.ChannelAccessLevelAll,
 				UserAccessLevel:    llm.UserAccessLevelAllow,
 				TeamIDs:            []string{"team2"},
@@ -201,7 +227,7 @@ func TestUsageRestrictions(t *testing.T) {
 		},
 		{
 			name: "User allowed via direct ID even if not in team",
-			bot: bots.NewBot(llm.BotConfig{
+			bot: NewBot(llm.BotConfig{
 				ChannelAccessLevel: llm.ChannelAccessLevelAll,
 				UserAccessLevel:    llm.UserAccessLevelAllow,
 				UserIDs:            []string{"user1"},
@@ -213,7 +239,7 @@ func TestUsageRestrictions(t *testing.T) {
 		},
 		{
 			name: "User blocked via direct ID even if in allowed team",
-			bot: bots.NewBot(llm.BotConfig{
+			bot: NewBot(llm.BotConfig{
 				ChannelAccessLevel: llm.ChannelAccessLevelAll,
 				UserAccessLevel:    llm.UserAccessLevelBlock,
 				UserIDs:            []string{"user1"},
@@ -237,7 +263,7 @@ func TestUsageRestrictions(t *testing.T) {
 				e.mockAPI.On("GetTeamMember", "team2", "user1").Return(nil, &model.AppError{Message: "not found", StatusCode: http.StatusNotFound}).Maybe()
 			}
 
-			err := e.plugin.CheckUsageRestrictions(tc.requestingUser, tc.bot, tc.channel)
+			err := e.bots.CheckUsageRestrictions(tc.requestingUser, tc.bot, tc.channel)
 			if tc.expectedError != nil {
 				require.ErrorIs(t, err, tc.expectedError)
 			} else {

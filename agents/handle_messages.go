@@ -91,7 +91,7 @@ func (p *AgentsService) handleMessages(post *model.Post) error {
 }
 
 func (p *AgentsService) handleMentions(bot *bots.Bot, post *model.Post, postingUser *model.User, channel *model.Channel) error {
-	if err := p.CheckUsageRestrictions(postingUser.Id, bot, channel); err != nil {
+	if err := p.bots.CheckUsageRestrictions(postingUser.Id, bot, channel); err != nil {
 		return err
 	}
 
@@ -117,7 +117,7 @@ func (p *AgentsService) handleMentions(bot *bots.Bot, post *model.Post, postingU
 }
 
 func (p *AgentsService) handleDMs(bot *bots.Bot, channel *model.Channel, postingUser *model.User, post *model.Post) error {
-	if err := p.CheckUsageRestrictionsForUser(bot, postingUser.Id); err != nil {
+	if err := p.bots.CheckUsageRestrictionsForUser(bot, postingUser.Id); err != nil {
 		return err
 	}
 
