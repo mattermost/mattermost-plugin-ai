@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/mattermost/mattermost-plugin-ai/agents"
 	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/conversations"
 	"github.com/mattermost/mattermost-plugin-ai/indexer"
@@ -37,7 +36,6 @@ type Config interface {
 
 // API represents the HTTP API functionality for the plugin
 type API struct {
-	agents               *agents.AgentsService
 	bots                 *bots.MMBots
 	conversationsService *conversations.Conversations
 	meetingsService      *meetings.Service
@@ -54,7 +52,6 @@ type API struct {
 
 // New creates a new API instance
 func New(
-	agentsService *agents.AgentsService,
 	bots *bots.MMBots,
 	conversationsService *conversations.Conversations,
 	meetingsService *meetings.Service,
@@ -68,7 +65,6 @@ func New(
 	mmClient mmapi.Client,
 ) *API {
 	return &API{
-		agents:               agentsService,
 		bots:                 bots,
 		conversationsService: conversationsService,
 		meetingsService:      meetingsService,

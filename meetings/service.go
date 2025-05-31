@@ -4,8 +4,6 @@
 package meetings
 
 import (
-	"database/sql"
-
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
 
@@ -47,8 +45,6 @@ type Service struct {
 	saveTitleAsync func(postID, title string)
 	// Function for getting bot by ID
 	getBotByID func(userID string) *bots.Bot
-	// Function for executing database queries
-	execBuilder func(query sq.Sqlizer) (sql.Result, error)
 }
 
 // ContextBuilder represents the interface for building LLM contexts
@@ -73,7 +69,6 @@ func NewService(
 	saveTitle func(postID, title string) error,
 	saveTitleAsync func(postID, title string),
 	getBotByID func(userID string) *bots.Bot,
-	execBuilder func(query sq.Sqlizer) (sql.Result, error),
 ) *Service {
 	service := &Service{
 		pluginAPI:        pluginAPI,
@@ -90,7 +85,6 @@ func NewService(
 		saveTitle:        saveTitle,
 		saveTitleAsync:   saveTitleAsync,
 		getBotByID:       getBotByID,
-		execBuilder:      execBuilder,
 	}
 
 	service.ffmpegPath = resolveFFMPEGPath()

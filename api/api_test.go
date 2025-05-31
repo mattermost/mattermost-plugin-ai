@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/mattermost/mattermost-plugin-ai/agents"
 	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/conversations"
 	"github.com/mattermost/mattermost-plugin-ai/enterprise"
@@ -27,7 +26,6 @@ import (
 type TestEnvironment struct {
 	api     *API
 	mockAPI *plugintest.API
-	agents  *agents.AgentsService
 	bots    *bots.MMBots
 }
 
@@ -76,20 +74,14 @@ func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 	// Create test bots instance
 	testBots := createTestBots(mockAPI, client)
 
-	// Create agents service with minimal setup for testing
-	agents := &agents.AgentsService{}
-	// Don't call SetAPI for tests - just set the fields we need
-	agents.SetBotsForTesting(testBots, client)
-
 	// Create minimal conversations service for testing
 	conversationsService := &conversations.Conversations{}
 
-	api := New(agents, testBots, conversationsService, nil, nil, nil, client, noopMetrics, nil, &testConfigImpl{}, nil, nil)
+	api := New(testBots, conversationsService, nil, nil, nil, client, noopMetrics, nil, &testConfigImpl{}, nil, nil)
 
 	return &TestEnvironment{
 		api:     api,
 		mockAPI: mockAPI,
-		agents:  agents,
 		bots:    testBots,
 	}
 }

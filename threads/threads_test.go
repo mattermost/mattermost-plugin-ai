@@ -8,12 +8,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/mattermost/mattermost-plugin-ai/agents/threads"
 	"github.com/mattermost/mattermost-plugin-ai/evals"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/llm/mocks"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
 	mmapimocks "github.com/mattermost/mattermost-plugin-ai/mmapi/mocks"
+	"github.com/mattermost/mattermost-plugin-ai/threads"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"

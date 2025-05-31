@@ -12,8 +12,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/render"
-	"github.com/mattermost/mattermost-plugin-ai/agents/channels"
 	"github.com/mattermost/mattermost-plugin-ai/bots"
+	"github.com/mattermost/mattermost-plugin-ai/channels"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
 	"github.com/mattermost/mattermost/server/public/model"

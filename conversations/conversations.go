@@ -11,13 +11,13 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
-	"github.com/mattermost/mattermost-plugin-ai/agents/threads"
 	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/enterprise"
 	"github.com/mattermost/mattermost-plugin-ai/i18n"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
 	"github.com/mattermost/mattermost-plugin-ai/streaming"
+	"github.com/mattermost/mattermost-plugin-ai/threads"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 )

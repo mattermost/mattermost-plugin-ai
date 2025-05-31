@@ -5,6 +5,7 @@ package meetings
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -349,6 +350,21 @@ func (s *Service) summarizeTranscription(bot *bots.Bot, transcription *subtitles
 	}
 
 	return summaryStream, nil
+}
+
+type builder interface {
+	ToSql() (string, []interface{}, error)
+}
+
+func (s *Service) execBuilder(b builder) (sql.Result, error) {
+	sqlString, args, err := b.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build sql: %w", err)
+	}
+
+	sqlString = s.db.Rebind(sqlString)
+
+	return s.db.Exec(sqlString, args...)
 }
 
 func (s *Service) updatePostWithFile(post *model.Post, fileinfo *model.FileInfo) error {

@@ -9,8 +9,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/mattermost/mattermost-plugin-ai/agents/format"
 	"github.com/mattermost/mattermost-plugin-ai/bots"
+	"github.com/mattermost/mattermost-plugin-ai/format"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/streaming"
 	"github.com/mattermost/mattermost/server/public/model"

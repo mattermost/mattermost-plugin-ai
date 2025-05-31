@@ -8,11 +8,11 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/mattermost/mattermost-plugin-ai/agents/threads"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
 	"github.com/mattermost/mattermost-plugin-ai/streaming"
 	"github.com/mattermost/mattermost-plugin-ai/subtitles"
+	"github.com/mattermost/mattermost-plugin-ai/threads"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 

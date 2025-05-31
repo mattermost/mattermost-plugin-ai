@@ -7,10 +7,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/mattermost/mattermost-plugin-ai/agents/react"
 	"github.com/mattermost/mattermost-plugin-ai/evals"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/llm/mocks"
+	"github.com/mattermost/mattermost-plugin-ai/react"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"

@@ -12,13 +12,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/render"
-	"github.com/mattermost/mattermost-plugin-ai/agents/react"
-	"github.com/mattermost/mattermost-plugin-ai/agents/threads"
 	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/conversations"
 	"github.com/mattermost/mattermost-plugin-ai/i18n"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
+	"github.com/mattermost/mattermost-plugin-ai/react"
+	"github.com/mattermost/mattermost-plugin-ai/threads"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 

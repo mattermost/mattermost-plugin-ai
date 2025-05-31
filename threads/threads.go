@@ -6,7 +6,7 @@ package threads
 import (
 	"fmt"
 
-	"github.com/mattermost/mattermost-plugin-ai/agents/format"
+	"github.com/mattermost/mattermost-plugin-ai/format"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
 )

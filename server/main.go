@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/mattermost/mattermost-plugin-ai/agents"
 	"github.com/mattermost/mattermost-plugin-ai/api"
 	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/config"
@@ -47,7 +46,6 @@ type Plugin struct {
 	llmUpstreamHTTPClient *http.Client
 	db                    *sqlx.DB
 
-	agentsService        *agents.AgentsService
 	meetingsService      *meetings.Service
 	indexerService       *indexer.Indexer
 	searchService        *search.Search
@@ -178,13 +176,6 @@ func (p *Plugin) OnActivate() error {
 		&p.configuration,
 	)
 
-	// Initialize the agents service first (without conversations service)
-	agentsService, err := agents.NewAgentsService(p.API, p.pluginAPI, p.llmUpstreamHTTPClient, untrustedHTTPClient, metricsService, p.bots, contextBuilder, p.db, dbClient.Builder(), nil)
-	if err != nil {
-		return err
-	}
-	p.agentsService = agentsService
-
 	// Now initialize conversations service with bots service checkUsageRestrictions method
 	p.conversationsService = conversations.New(
 		prompts,
@@ -206,9 +197,6 @@ func (p *Plugin) OnActivate() error {
 	// Update the conversations service with the real streaming service
 	p.conversationsService.SetStreamingService(streamingService)
 
-	// Update the agents service with the conversation service
-	agentsService.SetConversationService(p.conversationsService)
-
 	// Initialize the meetings service
 	p.meetingsService = meetings.NewService(
 		p.pluginAPI,
@@ -225,12 +213,10 @@ func (p *Plugin) OnActivate() error {
 		p.conversationsService.SaveTitle,
 		p.conversationsService.SaveTitleAsync,
 		p.bots.GetBotByID,
-		agentsService.ExecBuilder,
 	)
 
 	// Initialize the API service with all services
 	p.apiService = api.New(
-		p.agentsService,
 		p.bots,
 		p.conversationsService,
 		p.meetingsService,
@@ -254,8 +240,6 @@ func (p *Plugin) OnDeactivate() error {
 			p.pluginAPI.Log.Error("Failed to close MCP client manager during deactivation", "error", err)
 		}
 	}
-
-	// No specific cleanup needed for agents service
 	return nil
 }
 
