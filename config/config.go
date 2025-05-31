@@ -37,59 +37,60 @@ func (c *Config) Clone() *Config {
 
 type UpdateListener func()
 
-type ConfigContainer struct {
+type Container struct {
 	cfg       atomic.Pointer[Config]
 	listeners []UpdateListener
 }
 
 // Config retruns the whole configuration readonly.
 // Avoid using this method, prefer using config though interfaces.
-func (c *ConfigContainer) Config() *Config {
+func (c *Container) Config() *Config {
 	return c.cfg.Load()
 }
 
-func (c *ConfigContainer) GetEnableLLMTrace() bool {
+func (c *Container) GetEnableLLMTrace() bool {
 	return c.cfg.Load().EnableLLMTrace
 }
 
-func (c *ConfigContainer) GetTranscriptGenerator() string {
+func (c *Container) GetTranscriptGenerator() string {
 	return c.cfg.Load().TranscriptGenerator
 }
 
-func (c *ConfigContainer) GetBots() []llm.BotConfig {
+func (c *Container) GetBots() []llm.BotConfig {
 	return c.cfg.Load().Bots
 }
 
-func (c *ConfigContainer) GetDefaultBotName() string {
+func (c *Container) GetDefaultBotName() string {
 	return c.cfg.Load().DefaultBotName
 }
 
-func (c *ConfigContainer) EnableLLMLogging() bool {
+func (c *Container) EnableLLMLogging() bool {
 	return c.cfg.Load().EnableLLMTrace
 }
 
-func (c *ConfigContainer) MCP() mcp.Config {
+func (c *Container) MCP() mcp.Config {
 	return c.cfg.Load().MCP
 }
 
-func (c *ConfigContainer) RegisterUpdateListener(listener UpdateListener) {
+func (c *Container) RegisterUpdateListener(listener UpdateListener) {
 	c.listeners = append(c.listeners, listener)
 }
 
-func (c *ConfigContainer) EmbeddingSearchConfig() embeddings.EmbeddingSearchConfig {
+func (c *Container) EmbeddingSearchConfig() embeddings.EmbeddingSearchConfig {
 	return c.cfg.Load().EmbeddingSearchConfig
 }
 
-func (c *ConfigContainer) GetTrascriptGenerator() string {
+func (c *Container) GetTrascriptGenerator() string {
 	return c.cfg.Load().TranscriptGenerator
 }
 
 // Updates the current configuration
 // The new configuration is deep-copied to ensure the new and old
 // configurations are independent of each other.
-func (c *ConfigContainer) Update(newConfig *Config) {
+func (c *Container) Update(newConfig *Config) {
 	if newConfig == nil {
 		c.cfg.Store(nil)
+		return
 	}
 	// Create a deep copy of the new configuration
 	clone, err := DeepCopyJSON(*newConfig)

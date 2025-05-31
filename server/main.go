@@ -40,7 +40,7 @@ func main() {
 type Plugin struct {
 	plugin.MattermostPlugin
 
-	configuration config.ConfigContainer
+	configuration config.Container
 
 	pluginAPI             *pluginapi.Client
 	llmUpstreamHTTPClient *http.Client

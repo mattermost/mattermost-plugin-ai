@@ -27,8 +27,8 @@ type ConfigProvider interface {
 	GetEnableLLMTrace() bool
 }
 
-// LLMContextBuilder builds contexts for LLM requests
-type LLMContextBuilder struct {
+// Builder builds contexts for LLM requests
+type Builder struct {
 	pluginAPI       *pluginapi.Client
 	toolProvider    ToolProvider
 	mcpToolProvider MCPToolProvider
@@ -41,8 +41,8 @@ func NewLLMContextBuilder(
 	toolProvider ToolProvider,
 	mcpToolProvider MCPToolProvider,
 	configProvider ConfigProvider,
-) *LLMContextBuilder {
-	return &LLMContextBuilder{
+) *Builder {
+	return &Builder{
 		pluginAPI:       pluginAPI,
 		toolProvider:    toolProvider,
 		mcpToolProvider: nil, /// mcpToolProvider,
@@ -51,7 +51,7 @@ func NewLLMContextBuilder(
 }
 
 // BuildLLMContextUserRequest is a helper function to collect the required context for a user request.
-func (b *LLMContextBuilder) BuildLLMContextUserRequest(bot *bots.Bot, requestingUser *model.User, channel *model.Channel, opts ...llm.ContextOption) *llm.Context {
+func (b *Builder) BuildLLMContextUserRequest(bot *bots.Bot, requestingUser *model.User, channel *model.Channel, opts ...llm.ContextOption) *llm.Context {
 	allOpts := []llm.ContextOption{
 		b.WithLLMContextServerInfo(),
 		b.WithLLMContextRequestingUser(requestingUser),
@@ -63,7 +63,7 @@ func (b *LLMContextBuilder) BuildLLMContextUserRequest(bot *bots.Bot, requesting
 	return llm.NewContext(allOpts...)
 }
 
-func (b *LLMContextBuilder) WithLLMContextServerInfo() llm.ContextOption {
+func (b *Builder) WithLLMContextServerInfo() llm.ContextOption {
 	return func(c *llm.Context) {
 		if b.pluginAPI.Configuration.GetConfig().TeamSettings.SiteName != nil {
 			c.ServerName = *b.pluginAPI.Configuration.GetConfig().TeamSettings.SiteName
@@ -75,7 +75,7 @@ func (b *LLMContextBuilder) WithLLMContextServerInfo() llm.ContextOption {
 	}
 }
 
-func (b *LLMContextBuilder) WithLLMContextChannel(channel *model.Channel) llm.ContextOption {
+func (b *Builder) WithLLMContextChannel(channel *model.Channel) llm.ContextOption {
 	return func(c *llm.Context) {
 		c.Channel = channel
 
@@ -93,7 +93,7 @@ func (b *LLMContextBuilder) WithLLMContextChannel(channel *model.Channel) llm.Co
 	}
 }
 
-func (b *LLMContextBuilder) WithLLMContextRequestingUser(user *model.User) llm.ContextOption {
+func (b *Builder) WithLLMContextRequestingUser(user *model.User) llm.ContextOption {
 	return func(c *llm.Context) {
 		c.RequestingUser = user
 		if user != nil {
@@ -107,7 +107,7 @@ func (b *LLMContextBuilder) WithLLMContextRequestingUser(user *model.User) llm.C
 }
 
 // GetToolsStoreForUser returns a tool store for a specific user, including MCP tools
-func (b *LLMContextBuilder) GetToolsStoreForUser(bot *bots.Bot, isDM bool, userID string) *llm.ToolStore {
+func (b *Builder) GetToolsStoreForUser(bot *bots.Bot, isDM bool, userID string) *llm.ToolStore {
 	// Check for nil bot, which is unexpected
 	if bot == nil {
 		b.pluginAPI.Log.Error("Unexpected nil bot when getting tool store for user", "userID", userID)
@@ -145,7 +145,7 @@ func (b *LLMContextBuilder) GetToolsStoreForUser(bot *bots.Bot, isDM bool, userI
 }
 
 // WithLLMContextDefaultTools adds default tools to the LLM context for the requesting user
-func (b *LLMContextBuilder) WithLLMContextDefaultTools(bot *bots.Bot, isDM bool) llm.ContextOption {
+func (b *Builder) WithLLMContextDefaultTools(bot *bots.Bot, isDM bool) llm.ContextOption {
 	return func(c *llm.Context) {
 		if c.RequestingUser == nil {
 			b.pluginAPI.Log.Error("Cannot add tools to context: RequestingUser is nil")
@@ -156,13 +156,13 @@ func (b *LLMContextBuilder) WithLLMContextDefaultTools(bot *bots.Bot, isDM bool)
 	}
 }
 
-func (b *LLMContextBuilder) WithLLMContextParameters(params map[string]interface{}) llm.ContextOption {
+func (b *Builder) WithLLMContextParameters(params map[string]interface{}) llm.ContextOption {
 	return func(c *llm.Context) {
 		c.Parameters = params
 	}
 }
 
-func (b *LLMContextBuilder) WithLLMContextBot(bot *bots.Bot) llm.ContextOption {
+func (b *Builder) WithLLMContextBot(bot *bots.Bot) llm.ContextOption {
 	return func(c *llm.Context) {
 		c.BotName = bot.GetConfig().DisplayName
 		c.CustomInstructions = bot.GetConfig().CustomInstructions

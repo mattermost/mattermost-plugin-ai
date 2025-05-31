@@ -44,7 +44,7 @@ type API struct {
 	pluginAPI            *pluginapi.Client
 	metricsService       metrics.Metrics
 	metricsHandler       http.Handler
-	contextBuilder       *llmcontext.LLMContextBuilder
+	contextBuilder       *llmcontext.Builder
 	prompts              *llm.Prompts
 	config               Config
 	mmClient             mmapi.Client
@@ -59,7 +59,7 @@ func New(
 	searchService *search.Search,
 	pluginAPI *pluginapi.Client,
 	metricsService metrics.Metrics,
-	llmContextBuilder *llmcontext.LLMContextBuilder,
+	llmContextBuilder *llmcontext.Builder,
 	config Config,
 	prompts *llm.Prompts,
 	mmClient mmapi.Client,

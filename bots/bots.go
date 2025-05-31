@@ -165,52 +165,52 @@ func (b *MMBots) UpdateBotsCache(cfgBots []llm.BotConfig) error {
 	return nil
 }
 
-func (a *MMBots) getLLM(serviceConfig llm.ServiceConfig) llm.LanguageModel {
+func (b *MMBots) getLLM(serviceConfig llm.ServiceConfig) llm.LanguageModel {
 	// Create the correct model
 	var result llm.LanguageModel
 	switch serviceConfig.Type {
 	case llm.ServiceTypeOpenAI:
-		result = openai.New(config.OpenAIConfigFromServiceConfig(serviceConfig), a.llmUpstreamHTTPClient)
+		result = openai.New(config.OpenAIConfigFromServiceConfig(serviceConfig), b.llmUpstreamHTTPClient)
 	case llm.ServiceTypeOpenAICompatible:
-		result = openai.NewCompatible(config.OpenAIConfigFromServiceConfig(serviceConfig), a.llmUpstreamHTTPClient)
+		result = openai.NewCompatible(config.OpenAIConfigFromServiceConfig(serviceConfig), b.llmUpstreamHTTPClient)
 	case llm.ServiceTypeAzure:
-		result = openai.NewAzure(config.OpenAIConfigFromServiceConfig(serviceConfig), a.llmUpstreamHTTPClient)
+		result = openai.NewAzure(config.OpenAIConfigFromServiceConfig(serviceConfig), b.llmUpstreamHTTPClient)
 	case llm.ServiceTypeAnthropic:
-		result = anthropic.New(serviceConfig, a.llmUpstreamHTTPClient)
+		result = anthropic.New(serviceConfig, b.llmUpstreamHTTPClient)
 	case llm.ServiceTypeASage:
-		result = asage.New(serviceConfig, a.llmUpstreamHTTPClient)
+		result = asage.New(serviceConfig, b.llmUpstreamHTTPClient)
 	}
 
 	// Truncation Support
 	result = llm.NewLLMTruncationWrapper(result)
 
 	// Logging
-	if a.config.EnableLLMLogging() {
-		result = llm.NewLanguageModelLogWrapper(a.pluginAPI.Log, result)
+	if b.config.EnableLLMLogging() {
+		result = llm.NewLanguageModelLogWrapper(b.pluginAPI.Log, result)
 	}
 
 	return result
 }
 
 // TODO: This really doesn't belong here. Figure out where to put this.
-func (a *MMBots) GetTranscribe() Transcriber {
+func (b *MMBots) GetTranscribe() Transcriber {
 	// Get the configured transcript generator bot
-	bot := a.getTrasncriberBot()
+	bot := b.getTrasncriberBot()
 	if bot == nil {
-		a.pluginAPI.Log.Error("No transcript generator bot found")
+		b.pluginAPI.Log.Error("No transcript generator bot found")
 		return nil
 	}
 
 	service := bot.GetConfig().Service
 	switch service.Type {
 	case llm.ServiceTypeOpenAI:
-		return openai.New(config.OpenAIConfigFromServiceConfig(service), a.llmUpstreamHTTPClient)
+		return openai.New(config.OpenAIConfigFromServiceConfig(service), b.llmUpstreamHTTPClient)
 	case llm.ServiceTypeOpenAICompatible:
-		return openai.NewCompatible(config.OpenAIConfigFromServiceConfig(service), a.llmUpstreamHTTPClient)
+		return openai.NewCompatible(config.OpenAIConfigFromServiceConfig(service), b.llmUpstreamHTTPClient)
 	case llm.ServiceTypeAzure:
-		return openai.NewAzure(config.OpenAIConfigFromServiceConfig(service), a.llmUpstreamHTTPClient)
+		return openai.NewAzure(config.OpenAIConfigFromServiceConfig(service), b.llmUpstreamHTTPClient)
 	default:
-		a.pluginAPI.Log.Error("Unsupported service type for transcript generator",
+		b.pluginAPI.Log.Error("Unsupported service type for transcript generator",
 			"bot_name", bot.GetMMBot().Username,
 			"service_type", service.Type)
 		return nil
