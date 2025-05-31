@@ -13,7 +13,7 @@ import (
 
 func TestLoadThreadFromJSON(t *testing.T) {
 	evalT := &EvalT{T: t}
-	path := filepath.Join("..", "agents", "threads", "eval_timed_dnd.json")
+	path := filepath.Join("..", "threads", "eval_timed_dnd.json")
 
 	threadData := LoadThreadFromJSON(evalT, path)
 
