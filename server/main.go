@@ -175,10 +175,6 @@ func (p *Plugin) OnActivate() error {
 
 	// Initialize conversations service
 	conversationsService := conversations.New(
-		func(cfg llm.BotConfig) llm.LanguageModel {
-			// We'll set this up properly after agents service is created
-			return nil
-		},
 		nil, // prompts - will be set later
 		mmapi.NewClient(p.pluginAPI),
 		p.pluginAPI,

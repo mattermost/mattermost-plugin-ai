@@ -266,7 +266,7 @@ func (a *API) handleToolCall(c *gin.Context) {
 		return
 	}
 
-	err := a.agents.HandleToolCall(userID, post, channel, data.AcceptedToolIDs)
+	err := a.conversationsService.HandleToolCall(userID, post, channel, data.AcceptedToolIDs)
 	if err != nil {
 		if err.Error() == "post missing pending tool calls" || err.Error() == "post pending tool calls not valid JSON" {
 			c.AbortWithError(http.StatusBadRequest, err)

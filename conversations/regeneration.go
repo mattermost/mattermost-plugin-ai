@@ -70,7 +70,7 @@ func (c *Conversations) HandleRegenerate(userID string, post *model.Post, channe
 		)
 
 		var err error
-		result, err = threads.New(c.llm(bot.GetConfig()), c.prompts, c.mmClient).Analyze(threadID, llmContext, analysisType)
+		result, err = threads.New(bot.LLM(), c.prompts, c.mmClient).Analyze(threadID, llmContext, analysisType)
 		if err != nil {
 			return fmt.Errorf("could not summarize post on regen: %w", err)
 		}

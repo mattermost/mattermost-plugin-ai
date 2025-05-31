@@ -224,14 +224,6 @@ const (
 	RespondingToProp   = conversations.RespondingToProp
 )
 
-// Type aliases for compatibility
-type AIThread = conversations.AIThread
-
-// ExistingConversationToLLMPosts delegates to the conversations service
-func (p *AgentsService) existingConversationToLLMPosts(bot *bots.Bot, conversation *mmapi.ThreadData, context *llm.Context) ([]llm.Post, error) {
-	return p.conversationService.ExistingConversationToLLMPosts(bot, conversation, context)
-}
-
 // saveTitle saves a title for a thread
 func (p *AgentsService) saveTitle(threadID, title string) error {
 	// Delegate to conversations service

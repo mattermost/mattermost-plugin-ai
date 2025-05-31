@@ -45,7 +45,6 @@ type LLMContextBuilderInterface interface {
 }
 
 type Conversations struct {
-	llm              func(cfg llm.BotConfig) llm.LanguageModel
 	prompts          *llm.Prompts
 	mmClient         mmapi.Client
 	pluginAPI        *pluginapi.Client
@@ -60,7 +59,6 @@ type Conversations struct {
 }
 
 func New(
-	llmGetter func(cfg llm.BotConfig) llm.LanguageModel,
 	prompts *llm.Prompts,
 	mmClient mmapi.Client,
 	pluginAPI *pluginapi.Client,
@@ -74,7 +72,6 @@ func New(
 	checkUsageFunc func(userID string, bot *bots.Bot, channel *model.Channel) error,
 ) *Conversations {
 	return &Conversations{
-		llm:              llmGetter,
 		prompts:          prompts,
 		mmClient:         mmClient,
 		pluginAPI:        pluginAPI,
@@ -113,7 +110,7 @@ func (c *Conversations) ProcessUserRequestWithContext(bot *bots.Bot, postingUser
 		previousConversation.CutoffBeforePostID(post.Id)
 
 		var err error
-		posts, err = c.ExistingConversationToLLMPosts(bot, previousConversation, context)
+		posts, err = c.existingConversationToLLMPosts(bot, previousConversation, context)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert existing conversation to LLM posts: %w", err)
 		}
@@ -128,7 +125,7 @@ func (c *Conversations) ProcessUserRequestWithContext(bot *bots.Bot, postingUser
 		Posts:   posts,
 		Context: context,
 	}
-	result, err := c.llm(bot.GetConfig()).ChatCompletion(completionRequest)
+	result, err := bot.LLM().ChatCompletion(completionRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +160,7 @@ func (c *Conversations) GenerateTitle(bot *bots.Bot, request string, postID stri
 		Context: context,
 	}
 
-	conversationTitle, err := c.llm(bot.GetConfig()).ChatCompletionNoStream(titleRequest, llm.WithMaxGeneratedTokens(25))
+	conversationTitle, err := bot.LLM().ChatCompletionNoStream(titleRequest, llm.WithMaxGeneratedTokens(25))
 	if err != nil {
 		return fmt.Errorf("failed to get title: %w", err)
 	}
@@ -177,8 +174,8 @@ func (c *Conversations) GenerateTitle(bot *bots.Bot, request string, postID stri
 	return nil
 }
 
-// ExistingConversationToLLMPosts converts existing conversation to LLM posts format
-func (c *Conversations) ExistingConversationToLLMPosts(bot *bots.Bot, conversation *mmapi.ThreadData, context *llm.Context) ([]llm.Post, error) {
+// existingConversationToLLMPosts converts existing conversation to LLM posts format
+func (c *Conversations) existingConversationToLLMPosts(bot *bots.Bot, conversation *mmapi.ThreadData, context *llm.Context) ([]llm.Post, error) {
 	// Handle thread summarization requests
 	originalThreadID, ok := conversation.Posts[0].GetProp(ThreadIDProp).(string)
 	if ok && originalThreadID != "" && conversation.Posts[0].UserId == bot.GetMMBot().UserId {
@@ -210,7 +207,7 @@ func (c *Conversations) ExistingConversationToLLMPosts(bot *bots.Bot, conversati
 			return nil, fmt.Errorf("missing analysis type")
 		}
 
-		posts, err := threads.New(c.llm(bot.GetConfig()), c.prompts, c.mmClient).FollowUpAnalyze(originalThreadID, context, analysisType)
+		posts, err := threads.New(bot.LLM(), c.prompts, c.mmClient).FollowUpAnalyze(originalThreadID, context, analysisType)
 		if err != nil {
 			return nil, err
 		}
