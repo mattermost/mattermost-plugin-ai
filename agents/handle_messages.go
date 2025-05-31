@@ -91,11 +91,11 @@ func (p *AgentsService) handleMessages(post *model.Post) error {
 }
 
 func (p *AgentsService) handleMentions(bot *bots.Bot, post *model.Post, postingUser *model.User, channel *model.Channel) error {
-	if err := p.checkUsageRestrictions(postingUser.Id, bot, channel); err != nil {
+	if err := p.CheckUsageRestrictions(postingUser.Id, bot, channel); err != nil {
 		return err
 	}
 
-	stream, err := p.processUserRequestToBot(bot, postingUser, channel, post)
+	stream, err := p.conversationService.ProcessUserRequest(bot, postingUser, channel, post)
 	if err != nil {
 		return fmt.Errorf("unable to process bot mention: %w", err)
 	}
@@ -117,11 +117,11 @@ func (p *AgentsService) handleMentions(bot *bots.Bot, post *model.Post, postingU
 }
 
 func (p *AgentsService) handleDMs(bot *bots.Bot, channel *model.Channel, postingUser *model.User, post *model.Post) error {
-	if err := p.checkUsageRestrictionsForUser(bot, postingUser.Id); err != nil {
+	if err := p.CheckUsageRestrictionsForUser(bot, postingUser.Id); err != nil {
 		return err
 	}
 
-	stream, err := p.processUserRequestToBot(bot, postingUser, channel, post)
+	stream, err := p.conversationService.ProcessUserRequest(bot, postingUser, channel, post)
 	if err != nil {
 		return fmt.Errorf("unable to process bot mention: %w", err)
 	}

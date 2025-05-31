@@ -19,7 +19,7 @@ import (
 const defaultMaxFileSize = int64(1024 * 1024 * 5) // 5MB
 const UnsafeLinksPostProp = "unsafe_links"
 
-func (c *Conversations) modifyPostForBot(botid string, requesterUserID string, post *model.Post, respondingToPostID string) {
+func (c *Conversations) ModifyPostForBot(botid string, requesterUserID string, post *model.Post, respondingToPostID string) {
 	post.UserId = botid
 	post.Type = "custom_llmbot" // This must be the only place we add this type for security.
 	post.AddProp(LLMRequesterUserID, requesterUserID)
@@ -33,8 +33,8 @@ func (c *Conversations) modifyPostForBot(botid string, requesterUserID string, p
 	}
 }
 
-func (c *Conversations) botCreateNonResponsePost(botid string, requesterUserID string, post *model.Post) error {
-	c.modifyPostForBot(botid, requesterUserID, post, "")
+func (c *Conversations) BotCreateNonResponsePost(botid string, requesterUserID string, post *model.Post) error {
+	c.ModifyPostForBot(botid, requesterUserID, post, "")
 	post.AddProp(NoRegen, true)
 
 	if err := c.pluginAPI.Post.CreatePost(post); err != nil {

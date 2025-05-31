@@ -237,7 +237,7 @@ func TestUsageRestrictions(t *testing.T) {
 				e.mockAPI.On("GetTeamMember", "team2", "user1").Return(nil, &model.AppError{Message: "not found", StatusCode: http.StatusNotFound}).Maybe()
 			}
 
-			err := e.plugin.checkUsageRestrictions(tc.requestingUser, tc.bot, tc.channel)
+			err := e.plugin.CheckUsageRestrictions(tc.requestingUser, tc.bot, tc.channel)
 			if tc.expectedError != nil {
 				require.ErrorIs(t, err, tc.expectedError)
 			} else {

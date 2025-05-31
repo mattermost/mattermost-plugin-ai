@@ -4,6 +4,7 @@
 package api
 
 import (
+	stdcontext "context"
 	"fmt"
 	"net/http"
 
@@ -11,7 +12,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/render"
-	"github.com/mattermost/mattermost-plugin-ai/agents"
 	"github.com/mattermost/mattermost-plugin-ai/agents/react"
 	"github.com/mattermost/mattermost-plugin-ai/agents/threads"
 	"github.com/mattermost/mattermost-plugin-ai/bots"
@@ -72,7 +72,7 @@ func (a *API) handleReact(c *gin.Context) {
 
 	emojiName, err := react.New(
 		bot.LLM(),
-		a.agents.GetPrompts(),
+		a.prompts,
 	).Resolve(post.Message, context)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
@@ -160,12 +160,12 @@ func (a *API) handleThreadAnalysis(c *gin.Context) {
 	// Create analysis post
 	siteURL := a.pluginAPI.Configuration.GetConfig().ServiceSettings.SiteURL
 	analysisPost := a.makeAnalysisPost(user.Locale, post.Id, data.AnalysisType, *siteURL)
-	if err := a.agents.StreamResultToNewDM(bot.GetMMBot().UserId, analysisStream, user.Id, analysisPost, post.Id); err != nil {
+	if err := a.conversationsService.StreamToNewDM(stdcontext.Background(), bot.GetMMBot().UserId, analysisStream, user.Id, analysisPost, post.Id); err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 
-	a.agents.SaveTitleAsync(post.Id, title)
+	a.conversationsService.SaveTitleAsync(post.Id, title)
 
 	c.JSON(http.StatusOK, map[string]string{
 		"postid":    analysisPost.Id,
@@ -213,12 +213,12 @@ func (a *API) handleStop(c *gin.Context) {
 	post := c.MustGet(ContextPostKey).(*model.Post)
 
 	botID := post.UserId
-	if !a.agents.IsAnyBot(botID) {
+	if !a.bots.IsAnyBot(botID) {
 		c.AbortWithError(http.StatusBadRequest, errors.New("not a bot post"))
 		return
 	}
 
-	if post.GetProp(agents.LLMRequesterUserID) != userID {
+	if post.GetProp(conversations.LLMRequesterUserID) != userID {
 		c.AbortWithError(http.StatusForbidden, errors.New("only the original poster can stop the stream"))
 		return
 	}
@@ -252,7 +252,7 @@ func (a *API) handleToolCall(c *gin.Context) {
 	}
 
 	// Only the original requester can approve/reject tool calls
-	if post.GetProp(agents.LLMRequesterUserID) != userID {
+	if post.GetProp(conversations.LLMRequesterUserID) != userID {
 		c.AbortWithError(http.StatusForbidden, errors.New("only the original requester can approve/reject tool calls"))
 		return
 	}
@@ -308,7 +308,7 @@ func (a *API) makeAnalysisPost(locale string, postIDToAnalyze string, analysisTy
 }
 
 func (a *API) analysisPostMessage(locale string, postIDToAnalyze string, analysisType string, siteURL string) string {
-	T := i18n.LocalizerFunc(a.agents.GetI18nBundle(), locale)
+	T := i18n.LocalizerFunc(a.conversationsService.GetI18nBundle(), locale)
 	switch analysisType {
 	case "summarize_thread":
 		return T("copilot.summarize_thread", "Sure, I will summarize this thread: %s/_redirect/pl/%s\n", siteURL, postIDToAnalyze)

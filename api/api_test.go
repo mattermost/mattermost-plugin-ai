@@ -31,6 +31,13 @@ type TestEnvironment struct {
 	bots    *bots.MMBots
 }
 
+// testConfigImpl is a minimal implementation of Config for testing
+type testConfigImpl struct{}
+
+func (tc *testConfigImpl) GetDefaultBotName() string {
+	return "ai"
+}
+
 func (e *TestEnvironment) Cleanup(t *testing.T) {
 	if e.mockAPI != nil {
 		e.mockAPI.AssertExpectations(t)
@@ -77,7 +84,7 @@ func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 	// Create minimal conversations service for testing
 	conversationsService := &conversations.Conversations{}
 
-	api := New(agents, testBots, conversationsService, nil, nil, nil, client, noopMetrics, nil, nil)
+	api := New(agents, testBots, conversationsService, nil, nil, nil, client, noopMetrics, nil, &testConfigImpl{}, nil, nil)
 
 	return &TestEnvironment{
 		api:     api,

@@ -64,6 +64,8 @@ func New(
 	metricsService metrics.Metrics,
 	llmContextBuilder *llmcontext.LLMContextBuilder,
 	config Config,
+	prompts *llm.Prompts,
+	mmClient mmapi.Client,
 ) *API {
 	return &API{
 		agents:               agentsService,
@@ -76,9 +78,9 @@ func New(
 		metricsService:       metricsService,
 		metricsHandler:       metrics.NewMetricsHandler(metricsService),
 		contextBuilder:       llmContextBuilder,
-		prompts:              agentsService.GetPrompts(),
+		prompts:              prompts,
 		config:               config,
-		mmClient:             agentsService.GetMMClient(),
+		mmClient:             mmClient,
 	}
 }
 
@@ -156,7 +158,7 @@ func (a *API) metricsMiddleware(c *gin.Context) {
 func (a *API) aiBotRequired(c *gin.Context) {
 	// We should integreate LLM here
 	botUsername := c.Query("botUsername")
-	bot := a.agents.GetBotByUsernameOrFirst(botUsername)
+	bot := a.bots.GetBotByUsernameOrFirst(botUsername)
 	if bot == nil {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to get bot: %s", botUsername))
 		return
@@ -219,7 +221,7 @@ type AIBotsResponse struct {
 
 // getAIBotsForUser returns all AI bots available to a user
 func (a *API) getAIBotsForUser(userID string) ([]AIBotInfo, error) {
-	allBots := a.agents.GetAllBots()
+	allBots := a.bots.GetAllBots()
 
 	// Get the info from all the bots.
 	// Put the default bot first.

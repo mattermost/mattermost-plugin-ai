@@ -4,6 +4,7 @@
 package conversations
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -196,7 +197,7 @@ func (c *Conversations) existingConversationToLLMPosts(bot *bots.Bot, conversati
 				RootId:    originalThreadID,
 				Message:   T("copilot.no_longer_access_error", "Sorry, you no longer have access to the original thread."),
 			}
-			if err = c.botCreateNonResponsePost(bot.GetMMBot().UserId, context.RequestingUser.Id, responsePost); err != nil {
+			if err = c.BotCreateNonResponsePost(bot.GetMMBot().UserId, context.RequestingUser.Id, responsePost); err != nil {
 				return nil, err
 			}
 			return nil, fmt.Errorf("user no longer has access to original thread")
@@ -260,17 +261,40 @@ func (c *Conversations) GetAIThreads(userID string) ([]AIThread, error) {
 	return c.getAIThreads(dmChannelIDs)
 }
 
-// IsBasicsLicensed returns whether the basic features are licensed
+// CheckUsageRestrictions checks if a user can use a bot in a channel
+func (c *Conversations) CheckUsageRestrictions(userID string, bot *bots.Bot, channel *model.Channel) error {
+	if c.checkUsageFunc == nil {
+		return nil
+	}
+	return c.checkUsageFunc(userID, bot, channel)
+}
+
+// IsBasicsLicensed checks if the plugin has the required license
 func (c *Conversations) IsBasicsLicensed() bool {
 	return c.licenseChecker.IsBasicsLicensed()
 }
 
-// StopPostStreaming stops streaming to a post
-func (c *Conversations) StopPostStreaming(postID string) {
-	c.streamingService.StopStreaming(postID)
+// GetI18nBundle returns the i18n bundle
+func (c *Conversations) GetI18nBundle() *i18n.Bundle {
+	return c.i18n
 }
 
-// CheckUsageRestrictions checks if a user can use a bot in a channel
-func (c *Conversations) CheckUsageRestrictions(userID string, bot *bots.Bot, channel *model.Channel) error {
-	return c.checkUsageFunc(userID, bot, channel)
+// StreamToNewDM streams an LLM result to a new DM
+func (c *Conversations) StreamToNewDM(ctx context.Context, botID string, stream *llm.TextStreamResult, userID string, post *model.Post, respondingToPostID string) error {
+	if c.streamingService == nil {
+		return fmt.Errorf("streaming service not initialized")
+	}
+	return c.streamingService.StreamToNewDM(ctx, botID, stream, userID, post, respondingToPostID)
+}
+
+// StopPostStreaming stops streaming to a post
+func (c *Conversations) StopPostStreaming(postID string) {
+	if c.streamingService != nil {
+		c.streamingService.StopStreaming(postID)
+	}
+}
+
+// SetStreamingService updates the streaming service (used during initialization)
+func (c *Conversations) SetStreamingService(service streaming.Service) {
+	c.streamingService = service
 }

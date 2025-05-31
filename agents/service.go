@@ -4,11 +4,9 @@
 package agents
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"net/http"
-	"sync"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
@@ -31,8 +29,6 @@ const (
 )
 
 type AgentsService struct { //nolint:revive
-	configurationLock sync.RWMutex
-
 	pluginAPI *pluginapi.Client
 	mmClient  mmapi.Client
 	API       plugin.API
@@ -113,129 +109,24 @@ func NewAgentsService(
 	return agentsService, nil
 }
 
-func (p *AgentsService) GetPrompts() *llm.Prompts {
-	return p.prompts
+// SetConversationService updates the conversation service (used during initialization)
+func (p *AgentsService) SetConversationService(service *conversations.Conversations) {
+	p.conversationService = service
 }
 
-func (p *AgentsService) OnDeactivate() error {
-	return nil
-}
-
-// SetAPI sets the API for testing
-func (p *AgentsService) SetAPI(api plugin.API) {
-	p.pluginAPI = pluginapi.NewClient(api, nil)
-	p.mmClient = mmapi.NewClient(p.pluginAPI)
-}
-
-// GetMMClient returns the mmapi client for external use
-func (p *AgentsService) GetMMClient() mmapi.Client {
-	return p.mmClient
-}
-
-// StreamResultToNewDM streams result to a new direct message (exported wrapper)
-func (p *AgentsService) StreamResultToNewDM(botid string, stream *llm.TextStreamResult, userID string, post *model.Post, respondingToPostID string) error {
-	return p.streamingService.StreamToNewDM(context.TODO(), botid, stream, userID, post, respondingToPostID)
-}
-
-// SaveTitleAsync saves a title asynchronously (exported wrapper)
-func (p *AgentsService) SaveTitleAsync(threadID, title string) {
-	p.conversationService.SaveTitleAsync(threadID, title)
-}
-
-// saveTitleAsync is a compatibility wrapper for internal use
-func (p *AgentsService) saveTitleAsync(threadID, title string) {
-	p.conversationService.SaveTitleAsync(threadID, title)
-}
-
-// IsAnyBot returns true if the given user is an AI bot.
-func (p *AgentsService) IsAnyBot(userID string) bool {
-	return p.bots.IsAnyBot(userID)
-}
-
-// GetBotByUsernameOrFirst retrieves the bot associated with the given bot username or the first bot if not found
-func (p *AgentsService) GetBotByUsernameOrFirst(botUsername string) *bots.Bot {
-	return p.bots.GetBotByUsernameOrFirst(botUsername)
-}
-
-// GetBotByID retrieves the bot associated with the given bot ID
-func (p *AgentsService) GetBotByID(botID string) *bots.Bot {
-	return p.bots.GetBotByID(botID)
-}
-
-// GetAllBots returns all bots
-func (p *AgentsService) GetAllBots() []*bots.Bot {
-	return p.bots.GetAllBots()
-}
-
-// CheckUsageRestrictionsForUser checks if a user can use a bot
-func (p *AgentsService) CheckUsageRestrictionsForUser(bot *bots.Bot, userID string) error {
-	return p.checkUsageRestrictionsForUser(bot, userID)
-}
-
-// SetBotsForTesting sets the bots instance for testing purposes only
-func (p *AgentsService) SetBotsForTesting(botsInstance *bots.MMBots, pluginAPI *pluginapi.Client) {
-	p.bots = botsInstance
-	p.pluginAPI = pluginAPI
-}
-
-// ProcessUserRequestToBot delegates to the conversations service
-func (p *AgentsService) processUserRequestToBot(bot *bots.Bot, postingUser *model.User, channel *model.Channel, post *model.Post) (*llm.TextStreamResult, error) {
-	return p.conversationService.ProcessUserRequest(bot, postingUser, channel, post)
-}
-
-// GetI18nBundle returns the i18n bundle for external use
-func (p *AgentsService) GetI18nBundle() *i18n.Bundle {
-	return p.i18n
-}
-
-func (p *AgentsService) GetI18n() *i18n.Bundle {
-	return p.i18n
-}
-
-func (p *AgentsService) GetStreamingService() streaming.Service {
-	return p.streamingService
-}
-
-// Public wrappers for methods needed by meetings service
-func (p *AgentsService) BotDMNonResponse(botUserID, userID string, post *model.Post) error {
-	return p.botDMNonResponse(botUserID, userID, post)
-}
-
-func (p *AgentsService) ModifyPostForBot(botID, userID string, post *model.Post, respondingToPostID string) {
-	p.modifyPostForBot(botID, userID, post, respondingToPostID)
-}
-
-func (p *AgentsService) SaveTitle(postID, title string) error {
-	return p.saveTitle(postID, title)
+// SetBotsForTesting sets the bots service for testing purposes only
+func (p *AgentsService) SetBotsForTesting(botsService *bots.MMBots, client *pluginapi.Client) {
+	p.bots = botsService
+	p.pluginAPI = client
+	p.mmClient = mmapi.NewClient(client)
 }
 
 func (p *AgentsService) ExecBuilder(query sq.Sqlizer) (sql.Result, error) {
-	return p.execBuilder(query)
-}
-
-// Constants moved to conversations package - re-export for compatibility
-const (
-	LLMRequesterUserID = conversations.LLMRequesterUserID
-	NoRegen            = conversations.NoRegen
-	RespondingToProp   = conversations.RespondingToProp
-)
-
-// saveTitle saves a title for a thread
-func (p *AgentsService) saveTitle(threadID, title string) error {
-	// Delegate to conversations service
-	return p.conversationService.SaveTitle(threadID, title)
-}
-
-// execBuilder is a helper for executing SQL builders
-func (p *AgentsService) execBuilder(b interface {
-	ToSql() (string, []interface{}, error)
-}) (sql.Result, error) {
-	sqlString, args, err := b.ToSql()
+	sqlString, args, err := query.ToSql()
 	if err != nil {
 		return nil, fmt.Errorf("failed to build sql: %w", err)
 	}
 
 	sqlString = p.db.Rebind(sqlString)
-
 	return p.db.Exec(sqlString, args...)
 }

@@ -17,8 +17,8 @@ import (
 
 var ErrUsageRestriction = errors.New("usage restriction")
 
-func (p *AgentsService) checkUsageRestrictions(requestingUserID string, bot *bots.Bot, channel *model.Channel) error {
-	if err := p.checkUsageRestrictionsForUser(bot, requestingUserID); err != nil {
+func (p *AgentsService) CheckUsageRestrictions(requestingUserID string, bot *bots.Bot, channel *model.Channel) error {
+	if err := p.CheckUsageRestrictionsForUser(bot, requestingUserID); err != nil {
 		return err
 	}
 
@@ -61,7 +61,7 @@ func (p *AgentsService) isMemberOfTeam(teamID string, userID string) (bool, erro
 	return member != nil && member.DeleteAt == 0, nil
 }
 
-func (p *AgentsService) checkUsageRestrictionsForUser(bot *bots.Bot, requestingUserID string) error {
+func (p *AgentsService) CheckUsageRestrictionsForUser(bot *bots.Bot, requestingUserID string) error {
 	switch bot.GetConfig().UserAccessLevel {
 	case llm.UserAccessLevelAll:
 		return nil

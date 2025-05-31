@@ -4,6 +4,7 @@
 package api
 
 import (
+	stdcontext "context"
 	"encoding/json"
 	"net/http"
 
@@ -129,13 +130,13 @@ func (a *API) handleInterval(c *gin.Context) {
 	post.AddProp(NoRegen, "true")
 
 	// Stream result to new DM
-	if err := a.agents.StreamResultToNewDM(bot.GetMMBot().UserId, resultStream, user.Id, post, ""); err != nil {
+	if err := a.conversationsService.StreamToNewDM(stdcontext.Background(), bot.GetMMBot().UserId, resultStream, user.Id, post, ""); err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 
 	// Save title asynchronously
-	a.agents.SaveTitleAsync(post.Id, promptTitle)
+	a.conversationsService.SaveTitleAsync(post.Id, promptTitle)
 
 	// Return result
 	result := map[string]string{
