@@ -1,7 +1,7 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-package agents
+package conversations
 
 import (
 	"context"
@@ -26,19 +26,19 @@ var (
 	ErrNoResponse = errors.New("no response")
 )
 
-func (p *AgentsService) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
-	if err := p.handleMessages(post); err != nil {
+func (c *Conversations) MessageHasBeenPosted(ctx *plugin.Context, post *model.Post) {
+	if err := c.handleMessages(post); err != nil {
 		if errors.Is(err, ErrNoResponse) {
-			p.pluginAPI.Log.Debug(err.Error())
+			c.pluginAPI.Log.Debug(err.Error())
 		} else {
-			p.pluginAPI.Log.Error(err.Error())
+			c.pluginAPI.Log.Error(err.Error())
 		}
 	}
 }
 
-func (p *AgentsService) handleMessages(post *model.Post) error {
+func (c *Conversations) handleMessages(post *model.Post) error {
 	// Don't respond to ourselves
-	if p.bots.IsAnyBot(post.UserId) {
+	if c.bots.IsAnyBot(post.UserId) {
 		return fmt.Errorf("not responding to ourselves: %w", ErrNoResponse)
 	}
 
@@ -62,12 +62,12 @@ func (p *AgentsService) handleMessages(post *model.Post) error {
 		return fmt.Errorf("not responding to webhook posts: %w", ErrNoResponse)
 	}
 
-	channel, err := p.pluginAPI.Channel.Get(post.ChannelId)
+	channel, err := c.pluginAPI.Channel.Get(post.ChannelId)
 	if err != nil {
 		return fmt.Errorf("unable to get channel: %w", err)
 	}
 
-	postingUser, err := p.pluginAPI.User.Get(post.UserId)
+	postingUser, err := c.pluginAPI.User.Get(post.UserId)
 	if err != nil {
 		return err
 	}
@@ -78,24 +78,24 @@ func (p *AgentsService) handleMessages(post *model.Post) error {
 	}
 
 	// Check we are mentioned like @ai
-	if bot := p.bots.GetBotMentioned(post.Message); bot != nil {
-		return p.handleMentions(bot, post, postingUser, channel)
+	if bot := c.bots.GetBotMentioned(post.Message); bot != nil {
+		return c.handleMentions(bot, post, postingUser, channel)
 	}
 
 	// Check if this is post in the DM channel with any bot
-	if bot := p.bots.GetBotForDMChannel(channel); bot != nil {
-		return p.handleDMs(bot, channel, postingUser, post)
+	if bot := c.bots.GetBotForDMChannel(channel); bot != nil {
+		return c.handleDMs(bot, channel, postingUser, post)
 	}
 
 	return nil
 }
 
-func (p *AgentsService) handleMentions(bot *bots.Bot, post *model.Post, postingUser *model.User, channel *model.Channel) error {
-	if err := p.bots.CheckUsageRestrictions(postingUser.Id, bot, channel); err != nil {
+func (c *Conversations) handleMentions(bot *bots.Bot, post *model.Post, postingUser *model.User, channel *model.Channel) error {
+	if err := c.bots.CheckUsageRestrictions(postingUser.Id, bot, channel); err != nil {
 		return err
 	}
 
-	stream, err := p.conversationService.ProcessUserRequest(bot, postingUser, channel, post)
+	stream, err := c.ProcessUserRequest(bot, postingUser, channel, post)
 	if err != nil {
 		return fmt.Errorf("unable to process bot mention: %w", err)
 	}
@@ -109,19 +109,19 @@ func (p *AgentsService) handleMentions(bot *bots.Bot, post *model.Post, postingU
 		ChannelId: channel.Id,
 		RootId:    responseRootID,
 	}
-	if err := p.streamingService.StreamToNewPost(context.Background(), bot.GetMMBot().UserId, postingUser.Id, stream, responsePost, post.Id); err != nil {
+	if err := c.streamingService.StreamToNewPost(context.Background(), bot.GetMMBot().UserId, postingUser.Id, stream, responsePost, post.Id); err != nil {
 		return fmt.Errorf("unable to stream response: %w", err)
 	}
 
 	return nil
 }
 
-func (p *AgentsService) handleDMs(bot *bots.Bot, channel *model.Channel, postingUser *model.User, post *model.Post) error {
-	if err := p.bots.CheckUsageRestrictionsForUser(bot, postingUser.Id); err != nil {
+func (c *Conversations) handleDMs(bot *bots.Bot, channel *model.Channel, postingUser *model.User, post *model.Post) error {
+	if err := c.bots.CheckUsageRestrictionsForUser(bot, postingUser.Id); err != nil {
 		return err
 	}
 
-	stream, err := p.conversationService.ProcessUserRequest(bot, postingUser, channel, post)
+	stream, err := c.ProcessUserRequest(bot, postingUser, channel, post)
 	if err != nil {
 		return fmt.Errorf("unable to process bot mention: %w", err)
 	}
@@ -135,7 +135,7 @@ func (p *AgentsService) handleDMs(bot *bots.Bot, channel *model.Channel, posting
 		ChannelId: channel.Id,
 		RootId:    responseRootID,
 	}
-	if err := p.streamingService.StreamToNewPost(context.Background(), bot.GetMMBot().UserId, postingUser.Id, stream, responsePost, post.Id); err != nil {
+	if err := c.streamingService.StreamToNewPost(context.Background(), bot.GetMMBot().UserId, postingUser.Id, stream, responsePost, post.Id); err != nil {
 		return fmt.Errorf("unable to stream response: %w", err)
 	}
 

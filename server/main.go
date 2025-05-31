@@ -271,9 +271,6 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 			}
 		}
 	}
-
-	// Keep existing AgentsService calls for other functionality
-	p.agentsService.MessageHasBeenPosted(c, post)
 }
 
 func (p *Plugin) MessageHasBeenUpdated(c *plugin.Context, newPost, oldPost *model.Post) {

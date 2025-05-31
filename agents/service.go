@@ -19,7 +19,6 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/metrics"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
 	"github.com/mattermost/mattermost-plugin-ai/streaming"
-	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 )
@@ -96,15 +95,6 @@ func NewAgentsService(
 	if err != nil {
 		return nil, err
 	}
-
-	// Initialize streaming service
-	agentsService.streamingService = streaming.NewMMPostStreamService(
-		agentsService.mmClient,
-		agentsService.i18n,
-		func(botid, userID string, post *model.Post, respondingToPostID string) {
-			agentsService.modifyPostForBot(botid, userID, post, respondingToPostID)
-		},
-	)
 
 	return agentsService, nil
 }
