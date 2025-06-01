@@ -80,10 +80,6 @@ func (c *Container) EmbeddingSearchConfig() embeddings.EmbeddingSearchConfig {
 	return c.cfg.Load().EmbeddingSearchConfig
 }
 
-func (c *Container) GetTrascriptGenerator() string {
-	return c.cfg.Load().TranscriptGenerator
-}
-
 // Updates the current configuration
 // The new configuration is deep-copied to ensure the new and old
 // configurations are independent of each other.

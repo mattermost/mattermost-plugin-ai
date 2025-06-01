@@ -147,6 +147,7 @@ func (p *Plugin) OnActivate() error {
 	mcpClient, err := mcp.NewClientManager(p.configuration.MCP(), p.pluginAPI.Log)
 	if err != nil {
 		p.pluginAPI.Log.Error("Failed to initialize MCP client manager, MCP tools will be disabled", "error", err)
+		p.mcpClientManager = nil
 	} else {
 		p.mcpClientManager = mcpClient
 	}
@@ -169,10 +170,14 @@ func (p *Plugin) OnActivate() error {
 		}
 	})
 
+	var mcpProvider llmcontext.MCPToolProvider
+	if p.mcpClientManager != nil {
+		mcpProvider = p.mcpClientManager
+	}
 	contextBuilder := llmcontext.NewLLMContextBuilder(
 		p.pluginAPI,
 		p.toolProvider,
-		p.mcpClientManager,
+		mcpProvider,
 		&p.configuration,
 	)
 
