@@ -46,7 +46,7 @@ func (a *API) postAuthorizationRequired(c *gin.Context) {
 	}
 
 	bot := c.MustGet(ContextBotKey).(*bots.Bot)
-	if err := a.conversationsService.CheckUsageRestrictions(userID, bot, channel); err != nil {
+	if err := a.bots.CheckUsageRestrictions(userID, bot, channel); err != nil {
 		c.AbortWithError(http.StatusForbidden, err)
 		return
 	}

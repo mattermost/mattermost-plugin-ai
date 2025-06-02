@@ -27,7 +27,7 @@ type BotMigrationConfig struct {
 	} `json:"config"`
 }
 
-func MigrateServicesToBots(mutexAPI cluster.MutexPluginAPI, pluginAPI *pluginapi.Client, cfg config.Config) (bool, config.Config, error) {
+func migrateServicesToBots(mutexAPI cluster.MutexPluginAPI, pluginAPI *pluginapi.Client, cfg config.Config) (bool, config.Config, error) {
 	mtx, err := cluster.NewMutex(mutexAPI, "migrate_services_to_bots")
 	if err != nil {
 		return false, cfg, fmt.Errorf("failed to create mutex: %w", err)

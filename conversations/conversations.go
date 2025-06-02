@@ -56,7 +56,6 @@ type Conversations struct {
 	builder          sq.StatementBuilderType
 	licenseChecker   *enterprise.LicenseChecker
 	i18n             *i18n.Bundle
-	checkUsageFunc   func(userID string, bot *bots.Bot, channel *model.Channel) error
 }
 
 func New(
@@ -70,7 +69,6 @@ func New(
 	builder sq.StatementBuilderType,
 	licenseChecker *enterprise.LicenseChecker,
 	i18nBundle *i18n.Bundle,
-	checkUsageFunc func(userID string, bot *bots.Bot, channel *model.Channel) error,
 ) *Conversations {
 	return &Conversations{
 		prompts:          prompts,
@@ -83,7 +81,6 @@ func New(
 		builder:          builder,
 		licenseChecker:   licenseChecker,
 		i18n:             i18nBundle,
-		checkUsageFunc:   checkUsageFunc,
 	}
 }
 
@@ -190,7 +187,7 @@ func (c *Conversations) existingConversationToLLMPosts(bot *bots.Bot, conversati
 		}
 
 		if !c.pluginAPI.User.HasPermissionToChannel(context.RequestingUser.Id, threadChannel.Id, model.PermissionReadChannel) ||
-			c.checkUsageFunc(context.RequestingUser.Id, bot, threadChannel) != nil {
+			c.bots.CheckUsageRestrictions(context.RequestingUser.Id, bot, threadChannel) != nil {
 			T := i18n.LocalizerFunc(c.i18n, context.RequestingUser.Locale)
 			responsePost := &model.Post{
 				ChannelId: context.Channel.Id,
@@ -259,14 +256,6 @@ func (c *Conversations) GetAIThreads(userID string) ([]AIThread, error) {
 	}
 
 	return c.getAIThreads(dmChannelIDs)
-}
-
-// CheckUsageRestrictions checks if a user can use a bot in a channel
-func (c *Conversations) CheckUsageRestrictions(userID string, bot *bots.Bot, channel *model.Channel) error {
-	if c.checkUsageFunc == nil {
-		return nil
-	}
-	return c.checkUsageFunc(userID, bot, channel)
 }
 
 // IsBasicsLicensed checks if the plugin has the required license
