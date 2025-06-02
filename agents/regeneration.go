@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/mattermost/mattermost-plugin-ai/agents/threads"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/llm/subtitles"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
@@ -63,15 +64,17 @@ func (p *AgentsService) HandleRegenerate(userID string, post *model.Post, channe
 			return errors.New("user doesn't have permission to read channel original thread in in")
 		}
 
-		var analyzeThreadErr error
-		result, analyzeThreadErr = p.analyzeThread(bot, threadID, analysisType, p.contextBuilder.BuildLLMContextUserRequest(
+		llmContext := p.contextBuilder.BuildLLMContextUserRequest(
 			bot,
 			user,
 			channel,
 			p.contextBuilder.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.mmBot.UserId, channel)),
-		))
-		if analyzeThreadErr != nil {
-			return fmt.Errorf("could not summarize post on regen: %w", analyzeThreadErr)
+		)
+
+		var err error
+		result, err = threads.New(p.GetLLM(bot.cfg), p.prompts, p.mmClient).Analyze(threadID, llmContext, analysisType)
+		if err != nil {
+			return fmt.Errorf("could not summarize post on regen: %w", err)
 		}
 	case referenceRecordingFileIDProp != nil:
 		post.Message = ""

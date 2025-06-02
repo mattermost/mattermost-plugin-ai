@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/mattermost/mattermost-plugin-ai/anthropic"
+	"github.com/mattermost/mattermost-plugin-ai/asage"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/openai"
 )
@@ -46,6 +47,8 @@ func (p *AgentsService) GetLLM(llmBotConfig llm.BotConfig) llm.LanguageModel {
 		result = openai.NewAzure(openaiConfigFromLLMService(llmBotConfig.Service), p.llmUpstreamHTTPClient, llmMetrics)
 	case llm.ServiceTypeAnthropic:
 		result = anthropic.New(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
+	case llm.ServiceTypeASage:
+		result = asage.New(llmBotConfig.Service, p.llmUpstreamHTTPClient, llmMetrics)
 	}
 
 	cfg := p.getConfiguration()

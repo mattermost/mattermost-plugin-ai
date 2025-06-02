@@ -62,6 +62,16 @@ func (b *CompletionRequest) Truncate(maxTokens int, countTokens func(string) int
 	return false
 }
 
+// ExtractSystemMessage extracts the system message from the conversation.
+func (b CompletionRequest) ExtractSystemMessage() string {
+	for _, post := range b.Posts {
+		if post.Role == PostRoleSystem {
+			return post.Message
+		}
+	}
+	return ""
+}
+
 func (b CompletionRequest) String() string {
 	// Create a string of all the posts with their role and message
 	var result strings.Builder

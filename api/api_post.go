@@ -52,6 +52,11 @@ func (a *API) handleReact(c *gin.Context) {
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 	bot := c.MustGet(ContextBotKey).(*agents.Bot)
 
+	if err := a.enforceEmptyBody(c); err != nil {
+		c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
 	requestingUser, err := a.pluginAPI.User.Get(userID)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
@@ -116,13 +121,16 @@ func (a *API) handleThreadAnalysis(c *gin.Context) {
 		return
 	}
 
-	result, err := a.agents.HandleThreadAnalysis(userID, bot, post, channel, data.AnalysisType)
+	createdPost, err := a.agents.ThreadAnalysis(userID, bot, post, channel, data.AnalysisType)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to perform analysis: %w", err))
 		return
 	}
 
-	c.JSON(http.StatusOK, result)
+	c.JSON(http.StatusOK, map[string]string{
+		"postid":    createdPost.Id,
+		"channelid": createdPost.ChannelId,
+	})
 }
 
 func (a *API) handleTranscribeFile(c *gin.Context) {
@@ -131,6 +139,11 @@ func (a *API) handleTranscribeFile(c *gin.Context) {
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 	fileID := c.Param("fileid")
 	bot := c.MustGet(ContextBotKey).(*agents.Bot)
+
+	if err := a.enforceEmptyBody(c); err != nil {
+		c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
 
 	result, err := a.agents.HandleTranscribeFile(userID, bot, post, channel, fileID)
 	if err != nil {
@@ -146,6 +159,11 @@ func (a *API) handleSummarizeTranscription(c *gin.Context) {
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 	bot := c.MustGet(ContextBotKey).(*agents.Bot)
+
+	if err := a.enforceEmptyBody(c); err != nil {
+		c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
 
 	result, err := a.agents.HandleSummarizeTranscription(userID, bot, post, channel)
 	if err != nil {
@@ -163,6 +181,11 @@ func (a *API) handleSummarizeTranscription(c *gin.Context) {
 func (a *API) handleStop(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
+
+	if err := a.enforceEmptyBody(c); err != nil {
+		c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
 
 	botID := post.UserId
 	if !a.agents.IsAnyBot(botID) {
@@ -183,6 +206,11 @@ func (a *API) handleRegenerate(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
+
+	if err := a.enforceEmptyBody(c); err != nil {
+		c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
 
 	err := a.agents.HandleRegenerate(userID, post, channel)
 	if err != nil {
@@ -234,6 +262,11 @@ func (a *API) handleToolCall(c *gin.Context) {
 func (a *API) handlePostbackSummary(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
+
+	if err := a.enforceEmptyBody(c); err != nil {
+		c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
 
 	result, err := a.agents.HandlePostbackSummary(userID, post)
 	if err != nil {
