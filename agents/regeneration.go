@@ -55,6 +55,15 @@ func (p *AgentsService) HandleRegenerate(userID string, post *model.Post, channe
 		siteURL := config.ServiceSettings.SiteURL
 		post.Message = p.analysisPostMessage(user.Locale, threadID, analysisType, *siteURL)
 
+		threadPost, getPostErr := p.pluginAPI.Post.GetPost(threadID)
+		if getPostErr != nil {
+			return fmt.Errorf("could not get thread post on regen: %w", getPostErr)
+		}
+
+		if !p.pluginAPI.User.HasPermissionToChannel(userID, threadPost.ChannelId, model.PermissionReadChannel) {
+			return errors.New("user doesn't have permission to read channel original thread in in")
+		}
+
 		llmContext := p.contextBuilder.BuildLLMContextUserRequest(
 			bot,
 			user,
