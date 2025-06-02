@@ -16,10 +16,9 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/channels"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
+	"github.com/mattermost/mattermost-plugin-ai/streaming"
 	"github.com/mattermost/mattermost/server/public/model"
 )
-
-const NoRegen = "no_regen"
 
 func (a *API) channelAuthorizationRequired(c *gin.Context) {
 	channelID := c.Param("channelid")
@@ -127,7 +126,7 @@ func (a *API) handleInterval(c *gin.Context) {
 
 	// Create post for the response
 	post := &model.Post{}
-	post.AddProp(NoRegen, "true")
+	post.AddProp(streaming.NoRegen, "true")
 
 	// Stream result to new DM
 	if err := a.conversationsService.StreamToNewDM(stdcontext.Background(), bot.GetMMBot().UserId, resultStream, user.Id, post, ""); err != nil {

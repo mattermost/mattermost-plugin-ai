@@ -9,16 +9,13 @@ import (
 	"slices"
 
 	"github.com/mattermost/mattermost-plugin-ai/bots"
-	"github.com/mattermost/mattermost-plugin-ai/conversations"
+	"github.com/mattermost/mattermost-plugin-ai/streaming"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
 const (
 	ReferencedRecordingFileID  = "referenced_recording_file_id"
 	ReferencedTranscriptPostID = "referenced_transcript_post_id"
-
-	// Import constants from conversations package
-	LLMRequesterUserID = conversations.LLMRequesterUserID
 )
 
 // HandleTranscribeFile handles file transcription requests
@@ -88,7 +85,7 @@ func (s *Service) HandlePostbackSummary(userID string, post *model.Post) (map[st
 		return nil, fmt.Errorf("unable to get bot")
 	}
 
-	if post.GetProp(LLMRequesterUserID) != userID {
+	if post.GetProp(streaming.LLMRequesterUserID) != userID {
 		return nil, errors.New("only the original requester can post back")
 	}
 

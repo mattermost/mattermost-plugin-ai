@@ -42,21 +42,19 @@ type MMPostStreamService struct {
 	contextsMutex sync.Mutex
 	mmClient      mmapi.Client
 	i18n          *i18n.Bundle
-	postModifier  func(string, string, *model.Post, string) // Function to modify posts for bot
 }
 
-func NewMMPostStreamService(mmClient mmapi.Client, i18n *i18n.Bundle, postModifier func(string, string, *model.Post, string)) *MMPostStreamService {
+func NewMMPostStreamService(mmClient mmapi.Client, i18n *i18n.Bundle) *MMPostStreamService {
 	return &MMPostStreamService{
-		contexts:     make(map[string]postStreamContext),
-		mmClient:     mmClient,
-		i18n:         i18n,
-		postModifier: postModifier,
+		contexts: make(map[string]postStreamContext),
+		mmClient: mmClient,
+		i18n:     i18n,
 	}
 }
 
 func (p *MMPostStreamService) StreamToNewPost(ctx context.Context, botID string, requesterUserID string, stream *llm.TextStreamResult, post *model.Post, respondingToPostID string) error {
-	// We use postModifier directly here to add the responding to post ID
-	p.postModifier(botID, requesterUserID, post, respondingToPostID)
+	// We use ModifyPostForBot directly here to add the responding to post ID
+	ModifyPostForBot(botID, requesterUserID, post, respondingToPostID)
 
 	if err := p.mmClient.CreatePost(post); err != nil {
 		return fmt.Errorf("unable to create post: %w", err)
@@ -97,8 +95,8 @@ func (p *MMPostStreamService) StreamToNewPost(ctx context.Context, botID string,
 }
 
 func (p *MMPostStreamService) StreamToNewDM(ctx context.Context, botID string, stream *llm.TextStreamResult, userID string, post *model.Post, respondingToPostID string) error {
-	// We use postModifier directly here to add the responding to post ID
-	p.postModifier(botID, userID, post, respondingToPostID)
+	// We use ModifyPostForBot directly here to add the responding to post ID
+	ModifyPostForBot(botID, userID, post, respondingToPostID)
 
 	if err := p.mmClient.DM(botID, userID, post); err != nil {
 		return fmt.Errorf("failed to post DM: %w", err)

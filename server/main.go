@@ -117,15 +117,14 @@ func (p *Plugin) OnActivate() error {
 	// Initialize indexer service
 	indexerService := indexer.New(embeddings, mmClient, bots, dbClient.DB)
 
-	// Create temporary streaming service
-	//TODO: Fix this shit. The ModifyPostForBot function should likely end up in the streaming service.
-	tempStreamingService := streaming.NewMMPostStreamService(mmClient, i18nBundle, nil)
+	// Create streaming service
+	streamingService := streaming.NewMMPostStreamService(mmClient, i18nBundle)
 
 	searchService := search.New(
 		embeddings,
 		mmClient,
 		prompts,
-		tempStreamingService,
+		streamingService,
 		llmUpstreamHTTPClient,
 		dbClient.DB,
 		licenseChecker,
@@ -176,7 +175,7 @@ func (p *Plugin) OnActivate() error {
 		prompts,
 		mmClient,
 		pluginAPI,
-		tempStreamingService,
+		streamingService,
 		contextBuilder,
 		bots,
 		dbClient.DB,
@@ -184,12 +183,6 @@ func (p *Plugin) OnActivate() error {
 		licenseChecker,
 		i18nBundle,
 	)
-
-	// Now create the real streaming service with the correct postModifier
-	streamingService := streaming.NewMMPostStreamService(mmClient, i18nBundle, conversationsService.ModifyPostForBot)
-
-	// Update the conversations service with the real streaming service
-	conversationsService.SetStreamingService(streamingService)
 
 	// Initialize the meetings service
 	meetingsService := meetings.NewService(
@@ -203,7 +196,7 @@ func (p *Plugin) OnActivate() error {
 		dbClient.Builder(),
 		contextBuilder,
 		conversationsService.BotCreateNonResponsePost,
-		conversationsService.ModifyPostForBot,
+		streaming.ModifyPostForBot,
 		conversationsService.SaveTitle,
 		conversationsService.SaveTitleAsync,
 		bots.GetBotByID,

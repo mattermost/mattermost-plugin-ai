@@ -18,6 +18,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
 	"github.com/mattermost/mattermost-plugin-ai/react"
+	"github.com/mattermost/mattermost-plugin-ai/streaming"
 	"github.com/mattermost/mattermost-plugin-ai/threads"
 	"github.com/mattermost/mattermost/server/public/model"
 )
@@ -218,7 +219,7 @@ func (a *API) handleStop(c *gin.Context) {
 		return
 	}
 
-	if post.GetProp(conversations.LLMRequesterUserID) != userID {
+	if post.GetProp(streaming.LLMRequesterUserID) != userID {
 		c.AbortWithError(http.StatusForbidden, errors.New("only the original poster can stop the stream"))
 		return
 	}
@@ -252,7 +253,7 @@ func (a *API) handleToolCall(c *gin.Context) {
 	}
 
 	// Only the original requester can approve/reject tool calls
-	if post.GetProp(conversations.LLMRequesterUserID) != userID {
+	if post.GetProp(streaming.LLMRequesterUserID) != userID {
 		c.AbortWithError(http.StatusForbidden, errors.New("only the original requester can approve/reject tool calls"))
 		return
 	}

@@ -28,11 +28,11 @@ func (c *Conversations) HandleRegenerate(userID string, post *model.Post, channe
 		return fmt.Errorf("unable to get bot")
 	}
 
-	if post.GetProp(LLMRequesterUserID) != userID {
+	if post.GetProp(streaming.LLMRequesterUserID) != userID {
 		return errors.New("only the original poster can regenerate")
 	}
 
-	if post.GetProp(NoRegen) != nil {
+	if post.GetProp(streaming.NoRegen) != nil {
 		return errors.New("tagged no regen")
 	}
 
@@ -160,7 +160,7 @@ func (c *Conversations) HandleRegenerate(userID string, post *model.Post, channe
 	default:
 		post.Message = ""
 
-		respondingToPostID, ok := post.GetProp(RespondingToProp).(string)
+		respondingToPostID, ok := post.GetProp(streaming.RespondingToProp).(string)
 		if !ok {
 			return errors.New("post missing responding to prop")
 		}

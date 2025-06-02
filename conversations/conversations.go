@@ -22,10 +22,6 @@ import (
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 )
 
-const RespondingToProp = "responding_to"
-const LLMRequesterUserID = "llm_requester_user_id"
-const NoRegen = "no_regen"
-
 // Constants from agents package - TODO: consolidate these
 const ThreadIDProp = "referenced_thread"
 const AnalysisTypeProp = "prompt_type"
@@ -281,9 +277,4 @@ func (c *Conversations) StopPostStreaming(postID string) {
 	if c.streamingService != nil {
 		c.streamingService.StopStreaming(postID)
 	}
-}
-
-// SetStreamingService updates the streaming service (used during initialization)
-func (c *Conversations) SetStreamingService(service streaming.Service) {
-	c.streamingService = service
 }

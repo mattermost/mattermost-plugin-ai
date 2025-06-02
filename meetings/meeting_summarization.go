@@ -16,10 +16,10 @@ import (
 
 	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/chunking"
-	"github.com/mattermost/mattermost-plugin-ai/conversations"
 	"github.com/mattermost/mattermost-plugin-ai/i18n"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
+	"github.com/mattermost/mattermost-plugin-ai/streaming"
 	"github.com/mattermost/mattermost-plugin-ai/subtitles"
 	"github.com/mattermost/mattermost/server/public/model"
 )
@@ -28,8 +28,6 @@ const (
 	ContextTokenMargin = 1000
 	WhisperAPILimit    = 25 * 1000 * 1000 // 25 MB
 
-	// Import constants from conversations package
-	NoRegen = conversations.NoRegen
 )
 
 func getCaptionsFileIDFromProps(post *model.Post) (fileID string, err error) {
@@ -116,7 +114,7 @@ func (s *Service) newCallRecordingThread(bot *bots.Bot, requestingUser *model.Us
 	surePost := &model.Post{
 		Message: T("copilot.summarize_recording", "Sure, I will summarize this recording: %s/_redirect/pl/%s\n", *siteURL, recordingPost.Id),
 	}
-	surePost.AddProp(NoRegen, "true")
+	surePost.AddProp(streaming.NoRegen, "true")
 	if err := s.botDMNonResponse(bot.GetMMBot().UserId, requestingUser.Id, surePost); err != nil {
 		return nil, err
 	}
@@ -138,7 +136,7 @@ func (s *Service) newCallTranscriptionSummaryThread(bot *bots.Bot, requestingUse
 	surePost := &model.Post{
 		Message: T("copilot.summarize_transcription", "Sure, I will summarize this transcription: %s/_redirect/pl/%s\n", *siteURL, transcriptionPost.Id),
 	}
-	surePost.AddProp(NoRegen, "true")
+	surePost.AddProp(streaming.NoRegen, "true")
 	surePost.AddProp(ReferencedTranscriptPostID, transcriptionPost.Id)
 	if err := s.botDMNonResponse(bot.GetMMBot().UserId, requestingUser.Id, surePost); err != nil {
 		return nil, err
