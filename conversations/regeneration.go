@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/mattermost/mattermost-plugin-ai/i18n"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
 	"github.com/mattermost/mattermost-plugin-ai/streaming"
@@ -57,10 +58,9 @@ func (c *Conversations) HandleRegenerate(userID string, post *model.Post, channe
 	case threadIDProp != nil:
 		threadID := threadIDProp.(string)
 		analysisType := analysisTypeProp.(string)
-		// 		config := c.pluginAPI.Configuration.GetConfig()
-		// 		siteURL := config.ServiceSettings.SiteURL
-		// TODO: Move analysisPostMessage to conversations package
-		post.Message = "" // c.analysisPostMessage(user.Locale, threadID, analysisType, *siteURL)
+		config := c.pluginAPI.Configuration.GetConfig()
+		siteURL := config.ServiceSettings.SiteURL
+		post.Message = i18n.FormatAnalysisPostMessage(c.i18n, user.Locale, threadID, analysisType, *siteURL)
 
 		llmContext := c.contextBuilder.BuildLLMContextUserRequest(
 			bot,
@@ -69,11 +69,21 @@ func (c *Conversations) HandleRegenerate(userID string, post *model.Post, channe
 			c.contextBuilder.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.GetMMBot().UserId, channel)),
 		)
 
-		var err error
-		result, err = threads.New(bot.LLM(), c.prompts, c.mmClient).Analyze(threadID, llmContext, analysisType)
-		if err != nil {
-			return fmt.Errorf("could not summarize post on regen: %w", err)
+		analyzer := threads.New(bot.LLM(), c.prompts, c.mmClient)
+		switch analysisType {
+		case "summarize_thread":
+			result, err = analyzer.Summarize(threadID, llmContext)
+		case "action_items":
+			result, err = analyzer.FindActionItems(threadID, llmContext)
+		case "open_questions":
+			result, err = analyzer.FindOpenQuestions(threadID, llmContext)
+		default:
+			return fmt.Errorf("invalid analysis type: %s", analysisType)
 		}
+		if err != nil {
+			return fmt.Errorf("could not analyze thread on regen: %w", err)
+		}
+
 	case referenceRecordingFileIDProp != nil:
 		post.Message = ""
 		referencedRecordingFileID := referenceRecordingFileIDProp.(string)
@@ -101,18 +111,14 @@ func (c *Conversations) HandleRegenerate(userID string, post *model.Post, channe
 			return fmt.Errorf("could not get channel of original recording on regen: %w", channelErr)
 		}
 
-		// 		_context := c.contextBuilder.BuildLLMContextUserRequest(
-		// 			bot,
-		// 			user,
-		// 			originalFileChannel,
-		// 			c.contextBuilder.WithLLMContextDefaultTools(bot, originalFileChannel.Type == model.ChannelTypeDirect),
-		// 		)
+		context := c.contextBuilder.BuildLLMContextUserRequest(
+			bot,
+			user,
+			originalFileChannel,
+			c.contextBuilder.WithLLMContextDefaultTools(bot, originalFileChannel.Type == model.ChannelTypeDirect),
+		)
 		var summaryErr error
-		// TODO: Move summarizeTranscription to conversations package
-		_ = transcription
-		_ = originalFileChannel
-		result = nil
-		summaryErr = fmt.Errorf("summarizeTranscription not implemented yet")
+		result, summaryErr = c.meetingsService.SummarizeTranscription(bot, transcription, context)
 		if summaryErr != nil {
 			return fmt.Errorf("could not summarize transcription on regen: %w", summaryErr)
 		}
@@ -124,10 +130,7 @@ func (c *Conversations) HandleRegenerate(userID string, post *model.Post, channe
 			return fmt.Errorf("could not get transcription post on regen: %w", postErr)
 		}
 
-		// TODO: Move getCaptionsFileIDFromProps to conversations package
-		_ = referencedTranscriptionPost
-		transcriptionFileID := ""
-		fileIDErr := fmt.Errorf("getCaptionsFileIDFromProps not implemented yet")
+		transcriptionFileID, fileIDErr := c.meetingsService.GetCaptionsFileIDFromProps(referencedTranscriptionPost)
 		if fileIDErr != nil {
 			return fmt.Errorf("unable to get transcription file id: %w", fileIDErr)
 		}
@@ -141,18 +144,14 @@ func (c *Conversations) HandleRegenerate(userID string, post *model.Post, channe
 			return fmt.Errorf("unable to parse transcription file: %w", parseErr)
 		}
 
-		// 		_context := c.contextBuilder.BuildLLMContextUserRequest(
-		// 			bot,
-		// 			user,
-		// 			channel,
-		// 			c.contextBuilder.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.GetMMBot().UserId, channel)),
-		// 		)
+		context := c.contextBuilder.BuildLLMContextUserRequest(
+			bot,
+			user,
+			channel,
+			c.contextBuilder.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.GetMMBot().UserId, channel)),
+		)
 		var summaryErr error
-		// TODO: Move summarizeTranscription to conversations package
-		_ = transcription
-		_ = channel
-		result = nil
-		summaryErr = fmt.Errorf("summarizeTranscription not implemented yet")
+		result, summaryErr = c.meetingsService.SummarizeTranscription(bot, transcription, context)
 		if summaryErr != nil {
 			return fmt.Errorf("unable to summarize transcription: %w", summaryErr)
 		}

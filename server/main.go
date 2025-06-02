@@ -152,6 +152,7 @@ func (p *Plugin) OnActivate() error {
 		dbClient,
 		licenseChecker,
 		i18nBundle,
+		nil, // meetingsService will be set after it's created
 	)
 
 	meetingsService := meetings.NewService(
@@ -165,6 +166,10 @@ func (p *Plugin) OnActivate() error {
 		contextBuilder,
 		conversationsService,
 	)
+
+	// Set the meetings service on conversations to break circular dependency
+	// TODO: Refactor to avoid circular dependency
+	conversationsService.SetMeetingsService(meetingsService)
 
 	apiService := api.New(
 		bots,

@@ -30,7 +30,7 @@ const (
 
 )
 
-func getCaptionsFileIDFromProps(post *model.Post) (fileID string, err error) {
+func GetCaptionsFileIDFromProps(post *model.Post) (fileID string, err error) {
 	if post == nil {
 		return "", errors.New("post is nil")
 	}
@@ -48,6 +48,11 @@ func getCaptionsFileIDFromProps(post *model.Post) (fileID string, err error) {
 
 	// Calls will only ever have one for now.
 	return captions[0].(map[string]interface{})["file_id"].(string), nil
+}
+
+// GetCaptionsFileIDFromProps is a wrapper method to make the function available via the Service
+func (s *Service) GetCaptionsFileIDFromProps(post *model.Post) (fileID string, err error) {
+	return GetCaptionsFileIDFromProps(post)
 }
 
 func (s *Service) createTranscription(recordingFileID string) (*subtitles.Subtitles, error) {
@@ -154,7 +159,7 @@ func (s *Service) newCallTranscriptionSummaryThread(bot *bots.Bot, requestingUse
 			}
 		}()
 
-		transcriptionFileID, err := getCaptionsFileIDFromProps(transcriptionPost)
+		transcriptionFileID, err := GetCaptionsFileIDFromProps(transcriptionPost)
 		if err != nil {
 			return fmt.Errorf("unable to get transcription file id: %w", err)
 		}
@@ -193,7 +198,7 @@ func (s *Service) newCallTranscriptionSummaryThread(bot *bots.Bot, requestingUse
 			channel,
 			s.contextBuilder.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.GetMMBot().UserId, channel)),
 		)
-		summaryStream, err := s.summarizeTranscription(bot, text, requestContext)
+		summaryStream, err := s.SummarizeTranscription(bot, text, requestContext)
 		if err != nil {
 			return fmt.Errorf("unable to summarize transcription: %w", err)
 		}
@@ -254,7 +259,7 @@ func (s *Service) summarizeCallRecording(bot *bots.Bot, rootID string, requestin
 			channel,
 			s.contextBuilder.WithLLMContextDefaultTools(bot, channel.Type == model.ChannelTypeDirect),
 		)
-		summaryStream, err := s.summarizeTranscription(bot, transcription, llmContext)
+		summaryStream, err := s.SummarizeTranscription(bot, transcription, llmContext)
 		if err != nil {
 			return fmt.Errorf("unable to summarize transcription: %w", err)
 		}
@@ -277,7 +282,7 @@ func (s *Service) summarizeCallRecording(bot *bots.Bot, rootID string, requestin
 	return nil
 }
 
-func (s *Service) summarizeTranscription(bot *bots.Bot, transcription *subtitles.Subtitles, context *llm.Context) (*llm.TextStreamResult, error) {
+func (s *Service) SummarizeTranscription(bot *bots.Bot, transcription *subtitles.Subtitles, context *llm.Context) (*llm.TextStreamResult, error) {
 	llmFormattedTranscription := transcription.FormatForLLM()
 	tokens := bot.LLM().CountTokens(llmFormattedTranscription)
 	tokenLimitWithMargin := int(float64(bot.LLM().InputTokenLimit())*0.75) - ContextTokenMargin

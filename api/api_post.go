@@ -309,15 +309,5 @@ func (a *API) makeAnalysisPost(locale string, postIDToAnalyze string, analysisTy
 }
 
 func (a *API) analysisPostMessage(locale string, postIDToAnalyze string, analysisType string, siteURL string) string {
-	T := i18n.LocalizerFunc(a.i18nBundle, locale)
-	switch analysisType {
-	case "summarize_thread":
-		return T("copilot.summarize_thread", "Sure, I will summarize this thread: %s/_redirect/pl/%s\n", siteURL, postIDToAnalyze)
-	case "action_items":
-		return T("copilot.find_action_items", "Sure, I will find action items in this thread: %s/_redirect/pl/%s\n", siteURL, postIDToAnalyze)
-	case "open_questions":
-		return T("copilot.find_open_questions", "Sure, I will find open questions in this thread: %s/_redirect/pl/%s\n", siteURL, postIDToAnalyze)
-	default:
-		return T("copilot.analyze_thread", "Sure, I will analyze this thread: %s/_redirect/pl/%s\n", siteURL, postIDToAnalyze)
-	}
+	return i18n.FormatAnalysisPostMessage(a.i18nBundle, locale, postIDToAnalyze, analysisType, siteURL)
 }

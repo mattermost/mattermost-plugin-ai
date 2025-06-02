@@ -19,12 +19,12 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
 	"github.com/mattermost/mattermost-plugin-ai/prompts"
 	"github.com/mattermost/mattermost-plugin-ai/streaming"
+	"github.com/mattermost/mattermost-plugin-ai/subtitles"
 	"github.com/mattermost/mattermost-plugin-ai/threads"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 )
 
-// Constants from agents package - TODO: consolidate these
 const ThreadIDProp = "referenced_thread"
 const AnalysisTypeProp = "prompt_type"
 
@@ -47,6 +47,13 @@ type Conversations struct {
 	db               *mmapi.DBClient
 	licenseChecker   *enterprise.LicenseChecker
 	i18n             *i18n.Bundle
+	meetingsService  MeetingsService
+}
+
+// MeetingsService defines the interface for meetings functionality needed by conversations
+type MeetingsService interface {
+	GetCaptionsFileIDFromProps(post *model.Post) (fileID string, err error)
+	SummarizeTranscription(bot *bots.Bot, transcription *subtitles.Subtitles, context *llm.Context) (*llm.TextStreamResult, error)
 }
 
 func New(
@@ -59,6 +66,7 @@ func New(
 	db *mmapi.DBClient,
 	licenseChecker *enterprise.LicenseChecker,
 	i18nBundle *i18n.Bundle,
+	meetingsService MeetingsService,
 ) *Conversations {
 	return &Conversations{
 		prompts:          prompts,
@@ -70,7 +78,13 @@ func New(
 		db:               db,
 		licenseChecker:   licenseChecker,
 		i18n:             i18nBundle,
+		meetingsService:  meetingsService,
 	}
+}
+
+// SetMeetingsService sets the meetings service (used to break circular dependency during initialization)
+func (c *Conversations) SetMeetingsService(meetingsService MeetingsService) {
+	c.meetingsService = meetingsService
 }
 
 // ProcessUserRequestWithContext is an internal helper that uses an existing context to process a message
