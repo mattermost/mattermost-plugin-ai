@@ -59,6 +59,11 @@ func (a *API) handleReact(c *gin.Context) {
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 	bot := c.MustGet(ContextBotKey).(*bots.Bot)
 
+	if err := a.enforceEmptyBody(c); err != nil {
+		c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
 	requestingUser, err := a.pluginAPI.User.Get(userID)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
@@ -181,6 +186,11 @@ func (a *API) handleTranscribeFile(c *gin.Context) {
 	fileID := c.Param("fileid")
 	bot := c.MustGet(ContextBotKey).(*bots.Bot)
 
+	if err := a.enforceEmptyBody(c); err != nil {
+		c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
 	result, err := a.meetingsService.HandleTranscribeFile(userID, bot, post, channel, fileID)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
@@ -195,6 +205,11 @@ func (a *API) handleSummarizeTranscription(c *gin.Context) {
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 	bot := c.MustGet(ContextBotKey).(*bots.Bot)
+
+	if err := a.enforceEmptyBody(c); err != nil {
+		c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
 
 	result, err := a.meetingsService.HandleSummarizeTranscription(userID, bot, post, channel)
 	if err != nil {
@@ -212,6 +227,11 @@ func (a *API) handleSummarizeTranscription(c *gin.Context) {
 func (a *API) handleStop(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
+
+	if err := a.enforceEmptyBody(c); err != nil {
+		c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
 
 	botID := post.UserId
 	if !a.bots.IsAnyBot(botID) {
@@ -232,6 +252,11 @@ func (a *API) handleRegenerate(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
+
+	if err := a.enforceEmptyBody(c); err != nil {
+		c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
 
 	err := a.conversationsService.HandleRegenerate(userID, post, channel)
 	if err != nil {
@@ -283,6 +308,11 @@ func (a *API) handleToolCall(c *gin.Context) {
 func (a *API) handlePostbackSummary(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
+
+	if err := a.enforceEmptyBody(c); err != nil {
+		c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
 
 	result, err := a.meetingsService.HandlePostbackSummary(userID, post)
 	if err != nil {

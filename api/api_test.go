@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -195,6 +196,110 @@ func TestAdminRouter(t *testing.T) {
 				require.Equal(t, test.expectedStatus, resp.StatusCode)
 			})
 		}
+	}
+}
+
+func TestEnforceEmptyBody(t *testing.T) {
+	// This just makes gin not output a whole bunch of debug stuff.
+	gin.SetMode(gin.ReleaseMode)
+	gin.DefaultWriter = io.Discard
+
+	tests := []struct {
+		name          string
+		requestBody   string
+		expectedError bool
+	}{
+		{
+			name:          "empty body",
+			requestBody:   "",
+			expectedError: false,
+		},
+		{
+			name:          "non-empty body",
+			requestBody:   "some content",
+			expectedError: true,
+		},
+		{
+			name:          "whitespace only",
+			requestBody:   "   \n\t",
+			expectedError: true,
+		},
+		{
+			name:          "json object",
+			requestBody:   `{"key": "value"}`,
+			expectedError: true,
+		},
+		{
+			name:          "empty json object",
+			requestBody:   `{}`,
+			expectedError: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			e := SetupTestEnvironment(t)
+			defer e.Cleanup(t)
+
+			// Create a test context with the specified request body
+			w := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(w)
+
+			// Create request with the test body
+			bodyReader := strings.NewReader(test.requestBody)
+			req, err := http.NewRequest("POST", "/test", bodyReader)
+			require.NoError(t, err)
+
+			ctx.Request = req
+
+			// Test the enforceEmptyBody function
+			err = e.api.enforceEmptyBody(ctx)
+
+			if test.expectedError {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "request body must be empty")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestEmptyBodyCheckerInApi tests the API endpoints that use enforceEmptyBody
+func TestEmptyBodyCheckerInApi(t *testing.T) {
+	// This just makes gin not output a whole bunch of debug stuff.
+	// maybe pipe this to the test log?
+	gin.SetMode(gin.ReleaseMode)
+	gin.DefaultWriter = io.Discard
+
+	for urlName, url := range map[string]string{
+		"react":                   "/post/postid/react?botUsername=thebot",
+		"transcribe file":         "/post/postid/transcribe/file/fileid?botUsername=thebot",
+		"summarize transcription": "/post/postid/summarize_transcription?botUsername=thebot",
+		"regen":                   "/post/postid/regenerate",
+		"postback summary":        "/post/postid/postback_summary",
+		"reindex":                 "/admin/reindex",
+		"cancel":                  "/admin/reindex/cancel",
+	} {
+		t.Run(urlName, func(t *testing.T) {
+			e := SetupTestEnvironment(t)
+			defer e.Cleanup(t)
+
+			e.mockAPI.On("LogError", "request body must be empty")
+			e.mockAPI.On("GetPost", mock.Anything).Return(&model.Post{}, nil).Maybe()
+			e.mockAPI.On("GetChannel", mock.Anything).Return(&model.Channel{}, nil).Maybe()
+			e.mockAPI.On("HasPermissionToChannel", mock.Anything, mock.Anything, model.PermissionReadChannel).Return(true).Maybe()
+			e.mockAPI.On("HasPermissionTo", mock.Anything, model.PermissionManageSystem).Return(true).Maybe()
+
+			e.agents.SetBots([]*agents.Bot{agents.NewBot(llm.BotConfig{Name: "thebot"}, nil)})
+
+			request := httptest.NewRequest(http.MethodPost, url, strings.NewReader("non-empty body"))
+			request.Header.Add("Mattermost-User-ID", "userid")
+			recorder := httptest.NewRecorder()
+			e.api.ServeHTTP(&plugin.Context{}, recorder, request)
+			resp := recorder.Result()
+			require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		})
 	}
 }
 

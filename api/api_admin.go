@@ -15,6 +15,10 @@ import (
 
 // handleReindexPosts starts a background job to reindex all posts
 func (a *API) handleReindexPosts(c *gin.Context) {
+	if err := a.enforceEmptyBody(c); err != nil {
+		c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
 	if a.indexerService == nil {
 		c.AbortWithError(http.StatusBadRequest, fmt.Errorf("search functionality is not configured"))
 		return
@@ -61,6 +65,11 @@ func (a *API) handleGetJobStatus(c *gin.Context) {
 
 // handleCancelJob cancels a running reindex job
 func (a *API) handleCancelJob(c *gin.Context) {
+	if err := a.enforceEmptyBody(c); err != nil {
+		c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
 	if a.indexerService == nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"status": "no_job",

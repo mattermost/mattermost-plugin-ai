@@ -5,6 +5,7 @@ package api
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -196,6 +197,15 @@ func (a *API) interPluginAuthorizationRequired(c *gin.Context) {
 		return
 	}
 	c.AbortWithStatus(http.StatusUnauthorized)
+}
+
+// enforceEmptyBody checks if the request body is empty returning an error if not
+func (a *API) enforceEmptyBody(c *gin.Context) error {
+	// Check the body is empty
+	if _, err := c.Request.Body.Read(make([]byte, 1)); err != io.EOF {
+		return fmt.Errorf("request body must be empty")
+	}
+	return nil
 }
 
 func (a *API) handleGetAIThreads(c *gin.Context) {
