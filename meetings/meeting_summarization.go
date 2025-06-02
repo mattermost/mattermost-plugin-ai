@@ -5,7 +5,6 @@ package meetings
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -351,23 +350,8 @@ func (s *Service) summarizeTranscription(bot *bots.Bot, transcription *subtitles
 	return summaryStream, nil
 }
 
-type builder interface {
-	ToSql() (string, []interface{}, error)
-}
-
-func (s *Service) execBuilder(b builder) (sql.Result, error) {
-	sqlString, args, err := b.ToSql()
-	if err != nil {
-		return nil, fmt.Errorf("failed to build sql: %w", err)
-	}
-
-	sqlString = s.db.Rebind(sqlString)
-
-	return s.db.Exec(sqlString, args...)
-}
-
 func (s *Service) updatePostWithFile(post *model.Post, fileinfo *model.FileInfo) error {
-	if _, err := s.execBuilder(s.builder.
+	if _, err := s.db.ExecBuilder(s.db.Builder().
 		Update("FileInfo").
 		Set("PostId", post.Id).
 		Set("ChannelId", post.ChannelId).
@@ -382,6 +366,16 @@ func (s *Service) updatePostWithFile(post *model.Post, fileinfo *model.FileInfo)
 	post.Message = ""
 	if err := s.pluginAPI.Post.UpdatePost(post); err != nil {
 		return fmt.Errorf("unable to update post: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Service) botDMNonResponse(botid string, userID string, post *model.Post) error {
+	streaming.ModifyPostForBot(botid, userID, post, "")
+
+	if err := s.pluginAPI.Post.DM(botid, userID, post); err != nil {
+		return fmt.Errorf("failed to post DM: %w", err)
 	}
 
 	return nil

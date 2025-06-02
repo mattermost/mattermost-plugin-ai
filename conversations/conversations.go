@@ -4,17 +4,18 @@
 package conversations
 
 import (
-	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
-	sq "github.com/Masterminds/squirrel"
-	"github.com/jmoiron/sqlx"
 	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/enterprise"
+	"github.com/mattermost/mattermost-plugin-ai/format"
 	"github.com/mattermost/mattermost-plugin-ai/i18n"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
+	"github.com/mattermost/mattermost-plugin-ai/llmcontext"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
 	"github.com/mattermost/mattermost-plugin-ai/prompts"
 	"github.com/mattermost/mattermost-plugin-ai/streaming"
@@ -36,21 +37,14 @@ type AIThread struct {
 	UpdatedAt int64  `json:"updated_at"`
 }
 
-// LLMContextBuilderInterface is an interface for building LLM contexts
-type LLMContextBuilderInterface interface {
-	BuildLLMContextUserRequest(bot *bots.Bot, user *model.User, channel *model.Channel, options ...llm.ContextOption) *llm.Context
-	WithLLMContextDefaultTools(bot *bots.Bot, isDM bool) llm.ContextOption
-}
-
 type Conversations struct {
 	prompts          *llm.Prompts
 	mmClient         mmapi.Client
 	pluginAPI        *pluginapi.Client
 	streamingService streaming.Service
-	contextBuilder   LLMContextBuilderInterface
+	contextBuilder   *llmcontext.Builder
 	bots             *bots.MMBots
-	db               *sqlx.DB
-	builder          sq.StatementBuilderType
+	db               *mmapi.DBClient
 	licenseChecker   *enterprise.LicenseChecker
 	i18n             *i18n.Bundle
 }
@@ -60,10 +54,9 @@ func New(
 	mmClient mmapi.Client,
 	pluginAPI *pluginapi.Client,
 	streamingService streaming.Service,
-	contextBuilder LLMContextBuilderInterface,
+	contextBuilder *llmcontext.Builder,
 	botsService *bots.MMBots,
-	db *sqlx.DB,
-	builder sq.StatementBuilderType,
+	db *mmapi.DBClient,
 	licenseChecker *enterprise.LicenseChecker,
 	i18nBundle *i18n.Bundle,
 ) *Conversations {
@@ -75,7 +68,6 @@ func New(
 		contextBuilder:   contextBuilder,
 		bots:             botsService,
 		db:               db,
-		builder:          builder,
 		licenseChecker:   licenseChecker,
 		i18n:             i18nBundle,
 	}
@@ -255,27 +247,117 @@ func (c *Conversations) GetAIThreads(userID string) ([]AIThread, error) {
 	return c.getAIThreads(dmChannelIDs)
 }
 
-// IsBasicsLicensed checks if the plugin has the required license
-func (c *Conversations) IsBasicsLicensed() bool {
-	return c.licenseChecker.IsBasicsLicensed()
-}
+const defaultMaxFileSize = int64(1024 * 1024 * 5) // 5MB
 
-// GetI18nBundle returns the i18n bundle
-func (c *Conversations) GetI18nBundle() *i18n.Bundle {
-	return c.i18n
-}
+func (c *Conversations) BotCreateNonResponsePost(botid string, requesterUserID string, post *model.Post) error {
+	streaming.ModifyPostForBot(botid, requesterUserID, post, "")
+	post.AddProp(streaming.NoRegen, true)
 
-// StreamToNewDM streams an LLM result to a new DM
-func (c *Conversations) StreamToNewDM(ctx context.Context, botID string, stream *llm.TextStreamResult, userID string, post *model.Post, respondingToPostID string) error {
-	if c.streamingService == nil {
-		return fmt.Errorf("streaming service not initialized")
+	if err := c.pluginAPI.Post.CreatePost(post); err != nil {
+		return err
 	}
-	return c.streamingService.StreamToNewDM(ctx, botID, stream, userID, post, respondingToPostID)
+
+	return nil
 }
 
-// StopPostStreaming stops streaming to a post
-func (c *Conversations) StopPostStreaming(postID string) {
-	if c.streamingService != nil {
-		c.streamingService.StopStreaming(postID)
+func isImageMimeType(mimeType string) bool {
+	return strings.HasPrefix(mimeType, "image/")
+}
+
+func (c *Conversations) PostToAIPost(bot *bots.Bot, post *model.Post) llm.Post {
+	var filesForUpstream []llm.File
+	message := format.PostBody(post)
+	var extractedFileContents []string
+
+	maxFileSize := defaultMaxFileSize
+	if bot.GetConfig().MaxFileSize > 0 {
+		maxFileSize = bot.GetConfig().MaxFileSize
 	}
+
+	for _, fileID := range post.FileIds {
+		fileInfo, err := c.pluginAPI.File.GetInfo(fileID)
+		if err != nil {
+			c.pluginAPI.Log.Error("Error getting file info", "error", err)
+			continue
+		}
+
+		// Check for files that have been interpreted already by the server or are text files.
+		content := ""
+		if trimmedContent := strings.TrimSpace(fileInfo.Content); trimmedContent != "" {
+			content = trimmedContent
+		} else if strings.HasPrefix(fileInfo.MimeType, "text/") {
+			file, err := c.pluginAPI.File.Get(fileID)
+			if err != nil {
+				c.pluginAPI.Log.Error("Error getting file", "error", err)
+				continue
+			}
+			contentBytes, err := io.ReadAll(io.LimitReader(file, maxFileSize))
+			if err != nil {
+				c.pluginAPI.Log.Error("Error reading file content", "error", err)
+				continue
+			}
+			content = string(contentBytes)
+			if int64(len(contentBytes)) == maxFileSize {
+				content += "\n... (content truncated due to size limit)"
+			}
+		}
+
+		if content != "" {
+			fileContent := fmt.Sprintf("File Name: %s\nContent: %s", fileInfo.Name, content)
+			extractedFileContents = append(extractedFileContents, fileContent)
+		}
+
+		if bot.GetConfig().EnableVision && isImageMimeType(fileInfo.MimeType) {
+			file, err := c.pluginAPI.File.Get(fileID)
+			if err != nil {
+				c.pluginAPI.Log.Error("Error getting file", "error", err)
+				continue
+			}
+			filesForUpstream = append(filesForUpstream, llm.File{
+				Reader:   file,
+				MimeType: fileInfo.MimeType,
+				Size:     fileInfo.Size,
+			})
+		}
+	}
+
+	// Add structured file contents to the message
+	if len(extractedFileContents) > 0 {
+		message += "\nAttached File Contents:\n" + strings.Join(extractedFileContents, "\n\n")
+	}
+
+	role := llm.PostRoleUser
+	if c.bots.IsAnyBot(post.UserId) {
+		role = llm.PostRoleBot
+	}
+
+	// Check for tools
+	pendingToolsProp := post.GetProp(streaming.ToolCallProp)
+	tools := []llm.ToolCall{}
+	pendingTools, ok := pendingToolsProp.(string)
+	if ok {
+		var toolCalls []llm.ToolCall
+		if err := json.Unmarshal([]byte(pendingTools), &toolCalls); err != nil {
+			c.pluginAPI.Log.Error("Error unmarshalling tool calls", "error", err)
+		} else {
+			tools = toolCalls
+		}
+	}
+
+	return llm.Post{
+		Role:    role,
+		Message: message,
+		Files:   filesForUpstream,
+		ToolUse: tools,
+	}
+}
+
+func (c *Conversations) ThreadToLLMPosts(bot *bots.Bot, posts []*model.Post) []llm.Post {
+	result := make([]llm.Post, 0, len(posts))
+
+	for _, post := range posts {
+		result = append(result, c.PostToAIPost(bot, post))
+	}
+
+	return result
 }

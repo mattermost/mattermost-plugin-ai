@@ -16,6 +16,8 @@ import (
 const (
 	ReferencedRecordingFileID  = "referenced_recording_file_id"
 	ReferencedTranscriptPostID = "referenced_transcript_post_id"
+
+	TitleMeetingSummary = "Meeting Summary"
 )
 
 // HandleTranscribeFile handles file transcription requests
@@ -39,7 +41,7 @@ func (s *Service) HandleTranscribeFile(userID string, bot *bots.Bot, post *model
 		return nil, err
 	}
 
-	if err := s.saveTitle(createdPost.Id, "Meeting Summary"); err != nil {
+	if err := s.conversations.SaveTitle(createdPost.Id, TitleMeetingSummary); err != nil {
 		return nil, fmt.Errorf("failed to save title: %w", err)
 	}
 
@@ -70,7 +72,7 @@ func (s *Service) HandleSummarizeTranscription(userID string, bot *bots.Bot, pos
 		return nil, fmt.Errorf("unable to summarize transcription: %w", err)
 	}
 
-	s.saveTitleAsync(createdPost.Id, "Meeting Summary")
+	s.conversations.SaveTitleAsync(createdPost.Id, TitleMeetingSummary)
 
 	return map[string]string{
 		"postid":    createdPost.Id,
@@ -80,7 +82,7 @@ func (s *Service) HandleSummarizeTranscription(userID string, bot *bots.Bot, pos
 
 // HandlePostbackSummary handles posting back a summary to the original channel
 func (s *Service) HandlePostbackSummary(userID string, post *model.Post) (map[string]string, error) {
-	bot := s.getBotByID(post.UserId)
+	bot := s.bots.GetBotByID(post.UserId)
 	if bot == nil {
 		return nil, fmt.Errorf("unable to get bot")
 	}

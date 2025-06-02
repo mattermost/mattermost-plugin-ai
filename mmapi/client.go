@@ -34,6 +34,7 @@ type Client interface {
 	HasPermissionTo(userID string, permission *model.Permission) bool
 	GetPluginStatus(pluginID string) (*model.PluginStatus, error)
 	PluginHTTP(req *http.Request) *http.Response
+	DB() *DBClient
 }
 
 func NewClient(pluginAPI *pluginapi.Client) Client {
@@ -54,6 +55,10 @@ type client struct {
 	pluginapi.ConfigurationService
 	*DBClient
 	pluginAPI *pluginapi.Client
+}
+
+func (m *client) DB() *DBClient {
+	return m.DBClient
 }
 
 func (m *client) GetUser(userID string) (*model.User, error) {

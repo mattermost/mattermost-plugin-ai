@@ -11,6 +11,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/mattermost/mattermost-plugin-ai/chunking"
 	"github.com/mattermost/mattermost-plugin-ai/embeddings"
+	"github.com/mattermost/mattermost-plugin-ai/enterprise"
 	"github.com/mattermost/mattermost-plugin-ai/openai"
 	"github.com/mattermost/mattermost-plugin-ai/postgres"
 )
@@ -51,8 +52,8 @@ func newEmbeddingProvider(config embeddings.UpstreamConfig, httpClient *http.Cli
 	return nil, fmt.Errorf("unsupported embedding provider type: %s", config.Type)
 }
 
-// InitSearch creates and initializes the embedding search system
-func InitSearch(db *sqlx.DB, httpClient *http.Client, cfg embeddings.EmbeddingSearchConfig, licenseChecker LicenseChecker) (embeddings.EmbeddingSearch, error) {
+// InitEmbeddingsSearch creates and initializes the embedding search system
+func InitEmbeddingsSearch(db *sqlx.DB, httpClient *http.Client, cfg embeddings.EmbeddingSearchConfig, licenseChecker *enterprise.LicenseChecker) (embeddings.EmbeddingSearch, error) {
 	if cfg.Type == "" {
 		return nil, fmt.Errorf("search is disabled")
 	}

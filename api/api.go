@@ -12,6 +12,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/conversations"
+	"github.com/mattermost/mattermost-plugin-ai/enterprise"
+	"github.com/mattermost/mattermost-plugin-ai/i18n"
 	"github.com/mattermost/mattermost-plugin-ai/indexer"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/llmcontext"
@@ -19,6 +21,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/metrics"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
 	"github.com/mattermost/mattermost-plugin-ai/search"
+	"github.com/mattermost/mattermost-plugin-ai/streaming"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
@@ -48,6 +51,9 @@ type API struct {
 	prompts              *llm.Prompts
 	config               Config
 	mmClient             mmapi.Client
+	licenseChecker       *enterprise.LicenseChecker
+	streamingService     streaming.Service
+	i18nBundle           *i18n.Bundle
 }
 
 // New creates a new API instance
@@ -63,6 +69,9 @@ func New(
 	config Config,
 	prompts *llm.Prompts,
 	mmClient mmapi.Client,
+	licenseChecker *enterprise.LicenseChecker,
+	streamingService streaming.Service,
+	i18nBundle *i18n.Bundle,
 ) *API {
 	return &API{
 		bots:                 bots,
@@ -77,6 +86,9 @@ func New(
 		prompts:              prompts,
 		config:               config,
 		mmClient:             mmClient,
+		licenseChecker:       licenseChecker,
+		streamingService:     streamingService,
+		i18nBundle:           i18nBundle,
 	}
 }
 

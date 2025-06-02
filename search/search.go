@@ -7,11 +7,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 
-	"github.com/jmoiron/sqlx"
 	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/embeddings"
+	"github.com/mattermost/mattermost-plugin-ai/enterprise"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
 	"github.com/mattermost/mattermost-plugin-ai/streaming"
@@ -52,35 +51,25 @@ type RAGResult struct {
 
 type Search struct {
 	embeddings.EmbeddingSearch
-	pluginAPI             mmapi.Client
-	prompts               *llm.Prompts
-	streamingService      streaming.Service
-	llmUpstreamHTTPClient *http.Client
-	db                    *sqlx.DB
-	licenseChecker        LicenseChecker
-}
-
-type LicenseChecker interface {
-	IsBasicsLicensed() bool
+	mmclient         mmapi.Client
+	prompts          *llm.Prompts
+	streamingService streaming.Service
+	licenseChecker   *enterprise.LicenseChecker
 }
 
 func New(
 	search embeddings.EmbeddingSearch,
-	pluginAPI mmapi.Client,
+	mmclient mmapi.Client,
 	prompts *llm.Prompts,
 	streamingService streaming.Service,
-	llmUpstreamHTTPClient *http.Client,
-	db *sqlx.DB,
-	licenseChecker LicenseChecker,
+	licenseChecker *enterprise.LicenseChecker,
 ) *Search {
 	return &Search{
-		EmbeddingSearch:       search,
-		pluginAPI:             pluginAPI,
-		prompts:               prompts,
-		streamingService:      streamingService,
-		llmUpstreamHTTPClient: llmUpstreamHTTPClient,
-		db:                    db,
-		licenseChecker:        licenseChecker,
+		EmbeddingSearch:  search,
+		mmclient:         mmclient,
+		prompts:          prompts,
+		streamingService: streamingService,
+		licenseChecker:   licenseChecker,
 	}
 }
 
@@ -90,9 +79,9 @@ func (s *Search) convertToRAGResults(searchResults []embeddings.SearchResult) []
 	for _, result := range searchResults {
 		// Get channel name
 		var channelName string
-		channel, chErr := s.pluginAPI.GetChannel(result.Document.ChannelID)
+		channel, chErr := s.mmclient.GetChannel(result.Document.ChannelID)
 		if chErr != nil {
-			s.pluginAPI.LogWarn("Failed to get channel", "error", chErr, "channelID", result.Document.ChannelID)
+			s.mmclient.LogWarn("Failed to get channel", "error", chErr, "channelID", result.Document.ChannelID)
 			channelName = "Unknown Channel"
 		} else {
 			switch channel.Type {
@@ -107,9 +96,9 @@ func (s *Search) convertToRAGResults(searchResults []embeddings.SearchResult) []
 
 		// Get username
 		var username string
-		user, userErr := s.pluginAPI.GetUser(result.Document.UserID)
+		user, userErr := s.mmclient.GetUser(result.Document.UserID)
 		if userErr != nil {
-			s.pluginAPI.LogWarn("Failed to get user", "error", userErr, "userID", result.Document.UserID)
+			s.mmclient.LogWarn("Failed to get user", "error", userErr, "userID", result.Document.UserID)
 			username = "Unknown User"
 		} else {
 			username = user.Username
@@ -156,7 +145,7 @@ func (s *Search) RunSearch(ctx context.Context, userID string, bot *bots.Bot, qu
 		Message: query,
 	}
 	questionPost.AddProp(SearchQueryProp, "true")
-	if err := s.pluginAPI.DM(userID, bot.GetMMBot().UserId, questionPost); err != nil {
+	if err := s.mmclient.DM(userID, bot.GetMMBot().UserId, questionPost); err != nil {
 		return nil, fmt.Errorf("failed to create question post: %w", err)
 	}
 
@@ -170,7 +159,7 @@ func (s *Search) RunSearch(ctx context.Context, userID string, bot *bots.Bot, qu
 
 		if err := s.botDMNonResponse(bot.GetMMBot().UserId, userID, responsePost); err != nil {
 			// Not much point in retrying if this failed. (very unlikely beyond dev)
-			s.pluginAPI.LogError("Error creating bot DM", "error", err)
+			s.mmclient.LogError("Error creating bot DM", "error", err)
 			return
 		}
 
@@ -179,8 +168,8 @@ func (s *Search) RunSearch(ctx context.Context, userID string, bot *bots.Bot, qu
 		defer func() {
 			if processingError != nil {
 				responsePost.Message = "I encountered an error while searching. Please try again later. See server logs for details."
-				if err := s.pluginAPI.UpdatePost(responsePost); err != nil {
-					s.pluginAPI.LogError("Error updating post on error", "error", err)
+				if err := s.mmclient.UpdatePost(responsePost); err != nil {
+					s.mmclient.LogError("Error updating post on error", "error", err)
 				}
 			}
 		}()
@@ -197,7 +186,7 @@ func (s *Search) RunSearch(ctx context.Context, userID string, bot *bots.Bot, qu
 			UserID:    userID,
 		})
 		if err != nil {
-			s.pluginAPI.LogError("Error performing search", "error", err)
+			s.mmclient.LogError("Error performing search", "error", err)
 			processingError = err
 			return
 		}
@@ -205,8 +194,8 @@ func (s *Search) RunSearch(ctx context.Context, userID string, bot *bots.Bot, qu
 		ragResults := s.convertToRAGResults(searchResults)
 		if len(ragResults) == 0 {
 			responsePost.Message = "I couldn't find any relevant messages for your query. Please try a different search term."
-			if updateErr := s.pluginAPI.UpdatePost(responsePost); updateErr != nil {
-				s.pluginAPI.LogError("Error updating post on error", "error", updateErr)
+			if updateErr := s.mmclient.UpdatePost(responsePost); updateErr != nil {
+				s.mmclient.LogError("Error updating post on error", "error", updateErr)
 			}
 			return
 		}
@@ -220,7 +209,7 @@ func (s *Search) RunSearch(ctx context.Context, userID string, bot *bots.Bot, qu
 
 		systemMessage, err := s.prompts.Format("search_system", promptCtx)
 		if err != nil {
-			s.pluginAPI.LogError("Error formatting system message", "error", err)
+			s.mmclient.LogError("Error formatting system message", "error", err)
 			processingError = err
 			return
 		}
@@ -241,29 +230,29 @@ func (s *Search) RunSearch(ctx context.Context, userID string, bot *bots.Bot, qu
 
 		resultStream, err := bot.LLM().ChatCompletion(prompt)
 		if err != nil {
-			s.pluginAPI.LogError("Error generating answer", "error", err)
+			s.mmclient.LogError("Error generating answer", "error", err)
 			processingError = err
 			return
 		}
 
 		resultsJSON, err := json.Marshal(ragResults)
 		if err != nil {
-			s.pluginAPI.LogError("Error marshaling results", "error", err)
+			s.mmclient.LogError("Error marshaling results", "error", err)
 			processingError = err
 			return
 		}
 
 		// Update post to add sources
 		responsePost.AddProp(SearchResultsProp, string(resultsJSON))
-		if updateErr := s.pluginAPI.UpdatePost(responsePost); updateErr != nil {
-			s.pluginAPI.LogError("Error updating post for search results", "error", updateErr)
+		if updateErr := s.mmclient.UpdatePost(responsePost); updateErr != nil {
+			s.mmclient.LogError("Error updating post for search results", "error", updateErr)
 			processingError = updateErr
 			return
 		}
 
 		streamContext, err := s.streamingService.GetStreamingContext(context.Background(), responsePost.Id)
 		if err != nil {
-			s.pluginAPI.LogError("Error getting post streaming context", "error", err)
+			s.mmclient.LogError("Error getting post streaming context", "error", err)
 			processingError = err
 			return
 		}
@@ -342,20 +331,10 @@ func (s *Search) SearchQuery(ctx context.Context, userID string, bot *bots.Bot, 
 	}, nil
 }
 
-// Helper functions for post creation
-func (s *Search) modifyPostForBot(botid string, requesterUserID string, post *model.Post) {
-	post.UserId = botid
-	post.Type = "custom_llmbot" // This must be the only place we add this type for security.
-	post.AddProp(streaming.LLMRequesterUserID, requesterUserID)
-	// This tags that the post has unsafe links since they could have been generated by a prompt injection.
-	// This will prevent the server from making OpenGraph requests and markdown images being rendered.
-	post.AddProp(streaming.UnsafeLinksPostProp, "true")
-}
-
 func (s *Search) botDMNonResponse(botid string, userID string, post *model.Post) error {
-	s.modifyPostForBot(botid, userID, post)
+	streaming.ModifyPostForBot(botid, userID, post, "")
 
-	if err := s.pluginAPI.DM(botid, userID, post); err != nil {
+	if err := s.mmclient.DM(botid, userID, post); err != nil {
 		return fmt.Errorf("failed to post DM: %w", err)
 	}
 

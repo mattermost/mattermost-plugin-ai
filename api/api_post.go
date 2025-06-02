@@ -98,7 +98,7 @@ func (a *API) handleThreadAnalysis(c *gin.Context) {
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 	bot := c.MustGet(ContextBotKey).(*bots.Bot)
 
-	if !a.conversationsService.IsBasicsLicensed() {
+	if !a.licenseChecker.IsBasicsLicensed() {
 		c.AbortWithError(http.StatusForbidden, errors.New("feature not licensed"))
 		return
 	}
@@ -144,13 +144,13 @@ func (a *API) handleThreadAnalysis(c *gin.Context) {
 	var title string
 	switch data.AnalysisType {
 	case "summarize_thread":
-		title = "Thread Summary"
+		title = TitleThreadSummary
 		analysisStream, err = analyzer.Summarize(post.Id, llmContext)
 	case "action_items":
-		title = "Action Items"
+		title = TitleFindActionItems
 		analysisStream, err = analyzer.FindActionItems(post.Id, llmContext)
 	case "open_questions":
-		title = "Open Questions"
+		title = TitleFindOpenQuestions
 		analysisStream, err = analyzer.FindOpenQuestions(post.Id, llmContext)
 	}
 	if err != nil {
@@ -161,7 +161,7 @@ func (a *API) handleThreadAnalysis(c *gin.Context) {
 	// Create analysis post
 	siteURL := a.pluginAPI.Configuration.GetConfig().ServiceSettings.SiteURL
 	analysisPost := a.makeAnalysisPost(user.Locale, post.Id, data.AnalysisType, *siteURL)
-	if err := a.conversationsService.StreamToNewDM(stdcontext.Background(), bot.GetMMBot().UserId, analysisStream, user.Id, analysisPost, post.Id); err != nil {
+	if err := a.streamingService.StreamToNewDM(stdcontext.Background(), bot.GetMMBot().UserId, analysisStream, user.Id, analysisPost, post.Id); err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
@@ -224,7 +224,7 @@ func (a *API) handleStop(c *gin.Context) {
 		return
 	}
 
-	a.conversationsService.StopPostStreaming(post.Id)
+	a.streamingService.StopStreaming(post.Id)
 	c.Status(http.StatusOK)
 }
 
@@ -247,7 +247,7 @@ func (a *API) handleToolCall(c *gin.Context) {
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 
-	if !a.conversationsService.IsBasicsLicensed() {
+	if !a.licenseChecker.IsBasicsLicensed() {
 		c.AbortWithError(http.StatusForbidden, errors.New("feature not licensed"))
 		return
 	}
@@ -309,7 +309,7 @@ func (a *API) makeAnalysisPost(locale string, postIDToAnalyze string, analysisTy
 }
 
 func (a *API) analysisPostMessage(locale string, postIDToAnalyze string, analysisType string, siteURL string) string {
-	T := i18n.LocalizerFunc(a.conversationsService.GetI18nBundle(), locale)
+	T := i18n.LocalizerFunc(a.i18nBundle, locale)
 	switch analysisType {
 	case "summarize_thread":
 		return T("copilot.summarize_thread", "Sure, I will summarize this thread: %s/_redirect/pl/%s\n", siteURL, postIDToAnalyze)

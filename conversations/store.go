@@ -4,38 +4,10 @@
 package conversations
 
 import (
-	"database/sql"
 	"fmt"
 
 	sq "github.com/Masterminds/squirrel"
-	"github.com/jmoiron/sqlx"
 )
-
-type builder interface {
-	ToSql() (string, []interface{}, error)
-}
-
-func (c *Conversations) doQuery(dest interface{}, b builder) error {
-	sqlString, args, err := b.ToSql()
-	if err != nil {
-		return fmt.Errorf("failed to build sql: %w", err)
-	}
-
-	sqlString = c.db.Rebind(sqlString)
-
-	return sqlx.Select(c.db, dest, sqlString, args...)
-}
-
-func (c *Conversations) execBuilder(b builder) (sql.Result, error) {
-	sqlString, args, err := b.ToSql()
-	if err != nil {
-		return nil, fmt.Errorf("failed to build sql: %w", err)
-	}
-
-	sqlString = c.db.Rebind(sqlString)
-
-	return c.db.Exec(sqlString, args...)
-}
 
 // SaveTitleAsync saves a title asynchronously
 func (c *Conversations) SaveTitleAsync(threadID, title string) {
@@ -48,7 +20,7 @@ func (c *Conversations) SaveTitleAsync(threadID, title string) {
 
 // SaveTitle saves a title for a thread
 func (c *Conversations) SaveTitle(threadID, title string) error {
-	_, err := c.execBuilder(c.builder.Insert("LLM_PostMeta").
+	_, err := c.db.ExecBuilder(c.db.Builder().Insert("LLM_PostMeta").
 		Columns("RootPostID", "Title").
 		Values(threadID, title).
 		Suffix("ON CONFLICT (RootPostID) DO UPDATE SET Title = ?", title))
@@ -67,7 +39,7 @@ type aiThreadData struct {
 
 func (c *Conversations) getAIThreads(dmChannelIDs []string) ([]AIThread, error) {
 	var dbPosts []aiThreadData
-	if err := c.doQuery(&dbPosts, c.builder.
+	if err := c.db.DoQuery(&dbPosts, c.db.Builder().
 		Select(
 			"p.Id",
 			"p.Message",

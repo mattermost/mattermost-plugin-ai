@@ -20,6 +20,14 @@ import (
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
+const (
+	TitleThreadSummary     = "Thread Summary"
+	TitleSummarizeUnreads  = "Summarize Unreads"
+	TitleSummarizeChannel  = "Summarize Channel"
+	TitleFindActionItems   = "Find Action Items"
+	TitleFindOpenQuestions = "Find Open Questions"
+)
+
 func (a *API) channelAuthorizationRequired(c *gin.Context) {
 	channelID := c.Param("channelid")
 	userID := c.GetHeader("Mattermost-User-Id")
@@ -49,7 +57,7 @@ func (a *API) handleInterval(c *gin.Context) {
 	bot := c.MustGet(ContextBotKey).(*bots.Bot)
 
 	// Check license
-	if !a.conversationsService.IsBasicsLicensed() {
+	if !a.licenseChecker.IsBasicsLicensed() {
 		c.AbortWithError(http.StatusForbidden, errors.New("feature not licensed"))
 		return
 	}
@@ -102,16 +110,16 @@ func (a *API) handleInterval(c *gin.Context) {
 	switch data.PresetPrompt {
 	case "summarize_unreads":
 		promptPreset = prompts.PromptSummarizeChannelSinceSystem
-		promptTitle = "Summarize Unreads"
+		promptTitle = TitleSummarizeUnreads
 	case "summarize_range":
 		promptPreset = prompts.PromptSummarizeChannelRangeSystem
-		promptTitle = "Summarize Channel"
+		promptTitle = TitleSummarizeChannel
 	case "action_items":
 		promptPreset = prompts.PromptFindActionItemsSystem
-		promptTitle = "Find Action Items"
+		promptTitle = TitleFindActionItems
 	case "open_questions":
 		promptPreset = prompts.PromptFindOpenQuestionsSystem
-		promptTitle = "Find Open Questions"
+		promptTitle = TitleFindOpenQuestions
 	default:
 		c.AbortWithError(http.StatusBadRequest, errors.New("invalid preset prompt"))
 		return
@@ -129,7 +137,7 @@ func (a *API) handleInterval(c *gin.Context) {
 	post.AddProp(streaming.NoRegen, "true")
 
 	// Stream result to new DM
-	if err := a.conversationsService.StreamToNewDM(stdcontext.Background(), bot.GetMMBot().UserId, resultStream, user.Id, post, ""); err != nil {
+	if err := a.streamingService.StreamToNewDM(stdcontext.Background(), bot.GetMMBot().UserId, resultStream, user.Id, post, ""); err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}

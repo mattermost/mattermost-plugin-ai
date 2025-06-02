@@ -51,8 +51,9 @@ type Plugin struct {
 
 func (p *Plugin) OnActivate() error {
 	pluginAPI := pluginapi.NewClient(p.API, p.Driver)
-	mmClient := mmapi.NewClient(p.pluginAPI)
-	licenseChecker := enterprise.NewLicenseChecker(p.pluginAPI)
+	mmClient := mmapi.NewClient(pluginAPI)
+	licenseChecker := enterprise.NewLicenseChecker(pluginAPI)
+	dbClient := mmClient.DB()
 
 	i18nBundle := i18n.Init()
 
@@ -68,7 +69,7 @@ func (p *Plugin) OnActivate() error {
 
 	updated, newCfg, err := migrateServicesToBots(p.API, pluginAPI, *p.configuration.Config())
 	if err != nil {
-		p.pluginAPI.Log.Error("failed to migrate services to bots", "error", err)
+		pluginAPI.Log.Error("failed to migrate services to bots", "error", err)
 		// Don't fail on migration errors
 	}
 	if updated && err == nil {
@@ -89,10 +90,6 @@ func (p *Plugin) OnActivate() error {
 		pluginAPI.Log.Error("failed to ensure bots", "error", ensureBotsErr)
 	}
 
-	// Set up database
-	dbClient := mmapi.NewDBClient(p.pluginAPI)
-
-	// Set up database tables
 	if setupTablesErr := database.SetupTables(dbClient.DB); setupTablesErr != nil {
 		pluginAPI.Log.Error("failed to setup database tables", "error", setupTablesErr)
 		return setupTablesErr
@@ -104,7 +101,9 @@ func (p *Plugin) OnActivate() error {
 		return promptManagerErr
 	}
 
-	embeddings, err := search.InitSearch(
+	streamingService := streaming.NewMMPostStreamService(mmClient, i18nBundle)
+
+	embeddingsSearch, err := search.InitEmbeddingsSearch(
 		dbClient.DB,
 		llmUpstreamHTTPClient,
 		p.configuration.EmbeddingSearchConfig(),
@@ -115,19 +114,13 @@ func (p *Plugin) OnActivate() error {
 		// Continue without search functionality
 	}
 
-	// Initialize indexer service
-	indexerService := indexer.New(embeddings, mmClient, bots, dbClient.DB)
-
-	// Create streaming service
-	streamingService := streaming.NewMMPostStreamService(mmClient, i18nBundle)
+	indexerService := indexer.New(embeddingsSearch, mmClient, bots, dbClient.DB)
 
 	searchService := search.New(
-		embeddings,
+		embeddingsSearch,
 		mmClient,
 		prompts,
 		streamingService,
-		llmUpstreamHTTPClient,
-		dbClient.DB,
 		licenseChecker,
 	)
 
@@ -137,31 +130,9 @@ func (p *Plugin) OnActivate() error {
 		untrustedHTTPClient,
 	)
 
-	var mcpClientManager *mcp.ClientManager
-	mcpClient, err := mcp.NewClientManager(p.configuration.MCP(), pluginAPI.Log)
-	if err != nil {
-		pluginAPI.Log.Error("Failed to initialize MCP client manager, MCP tools will be disabled", "error", err)
-		mcpClientManager = nil
-	} else {
-		mcpClientManager = mcpClient
-	}
+	mcpClientManager := mcp.NewClientManager(p.configuration.MCP(), pluginAPI.Log)
 	p.configuration.RegisterUpdateListener(func() {
-		// Close existing MCP client manager
-		if mcpClientManager != nil {
-			if closeErr := mcpClientManager.Close(); closeErr != nil {
-				pluginAPI.Log.Error("Failed to close MCP client manager during configuration change", "error", closeErr)
-			}
-		}
-
-		// Reinitialize MCP client manager with new configuration
-		mcpClient, mcpErr := mcp.NewClientManager(p.configuration.MCP(), pluginAPI.Log)
-		if mcpErr != nil {
-			pluginAPI.Log.Error("Failed to reinitialize MCP client manager, MCP tools will be disabled", "error", mcpErr)
-			mcpClientManager = nil
-		} else {
-			mcpClientManager = mcpClient
-			pluginAPI.Log.Debug("MCP client manager reinitialized successfully")
-		}
+		mcpClientManager.ReInit(p.configuration.MCP())
 	})
 
 	contextBuilder := llmcontext.NewLLMContextBuilder(
@@ -171,7 +142,6 @@ func (p *Plugin) OnActivate() error {
 		&p.configuration,
 	)
 
-	// Now initialize conversations service with bots service checkUsageRestrictions method
 	conversationsService := conversations.New(
 		prompts,
 		mmClient,
@@ -179,13 +149,11 @@ func (p *Plugin) OnActivate() error {
 		streamingService,
 		contextBuilder,
 		bots,
-		dbClient.DB,
-		dbClient.Builder(),
+		dbClient,
 		licenseChecker,
 		i18nBundle,
 	)
 
-	// Initialize the meetings service
 	meetingsService := meetings.NewService(
 		pluginAPI,
 		streamingService,
@@ -193,14 +161,9 @@ func (p *Plugin) OnActivate() error {
 		bots,
 		i18nBundle,
 		metricsService,
-		dbClient.DB,
-		dbClient.Builder(),
+		dbClient,
 		contextBuilder,
-		conversationsService.BotCreateNonResponsePost,
-		streaming.ModifyPostForBot,
-		conversationsService.SaveTitle,
-		conversationsService.SaveTitleAsync,
-		bots.GetBotByID,
+		conversationsService,
 	)
 
 	apiService := api.New(
@@ -215,6 +178,9 @@ func (p *Plugin) OnActivate() error {
 		&p.configuration,
 		prompts,
 		mmClient,
+		licenseChecker,
+		streamingService,
+		i18nBundle,
 	)
 
 	// Keep only what we need
@@ -229,11 +195,7 @@ func (p *Plugin) OnActivate() error {
 
 func (p *Plugin) OnDeactivate() error {
 	// Clean up MCP client manager if it exists
-	if p.mcpClientManager != nil {
-		if err := p.mcpClientManager.Close(); err != nil {
-			p.pluginAPI.Log.Error("Failed to close MCP client manager during deactivation", "error", err)
-		}
-	}
+	p.mcpClientManager.Close()
 	return nil
 }
 
