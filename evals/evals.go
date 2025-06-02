@@ -13,6 +13,7 @@ import (
 
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/openai"
+	"github.com/mattermost/mattermost-plugin-ai/prompts"
 	"github.com/stretchr/testify/require"
 )
 
@@ -31,7 +32,7 @@ type Eval struct {
 
 func NewEval() (*Eval, error) {
 	// Setup prompts
-	prompts, err := llm.NewPrompts(llm.PromptsFolder)
+	prompts, err := llm.NewPrompts(prompts.PromptsFolder)
 	if err != nil {
 		return nil, err
 	}

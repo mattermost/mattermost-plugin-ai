@@ -14,8 +14,8 @@ import (
 	"github.com/gin-gonic/gin/render"
 	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/channels"
-	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
+	"github.com/mattermost/mattermost-plugin-ai/prompts"
 	"github.com/mattermost/mattermost-plugin-ai/streaming"
 	"github.com/mattermost/mattermost/server/public/model"
 )
@@ -101,16 +101,16 @@ func (a *API) handleInterval(c *gin.Context) {
 	promptTitle := ""
 	switch data.PresetPrompt {
 	case "summarize_unreads":
-		promptPreset = llm.PromptSummarizeChannelSinceSystem
+		promptPreset = prompts.PromptSummarizeChannelSinceSystem
 		promptTitle = "Summarize Unreads"
 	case "summarize_range":
-		promptPreset = llm.PromptSummarizeChannelRangeSystem
+		promptPreset = prompts.PromptSummarizeChannelRangeSystem
 		promptTitle = "Summarize Channel"
 	case "action_items":
-		promptPreset = llm.PromptFindActionItemsSystem
+		promptPreset = prompts.PromptFindActionItemsSystem
 		promptTitle = "Find Action Items"
 	case "open_questions":
-		promptPreset = llm.PromptFindOpenQuestionsSystem
+		promptPreset = prompts.PromptFindOpenQuestionsSystem
 		promptTitle = "Find Open Questions"
 	default:
 		c.AbortWithError(http.StatusBadRequest, errors.New("invalid preset prompt"))

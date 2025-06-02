@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/mattermost/mattermost-plugin-ai/llm"
+	"github.com/mattermost/mattermost-plugin-ai/prompts"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
@@ -32,7 +33,7 @@ func (r *React) Resolve(message string, context *llm.Context) (string, error) {
 	context.Parameters = map[string]any{"Message": message}
 
 	// Format prompt for emoji selection
-	prompt, err := r.prompts.Format(llm.PromptEmojiSelectSystem, context)
+	prompt, err := r.prompts.Format(prompts.PromptEmojiSelectSystem, context)
 	if err != nil {
 		return "", fmt.Errorf("failed to format prompt: %w", err)
 	}

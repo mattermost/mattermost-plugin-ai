@@ -16,6 +16,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/i18n"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
+	"github.com/mattermost/mattermost-plugin-ai/prompts"
 	"github.com/mattermost/mattermost-plugin-ai/streaming"
 	"github.com/mattermost/mattermost-plugin-ai/threads"
 	"github.com/mattermost/mattermost/server/public/model"
@@ -85,7 +86,7 @@ func (c *Conversations) ProcessUserRequestWithContext(bot *bots.Bot, postingUser
 	var posts []llm.Post
 	if post.RootId == "" {
 		// A new conversation
-		prompt, err := c.prompts.Format(llm.PromptDirectMessageQuestionSystem, context)
+		prompt, err := c.prompts.Format(prompts.PromptDirectMessageQuestionSystem, context)
 		if err != nil {
 			return nil, fmt.Errorf("failed to format prompt: %w", err)
 		}
@@ -210,7 +211,7 @@ func (c *Conversations) existingConversationToLLMPosts(bot *bots.Bot, conversati
 	}
 
 	// Plain DM conversation
-	prompt, err := c.prompts.Format(llm.PromptDirectMessageQuestionSystem, context)
+	prompt, err := c.prompts.Format(prompts.PromptDirectMessageQuestionSystem, context)
 	if err != nil {
 		return nil, fmt.Errorf("failed to format prompt: %w", err)
 	}

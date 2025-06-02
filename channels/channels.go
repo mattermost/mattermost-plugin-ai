@@ -9,6 +9,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/format"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
+	"github.com/mattermost/mattermost-plugin-ai/prompts"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
@@ -68,7 +69,7 @@ func (c *Channels) Interval(
 		return nil, err
 	}
 
-	userPrompt, err := c.prompts.Format(llm.PromptThreadUser, context)
+	userPrompt, err := c.prompts.Format(prompts.PromptThreadUser, context)
 	if err != nil {
 		return nil, err
 	}

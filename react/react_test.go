@@ -10,6 +10,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/evals"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/llm/mocks"
+	"github.com/mattermost/mattermost-plugin-ai/prompts"
 	"github.com/mattermost/mattermost-plugin-ai/react"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -58,7 +59,7 @@ func TestReactResolve(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Setup
 			mockLLM := mocks.NewMockLanguageModel(t)
-			prompts, err := llm.NewPrompts(llm.PromptsFolder)
+			prompts, err := llm.NewPrompts(prompts.PromptsFolder)
 			assert.NoError(t, err)
 
 			mockLLM.EXPECT().ChatCompletionNoStream(mock.Anything, mock.Anything).Return(tc.llmResponse, tc.llmError)

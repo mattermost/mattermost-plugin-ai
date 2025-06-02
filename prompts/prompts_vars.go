@@ -1,9 +1,9 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-package llm
+package prompts
 
-// Automatically generated convenience vars for the filenames in llm/prompts/
+// Automatically generated convenience vars for the filenames in prompts/
 const (
 	PromptDirectMessageQuestionSystem      = "direct_message_question_system"
 	PromptEmojiSelectSystem                = "emoji_select_system"

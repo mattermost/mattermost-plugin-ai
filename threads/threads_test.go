@@ -13,6 +13,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/llm/mocks"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
 	mmapimocks "github.com/mattermost/mattermost-plugin-ai/mmapi/mocks"
+	"github.com/mattermost/mattermost-plugin-ai/prompts"
 	"github.com/mattermost/mattermost-plugin-ai/threads"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/stretchr/testify/assert"
@@ -35,7 +36,7 @@ func TestThreadsAnalyze(t *testing.T) {
 		{
 			name:             "success",
 			postID:           "post123",
-			promptName:       llm.PromptSummarizeThreadSystem,
+			promptName:       prompts.PromptSummarizeThreadSystem,
 			threadData:       &mmapi.ThreadData{Posts: []*model.Post{{Id: "post123", Message: "Test message", UserId: "user123"}}},
 			threadDataErr:    nil,
 			expectedLLMCalls: 1,
@@ -45,7 +46,7 @@ func TestThreadsAnalyze(t *testing.T) {
 		{
 			name:             "thread data error",
 			postID:           "post123",
-			promptName:       llm.PromptSummarizeThreadSystem,
+			promptName:       prompts.PromptSummarizeThreadSystem,
 			threadData:       nil,
 			threadDataErr:    errors.New("failed to get thread data"),
 			expectedLLMCalls: 0,
@@ -56,7 +57,7 @@ func TestThreadsAnalyze(t *testing.T) {
 		{
 			name:             "llm error",
 			postID:           "post123",
-			promptName:       llm.PromptSummarizeThreadSystem,
+			promptName:       prompts.PromptSummarizeThreadSystem,
 			threadData:       &mmapi.ThreadData{Posts: []*model.Post{{Id: "post123", Message: "Test message", UserId: "user123"}}},
 			threadDataErr:    nil,
 			expectedLLMCalls: 1,
@@ -71,7 +72,7 @@ func TestThreadsAnalyze(t *testing.T) {
 			// Setup
 			mockLLM := mocks.NewMockLanguageModel(t)
 			mockClient := mmapimocks.NewMockClient(t)
-			prompts, err := llm.NewPrompts(llm.PromptsFolder)
+			prompts, err := llm.NewPrompts(prompts.PromptsFolder)
 			require.NoError(t, err)
 
 			// Create context with requesting user

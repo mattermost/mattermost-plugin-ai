@@ -9,6 +9,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/format"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
+	"github.com/mattermost/mattermost-plugin-ai/prompts"
 )
 
 type Threads struct {
@@ -30,15 +31,15 @@ func New(
 }
 
 func (t *Threads) Summarize(threadRootID string, context *llm.Context) (*llm.TextStreamResult, error) {
-	return t.Analyze(threadRootID, context, llm.PromptSummarizeThreadSystem)
+	return t.Analyze(threadRootID, context, prompts.PromptSummarizeThreadSystem)
 }
 
 func (t *Threads) FindActionItems(threadRootID string, context *llm.Context) (*llm.TextStreamResult, error) {
-	return t.Analyze(threadRootID, context, llm.PromptFindActionItemsSystem)
+	return t.Analyze(threadRootID, context, prompts.PromptFindActionItemsSystem)
 }
 
 func (t *Threads) FindOpenQuestions(threadRootID string, context *llm.Context) (*llm.TextStreamResult, error) {
-	return t.Analyze(threadRootID, context, llm.PromptFindOpenQuestionsSystem)
+	return t.Analyze(threadRootID, context, prompts.PromptFindOpenQuestionsSystem)
 }
 
 func (t *Threads) Analyze(postIDToAnalyze string, context *llm.Context, promptName string) (*llm.TextStreamResult, error) {
@@ -76,7 +77,7 @@ func (t *Threads) createInitalPosts(postIDToAnalyze string, context *llm.Context
 		return nil, fmt.Errorf("failed to format system prompt: %w", err)
 	}
 
-	userPrompt, err := t.prompts.Format(llm.PromptThreadUser, context)
+	userPrompt, err := t.prompts.Format(prompts.PromptThreadUser, context)
 	if err != nil {
 		return nil, fmt.Errorf("failed to format user prompt: %w", err)
 	}

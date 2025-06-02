@@ -19,6 +19,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/i18n"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
+	"github.com/mattermost/mattermost-plugin-ai/prompts"
 	"github.com/mattermost/mattermost-plugin-ai/streaming"
 	"github.com/mattermost/mattermost-plugin-ai/subtitles"
 	"github.com/mattermost/mattermost/server/public/model"
@@ -291,7 +292,7 @@ func (s *Service) summarizeTranscription(bot *bots.Bot, transcription *subtitles
 		summarizedChunks := make([]string, 0, len(chunks))
 		s.pluginAPI.Log.Debug("Split into chunks", "chunks", len(chunks))
 		for _, chunk := range chunks {
-			systemPrompt, err := s.prompts.Format(llm.PromptSummarizeChunkSystem, context)
+			systemPrompt, err := s.prompts.Format(prompts.PromptSummarizeChunkSystem, context)
 			if err != nil {
 				return nil, fmt.Errorf("unable to get summarize chunk prompt: %w", err)
 			}
@@ -323,7 +324,7 @@ func (s *Service) summarizeTranscription(bot *bots.Bot, transcription *subtitles
 	}
 
 	context.Parameters = map[string]any{"IsChunked": fmt.Sprintf("%t", isChunked)}
-	systemPrompt, err := s.prompts.Format(llm.PromptMeetingSummarySystem, context)
+	systemPrompt, err := s.prompts.Format(prompts.PromptMeetingSummarySystem, context)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get meeting summary prompt: %w", err)
 	}

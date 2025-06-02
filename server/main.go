@@ -24,6 +24,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/metrics"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
 	"github.com/mattermost/mattermost-plugin-ai/mmtools"
+	"github.com/mattermost/mattermost-plugin-ai/prompts"
 	"github.com/mattermost/mattermost-plugin-ai/search"
 	"github.com/mattermost/mattermost-plugin-ai/streaming"
 	"github.com/mattermost/mattermost/server/public/model"
@@ -97,7 +98,7 @@ func (p *Plugin) OnActivate() error {
 		return setupTablesErr
 	}
 
-	prompts, promptManagerErr := llm.NewPrompts(llm.PromptsFolder)
+	prompts, promptManagerErr := llm.NewPrompts(prompts.PromptsFolder)
 	if promptManagerErr != nil {
 		pluginAPI.Log.Error("failed to initialize prompts", "error", promptManagerErr)
 		return promptManagerErr
