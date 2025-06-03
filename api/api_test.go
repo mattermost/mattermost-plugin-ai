@@ -291,7 +291,7 @@ func TestEmptyBodyCheckerInApi(t *testing.T) {
 			e.mockAPI.On("HasPermissionToChannel", mock.Anything, mock.Anything, model.PermissionReadChannel).Return(true).Maybe()
 			e.mockAPI.On("HasPermissionTo", mock.Anything, model.PermissionManageSystem).Return(true).Maybe()
 
-			e.agents.SetBots([]*agents.Bot{agents.NewBot(llm.BotConfig{Name: "thebot"}, nil)})
+			e.bots.SetBotsForTesting([]*bots.Bot{bots.NewBot(llm.BotConfig{Name: "thebot"}, nil)})
 
 			request := httptest.NewRequest(http.MethodPost, url, strings.NewReader("non-empty body"))
 			request.Header.Add("Mattermost-User-ID", "userid")

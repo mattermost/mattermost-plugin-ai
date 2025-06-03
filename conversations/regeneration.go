@@ -61,12 +61,12 @@ func (c *Conversations) HandleRegenerate(userID string, post *model.Post, channe
 		config := c.pluginAPI.Configuration.GetConfig()
 		siteURL := config.ServiceSettings.SiteURL
 		post.Message = i18n.FormatAnalysisPostMessage(c.i18n, user.Locale, threadID, analysisType, *siteURL)
-		threadPost, getPostErr := p.pluginAPI.Post.GetPost(threadID)
+		threadPost, getPostErr := c.pluginAPI.Post.GetPost(threadID)
 		if getPostErr != nil {
 			return fmt.Errorf("could not get thread post on regen: %w", getPostErr)
 		}
 
-		if !p.pluginAPI.User.HasPermissionToChannel(userID, threadPost.ChannelId, model.PermissionReadChannel) {
+		if !c.pluginAPI.User.HasPermissionToChannel(userID, threadPost.ChannelId, model.PermissionReadChannel) {
 			return errors.New("user doesn't have permission to read channel original thread in in")
 		}
 
