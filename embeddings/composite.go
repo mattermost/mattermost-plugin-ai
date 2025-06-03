@@ -5,17 +5,19 @@ package embeddings
 
 import (
 	"context"
+
+	"github.com/mattermost/mattermost-plugin-ai/chunking"
 )
 
 // CompositeSearch implements EmbeddingSearch using separate vector store and embedding provider
 type CompositeSearch struct {
 	store    VectorStore
 	provider EmbeddingProvider
-	options  ChunkingOptions
+	options  chunking.Options
 }
 
 // NewCompositeSearch creates a new CompositeSearch with required chunking options
-func NewCompositeSearch(store VectorStore, provider EmbeddingProvider, options ChunkingOptions) *CompositeSearch {
+func NewCompositeSearch(store VectorStore, provider EmbeddingProvider, options chunking.Options) *CompositeSearch {
 	return &CompositeSearch{
 		store:    store,
 		provider: provider,
@@ -24,7 +26,7 @@ func NewCompositeSearch(store VectorStore, provider EmbeddingProvider, options C
 }
 
 // SetChunkingOptions updates the chunking options
-func (c *CompositeSearch) SetChunkingOptions(options ChunkingOptions) {
+func (c *CompositeSearch) SetChunkingOptions(options chunking.Options) {
 	c.options = options
 }
 
@@ -33,8 +35,16 @@ func (c *CompositeSearch) Store(ctx context.Context, docs []PostDocument) error 
 	// Apply chunking to each document
 	var chunkedDocs []PostDocument
 	for _, doc := range docs {
-		chunks := ChunkPostDocument(doc, c.options)
-		chunkedDocs = append(chunkedDocs, chunks...)
+		chunks := chunking.ChunkText(doc.Content, c.options)
+
+		for _, chunk := range chunks {
+			// Create a new document for each chunk
+			chunkDoc := doc // Copy all metadata
+			chunkDoc.Content = chunk.Content
+			chunkDoc.ChunkInfo = chunk.ChunkInfo // Assign chunk metadata
+
+			chunkedDocs = append(chunkedDocs, chunkDoc)
+		}
 	}
 
 	// Extract texts for embedding

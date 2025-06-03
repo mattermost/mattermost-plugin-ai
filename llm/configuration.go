@@ -38,14 +38,6 @@ const (
 	UserAccessLevelNone
 )
 
-const (
-	ServiceTypeOpenAI           = "openai"
-	ServiceTypeOpenAICompatible = "openaicompatible"
-	ServiceTypeAzure            = "azure"
-	ServiceTypeASage            = "asage"
-	ServiceTypeAnthropic        = "anthropic"
-)
-
 type BotConfig struct {
 	ID                 string             `json:"id"`
 	Name               string             `json:"name"`

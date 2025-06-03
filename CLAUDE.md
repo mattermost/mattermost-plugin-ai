@@ -19,3 +19,4 @@
 - Never use mocking or introduce new testing libraries
 - Document all public APIs
 - Always add i18n for new text
+- Write go unit tests as table driven tests whenever possible

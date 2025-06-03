@@ -4,6 +4,7 @@
 package api
 
 import (
+	stdcontext "context"
 	"fmt"
 	"net/http"
 
@@ -11,8 +12,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/render"
-	"github.com/mattermost/mattermost-plugin-ai/agents"
-	"github.com/mattermost/mattermost-plugin-ai/agents/react"
+	"github.com/mattermost/mattermost-plugin-ai/bots"
+	"github.com/mattermost/mattermost-plugin-ai/conversations"
+	"github.com/mattermost/mattermost-plugin-ai/i18n"
+	"github.com/mattermost/mattermost-plugin-ai/llm"
+	"github.com/mattermost/mattermost-plugin-ai/mmapi"
+	"github.com/mattermost/mattermost-plugin-ai/react"
+	"github.com/mattermost/mattermost-plugin-ai/streaming"
+	"github.com/mattermost/mattermost-plugin-ai/threads"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
@@ -39,8 +46,8 @@ func (a *API) postAuthorizationRequired(c *gin.Context) {
 		return
 	}
 
-	bot := c.MustGet(ContextBotKey).(*agents.Bot)
-	if err := a.agents.CheckUsageRestrictions(userID, bot, channel); err != nil {
+	bot := c.MustGet(ContextBotKey).(*bots.Bot)
+	if err := a.bots.CheckUsageRestrictions(userID, bot, channel); err != nil {
 		c.AbortWithError(http.StatusForbidden, err)
 		return
 	}
@@ -50,7 +57,7 @@ func (a *API) handleReact(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
-	bot := c.MustGet(ContextBotKey).(*agents.Bot)
+	bot := c.MustGet(ContextBotKey).(*bots.Bot)
 
 	if err := a.enforceEmptyBody(c); err != nil {
 		c.AbortWithError(http.StatusBadRequest, err)
@@ -63,15 +70,15 @@ func (a *API) handleReact(c *gin.Context) {
 		return
 	}
 
-	context := a.agents.GetContextBuilder().BuildLLMContextUserRequest(
+	context := a.contextBuilder.BuildLLMContextUserRequest(
 		bot,
 		requestingUser,
 		channel,
 	)
 
 	emojiName, err := react.New(
-		a.agents.GetLLM(bot.GetConfig()),
-		a.agents.GetPrompts(),
+		bot.LLM(),
+		a.prompts,
 	).Resolve(post.Message, context)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
@@ -94,9 +101,9 @@ func (a *API) handleThreadAnalysis(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
-	bot := c.MustGet(ContextBotKey).(*agents.Bot)
+	bot := c.MustGet(ContextBotKey).(*bots.Bot)
 
-	if !a.agents.IsBasicsLicensed() {
+	if !a.licenseChecker.IsBasicsLicensed() {
 		c.AbortWithError(http.StatusForbidden, errors.New("feature not licensed"))
 		return
 	}
@@ -121,15 +128,54 @@ func (a *API) handleThreadAnalysis(c *gin.Context) {
 		return
 	}
 
-	createdPost, err := a.agents.ThreadAnalysis(userID, bot, post, channel, data.AnalysisType)
+	// Get the user to build context
+	user, err := a.pluginAPI.User.Get(userID)
 	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to perform analysis: %w", err))
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to get user: %w", err))
 		return
 	}
 
+	// Build LLM context
+	llmContext := a.contextBuilder.BuildLLMContextUserRequest(
+		bot,
+		user,
+		channel,
+		a.contextBuilder.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.GetMMBot().UserId, channel)),
+	)
+
+	// Create thread analyzer
+	analyzer := threads.New(bot.LLM(), a.prompts, a.mmClient)
+	var analysisStream *llm.TextStreamResult
+	var title string
+	switch data.AnalysisType {
+	case "summarize_thread":
+		title = TitleThreadSummary
+		analysisStream, err = analyzer.Summarize(post.Id, llmContext)
+	case "action_items":
+		title = TitleFindActionItems
+		analysisStream, err = analyzer.FindActionItems(post.Id, llmContext)
+	case "open_questions":
+		title = TitleFindOpenQuestions
+		analysisStream, err = analyzer.FindOpenQuestions(post.Id, llmContext)
+	}
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to analyze thread: %w", err))
+		return
+	}
+
+	// Create analysis post
+	siteURL := a.pluginAPI.Configuration.GetConfig().ServiceSettings.SiteURL
+	analysisPost := a.makeAnalysisPost(user.Locale, post.Id, data.AnalysisType, *siteURL)
+	if err := a.streamingService.StreamToNewDM(stdcontext.Background(), bot.GetMMBot().UserId, analysisStream, user.Id, analysisPost, post.Id); err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	a.conversationsService.SaveTitleAsync(post.Id, title)
+
 	c.JSON(http.StatusOK, map[string]string{
-		"postid":    createdPost.Id,
-		"channelid": createdPost.ChannelId,
+		"postid":    analysisPost.Id,
+		"channelid": analysisPost.ChannelId,
 	})
 }
 
@@ -138,14 +184,14 @@ func (a *API) handleTranscribeFile(c *gin.Context) {
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 	fileID := c.Param("fileid")
-	bot := c.MustGet(ContextBotKey).(*agents.Bot)
+	bot := c.MustGet(ContextBotKey).(*bots.Bot)
 
 	if err := a.enforceEmptyBody(c); err != nil {
 		c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
-	result, err := a.agents.HandleTranscribeFile(userID, bot, post, channel, fileID)
+	result, err := a.meetingsService.HandleTranscribeFile(userID, bot, post, channel, fileID)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
@@ -158,14 +204,14 @@ func (a *API) handleSummarizeTranscription(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
-	bot := c.MustGet(ContextBotKey).(*agents.Bot)
+	bot := c.MustGet(ContextBotKey).(*bots.Bot)
 
 	if err := a.enforceEmptyBody(c); err != nil {
 		c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 
-	result, err := a.agents.HandleSummarizeTranscription(userID, bot, post, channel)
+	result, err := a.meetingsService.HandleSummarizeTranscription(userID, bot, post, channel)
 	if err != nil {
 		if err.Error() == "not a calls or zoom bot post" {
 			c.AbortWithError(http.StatusBadRequest, errors.New("not a calls or zoom bot post"))
@@ -188,17 +234,17 @@ func (a *API) handleStop(c *gin.Context) {
 	}
 
 	botID := post.UserId
-	if !a.agents.IsAnyBot(botID) {
+	if !a.bots.IsAnyBot(botID) {
 		c.AbortWithError(http.StatusBadRequest, errors.New("not a bot post"))
 		return
 	}
 
-	if post.GetProp(agents.LLMRequesterUserID) != userID {
+	if post.GetProp(streaming.LLMRequesterUserID) != userID {
 		c.AbortWithError(http.StatusForbidden, errors.New("only the original poster can stop the stream"))
 		return
 	}
 
-	a.agents.StopPostStreaming(post.Id)
+	a.streamingService.StopStreaming(post.Id)
 	c.Status(http.StatusOK)
 }
 
@@ -212,7 +258,7 @@ func (a *API) handleRegenerate(c *gin.Context) {
 		return
 	}
 
-	err := a.agents.HandleRegenerate(userID, post, channel)
+	err := a.conversationsService.HandleRegenerate(userID, post, channel)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("unable to regenerate post: %w", err))
 		return
@@ -226,13 +272,13 @@ func (a *API) handleToolCall(c *gin.Context) {
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 
-	if !a.agents.IsBasicsLicensed() {
+	if !a.licenseChecker.IsBasicsLicensed() {
 		c.AbortWithError(http.StatusForbidden, errors.New("feature not licensed"))
 		return
 	}
 
 	// Only the original requester can approve/reject tool calls
-	if post.GetProp(agents.LLMRequesterUserID) != userID {
+	if post.GetProp(streaming.LLMRequesterUserID) != userID {
 		c.AbortWithError(http.StatusForbidden, errors.New("only the original requester can approve/reject tool calls"))
 		return
 	}
@@ -246,7 +292,7 @@ func (a *API) handleToolCall(c *gin.Context) {
 		return
 	}
 
-	err := a.agents.HandleToolCall(userID, post, channel, data.AcceptedToolIDs)
+	err := a.conversationsService.HandleToolCall(userID, post, channel, data.AcceptedToolIDs)
 	if err != nil {
 		if err.Error() == "post missing pending tool calls" || err.Error() == "post pending tool calls not valid JSON" {
 			c.AbortWithError(http.StatusBadRequest, err)
@@ -268,7 +314,7 @@ func (a *API) handlePostbackSummary(c *gin.Context) {
 		return
 	}
 
-	result, err := a.agents.HandlePostbackSummary(userID, post)
+	result, err := a.meetingsService.HandlePostbackSummary(userID, post)
 	if err != nil {
 		if err.Error() == "post missing reference to transcription post ID" {
 			c.AbortWithError(http.StatusBadRequest, err)
@@ -279,4 +325,19 @@ func (a *API) handlePostbackSummary(c *gin.Context) {
 	}
 
 	c.Render(http.StatusOK, render.JSON{Data: result})
+}
+
+// makeAnalysisPost creates a post for thread analysis results
+func (a *API) makeAnalysisPost(locale string, postIDToAnalyze string, analysisType string, siteURL string) *model.Post {
+	post := &model.Post{
+		Message: a.analysisPostMessage(locale, postIDToAnalyze, analysisType, siteURL),
+	}
+	post.AddProp(conversations.ThreadIDProp, postIDToAnalyze)
+	post.AddProp(conversations.AnalysisTypeProp, analysisType)
+
+	return post
+}
+
+func (a *API) analysisPostMessage(locale string, postIDToAnalyze string, analysisType string, siteURL string) string {
+	return i18n.FormatAnalysisPostMessage(a.i18nBundle, locale, postIDToAnalyze, analysisType, siteURL)
 }

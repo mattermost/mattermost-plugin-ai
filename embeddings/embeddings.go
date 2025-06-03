@@ -6,6 +6,8 @@ package embeddings
 import (
 	"context"
 	"encoding/json"
+
+	"github.com/mattermost/mattermost-plugin-ai/chunking"
 )
 
 // Provider types
@@ -26,15 +28,15 @@ const (
 
 // PostDocument represents a Mattermost post with its metadata
 type PostDocument struct {
-	PostID      string // ID of the Mattermost post
-	CreateAt    int64  // Creation timestamp of the referenced post, not when this was indexed
-	TeamID      string
-	ChannelID   string
-	UserID      string
-	Content     string
-	IsChunk     bool
-	ChunkIndex  int
-	TotalChunks int
+	PostID    string // ID of the Mattermost post
+	CreateAt  int64  // Creation timestamp of the referenced post, not when this was indexed
+	TeamID    string
+	ChannelID string
+	UserID    string
+	Content   string
+
+	// Embed chunk info to track if this is a chunk
+	chunking.ChunkInfo
 }
 
 // SearchResult represents a single search result with its similarity score
@@ -52,24 +54,6 @@ type SearchOptions struct {
 	UserID        string // User ID for permission checks
 	CreatedAfter  int64
 	CreatedBefore int64
-}
-
-// ChunkingOptions defines options for chunking documents
-type ChunkingOptions struct {
-	ChunkSize        int     `json:"chunkSize"`        // Maximum size of each chunk in characters
-	ChunkOverlap     int     `json:"chunkOverlap"`     // Number of characters to overlap between chunks
-	MinChunkSize     float64 `json:"minChunkSize"`     // Minimum chunk size as a fraction of max size (0.0-1.0)
-	ChunkingStrategy string  `json:"chunkingStrategy"` // Strategy: sentences, paragraphs, or fixed
-}
-
-// DefaultChunkingOptions returns the default chunking options
-func DefaultChunkingOptions() ChunkingOptions {
-	return ChunkingOptions{
-		ChunkSize:        1000,
-		ChunkOverlap:     200,
-		MinChunkSize:     0.75,
-		ChunkingStrategy: "sentences",
-	}
 }
 
 // EmbeddingSearch defines the high-level interface for storing and searching using embeddings
@@ -122,10 +106,10 @@ type UpstreamConfig struct {
 
 // ServiceConfig holds configuration for the embedding search service
 type EmbeddingSearchConfig struct {
-	Type              string          `json:"type"`
-	VectorStore       UpstreamConfig  `json:"vectorStore"`
-	EmbeddingProvider UpstreamConfig  `json:"embeddingProvider"`
-	Parameters        json.RawMessage `json:"parameters"`
-	Dimensions        int             `json:"dimensions"`
-	ChunkingOptions   ChunkingOptions `json:"chunkingOptions"`
+	Type              string           `json:"type"`
+	VectorStore       UpstreamConfig   `json:"vectorStore"`
+	EmbeddingProvider UpstreamConfig   `json:"embeddingProvider"`
+	Parameters        json.RawMessage  `json:"parameters"`
+	Dimensions        int              `json:"dimensions"`
+	ChunkingOptions   chunking.Options `json:"chunkingOptions"`
 }

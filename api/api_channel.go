@@ -4,6 +4,7 @@
 package api
 
 import (
+	stdcontext "context"
 	"encoding/json"
 	"net/http"
 
@@ -11,8 +12,20 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/render"
-	"github.com/mattermost/mattermost-plugin-ai/agents"
+	"github.com/mattermost/mattermost-plugin-ai/bots"
+	"github.com/mattermost/mattermost-plugin-ai/channels"
+	"github.com/mattermost/mattermost-plugin-ai/mmapi"
+	"github.com/mattermost/mattermost-plugin-ai/prompts"
+	"github.com/mattermost/mattermost-plugin-ai/streaming"
 	"github.com/mattermost/mattermost/server/public/model"
+)
+
+const (
+	TitleThreadSummary     = "Thread Summary"
+	TitleSummarizeUnreads  = "Summarize Unreads"
+	TitleSummarizeChannel  = "Summarize Channel"
+	TitleFindActionItems   = "Find Action Items"
+	TitleFindOpenQuestions = "Find Open Questions"
 )
 
 func (a *API) channelAuthorizationRequired(c *gin.Context) {
@@ -31,8 +44,8 @@ func (a *API) channelAuthorizationRequired(c *gin.Context) {
 		return
 	}
 
-	bot := c.MustGet(ContextBotKey).(*agents.Bot)
-	if err := a.agents.CheckUsageRestrictions(userID, bot, channel); err != nil {
+	bot := c.MustGet(ContextBotKey).(*bots.Bot)
+	if err := a.bots.CheckUsageRestrictions(userID, bot, channel); err != nil {
 		c.AbortWithError(http.StatusForbidden, err)
 		return
 	}
@@ -41,10 +54,10 @@ func (a *API) channelAuthorizationRequired(c *gin.Context) {
 func (a *API) handleInterval(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
-	bot := c.MustGet(ContextBotKey).(*agents.Bot)
+	bot := c.MustGet(ContextBotKey).(*bots.Bot)
 
 	// Check license
-	if !a.agents.IsBasicsLicensed() {
+	if !a.licenseChecker.IsBasicsLicensed() {
 		c.AbortWithError(http.StatusForbidden, errors.New("feature not licensed"))
 		return
 	}
@@ -76,15 +89,66 @@ func (a *API) handleInterval(c *gin.Context) {
 		return
 	}
 
-	// Process interval request
-	result, err := a.agents.ChannelInterval(userID, bot, channel, data.StartTime, data.EndTime, data.PresetPrompt, data.Prompt)
+	// Get user
+	user, err := a.pluginAPI.User.Get(userID)
 	if err != nil {
-		if err.Error() == "invalid preset prompt" {
-			c.AbortWithError(http.StatusBadRequest, err)
-		} else {
-			c.AbortWithError(http.StatusInternalServerError, err)
-		}
+		c.AbortWithError(http.StatusInternalServerError, err)
 		return
+	}
+
+	// Build LLM context
+	context := a.contextBuilder.BuildLLMContextUserRequest(
+		bot,
+		user,
+		channel,
+		a.contextBuilder.WithLLMContextDefaultTools(bot, mmapi.IsDMWith(bot.GetMMBot().UserId, channel)),
+	)
+
+	// Map preset prompt to prompt type and title
+	promptPreset := ""
+	promptTitle := ""
+	switch data.PresetPrompt {
+	case "summarize_unreads":
+		promptPreset = prompts.PromptSummarizeChannelSinceSystem
+		promptTitle = TitleSummarizeUnreads
+	case "summarize_range":
+		promptPreset = prompts.PromptSummarizeChannelRangeSystem
+		promptTitle = TitleSummarizeChannel
+	case "action_items":
+		promptPreset = prompts.PromptFindActionItemsSystem
+		promptTitle = TitleFindActionItems
+	case "open_questions":
+		promptPreset = prompts.PromptFindOpenQuestionsSystem
+		promptTitle = TitleFindOpenQuestions
+	default:
+		c.AbortWithError(http.StatusBadRequest, errors.New("invalid preset prompt"))
+		return
+	}
+
+	// Call channels interval processing
+	resultStream, err := channels.New(bot.LLM(), a.prompts, a.mmClient).Interval(context, channel.Id, data.StartTime, data.EndTime, promptPreset)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	// Create post for the response
+	post := &model.Post{}
+	post.AddProp(streaming.NoRegen, "true")
+
+	// Stream result to new DM
+	if err := a.streamingService.StreamToNewDM(stdcontext.Background(), bot.GetMMBot().UserId, resultStream, user.Id, post, ""); err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	// Save title asynchronously
+	a.conversationsService.SaveTitleAsync(post.Id, promptTitle)
+
+	// Return result
+	result := map[string]string{
+		"postID":    post.Id,
+		"channelId": post.ChannelId,
 	}
 
 	c.Render(http.StatusOK, render.JSON{Data: result})

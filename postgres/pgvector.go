@@ -10,6 +10,7 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
+	"github.com/mattermost/mattermost-plugin-ai/chunking"
 	"github.com/mattermost/mattermost-plugin-ai/embeddings"
 	"github.com/pgvector/pgvector-go"
 )
@@ -221,10 +222,11 @@ func scanSearchResults(rows *sqlx.Rows, minScore float32) ([]embeddings.SearchRe
 			ChannelID: channelID,
 			UserID:    userID,
 			Content:   content,
-			IsChunk:   isChunk,
+			ChunkInfo: chunking.ChunkInfo{
+				IsChunk: isChunk,
+			},
 		}
 
-		// Handle chunk-specific fields
 		if isChunk {
 			if chunkIndex != nil {
 				doc.ChunkIndex = *chunkIndex

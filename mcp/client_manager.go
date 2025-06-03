@@ -31,30 +31,12 @@ type Config struct {
 }
 
 // NewClientManager creates a new MCP client manager
-func NewClientManager(config Config, log pluginapi.LogService) (*ClientManager, error) {
-	if config.IdleTimeoutMinutes <= 0 {
-		config.IdleTimeoutMinutes = 30
-	}
-
-	// If not enabled or no servers configured, return nil
-	if !config.Enabled || len(config.Servers) == 0 {
-		log.Debug("MCP client manager is disabled or no servers configured")
-		return nil, nil
-	}
-
+func NewClientManager(config Config, log pluginapi.LogService) *ClientManager {
 	manager := &ClientManager{
-		config:        config,
-		log:           log,
-		clients:       make(map[string]*UserClient),
-		clientTimeout: time.Duration(config.IdleTimeoutMinutes) * time.Minute,
-		closeChan:     make(chan struct{}),
+		log: log,
 	}
-
-	// Start cleanup ticker to remove inactive clients
-	manager.cleanupTicker = time.NewTicker(5 * time.Minute)
-	go manager.cleanupInactiveClients()
-
-	return manager, nil
+	manager.ReInit(config)
+	return manager
 }
 
 // cleanupInactiveClients periodically checks for and closes inactive client connections
@@ -67,9 +49,7 @@ func (m *ClientManager) cleanupInactiveClients() {
 			for userID, client := range m.clients {
 				if now.Sub(client.lastActivity) > m.clientTimeout {
 					m.log.Debug("Closing inactive MCP client", "userID", userID, "idleTime", now.Sub(client.lastActivity))
-					if err := client.Close(); err != nil {
-						m.log.Error("Error closing inactive MCP client", "userID", userID, "error", err)
-					}
+					client.Close()
 					delete(m.clients, userID)
 				}
 			}
@@ -81,29 +61,46 @@ func (m *ClientManager) cleanupInactiveClients() {
 	}
 }
 
+// ReInit re-initializes the client manager with a new configuration
+func (m *ClientManager) ReInit(config Config) {
+	m.Close()
+
+	if config.IdleTimeoutMinutes <= 0 {
+		config.IdleTimeoutMinutes = 30
+	}
+
+	m.config = config
+	m.clients = make(map[string]*UserClient)
+	m.clientTimeout = time.Duration(config.IdleTimeoutMinutes) * time.Minute
+	m.closeChan = make(chan struct{})
+
+	// Start cleanup ticker to remove inactive clients
+	m.cleanupTicker = time.NewTicker(5 * time.Minute)
+	go m.cleanupInactiveClients()
+}
+
 // Close closes the client manager and all managed clients
 // The client manger should not be used after Close is called
-func (m *ClientManager) Close() error {
+func (m *ClientManager) Close() {
+	// If already closed, do nothing
+	if m.closeChan == nil {
+		return
+	}
 	// Stop the cleanup goroutine
 	close(m.closeChan)
+	m.closeChan = nil
 	m.cleanupTicker.Stop()
 
 	// Close all client connections
-	var lastErr error
 	m.clientsMu.Lock()
 	defer m.clientsMu.Unlock()
 
-	for userID, client := range m.clients {
-		if err := client.Close(); err != nil {
-			m.log.Error("Failed to close MCP client", "userID", userID, "error", err)
-			lastErr = err
-		}
+	for _, client := range m.clients {
+		client.Close()
 	}
 
 	// Clear the clients map
 	m.clients = make(map[string]*UserClient)
-
-	return lastErr
 }
 
 // createAndStoreUserClient creates a new UserClient instance and stores it in the manager
@@ -157,6 +154,11 @@ func (m *ClientManager) getClientForUser(userID string) (*UserClient, error) {
 
 // GetToolsForUser returns the tools available for a specific user
 func (m *ClientManager) GetToolsForUser(userID string) ([]llm.Tool, error) {
+	// If not enabled or no servers configured return no tools
+	if !m.config.Enabled || len(m.config.Servers) == 0 {
+		return []llm.Tool{}, nil
+	}
+
 	// Get or create client for this user
 	userClient, err := m.getClientForUser(userID)
 	if err != nil {

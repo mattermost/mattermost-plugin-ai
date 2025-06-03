@@ -19,13 +19,14 @@ func (a *API) handleReindexPosts(c *gin.Context) {
 		c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
+	if a.indexerService == nil {
+		c.AbortWithError(http.StatusBadRequest, fmt.Errorf("search functionality is not configured"))
+		return
+	}
 
-	jobStatus, err := a.agents.HandleReindexPosts()
+	jobStatus, err := a.indexerService.StartReindexJob()
 	if err != nil {
 		switch err.Error() {
-		case "search functionality is not configured":
-			c.AbortWithError(http.StatusBadRequest, err)
-			return
 		case "job already running":
 			c.JSON(http.StatusConflict, jobStatus)
 			return
@@ -40,7 +41,14 @@ func (a *API) handleReindexPosts(c *gin.Context) {
 
 // handleGetJobStatus gets the status of the reindex job
 func (a *API) handleGetJobStatus(c *gin.Context) {
-	jobStatus, err := a.agents.GetJobStatus()
+	if a.indexerService == nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"status": "no_job",
+		})
+		return
+	}
+
+	jobStatus, err := a.indexerService.GetJobStatus()
 	if err != nil {
 		if err.Error() == "not found" {
 			c.JSON(http.StatusNotFound, gin.H{
@@ -62,7 +70,14 @@ func (a *API) handleCancelJob(c *gin.Context) {
 		return
 	}
 
-	jobStatus, err := a.agents.CancelJob()
+	if a.indexerService == nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"status": "no_job",
+		})
+		return
+	}
+
+	jobStatus, err := a.indexerService.CancelJob()
 	if err != nil {
 		switch err.Error() {
 		case "not found":

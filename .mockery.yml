@@ -12,3 +12,9 @@ packages:
       filename: language_model_mock.go
     interfaces:
       LanguageModel:
+  github.com/mattermost/mattermost-plugin-ai/mmapi:
+    config:
+      dir: mmapi/mocks
+      filename: client_mock.go
+    interfaces:
+      Client:

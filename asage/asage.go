@@ -10,18 +10,16 @@ import (
 	"strings"
 
 	"github.com/mattermost/mattermost-plugin-ai/llm"
-	"github.com/mattermost/mattermost-plugin-ai/metrics"
 )
 
 type Provider struct {
 	client           *Client
 	defaultModel     string
 	inputTokenLimit  int
-	metric           metrics.LLMetrics
 	outputTokenLimit int
 }
 
-func New(llmService llm.ServiceConfig, httpClient *http.Client, metric metrics.LLMetrics) *Provider {
+func New(llmService llm.ServiceConfig, httpClient *http.Client) *Provider {
 	client := NewClient("", httpClient)
 	result := strings.SplitN(llmService.APIKey, ":", 2)
 	if len(result) != 2 {
@@ -39,7 +37,6 @@ func New(llmService llm.ServiceConfig, httpClient *http.Client, metric metrics.L
 		client:           client,
 		defaultModel:     llmService.DefaultModel,
 		inputTokenLimit:  llmService.InputTokenLimit,
-		metric:           metric,
 		outputTokenLimit: llmService.OutputTokenLimit,
 	}
 }
@@ -94,8 +91,6 @@ func (s *Provider) ChatCompletion(request llm.CompletionRequest, opts ...llm.Lan
 }
 
 func (s *Provider) ChatCompletionNoStream(request llm.CompletionRequest, opts ...llm.LanguageModelOption) (string, error) {
-	s.metric.IncrementLLMRequests()
-
 	params := s.queryParamsFromConfig(s.createConfig(opts))
 	params.Message = conversationToMessagesList(request.Posts)
 	params.SystemPrompt = request.ExtractSystemMessage()

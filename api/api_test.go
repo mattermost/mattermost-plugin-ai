@@ -11,7 +11,9 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/mattermost/mattermost-plugin-ai/agents"
+	"github.com/mattermost/mattermost-plugin-ai/bots"
+	"github.com/mattermost/mattermost-plugin-ai/conversations"
+	"github.com/mattermost/mattermost-plugin-ai/enterprise"
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/metrics"
 	"github.com/mattermost/mattermost/server/public/model"
@@ -25,7 +27,14 @@ import (
 type TestEnvironment struct {
 	api     *API
 	mockAPI *plugintest.API
-	agents  *agents.AgentsService
+	bots    *bots.MMBots
+}
+
+// testConfigImpl is a minimal implementation of Config for testing
+type testConfigImpl struct{}
+
+func (tc *testConfigImpl) GetDefaultBotName() string {
+	return "ai"
 }
 
 func (e *TestEnvironment) Cleanup(t *testing.T) {
@@ -34,17 +43,47 @@ func (e *TestEnvironment) Cleanup(t *testing.T) {
 	}
 }
 
+// createTestBots creates a test MMBots instance for testing
+func createTestBots(mockAPI *plugintest.API, client *pluginapi.Client) *bots.MMBots {
+	licenseChecker := enterprise.NewLicenseChecker(client)
+	testBots := bots.New(mockAPI, client, licenseChecker, nil, &http.Client{})
+	return testBots
+}
+
+// setupTestBot configures a test bot in the environment
+func (e *TestEnvironment) setupTestBot(botConfig llm.BotConfig) {
+	// Create a mock bot user
+	mmBot := &model.Bot{
+		UserId:      "bot-user-id",
+		Username:    botConfig.Name,
+		DisplayName: botConfig.DisplayName,
+	}
+
+	// Create the bot instance
+	bot := bots.NewBot(botConfig, mmBot)
+
+	// Set the bot directly for testing
+	e.bots.SetBotsForTesting([]*bots.Bot{bot})
+}
+
 func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 	mockAPI := &plugintest.API{}
 	noopMetrics := &metrics.NoopMetrics{}
+
 	client := pluginapi.NewClient(mockAPI, nil)
-	agents := &agents.AgentsService{}
-	api := New(agents, client, noopMetrics)
+
+	// Create test bots instance
+	testBots := createTestBots(mockAPI, client)
+
+	// Create minimal conversations service for testing
+	conversationsService := &conversations.Conversations{}
+
+	api := New(testBots, conversationsService, nil, nil, nil, client, noopMetrics, nil, &testConfigImpl{}, nil, nil, nil, nil, nil)
 
 	return &TestEnvironment{
 		api:     api,
 		mockAPI: mockAPI,
-		agents:  agents,
+		bots:    testBots,
 	}
 }
 
@@ -102,7 +141,8 @@ func TestPostRouter(t *testing.T) {
 				defer e.Cleanup(t)
 
 				test.botconfig.Name = "permtest"
-				e.agents.SetBots([]*agents.Bot{agents.NewBot(test.botconfig, nil)})
+
+				e.setupTestBot(test.botconfig)
 
 				e.mockAPI.On("GetPost", "postid").Return(&model.Post{
 					ChannelId: "channelid",
@@ -251,7 +291,7 @@ func TestEmptyBodyCheckerInApi(t *testing.T) {
 			e.mockAPI.On("HasPermissionToChannel", mock.Anything, mock.Anything, model.PermissionReadChannel).Return(true).Maybe()
 			e.mockAPI.On("HasPermissionTo", mock.Anything, model.PermissionManageSystem).Return(true).Maybe()
 
-			e.agents.SetBots([]*agents.Bot{agents.NewBot(llm.BotConfig{Name: "thebot"}, nil)})
+			e.bots.SetBotsForTesting([]*bots.Bot{bots.NewBot(llm.BotConfig{Name: "thebot"}, nil)})
 
 			request := httptest.NewRequest(http.MethodPost, url, strings.NewReader("non-empty body"))
 			request.Header.Add("Mattermost-User-ID", "userid")
@@ -312,7 +352,8 @@ func TestChannelRouter(t *testing.T) {
 				defer e.Cleanup(t)
 
 				test.botconfig.Name = "permtest"
-				e.agents.SetBots([]*agents.Bot{agents.NewBot(test.botconfig, nil)})
+
+				e.setupTestBot(test.botconfig)
 
 				e.mockAPI.On("LogError", mock.Anything).Maybe()
 

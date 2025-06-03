@@ -5,18 +5,17 @@ package evals
 
 import (
 	"errors"
-	"flag"
 	"net/http"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/openai"
+	"github.com/mattermost/mattermost-plugin-ai/prompts"
 	"github.com/stretchr/testify/require"
 )
-
-var runEvals = flag.Bool("eval", false, "Run LLM evals")
 
 type EvalT struct {
 	*testing.T
@@ -27,11 +26,13 @@ type Eval struct {
 	LLM       llm.LanguageModel
 	GraderLLM llm.LanguageModel
 	Prompts   *llm.Prompts
+
+	runNumber int
 }
 
 func NewEval() (*Eval, error) {
 	// Setup prompts
-	prompts, err := llm.NewPrompts(llm.PromptsFolder)
+	prompts, err := llm.NewPrompts(prompts.PromptsFolder)
 	if err != nil {
 		return nil, err
 	}
@@ -42,7 +43,7 @@ func NewEval() (*Eval, error) {
 		APIKey:           os.Getenv("OPENAI_API_KEY"),
 		DefaultModel:     "gpt-4o",
 		StreamingTimeout: 20 * time.Second,
-	}, &httpClient, nil)
+	}, &httpClient)
 	if provider == nil {
 		return nil, errors.New("failed to create LLM provider")
 	}
@@ -54,11 +55,18 @@ func NewEval() (*Eval, error) {
 	}, nil
 }
 
-func Run(t *testing.T, name string, f func(e *EvalT)) {
-	if !*runEvals {
-		t.Skip("Skipping evals. Use -eval flag to run.")
-		return
+func NumEvalsOrSkip(t *testing.T) int {
+	t.Helper()
+	numEvals, err := strconv.Atoi(os.Getenv("GOEVALS"))
+	if err != nil || numEvals < 1 {
+		t.Skip("Skipping evals. Use GOEVALS=1 flag to run.")
 	}
+
+	return numEvals
+}
+
+func Run(t *testing.T, name string, f func(e *EvalT)) {
+	numEvals := NumEvalsOrSkip(t)
 
 	eval, err := NewEval()
 	require.NoError(t, err)
@@ -66,6 +74,10 @@ func Run(t *testing.T, name string, f func(e *EvalT)) {
 	e := &EvalT{T: t, Eval: eval}
 
 	t.Run(name, func(t *testing.T) {
-		f(e)
+		e.T = t
+		for i := range numEvals {
+			e.runNumber = i
+			f(e)
+		}
 	})
 }

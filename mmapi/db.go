@@ -4,6 +4,7 @@
 package mmapi
 
 import (
+	"database/sql"
 	"fmt"
 
 	sq "github.com/Masterminds/squirrel"
@@ -54,4 +55,15 @@ func (db *DBClient) DoQuery(dest any, b builder) error {
 
 func (db *DBClient) Builder() sq.StatementBuilderType {
 	return db.builder
+}
+
+func (db *DBClient) ExecBuilder(b builder) (sql.Result, error) {
+	sqlString, args, err := b.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build sql: %w", err)
+	}
+
+	sqlString = db.Rebind(sqlString)
+
+	return db.Exec(sqlString, args...)
 }

@@ -11,8 +11,19 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/mattermost/mattermost-plugin-ai/agents"
+	"github.com/mattermost/mattermost-plugin-ai/bots"
+	"github.com/mattermost/mattermost-plugin-ai/conversations"
+	"github.com/mattermost/mattermost-plugin-ai/enterprise"
+	"github.com/mattermost/mattermost-plugin-ai/i18n"
+	"github.com/mattermost/mattermost-plugin-ai/indexer"
+	"github.com/mattermost/mattermost-plugin-ai/llm"
+	"github.com/mattermost/mattermost-plugin-ai/llmcontext"
+	"github.com/mattermost/mattermost-plugin-ai/meetings"
 	"github.com/mattermost/mattermost-plugin-ai/metrics"
+	"github.com/mattermost/mattermost-plugin-ai/mmapi"
+	"github.com/mattermost/mattermost-plugin-ai/search"
+	"github.com/mattermost/mattermost-plugin-ai/streaming"
+	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 )
@@ -23,21 +34,62 @@ const (
 	ContextBotKey     = "bot"
 )
 
+type Config interface {
+	GetDefaultBotName() string
+}
+
 // API represents the HTTP API functionality for the plugin
 type API struct {
-	agents         *agents.AgentsService
-	pluginAPI      *pluginapi.Client
-	metricsService metrics.Metrics
-	metricsHandler http.Handler
+	bots                 *bots.MMBots
+	conversationsService *conversations.Conversations
+	meetingsService      *meetings.Service
+	indexerService       *indexer.Indexer
+	searchService        *search.Search
+	pluginAPI            *pluginapi.Client
+	metricsService       metrics.Metrics
+	metricsHandler       http.Handler
+	contextBuilder       *llmcontext.Builder
+	prompts              *llm.Prompts
+	config               Config
+	mmClient             mmapi.Client
+	licenseChecker       *enterprise.LicenseChecker
+	streamingService     streaming.Service
+	i18nBundle           *i18n.Bundle
 }
 
 // New creates a new API instance
-func New(agentsService *agents.AgentsService, pluginAPI *pluginapi.Client, metricsService metrics.Metrics) *API {
+func New(
+	bots *bots.MMBots,
+	conversationsService *conversations.Conversations,
+	meetingsService *meetings.Service,
+	indexerService *indexer.Indexer,
+	searchService *search.Search,
+	pluginAPI *pluginapi.Client,
+	metricsService metrics.Metrics,
+	llmContextBuilder *llmcontext.Builder,
+	config Config,
+	prompts *llm.Prompts,
+	mmClient mmapi.Client,
+	licenseChecker *enterprise.LicenseChecker,
+	streamingService streaming.Service,
+	i18nBundle *i18n.Bundle,
+) *API {
 	return &API{
-		agents:         agentsService,
-		pluginAPI:      pluginAPI,
-		metricsService: metricsService,
-		metricsHandler: metrics.NewMetricsHandler(metricsService),
+		bots:                 bots,
+		conversationsService: conversationsService,
+		meetingsService:      meetingsService,
+		indexerService:       indexerService,
+		searchService:        searchService,
+		pluginAPI:            pluginAPI,
+		metricsService:       metricsService,
+		metricsHandler:       metrics.NewMetricsHandler(metricsService),
+		contextBuilder:       llmContextBuilder,
+		prompts:              prompts,
+		config:               config,
+		mmClient:             mmClient,
+		licenseChecker:       licenseChecker,
+		streamingService:     streamingService,
+		i18nBundle:           i18nBundle,
 	}
 }
 
@@ -113,8 +165,9 @@ func (a *API) metricsMiddleware(c *gin.Context) {
 }
 
 func (a *API) aiBotRequired(c *gin.Context) {
+	// We should integreate LLM here
 	botUsername := c.Query("botUsername")
-	bot := a.agents.GetBotByUsernameOrFirst(botUsername)
+	bot := a.bots.GetBotByUsernameOrFirst(botUsername)
 	if bot == nil {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to get bot: %s", botUsername))
 		return
@@ -158,7 +211,7 @@ func (a *API) enforceEmptyBody(c *gin.Context) error {
 func (a *API) handleGetAIThreads(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 
-	threads, err := a.agents.GetAIThreads(userID)
+	threads, err := a.conversationsService.GetAIThreads(userID)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to get posts for bot DM: %w", err))
 		return
@@ -167,21 +220,75 @@ func (a *API) handleGetAIThreads(c *gin.Context) {
 	c.JSON(http.StatusOK, threads)
 }
 
+type AIBotInfo struct {
+	ID                 string                 `json:"id"`
+	DisplayName        string                 `json:"displayName"`
+	Username           string                 `json:"username"`
+	LastIconUpdate     int64                  `json:"lastIconUpdate"`
+	DMChannelID        string                 `json:"dmChannelID"`
+	ChannelAccessLevel llm.ChannelAccessLevel `json:"channelAccessLevel"`
+	ChannelIDs         []string               `json:"channelIDs"`
+	UserAccessLevel    llm.UserAccessLevel    `json:"userAccessLevel"`
+	UserIDs            []string               `json:"userIDs"`
+}
+
 type AIBotsResponse struct {
-	Bots          []agents.AIBotInfo `json:"bots"`
-	SearchEnabled bool               `json:"searchEnabled"`
+	Bots          []AIBotInfo `json:"bots"`
+	SearchEnabled bool        `json:"searchEnabled"`
+}
+
+// getAIBotsForUser returns all AI bots available to a user
+func (a *API) getAIBotsForUser(userID string) ([]AIBotInfo, error) {
+	allBots := a.bots.GetAllBots()
+
+	// Get the info from all the bots.
+	// Put the default bot first.
+	bots := make([]AIBotInfo, 0, len(allBots))
+	defaultBotName := a.config.GetDefaultBotName()
+	for i, bot := range allBots {
+		// Don't return bots the user is excluded from using.
+		if a.bots.CheckUsageRestrictionsForUser(bot, userID) != nil {
+			continue
+		}
+
+		// Get the bot DM channel ID. To avoid creating the channel unless nessary
+		/// we return "" if the channel doesn't exist.
+		dmChannelID := ""
+		channelName := model.GetDMNameFromIds(userID, bot.GetMMBot().UserId)
+		botDMChannel, err := a.pluginAPI.Channel.GetByName("", channelName, false)
+		if err == nil {
+			dmChannelID = botDMChannel.Id
+		}
+
+		bots = append(bots, AIBotInfo{
+			ID:                 bot.GetMMBot().UserId,
+			DisplayName:        bot.GetMMBot().DisplayName,
+			Username:           bot.GetMMBot().Username,
+			LastIconUpdate:     bot.GetMMBot().LastIconUpdate,
+			DMChannelID:        dmChannelID,
+			ChannelAccessLevel: bot.GetConfig().ChannelAccessLevel,
+			ChannelIDs:         bot.GetConfig().ChannelIDs,
+			UserAccessLevel:    bot.GetConfig().UserAccessLevel,
+			UserIDs:            bot.GetConfig().UserIDs,
+		})
+		if bot.GetMMBot().Username == defaultBotName {
+			bots[0], bots[i] = bots[i], bots[0]
+		}
+	}
+
+	return bots, nil
 }
 
 func (a *API) handleGetAIBots(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
-	bots, err := a.agents.GetAIBots(userID)
+	bots, err := a.getAIBotsForUser(userID)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 
 	// Check if search is enabled
-	searchEnabled := a.agents.IsSearchEnabled()
+	searchEnabled := a.searchService != nil
 
 	c.JSON(http.StatusOK, AIBotsResponse{
 		Bots:          bots,

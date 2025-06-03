@@ -1,6 +1,23 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
+// Package llm provides a unified abstraction layer for Large Language Model interactions
+// within the Mattermost AI plugin.
+//
+// This package defines the core interfaces and data structures for working with various
+// LLM providers (OpenAI, Anthropic, etc.) in a consistent manner. It handles:
+//
+//   - LanguageModel interface abstraction for different LLM providers
+//   - Conversation management with structured posts, roles, and context
+//   - Prompt template system with embedded templates and variable substitution
+//   - Streaming text responses for real-time chat interactions
+//   - Tool/function calling capabilities with JSON schema validation
+//   - Request/response structures with token counting and truncation
+//   - Context management including user info, channels, and bot configurations
+//
+// The package is designed to be provider-agnostic, allowing the plugin to work
+// with multiple LLM services through a common interface while preserving
+// provider-specific capabilities like vision, JSON output, and tool calling.
 package llm
 
 type LanguageModel interface {
@@ -15,6 +32,7 @@ type LanguageModelConfig struct {
 	Model              string
 	MaxGeneratedTokens int
 	EnableVision       bool
+	JSONOutputFormat   any
 }
 
 type LanguageModelOption func(*LanguageModelConfig)
@@ -29,3 +47,10 @@ func WithMaxGeneratedTokens(maxGeneratedTokens int) LanguageModelOption {
 		cfg.MaxGeneratedTokens = maxGeneratedTokens
 	}
 }
+func WithJSONOutput(format any) LanguageModelOption {
+	return func(cfg *LanguageModelConfig) {
+		cfg.JSONOutputFormat = format
+	}
+}
+
+type LanguageModelWrapper func(LanguageModel) LanguageModel

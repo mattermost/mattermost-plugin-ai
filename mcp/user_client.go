@@ -161,26 +161,21 @@ func (c *UserClient) connectToServer(ctx context.Context, serverID string, serve
 }
 
 // Close closes all server connections for a user client
-func (c *UserClient) Close() error {
+func (c *UserClient) Close() {
 	if len(c.clients) == 0 {
-		return nil
+		return
 	}
-
-	var lastErr error
 
 	// Close all MCP server clients
 	for serverID, client := range c.clients {
 		if err := client.client.Close(); err != nil {
 			c.log.Error("Failed to close MCP client", "userID", c.userID, "serverID", serverID, "error", err)
-			lastErr = err
 		}
 	}
 
 	// Clear clients and tool definitions
 	c.clients = make(map[string]*ServerConnection)
 	c.toolDefs = make(map[string]ToolDefinition)
-
-	return lastErr
 }
 
 // ConvertPropertiesToOrderedMap converts a map of properties to an OrderedMap using JSON marshaling

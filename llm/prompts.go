@@ -4,7 +4,6 @@
 package llm
 
 import (
-	"embed"
 	"fmt"
 	"io/fs"
 	"strings"
@@ -19,13 +18,8 @@ type Prompts struct {
 
 const PromptExtension = "tmpl"
 
-//go:embed prompts
-var PromptsFolder embed.FS
-
-//go:generate go run generate_prompt_vars.go
-
 func NewPrompts(input fs.FS) (*Prompts, error) {
-	templates, err := template.ParseFS(input, "prompts/*")
+	templates, err := template.ParseFS(input, "*.tmpl")
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse prompt templates: %w", err)
 	}
