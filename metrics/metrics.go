@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	MetricsNamespace       = "copilot"
+	MetricsNamespace       = "agents"
 	MetricsSubsystemSystem = "system"
 	MetricsSubsystemHTTP   = "http"
 	MetricsSubsystemAPI    = "api"

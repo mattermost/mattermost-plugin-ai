@@ -172,7 +172,7 @@ const RHSNewTab = ({selectPost, setCurrentTab, activeBot}: Props) => {
         editorComponent = (
             <AdvancedTextEditor
                 channelId={botChannelId}
-                placeholder={intl.formatMessage({defaultMessage: 'Ask Copilot anything...'})}
+                placeholder={intl.formatMessage({defaultMessage: 'Ask Agents anything...'})}
                 isThreadView={true}
                 location={'RHS_COMMENT'}
                 afterSubmit={(result: {created?: {id: string}}) => {
@@ -187,8 +187,8 @@ const RHSNewTab = ({selectPost, setCurrentTab, activeBot}: Props) => {
         editorComponent = (
             <CreatePost
                 channelId={botChannelId}
-                placeholder={intl.formatMessage({defaultMessage: 'Ask Copilot anything...'})}
-                rootId={'ai_copilot'}
+                placeholder={intl.formatMessage({defaultMessage: 'Ask Agents anything...'})}
+                rootId={'ai_agents'}
                 onSubmit={async (p: any) => {
                     const post = {...p};
                     post.channel_id = botChannelId || '';
@@ -201,7 +201,7 @@ const RHSNewTab = ({selectPost, setCurrentTab, activeBot}: Props) => {
                     dispatch({
                         type: 'SET_GLOBAL_ITEM',
                         data: {
-                            name: 'comment_draft_ai_copilot',
+                            name: 'comment_draft_ai_agents',
                             value: {message: '', fileInfos: [], uploadsInProgress: []},
                         },
                     });
@@ -215,7 +215,7 @@ const RHSNewTab = ({selectPost, setCurrentTab, activeBot}: Props) => {
                     dispatch({
                         type: 'SET_GLOBAL_ITEM',
                         data: {
-                            name: 'comment_draft_ai_copilot',
+                            name: 'comment_draft_ai_agents',
                             value: newDraft,
                         },
                     });
@@ -228,8 +228,8 @@ const RHSNewTab = ({selectPost, setCurrentTab, activeBot}: Props) => {
         <RHSPaddingContainer>
             <ReverseScroll>
                 <RHSImage/>
-                <RHSTitle><FormattedMessage defaultMessage='Ask Copilot anything'/></RHSTitle>
-                <RHSText><FormattedMessage defaultMessage='The Copilot is here to help. Choose from the prompts below or write your own.'/></RHSText>
+                <RHSTitle><FormattedMessage defaultMessage='Ask Agents anything'/></RHSTitle>
+                <RHSText><FormattedMessage defaultMessage='The Agents is here to help. Choose from the prompts below or write your own.'/></RHSText>
                 <QuestionOptions>
                     <OptionButton onClick={addBrainstormingIdeas}>
                         <LightbulbOutlineIcon/>

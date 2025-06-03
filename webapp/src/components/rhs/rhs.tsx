@@ -102,16 +102,16 @@ export default function RHS() {
             <RhsContainer>
                 <RHSPaddingContainer>
                     <RHSImage/>
-                    <RHSTitle><FormattedMessage defaultMessage='Copilot is not yet configured for this workspace'/></RHSTitle>
+                    <RHSTitle><FormattedMessage defaultMessage='Agents is not yet configured for this workspace'/></RHSTitle>
                     <RHSText><FormattedMessage defaultMessage='A system admin needs to complete the configuration before it can be used.'/></RHSText>
                     <RHSDivider/>
-                    <RHSSubtitle><FormattedMessage defaultMessage='What is Copilot?'/></RHSSubtitle>
-                    <RHSText><FormattedMessage defaultMessage='Copilot is a plugin that enables you to leverage the power of AI to:'/></RHSText>
+                    <RHSSubtitle><FormattedMessage defaultMessage='What is Agents?'/></RHSSubtitle>
+                    <RHSText><FormattedMessage defaultMessage='Agents is a plugin that enables you to leverage the power of AI to:'/></RHSText>
                     <RHSText>
                         <ul>
                             <RHSBullet><FormattedMessage defaultMessage='Get caught up quickly with instant summarization for channels and threads.'/></RHSBullet>
                             <RHSBullet><FormattedMessage defaultMessage='Create meeting summaries in a flash.'/></RHSBullet>
-                            <RHSBullet><FormattedMessage defaultMessage='Ask Copilot anything to get quick answers.'/></RHSBullet>
+                            <RHSBullet><FormattedMessage defaultMessage='Ask Agents anything to get quick answers.'/></RHSBullet>
                         </ul>
                     </RHSText>
 

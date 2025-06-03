@@ -41,7 +41,7 @@ const defaultNewBot: LLMBotConfig = {
 export const firstNewBot = {
     ...defaultNewBot,
     name: 'ai',
-    displayName: 'Copilot',
+    displayName: 'Agents',
 };
 
 type Props = {
@@ -59,7 +59,7 @@ const Bots = (props: Props) => {
         e.preventDefault();
         const id = Math.random().toString(36).substring(2, 22);
         if (props.bots.length === 0) {
-            // Suggest the '@ai' and 'Copilot' name for the first bot
+            // Suggest the '@ai' and 'Agents' name for the first bot
             props.onChange([{
                 ...firstNewBot,
                 id,

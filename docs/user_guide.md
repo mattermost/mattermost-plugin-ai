@@ -10,7 +10,7 @@ There are multiple ways to interact with AI features in Mattermost:
 
 ### Web and Desktop Applications
 
-You can access AI features through the right sidebar by clicking the Agents icon in the apps sidebar, mention an AI bot in any channel where you have access (like `@copilot`), use the AI Actions menu by hovering over the first message in any conversation thread, or use the "Ask AI" option in channels with unread messages.
+You can access AI features through the right sidebar by clicking the Agents icon in the apps sidebar, mention an AI bot in any channel where you have access (like `@agents`), use the AI Actions menu by hovering over the first message in any conversation thread, or use the "Ask AI" option in channels with unread messages.
 
 If your Mattermost workspace has multiple Agent bots, switch between them by selecting the bot name in the top right corner of the Agents panel.
 
@@ -28,7 +28,7 @@ You can have conversations with Agents in several ways:
 
 **Direct Messages**: Start a DM with a bot to have a private conversation. Chat privately with an Agent in direct message threads like you would any other Mattermost user.
 
-**Channel Mentions**: Invoke the power of Agents by @mentioning Agent bots by their username, like `@copilot`, in any thread to bring Agents capabilities to your conversation. The bot responds in a thread to keep channels organized, and other team members can view and contribute to the conversation. An Agent can help extract information quickly or transform discussions into charts, resources, documentation, and more, and can find action items and open questions in new messages.
+**Channel Mentions**: Invoke the power of Agents by @mentioning Agent bots by their username, like `@agents`, in any thread to bring Agents capabilities to your conversation. The bot responds in a thread to keep channels organized, and other team members can view and contribute to the conversation. An Agent can help extract information quickly or transform discussions into charts, resources, documentation, and more, and can find action items and open questions in new messages.
 
 ### Bot Selection
 
