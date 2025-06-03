@@ -115,6 +115,11 @@ func DeepCopyJSON[T any](src T) (T, error) {
 }
 
 func OpenAIConfigFromServiceConfig(serviceConfig llm.ServiceConfig) openai.Config {
+	streamingTimeout := time.Second * 30
+	if serviceConfig.StreamingTimeoutSeconds > 0 {
+		streamingTimeout = time.Duration(serviceConfig.StreamingTimeoutSeconds) * time.Second
+	}
+
 	return openai.Config{
 		APIKey:           serviceConfig.APIKey,
 		APIURL:           serviceConfig.APIURL,
@@ -122,7 +127,7 @@ func OpenAIConfigFromServiceConfig(serviceConfig llm.ServiceConfig) openai.Confi
 		DefaultModel:     serviceConfig.DefaultModel,
 		InputTokenLimit:  serviceConfig.InputTokenLimit,
 		OutputTokenLimit: serviceConfig.OutputTokenLimit,
-		StreamingTimeout: time.Duration(serviceConfig.StreamingTimeoutSeconds) * time.Second,
+		StreamingTimeout: streamingTimeout,
 		SendUserID:       serviceConfig.SendUserID,
 	}
 }
