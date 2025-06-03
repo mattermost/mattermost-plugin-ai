@@ -42,29 +42,29 @@ If you have an Enterprise license, upload it to unlock additional features.
 
 For general settings, you can toggle to enable or disable the plugin system-wide, enable debug logging for troubleshooting (use only when needed), and configure the hostname allowlist for API calls.
 
-### Bot Configuration
+### Agent Configuration
 
-Configure an LLM for your Agents integration by going to **System Console > Plugins > Agents** and selecting **Add an Agent Bot**. The plugin supports creating multiple Agent bots with different configurations.
+Configure an LLM for your Agents integration by going to **System Console > Plugins > Agents** and selecting **Add an Agent**. The plugin supports creating multiple Agents with different configurations.
 
-Click **Add an Agent Bot** to create a new Agent, then configure the bot settings:
+Click **Add an Agent** to create a new Agent, then configure the agent settings:
 
 | Setting | Description |
 |---------|-------------|
 | **Display Name** | User-facing name shown in Mattermost |
-| **Bot Username** | The mattermost username for the bot. @ mentions to the bot will use this name |
-| **Bot Avatar** | Custom image for the bot |
-| **Service** | LLM provider for this bot (OpenAI, Anthropic, Azure OpenAI, OpenAI-compatible) |
+| **Agent Username** | The mattermost username for the agent. @ mentions to the agent will use this name |
+| **Agent Avatar** | Custom image for the agent |
+| **Service** | LLM provider for this agent (OpenAI, Anthropic, Azure OpenAI, OpenAI-compatible) |
 | **Send User ID** | Whether to send Mattermost user IDs to the LLM provider |
 | **Default Model** | Specific model to use from your chosen provider |
 | **Input Token Limit** | Maximum tokens allowed in input (model-dependent) |
 | **Output Token Limit** | Maximum tokens allowed in output (model-dependent) |
 | **Streaming Timeout Seconds** | Timeout in seconds for streaming responses |
-| **Custom Instructions** | Custom instructions that define the bot's personality and capabilities |
-| **Enable Vision** | Enable Vision to allow the bot to process images. Requires a compatible model. |
+| **Custom Instructions** | Custom instructions that define the agent's personality and capabilities |
+| **Enable Vision** | Enable Vision to allow the agent to process images. Requires a compatible model. |
 | **Enable Tools** | By default some tool use is enabled to allow for features such as integrations with JIRA. Disabling this allows use of models that do not support or are not very good at tool use. Some features will not work without tools. |
-| **Access Control** | Set which teams, channels, and users can access this bot |
+| **Access Control** | Set which teams, channels, and users can access this agent |
 
-Click **Save** to create the bot.
+Click **Save** to create the agent.
 
 **Note**: The ability to define multiple LLMs for your Agents integration requires a Mattermost Enterprise license.
 
@@ -82,9 +82,9 @@ See the [Provider Guide](providers.md) for detailed provider-specific configurat
 
 ### Custom Instructions
 
-Text input in the custom instructions field is included in the prompt for every request. Use this to give your bots extra context or instructions. 
+Text input in the custom instructions field is included in the prompt for every request. Use this to give your agents extra context or instructions. 
 
-For example, you could list your organization's specific acronyms so the bot knows your vernacular and users can ask for definitions. Or you could give it specialized instructions like adopting a specific personality or following a certain workflow. By customizing the instructions for each individual bot, you can create a more tailored AI experience for your specific needs.
+For example, you could list your organization's specific acronyms so the agent knows your vernacular and users can ask for definitions. Or you could give it specialized instructions like adopting a specific personality or following a certain workflow. By customizing the instructions for each individual agent, you can create a more tailored AI experience for your specific needs.
 
 
 ### Embedding Search Configuration (Experimental)
@@ -106,7 +106,7 @@ Run the initial indexing process after configuration.
 
 ### Permission Configuration
 
-Configure who can access AI features by setting team-level, channel-level, and user-level permissions for each bot.
+Configure who can access AI features by setting team-level, channel-level, and user-level permissions for each agent.
 
 ## Management Tasks
 
@@ -151,7 +151,7 @@ Enhanced logging can help diagnose issues:
 
 ## Integrations
 
-Currently integrations are limited to direct messages between users and the bots. The integrations won't operate from within public, private, or group message channels.
+Currently integrations are limited to direct messages between users and the agents. The integrations won't operate from within public, private, or group message channels.
 
 ### Built-in Tool Integrations
 
@@ -212,7 +212,7 @@ The Model Context Protocol (MCP) integration allows Agents to connect to externa
 
 The following features require an Enterprise license:
 
-- Multiple bot configurations
+- Multiple agent configurations
 - Fine-grained access controls
 - Embedding search (Experimental)
 - MCP Support

@@ -10,13 +10,13 @@ There are multiple ways to interact with AI features in Mattermost:
 
 ### Web and Desktop Applications
 
-You can access AI features through the right sidebar by clicking the Agents icon in the apps sidebar, mention an AI bot in any channel where you have access (like `@agents`), use the AI Actions menu by hovering over the first message in any conversation thread, or use the "Ask AI" option in channels with unread messages.
+You can access AI features through the right sidebar by clicking the Agents icon in the apps sidebar, mention an AI agent in any channel where you have access (like `@agents`), use the AI Actions menu by hovering over the first message in any conversation thread, or use the "Ask AI" option in channels with unread messages.
 
-If your Mattermost workspace has multiple Agent bots, switch between them by selecting the bot name in the top right corner of the Agents panel.
+If your Mattermost workspace has multiple Agents, switch between them by selecting the agent name in the top right corner of the Agents panel.
 
 ### Mobile Applications
 
-Start or open a direct message with the Agent bot. If your administrator has configured multiple bots, switch between them by starting or opening each bot by name. 
+Start or open a direct message with the Agent bot. If your administrator has configured multiple agents, switch between them by starting or opening each agent by name. 
 
 ## Conversational Features
 
@@ -26,13 +26,13 @@ You can have conversations with Agents in several ways:
 
 **Agents Panel**: Use the Agents right-hand sidebar for a streamlined experience. Begin with suggested prompts, or engage in a private thread with an Agent for a tailored experience. If you have follow-up questions or need further insights, simply ask. You can also attach files for AI analysis or reference.
 
-**Direct Messages**: Start a DM with a bot to have a private conversation. Chat privately with an Agent in direct message threads like you would any other Mattermost user.
+**Direct Messages**: Start a DM with an agent to have a private conversation. Chat privately with an Agent in direct message threads like you would any other Mattermost user.
 
-**Channel Mentions**: Invoke the power of Agents by @mentioning Agent bots by their username, like `@agents`, in any thread to bring Agents capabilities to your conversation. The bot responds in a thread to keep channels organized, and other team members can view and contribute to the conversation. An Agent can help extract information quickly or transform discussions into charts, resources, documentation, and more, and can find action items and open questions in new messages.
+**Channel Mentions**: Invoke the power of Agents by @mentioning Agents by their username, like `@agents`, in any thread to bring Agents capabilities to your conversation. The agent responds in a thread to keep channels organized, and other team members can view and contribute to the conversation. An Agent can help extract information quickly or transform discussions into charts, resources, documentation, and more, and can find action items and open questions in new messages.
 
 ### Bot Selection
 
-If multiple bots are configured, you can select your preferred bot in the Agents panel or mention specific bots by name in channels.
+If multiple agents are configured, you can select your preferred agent in the Agents panel or mention specific agents by name in channels.
 
 ### Tool Approval and Security
 
@@ -56,7 +56,7 @@ This is particularly useful for catching up on long discussions, creating meetin
 
 To summarize unread Mattermost channels, scroll to the "New Messages" cutoff in a channel with unread messages, select "Ask AI", and then select "Summarize new messages". The channel summary is generated in the Agents pane, and only you can view the summary.
 
-When your system admin has configured multiple bots, you can switch between them by selecting one from the drop-down menu.
+When your system admin has configured multiple agents, you can switch between them by selecting one from the drop-down menu.
 
 ## Semantic Search (Enterprise, Experimental)
 
@@ -70,7 +70,7 @@ This feature accelerates decision-making and improves information flows by makin
 
 For AI models with vision capabilities, attach an image to your message when chatting with an Agent and ask questions about the image or request analysis. The Agent will respond based on the visual content.
 
-**Note**: Image analysis is in BETA. Your administrator must enable vision capabilities for your bot, and the underlying AI model must support vision features.
+**Note**: Image analysis is in BETA. Your administrator must enable vision capabilities for your agent, and the underlying AI model must support vision features.
 
 ## Call Recording and Meeting Summarization
 

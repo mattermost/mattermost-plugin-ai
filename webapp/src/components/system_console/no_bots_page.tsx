@@ -18,11 +18,11 @@ const NoBotsPage = (props: Props) => {
     return (
         <StyledPanelContainer>
             <SparklesGraphic/>
-            <Title>{'No AI bots added yet'}</Title>
-            <Subtitle>{'To get started with Agents, add an AI bot'}</Subtitle>
+            <Title>{'No AI agents added yet'}</Title>
+            <Subtitle>{'To get started with Agents, add an AI agent'}</Subtitle>
             <PrimaryButton onClick={props.onAddBotPressed}>
                 <StyledPlusIcon/>
-                {'Add an AI Bot'}
+                {'Add an AI Agent'}
             </PrimaryButton>
         </StyledPanelContainer>
     );
