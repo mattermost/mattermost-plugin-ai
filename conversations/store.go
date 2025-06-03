@@ -13,7 +13,7 @@ import (
 func (c *Conversations) SaveTitleAsync(threadID, title string) {
 	go func() {
 		if err := c.SaveTitle(threadID, title); err != nil {
-			c.pluginAPI.Log.Error("failed to save title: " + err.Error())
+			c.mmClient.LogError("failed to save title: " + err.Error())
 		}
 	}()
 }

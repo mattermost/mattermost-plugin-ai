@@ -9,6 +9,7 @@ import (
 
 	"github.com/mattermost/mattermost-plugin-ai/bots"
 	"github.com/mattermost/mattermost-plugin-ai/enterprise"
+	"github.com/mattermost/mattermost-plugin-ai/mmapi/mocks"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin/plugintest"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
@@ -30,13 +31,14 @@ func (e *TestEnvironment) Cleanup(t *testing.T) {
 func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 	mockAPI := &plugintest.API{}
 	client := pluginapi.NewClient(mockAPI, nil)
+	mmClient := mocks.NewMockClient(t)
 
 	licenseChecker := enterprise.NewLicenseChecker(client)
 	botsService := bots.New(mockAPI, client, licenseChecker, nil, &http.Client{})
 
 	conversations := &Conversations{
-		pluginAPI: client,
-		bots:      botsService,
+		mmClient: mmClient,
+		bots:     botsService,
 	}
 
 	return &TestEnvironment{

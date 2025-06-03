@@ -40,7 +40,6 @@ type AIThread struct {
 type Conversations struct {
 	prompts          *llm.Prompts
 	mmClient         mmapi.Client
-	pluginAPI        *pluginapi.Client
 	streamingService streaming.Service
 	contextBuilder   *llmcontext.Builder
 	bots             *bots.MMBots
@@ -59,7 +58,6 @@ type MeetingsService interface {
 func New(
 	prompts *llm.Prompts,
 	mmClient mmapi.Client,
-	pluginAPI *pluginapi.Client,
 	streamingService streaming.Service,
 	contextBuilder *llmcontext.Builder,
 	botsService *bots.MMBots,
@@ -71,7 +69,6 @@ func New(
 	return &Conversations{
 		prompts:          prompts,
 		mmClient:         mmClient,
-		pluginAPI:        pluginAPI,
 		streamingService: streamingService,
 		contextBuilder:   contextBuilder,
 		bots:             botsService,
@@ -134,7 +131,7 @@ func (c *Conversations) ProcessUserRequestWithContext(bot *bots.Bot, postingUser
 	go func() {
 		request := "Write a short title for the following request. Include only the title and nothing else, no quotations. Request:\n" + post.Message
 		if err := c.GenerateTitle(bot, request, post.Id, context); err != nil {
-			c.pluginAPI.Log.Error("Failed to generate title", "error", err.Error())
+			c.mmClient.LogError("Failed to generate title", "error", err.Error())
 			return
 		}
 	}()
@@ -180,16 +177,16 @@ func (c *Conversations) existingConversationToLLMPosts(bot *bots.Bot, conversati
 	// Handle thread summarization requests
 	originalThreadID, ok := conversation.Posts[0].GetProp(ThreadIDProp).(string)
 	if ok && originalThreadID != "" && conversation.Posts[0].UserId == bot.GetMMBot().UserId {
-		threadPost, err := c.pluginAPI.Post.GetPost(originalThreadID)
+		threadPost, err := c.mmClient.GetPost(originalThreadID)
 		if err != nil {
 			return nil, err
 		}
-		threadChannel, err := c.pluginAPI.Channel.Get(threadPost.ChannelId)
+		threadChannel, err := c.mmClient.GetChannel(threadPost.ChannelId)
 		if err != nil {
 			return nil, err
 		}
 
-		if !c.pluginAPI.User.HasPermissionToChannel(context.RequestingUser.Id, threadChannel.Id, model.PermissionReadChannel) ||
+		if !c.mmClient.HasPermissionToChannel(context.RequestingUser.Id, threadChannel.Id, model.PermissionReadChannel) ||
 			c.bots.CheckUsageRestrictions(context.RequestingUser.Id, bot, threadChannel) != nil {
 			T := i18n.LocalizerFunc(c.i18n, context.RequestingUser.Locale)
 			responsePost := &model.Post{
@@ -239,19 +236,19 @@ func (c *Conversations) GetAIThreads(userID string) ([]AIThread, error) {
 	dmChannelIDs := []string{}
 	for _, bot := range allBots {
 		channelName := model.GetDMNameFromIds(userID, bot.GetMMBot().UserId)
-		botDMChannel, err := c.pluginAPI.Channel.GetByName("", channelName, false)
+		botDMChannel, err := c.mmClient.GetChannelByName("", channelName, false)
 		if err != nil {
 			if errors.Is(err, pluginapi.ErrNotFound) {
 				// Channel doesn't exist yet, so we'll skip it
 				continue
 			}
-			c.pluginAPI.Log.Error("unable to get DM channel for bot", "error", err, "bot_id", bot.GetMMBot().UserId)
+			c.mmClient.LogError("unable to get DM channel for bot", "error", err, "bot_id", bot.GetMMBot().UserId)
 			continue
 		}
 
 		// Extra permissions checks are not totally necessary since a user should always have permission to read their own DMs
-		if !c.pluginAPI.User.HasPermissionToChannel(userID, botDMChannel.Id, model.PermissionReadChannel) {
-			c.pluginAPI.Log.Debug("user doesn't have permission to read channel", "user_id", userID, "channel_id", botDMChannel.Id, "bot_id", bot.GetMMBot().UserId)
+		if !c.mmClient.HasPermissionToChannel(userID, botDMChannel.Id, model.PermissionReadChannel) {
+			c.mmClient.LogDebug("user doesn't have permission to read channel", "user_id", userID, "channel_id", botDMChannel.Id, "bot_id", bot.GetMMBot().UserId)
 			continue
 		}
 
@@ -267,7 +264,7 @@ func (c *Conversations) BotCreateNonResponsePost(botid string, requesterUserID s
 	streaming.ModifyPostForBot(botid, requesterUserID, post, "")
 	post.AddProp(streaming.NoRegen, true)
 
-	if err := c.pluginAPI.Post.CreatePost(post); err != nil {
+	if err := c.mmClient.CreatePost(post); err != nil {
 		return err
 	}
 
@@ -289,9 +286,9 @@ func (c *Conversations) PostToAIPost(bot *bots.Bot, post *model.Post) llm.Post {
 	}
 
 	for _, fileID := range post.FileIds {
-		fileInfo, err := c.pluginAPI.File.GetInfo(fileID)
+		fileInfo, err := c.mmClient.GetFileInfo(fileID)
 		if err != nil {
-			c.pluginAPI.Log.Error("Error getting file info", "error", err)
+			c.mmClient.LogError("Error getting file info", "error", err)
 			continue
 		}
 
@@ -300,14 +297,14 @@ func (c *Conversations) PostToAIPost(bot *bots.Bot, post *model.Post) llm.Post {
 		if trimmedContent := strings.TrimSpace(fileInfo.Content); trimmedContent != "" {
 			content = trimmedContent
 		} else if strings.HasPrefix(fileInfo.MimeType, "text/") {
-			file, err := c.pluginAPI.File.Get(fileID)
+			file, err := c.mmClient.GetFile(fileID)
 			if err != nil {
-				c.pluginAPI.Log.Error("Error getting file", "error", err)
+				c.mmClient.LogError("Error getting file", "error", err)
 				continue
 			}
 			contentBytes, err := io.ReadAll(io.LimitReader(file, maxFileSize))
 			if err != nil {
-				c.pluginAPI.Log.Error("Error reading file content", "error", err)
+				c.mmClient.LogError("Error reading file content", "error", err)
 				continue
 			}
 			content = string(contentBytes)
@@ -322,9 +319,9 @@ func (c *Conversations) PostToAIPost(bot *bots.Bot, post *model.Post) llm.Post {
 		}
 
 		if bot.GetConfig().EnableVision && isImageMimeType(fileInfo.MimeType) {
-			file, err := c.pluginAPI.File.Get(fileID)
+			file, err := c.mmClient.GetFile(fileID)
 			if err != nil {
-				c.pluginAPI.Log.Error("Error getting file", "error", err)
+				c.mmClient.LogError("Error getting file", "error", err)
 				continue
 			}
 			filesForUpstream = append(filesForUpstream, llm.File{
@@ -352,7 +349,7 @@ func (c *Conversations) PostToAIPost(bot *bots.Bot, post *model.Post) llm.Post {
 	if ok {
 		var toolCalls []llm.ToolCall
 		if err := json.Unmarshal([]byte(pendingTools), &toolCalls); err != nil {
-			c.pluginAPI.Log.Error("Error unmarshalling tool calls", "error", err)
+			c.mmClient.LogError("Error unmarshalling tool calls", "error", err)
 		} else {
 			tools = toolCalls
 		}

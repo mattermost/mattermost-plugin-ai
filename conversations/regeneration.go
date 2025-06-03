@@ -37,7 +37,7 @@ func (c *Conversations) HandleRegenerate(userID string, post *model.Post, channe
 		return errors.New("tagged no regen")
 	}
 
-	user, err := c.pluginAPI.User.Get(userID)
+	user, err := c.mmClient.GetUser(userID)
 	if err != nil {
 		return fmt.Errorf("unable to get user to regen post: %w", err)
 	}
@@ -58,15 +58,15 @@ func (c *Conversations) HandleRegenerate(userID string, post *model.Post, channe
 	case threadIDProp != nil:
 		threadID := threadIDProp.(string)
 		analysisType := analysisTypeProp.(string)
-		config := c.pluginAPI.Configuration.GetConfig()
+		config := c.mmClient.GetConfig()
 		siteURL := config.ServiceSettings.SiteURL
 		post.Message = i18n.FormatAnalysisPostMessage(c.i18n, user.Locale, threadID, analysisType, *siteURL)
-		threadPost, getPostErr := c.pluginAPI.Post.GetPost(threadID)
+		threadPost, getPostErr := c.mmClient.GetPost(threadID)
 		if getPostErr != nil {
 			return fmt.Errorf("could not get thread post on regen: %w", getPostErr)
 		}
 
-		if !c.pluginAPI.User.HasPermissionToChannel(userID, threadPost.ChannelId, model.PermissionReadChannel) {
+		if !c.mmClient.HasPermissionToChannel(userID, threadPost.ChannelId, model.PermissionReadChannel) {
 			return errors.New("user doesn't have permission to read channel original thread in in")
 		}
 
@@ -96,12 +96,12 @@ func (c *Conversations) HandleRegenerate(userID string, post *model.Post, channe
 		post.Message = ""
 		referencedRecordingFileID := referenceRecordingFileIDProp.(string)
 
-		fileInfo, getErr := c.pluginAPI.File.GetInfo(referencedRecordingFileID)
+		fileInfo, getErr := c.mmClient.GetFileInfo(referencedRecordingFileID)
 		if getErr != nil {
 			return fmt.Errorf("could not get transcription file on regen: %w", getErr)
 		}
 
-		reader, getErr := c.pluginAPI.File.Get(post.FileIds[0])
+		reader, getErr := c.mmClient.GetFile(post.FileIds[0])
 		if getErr != nil {
 			return fmt.Errorf("could not get transcription file on regen: %w", getErr)
 		}
@@ -114,7 +114,7 @@ func (c *Conversations) HandleRegenerate(userID string, post *model.Post, channe
 			return errors.New("transcription is empty on regen")
 		}
 
-		originalFileChannel, channelErr := c.pluginAPI.Channel.Get(fileInfo.ChannelId)
+		originalFileChannel, channelErr := c.mmClient.GetChannel(fileInfo.ChannelId)
 		if channelErr != nil {
 			return fmt.Errorf("could not get channel of original recording on regen: %w", channelErr)
 		}
@@ -133,7 +133,7 @@ func (c *Conversations) HandleRegenerate(userID string, post *model.Post, channe
 	case referencedTranscriptPostProp != nil:
 		post.Message = ""
 		referencedTranscriptionPostID := referencedTranscriptPostProp.(string)
-		referencedTranscriptionPost, postErr := c.pluginAPI.Post.GetPost(referencedTranscriptionPostID)
+		referencedTranscriptionPost, postErr := c.mmClient.GetPost(referencedTranscriptionPostID)
 		if postErr != nil {
 			return fmt.Errorf("could not get transcription post on regen: %w", postErr)
 		}
@@ -142,7 +142,7 @@ func (c *Conversations) HandleRegenerate(userID string, post *model.Post, channe
 		if fileIDErr != nil {
 			return fmt.Errorf("unable to get transcription file id: %w", fileIDErr)
 		}
-		transcriptionFileReader, fileErr := c.pluginAPI.File.Get(transcriptionFileID)
+		transcriptionFileReader, fileErr := c.mmClient.GetFile(transcriptionFileID)
 		if fileErr != nil {
 			return fmt.Errorf("unable to read calls file: %w", fileErr)
 		}
@@ -171,7 +171,7 @@ func (c *Conversations) HandleRegenerate(userID string, post *model.Post, channe
 		if !ok {
 			return errors.New("post missing responding to prop")
 		}
-		respondingToPost, getErr := c.pluginAPI.Post.GetPost(respondingToPostID)
+		respondingToPost, getErr := c.mmClient.GetPost(respondingToPostID)
 		if getErr != nil {
 			return fmt.Errorf("could not get post being responded to: %w", getErr)
 		}
@@ -199,7 +199,7 @@ func (c *Conversations) HandleRegenerate(userID string, post *model.Post, channe
 		}
 	}
 
-	config := c.pluginAPI.Configuration.GetConfig()
+	config := c.mmClient.GetConfig()
 	c.streamingService.StreamToPost(ctx, result, post, *config.LocalizationSettings.DefaultServerLocale)
 
 	return nil
