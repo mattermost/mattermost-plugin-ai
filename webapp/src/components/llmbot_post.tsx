@@ -286,7 +286,7 @@ export const LLMBotPost = (props: Props) => {
             )}
             { showPostbackButton &&
             <PostSummaryHelpMessage>
-                <FormattedMessage defaultMessage='Would you like to post this summary to the original call thread? You can also ask Copilot to make changes.'/>
+                <FormattedMessage defaultMessage='Would you like to post this summary to the original call thread? You can also ask Agents to make changes.'/>
             </PostSummaryHelpMessage>
             }
             { showControlsBar &&

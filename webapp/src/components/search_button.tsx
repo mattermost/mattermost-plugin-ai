@@ -29,7 +29,7 @@ const SearchButton = () => {
     }
     return (
         <SearchButtonContainer>
-            <StyledIconAI/>{'Copilot'}
+            <StyledIconAI/>{'Agents'}
         </SearchButtonContainer>
     );
 };

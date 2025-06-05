@@ -38,7 +38,7 @@ func TestBotConfig_IsValid(t *testing.T) {
 				DisplayName:        "xxx",
 				CustomInstructions: "",
 				Service: ServiceConfig{
-					Name:                    "Copilot",
+					Name:                    "Agents",
 					Type:                    "openai",
 					APIKey:                  "sk-xyz",
 					OrgID:                   "org-xyz",
@@ -59,7 +59,7 @@ func TestBotConfig_IsValid(t *testing.T) {
 				DisplayName:        "xxx",
 				CustomInstructions: "",
 				Service: ServiceConfig{
-					Name:                    "Copilot",
+					Name:                    "Agents",
 					Type:                    "openai",
 					APIKey:                  "sk-xyz",
 					OrgID:                   "org-xyz",
@@ -80,7 +80,7 @@ func TestBotConfig_IsValid(t *testing.T) {
 				DisplayName:        "xxx",
 				CustomInstructions: "",
 				Service: ServiceConfig{
-					Name:                    "Copilot",
+					Name:                    "Agents",
 					Type:                    "openai",
 					APIKey:                  "sk-xyz",
 					OrgID:                   "org-xyz",
@@ -101,7 +101,7 @@ func TestBotConfig_IsValid(t *testing.T) {
 				DisplayName:        "", // bad
 				CustomInstructions: "",
 				Service: ServiceConfig{
-					Name:                    "Copilot",
+					Name:                    "Agents",
 					Type:                    "openai",
 					APIKey:                  "sk-xyz",
 					OrgID:                   "org-xyz",
@@ -122,7 +122,7 @@ func TestBotConfig_IsValid(t *testing.T) {
 				DisplayName:        "xxx",
 				CustomInstructions: "",
 				Service: ServiceConfig{
-					Name:                    "Copilot",
+					Name:                    "Agents",
 					Type:                    "mattermostllm", // bad
 					APIKey:                  "sk-xyz",
 					OrgID:                   "org-xyz",
@@ -143,7 +143,7 @@ func TestBotConfig_IsValid(t *testing.T) {
 				DisplayName:        "xxx",
 				CustomInstructions: "",
 				Service: ServiceConfig{
-					Name:                    "Copilot",
+					Name:                    "Agents",
 					Type:                    "openai",
 					APIKey:                  "sk-xyz",
 					OrgID:                   "org-xyz",
@@ -164,7 +164,7 @@ func TestBotConfig_IsValid(t *testing.T) {
 				DisplayName:        "xxx",
 				CustomInstructions: "",
 				Service: ServiceConfig{
-					Name:                    "Copilot",
+					Name:                    "Agents",
 					Type:                    "openai",
 					APIKey:                  "sk-xyz",
 					OrgID:                   "org-xyz",
@@ -185,7 +185,7 @@ func TestBotConfig_IsValid(t *testing.T) {
 				DisplayName:        "xxx",
 				CustomInstructions: "",
 				Service: ServiceConfig{
-					Name:                    "Copilot",
+					Name:                    "Agents",
 					Type:                    "openai",
 					APIKey:                  "sk-xyz",
 					OrgID:                   "org-xyz",
@@ -206,7 +206,7 @@ func TestBotConfig_IsValid(t *testing.T) {
 				DisplayName:        "xxx",
 				CustomInstructions: "",
 				Service: ServiceConfig{
-					Name:                    "Copilot",
+					Name:                    "Agents",
 					Type:                    "openai",
 					APIKey:                  "sk-xyz",
 					OrgID:                   "org-xyz",
@@ -227,7 +227,7 @@ func TestBotConfig_IsValid(t *testing.T) {
 				DisplayName:        "xxx",
 				CustomInstructions: "",
 				Service: ServiceConfig{
-					Name:                    "Copilot",
+					Name:                    "Agents",
 					Type:                    "openaicompatible",
 					APIKey:                  "sk-xyz",
 					APIURL:                  "", // bad
@@ -249,7 +249,7 @@ func TestBotConfig_IsValid(t *testing.T) {
 				DisplayName:        "xxx",
 				CustomInstructions: "",
 				Service: ServiceConfig{
-					Name:                    "Copilot",
+					Name:                    "Agents",
 					Type:                    "openaicompatible",
 					APIKey:                  "", // not bad
 					APIURL:                  "http://localhost",

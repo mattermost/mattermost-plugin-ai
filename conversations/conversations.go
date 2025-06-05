@@ -195,7 +195,7 @@ func (c *Conversations) existingConversationToLLMPosts(bot *bots.Bot, conversati
 			responsePost := &model.Post{
 				ChannelId: context.Channel.Id,
 				RootId:    originalThreadID,
-				Message:   T("copilot.no_longer_access_error", "Sorry, you no longer have access to the original thread."),
+				Message:   T("agents.no_longer_access_error", "Sorry, you no longer have access to the original thread."),
 			}
 			if err = c.BotCreateNonResponsePost(bot.GetMMBot().UserId, context.RequestingUser.Id, responsePost); err != nil {
 				return nil, err

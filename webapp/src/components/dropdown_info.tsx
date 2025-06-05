@@ -49,7 +49,7 @@ export const DropdownInfoOnlyVisibleToYou = () => {
     return (
         <DropdownMenuItemInfo>
             <LightbulbOutlineIconStyled/>
-            <FormattedMessage defaultMessage='Copilot posts responses in the right panel which will only be visible to you.'/>
+            <FormattedMessage defaultMessage='Agents posts responses in the right panel which will only be visible to you.'/>
         </DropdownMenuItemInfo>
     );
 };
@@ -58,7 +58,7 @@ export const DropdownChannelBlocked = () => {
     return (
         <DropdownMenuItemInfo>
             <ExclamationThickIconStyled/>
-            <FormattedMessage defaultMessage="Sorry, this channel has been blocked from Copilot's AI features"/>
+            <FormattedMessage defaultMessage="Sorry, this channel has been blocked from Agents's AI features"/>
         </DropdownMenuItemInfo>
     );
 };
