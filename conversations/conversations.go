@@ -209,7 +209,7 @@ func (c *Conversations) existingConversationToLLMPosts(bot *bots.Bot, conversati
 		if err != nil {
 			return nil, err
 		}
-		posts = append(posts, c.ThreadToLLMPosts(bot, conversation.Posts)...)
+		posts = append(posts, c.ThreadToLLMPosts(bot, conversation)...)
 		return posts, nil
 	}
 
@@ -224,7 +224,7 @@ func (c *Conversations) existingConversationToLLMPosts(bot *bots.Bot, conversati
 			Message: prompt,
 		},
 	}
-	posts = append(posts, c.ThreadToLLMPosts(bot, conversation.Posts)...)
+	posts = append(posts, c.ThreadToLLMPosts(bot, conversation)...)
 
 	return posts, nil
 }
@@ -363,11 +363,20 @@ func (c *Conversations) PostToAIPost(bot *bots.Bot, post *model.Post) llm.Post {
 	}
 }
 
-func (c *Conversations) ThreadToLLMPosts(bot *bots.Bot, posts []*model.Post) []llm.Post {
-	result := make([]llm.Post, 0, len(posts))
+func (c *Conversations) ThreadToLLMPosts(bot *bots.Bot, threadData *mmapi.ThreadData) []llm.Post {
+	result := make([]llm.Post, 0, len(threadData.Posts))
 
-	for _, post := range posts {
-		result = append(result, c.PostToAIPost(bot, post))
+	for _, post := range threadData.Posts {
+		aiPost := c.PostToAIPost(bot, post)
+
+		// Add username prefix for user messages in multi-user threads
+		if aiPost.Role == llm.PostRoleUser {
+			if user, exists := threadData.UsersByID[post.UserId]; exists {
+				aiPost.Message = "@" + user.Username + ": " + aiPost.Message
+			}
+		}
+
+		result = append(result, aiPost)
 	}
 
 	return result

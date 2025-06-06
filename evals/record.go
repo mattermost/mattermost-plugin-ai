@@ -16,12 +16,16 @@ type EvalLogLine struct {
 	Name      string  `json:"name"`
 	Timestamp string  `json:"timestamp"`
 	RunNumber int     `json:"run_number"`
+	Rubric    string  `json:"rubric"`
+	Output    string  `json:"output"`
 	Reasoning string  `json:"reasoning"`
 	Score     float64 `json:"score"`
 	Pass      bool    `json:"pass"`
 }
 
 type EvalResult struct {
+	Rubric    string  `json:"rubric"`
+	Output    string  `json:"output"`
 	Reasoning string  `json:"reasoning"`
 	Score     float64 `json:"score"`
 	Pass      bool    `json:"pass"`
@@ -38,6 +42,8 @@ func RecordScore(e *EvalT, result *EvalResult) {
 		Name:      e.Name(),
 		Timestamp: time.Now().Format(time.RFC3339),
 		RunNumber: e.runNumber,
+		Rubric:    result.Rubric,
+		Output:    result.Output,
 		Reasoning: result.Reasoning,
 		Score:     result.Score,
 		Pass:      result.Pass,

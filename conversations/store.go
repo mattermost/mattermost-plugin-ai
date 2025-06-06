@@ -20,6 +20,9 @@ func (c *Conversations) SaveTitleAsync(threadID, title string) {
 
 // SaveTitle saves a title for a thread
 func (c *Conversations) SaveTitle(threadID, title string) error {
+	if c.db == nil {
+		return nil // Skip database operations when db is not available
+	}
 	_, err := c.db.ExecBuilder(c.db.Builder().Insert("LLM_PostMeta").
 		Columns("RootPostID", "Title").
 		Values(threadID, title).
