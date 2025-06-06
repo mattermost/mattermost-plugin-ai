@@ -17,8 +17,6 @@ Access AI features through the right pane in one of the following ways:
 - Use the **AI Actions** menu by hovering over the first message in any conversation thread
 - Use the **Ask AI** option in channels with unread messages.
 
-If your Mattermost workspace has multiple Agent bots, switch between them by selecting the bot name in the top right corner of the Agents pane.
-
 ### Mobile
 
 Start or open a direct message with the Agent bot. If your system admin has configured multiple bots, switch between them by starting or opening each bot by name.
@@ -51,10 +49,7 @@ Available tools in direct messages include:
 - User lookup (find information about Mattermost users)
 - GitHub integration (the ability to fetch GitHub issues and pull requests requires the [GitHub plugin](https://docs.mattermost.com/integrate/github.html))
 - [Jira integration](https://docs.mattermost.com/integrate/jira.html) (retrieve Jira issues from public instances)
-- MCP tools (external tools provided by configured MCP servers if enabled).
-
-> [!NOTE]
-> Tool availability depends on your user permissions and system configuration.
+- MCP tools (external tools provided by configured MCP servers if enabled). Tool availability depends on your user permissions and system configuration.
 
 ## Analyze threads and channels
 
@@ -82,23 +77,19 @@ The channel summary is generated in the Agents pane, and only you can view the s
 
 ## Search with AI
 
-Enterprise customers can enhance Mattermost [search](https://docs.mattermost.com/collaborate/search-for-messages.html) with AI capabilities.
+Enterprise customers can enhance Mattermost [search](https://docs.mattermost.com/collaborate/search-for-messages.html) with AI capabilities. Semantic AI search requires a Mattermost Enterprise license, and AI search is an [experimental](https://docs.mattermost.com/manage/feature-labels.html#experimental) feature.
 
 Open the Agents pane from the right sidebar and use natural language to search for content (such as "find discussions about the new product launch"). The AI will find semantically relevant results, even if they don't contain the exact keywords, and results respect your permissions so you'll only see content you have access to.
 
 This feature accelerates decision-making and improves information flows by making it easier to find relevant content across threads, channels, and teams.
 
-> [!NOTE]
-> - Semantic AI search requires a Mattermost Enterprise license.
-> - AI search is an experimental feature. 
-> - Contact your system admin if this feature isn't available for your Mattermost instance.
+Contact your system admin if this feature isn't available for your Mattermost instance.
 
 ## Analyze images
 
 For AI models with vision capabilities, attach an image file to your message when chatting with an Agent to ask questions about the image or request analysis. The Agent responds based on the visual content.
 
-> [!NOTE]
-> Image analysis is a Beta feature. Your system admin must enable vision capabilities for your bot, and the underlying AI model must support vision features.
+Image analysis is a [Beta](https://docs.mattermost.com/manage/feature-labels.html#beta) feature. Your system admin must enable vision capabilities for your bot, and the underlying AI model must support vision features.
 
 ## Record calls to summarize meetings
 
@@ -111,5 +102,4 @@ To summarize a Mattermost call recording:
 
 The meeting summary is generated and shared as a direct message with the person who requested the meeting summary.
 
-> [!NOTE]
-> Both call recordings and recorded meeting summarization requires a Mattermost Enterprise license. Contact your system admin if these features aren't available for your Mattermost instance.
+Both call recordings and recorded meeting summarization requires a Mattermost Enterprise license. Contact your system admin if these features aren't available for your Mattermost instance.
