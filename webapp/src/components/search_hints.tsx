@@ -76,7 +76,7 @@ const SearchHints = () => {
             <HintContent>
                 <LightbulbIcon/>
                 <HintText>
-                    <FormattedMessage defaultMessage='Copilot searches only content you have access to'/>
+                    <FormattedMessage defaultMessage='Agents searches only content you have access to'/>
                 </HintText>
             </HintContent>
             <SearchWithContainer>

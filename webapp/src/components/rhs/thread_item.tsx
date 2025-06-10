@@ -77,7 +77,7 @@ type Props = {
     onClick: () => void;
 }
 
-const DefaultTitle = 'Conversation with Copilot';
+const DefaultTitle = 'Conversation with Agents';
 
 export default function ThreadItem(props: Props) {
     const repliesText = props.repliesCount === 1 ? '1 reply' : `${props.repliesCount} replies`;

@@ -117,7 +117,7 @@ func (s *Service) newCallRecordingThread(bot *bots.Bot, requestingUser *model.Us
 	siteURL := s.pluginAPI.Configuration.GetConfig().ServiceSettings.SiteURL
 	T := i18n.LocalizerFunc(s.i18n, requestingUser.Locale)
 	surePost := &model.Post{
-		Message: T("copilot.summarize_recording", "Sure, I will summarize this recording: %s/_redirect/pl/%s\n", *siteURL, recordingPost.Id),
+		Message: T("agents.summarize_recording", "Sure, I will summarize this recording: %s/_redirect/pl/%s\n", *siteURL, recordingPost.Id),
 	}
 	surePost.AddProp(streaming.NoRegen, "true")
 	if err := s.botDMNonResponse(bot.GetMMBot().UserId, requestingUser.Id, surePost); err != nil {
@@ -139,7 +139,7 @@ func (s *Service) newCallTranscriptionSummaryThread(bot *bots.Bot, requestingUse
 	siteURL := s.pluginAPI.Configuration.GetConfig().ServiceSettings.SiteURL
 	T := i18n.LocalizerFunc(s.i18n, requestingUser.Locale)
 	surePost := &model.Post{
-		Message: T("copilot.summarize_transcription", "Sure, I will summarize this transcription: %s/_redirect/pl/%s\n", *siteURL, transcriptionPost.Id),
+		Message: T("agents.summarize_transcription", "Sure, I will summarize this transcription: %s/_redirect/pl/%s\n", *siteURL, transcriptionPost.Id),
 	}
 	surePost.AddProp(streaming.NoRegen, "true")
 	surePost.AddProp(ReferencedTranscriptPostID, transcriptionPost.Id)
@@ -151,7 +151,7 @@ func (s *Service) newCallTranscriptionSummaryThread(bot *bots.Bot, requestingUse
 		// Update to an error if we return one.
 		defer func() {
 			if reterr != nil {
-				surePost.Message = T("copilot.summairize_subscription_error", "Sorry! Something went wrong. Check the server logs for details.")
+				surePost.Message = T("agents.summairize_subscription_error", "Sorry! Something went wrong. Check the server logs for details.")
 				if err := s.pluginAPI.Post.UpdatePost(surePost); err != nil {
 					s.pluginAPI.Log.Error("Failed to update post in error handling newCallTranscriptionSummaryThread", "error", err)
 				}
@@ -224,7 +224,7 @@ func (s *Service) summarizeCallRecording(bot *bots.Bot, rootID string, requestin
 
 	transcriptPost := &model.Post{
 		RootId:  rootID,
-		Message: T("copilot.summarize_call_recording_processing", "Processing audio into transcription. This will take some time..."),
+		Message: T("agents.summarize_call_recording_processing", "Processing audio into transcription. This will take some time..."),
 	}
 	transcriptPost.AddProp(ReferencedRecordingFileID, recordingFileID)
 	if err := s.botDMNonResponse(bot.GetMMBot().UserId, requestingUser.Id, transcriptPost); err != nil {
@@ -235,7 +235,7 @@ func (s *Service) summarizeCallRecording(bot *bots.Bot, rootID string, requestin
 		// Update to an error if we return one.
 		defer func() {
 			if reterr != nil {
-				transcriptPost.Message = T("copilot.summarize_call_recording_processing_error", "Sorry! Something went wrong. Check the server logs for details.")
+				transcriptPost.Message = T("agents.summarize_call_recording_processing_error", "Sorry! Something went wrong. Check the server logs for details.")
 				if err := s.pluginAPI.Post.UpdatePost(transcriptPost); err != nil {
 					s.pluginAPI.Log.Error("Failed to update post in error handling handleCallRecordingPost", "error", err)
 				}

@@ -75,7 +75,7 @@ func migrateServicesToBots(mutexAPI cluster.MutexPluginAPI, pluginAPI *pluginapi
 	// If there is one bot then give it the standard name
 	if len(existingConfig.Bots) == 1 {
 		existingConfig.Bots[0].Name = "ai"
-		existingConfig.Bots[0].DisplayName = "Copilot"
+		existingConfig.Bots[0].DisplayName = "Agents"
 	}
 
 	out := map[string]any{}

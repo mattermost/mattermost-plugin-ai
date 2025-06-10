@@ -1,16 +1,16 @@
 <div align="center">
 
-# Mattermost Copilot Plugin [![Download Latest Master Build](https://img.shields.io/badge/Download-Latest%20Master%20Build-blue)](https://github.com/mattermost/mattermost-plugin-ai/releases/tag/latest-master)
+# Mattermost Agents Plugin [![Download Latest Master Build](https://img.shields.io/badge/Download-Latest%20Master%20Build-blue)](https://github.com/mattermost/mattermost-plugin-ai/releases/tag/latest-master)
 
-The Mattermost Copilot Plugin integrates AI capabilities directly into your [Mattermost](https://github.com/mattermost/mattermost) workspace. **Run any local LLM** on your infrastructure or connect to cloud providers - you control your data and deployment.
+The Mattermost Agents Plugin integrates AI capabilities directly into your [Mattermost](https://github.com/mattermost/mattermost) workspace. **Run any local LLM** on your infrastructure or connect to cloud providers - you control your data and deployment.
 
 </div>
 
-![The Mattermost Copilot AI Plugin is an extension for mattermost that provides functionality for self-hosted and vendor-hosted LLMs](img/mattermost-ai-llm-access.webp)
+![The Mattermost Agents AI Plugin is an extension for mattermost that provides functionality for self-hosted and vendor-hosted LLMs](img/mattermost-ai-llm-access.webp)
 
 ## Key Features
 
-- **Multiple AI Assistants**: Configure different bots with specialized personalities and capabilities
+- **Multiple AI Assistants**: Configure different agents with specialized personalities and capabilities
 - **Thread & Channel Summarization**: Get concise summaries of long discussions with a single click
 - **Action Item Extraction**: Automatically identify and extract action items from threads
 - **Meeting Transcription**: Transcribe and summarize meeting recordings
@@ -46,10 +46,10 @@ Comprehensive documentation is available in the `/docs` directory:
 
 After installation, complete these steps to get started:
 
-1. Navigate to **System Console > Plugins > Copilot**
-2. Create a bot and configure it with your LLM provider credentials
-3. Set permissions for who can access the bot
-4. Open the Copilot panel from any channel using the AI icon in the right sidebar
+1. Navigate to **System Console > Plugins > Agents**
+2. Create an agent and configure it with your LLM provider credentials
+3. Set permissions for who can access the agent
+4. Open the Agents panel from any channel using the AI icon in the right sidebar
 5. Start interacting with your AI assistant
 
 For detailed configuration instructions, see the [Admin Guide](docs/admin_guide.md).

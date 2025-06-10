@@ -1,84 +1,105 @@
 # Mattermost Agents User Guide
 
-This guide explains how to use the AI features provided by the Mattermost Agents plugin. The plugin transforms Mattermost into an AI-enhanced collaboration platform to improve team productivity and communication.
+This guide explains how to use the AI features available through the Mattermost Agents plugin. This plugin transforms Mattermost into an AI-enhanced collaboration platform to improve team productivity and communication.
 
-With Agents, you can summarize call and meeting recordings, turn long threads and unread channel messages into concise summaries, stay on top of your messages by identifying next steps and decisions, extract learnings and transform content into charts and documentation, dig further into any topic by asking for insights, and leverage voice dictation tools for hands-free communication.
+With Mattermost Agents, you can summarize call and meeting recordings, turn long threads and unread channel messages into concise summaries, stay on top of your messages by identifying next steps and decisions, extract learnings and transform content into charts and documentation, dig further into any topic by asking for insights, and leverage voice dictation tools for hands-free communication.
 
-## Accessing AI Features
+## Access AI features
 
-There are multiple ways to interact with AI features in Mattermost:
+You can access AI features in Mattermost in the following ways:
 
-### Web and Desktop Applications
+### Web and desktop
 
-You can access AI features through the right sidebar by clicking the Agents icon in the apps sidebar, mention an AI bot in any channel where you have access (like `@copilot`), use the AI Actions menu by hovering over the first message in any conversation thread, or use the "Ask AI" option in channels with unread messages.
+Access AI features through the right pane in one of the following ways:
 
-If your Mattermost workspace has multiple Agent bots, switch between them by selecting the bot name in the top right corner of the Agents panel.
+- Select the **Agents** icon in the apps sidebar.
+- @mention an AI bot in any channel where you have access (such as `@copilot`).
+- Use the **AI Actions** menu by hovering over the first message in any conversation thread
+- Use the **Ask AI** option in channels with unread messages.
 
-### Mobile Applications
+### Mobile
 
-Start or open a direct message with the Agent bot. If your administrator has configured multiple bots, switch between them by starting or opening each bot by name. 
+Start or open a direct message with the Agent bot. If your system admin has configured multiple bots, switch between them by starting or opening each bot by name.
 
-## Conversational Features
+## Conversational AI features
 
-### Chatting with Agents
+### Chat with agents
 
 You can have conversations with Agents in several ways:
 
-**Agents Panel**: Use the Agents right-hand sidebar for a streamlined experience. Begin with suggested prompts, or engage in a private thread with an Agent for a tailored experience. If you have follow-up questions or need further insights, simply ask. You can also attach files for AI analysis or reference.
+**Agents pane**: Use the Agents right-hand pane for a streamlined experience. Begin with suggested prompts, or engage in a private thread with an Agent for a tailored experience. If you have follow-up questions or need further insights, simply ask. You can also attach files for AI analysis or reference.
 
-**Direct Messages**: Start a DM with a bot to have a private conversation. Chat privately with an Agent in direct message threads like you would any other Mattermost user.
+**Direct messages**: Start a direct message with an Agent bot to have a private conversation. Chat privately with an Agent in direct message threads like you would any other Mattermost user.
 
-**Channel Mentions**: Invoke the power of Agents by @mentioning Agent bots by their username, like `@copilot`, in any thread to bring Agents capabilities to your conversation. The bot responds in a thread to keep channels organized, and other team members can view and contribute to the conversation. An Agent can help extract information quickly or transform discussions into charts, resources, documentation, and more, and can find action items and open questions in new messages.
+**Channel mentions**: [@mention](https://docs.mattermost.com/collaborate/mention-people.html) Agent bots by their username, such as `@copilot`, in any thread to bring Agents capabilities to your conversation. The bot responds in a thread to keep channels organized, and other team members can view and contribute to the conversation. An Agent can help extract information quickly or transform discussions into charts, resources, documentation, and more, and can find action items and open questions in new messages.
 
-### Bot Selection
+### Select a bot
 
-If multiple bots are configured, you can select your preferred bot in the Agents panel or mention specific bots by name in channels.
+If multiple Agent bots are configured for your Mattermost workspace, select your preferred bot in the Agents pane or @mention specific bots by name in channels.
 
-### Tool Approval and Security
+### Approve tools
 
-When Agents use external tools or integrations, you may be prompted to approve tool usage for security. When a tool is called, you'll see a card showing the tool name and description, arguments being passed to the tool, and Approve/Reject buttons.
+When Agents use external tools or integrations, you may be prompted to approve tool usage for security. When a tool is called, you'll see a card showing the tool name and description, arguments being passed to the tool, and **Approve/Reject** options.
 
 For security, tool calls are only available in direct messages and each tool call requires explicit approval before execution. You can review tool arguments before approving, and tool results are shown after successful execution.
 
-Available tools in direct messages include server search (semantic search across your Mattermost instance), user lookup (find information about Mattermost users), GitHub integration (fetch GitHub issues and pull requests - requires GitHub plugin), Jira integration (retrieve Jira issues from public instances), and MCP tools (external tools provided by configured MCP servers if enabled).
+Available tools in direct messages include:
 
-**Note**: Tool availability depends on your permissions and administrator configuration.
+- Server search (semantic search across your Mattermost instance)
+- User lookup (find information about Mattermost users)
+- GitHub integration (the ability to fetch GitHub issues and pull requests requires the [GitHub plugin](https://docs.mattermost.com/integrate/github.html))
+- [Jira integration](https://docs.mattermost.com/integrate/jira.html) (retrieve Jira issues from public instances)
+- MCP tools (external tools provided by configured MCP servers if enabled). Tool availability depends on your user permissions and system configuration.
 
-## Thread and Channel Analysis
+## Analyze threads and channels
 
-### Thread Summarization
+### Summarize discussion threads
 
-To summarize a discussion thread, hover over the first message in any conversation thread, select the AI Actions icon, and select "Summarize Thread". The thread summary is generated in the Agents pane, and only you can view the summary.
+To summarize a discussion thread:
+
+1. Hover over the first message in any [conversation thread](https://docs.mattermost.com/collaborate/organize-conversations.html).
+2. Select the **AI Actions** icon.
+3. Select **Summarize Thread**. 
+
+The thread summary is generated in the Agents pane, and only you can view the summary.
 
 This is particularly useful for catching up on long discussions, creating meeting notes, and sharing outcomes with team members. You can also extract action items or find open questions in the same menu.
 
-### Channel Summarization
+### Summarize unread channels
 
-To summarize unread Mattermost channels, scroll to the "New Messages" cutoff in a channel with unread messages, select "Ask AI", and then select "Summarize new messages". The channel summary is generated in the Agents pane, and only you can view the summary.
+To summarize unread Mattermost channels:
 
-When your system admin has configured multiple bots, you can switch between them by selecting one from the drop-down menu.
+1. Scroll to the **New Messages** cutoff line in a channel with unread messages.
+2. Select **Ask AI**.
+3. Select **Summarize new messages**. 
 
-## Semantic Search (Enterprise, Experimental)
+The channel summary is generated in the Agents pane, and only you can view the summary.
 
-The Agents plugin enhances Mattermost's search with AI capabilities. Open the Agents panel from the right sidebar and use natural language to search for content (like "find discussions about the new product launch"). The AI will find semantically relevant results, even if they don't contain the exact keywords, and results respect your permissions so you'll only see content you have access to.
+## Search with AI
+
+Enterprise customers can enhance Mattermost [search](https://docs.mattermost.com/collaborate/search-for-messages.html) with AI capabilities. Semantic AI search requires a Mattermost Enterprise license, and AI search is an [experimental](https://docs.mattermost.com/manage/feature-labels.html#experimental) feature.
+
+Open the Agents pane from the right sidebar and use natural language to search for content (such as "find discussions about the new product launch"). The AI will find semantically relevant results, even if they don't contain the exact keywords, and results respect your permissions so you'll only see content you have access to.
 
 This feature accelerates decision-making and improves information flows by making it easier to find relevant content across threads, channels, and teams.
 
-**Note**: Semantic search requires an Enterprise license and is currently experimental. Contact your administrator if this feature is not available.
+Contact your system admin if this feature isn't available for your Mattermost instance.
 
-## Image Analysis (BETA)
+## Analyze images
 
-For AI models with vision capabilities, attach an image to your message when chatting with an Agent and ask questions about the image or request analysis. The Agent will respond based on the visual content.
+For AI models with vision capabilities, attach an image file to your message when chatting with an Agent to ask questions about the image or request analysis. The Agent responds based on the visual content.
 
-**Note**: Image analysis is in BETA. Your administrator must enable vision capabilities for your bot, and the underlying AI model must support vision features.
+Image analysis is a [Beta](https://docs.mattermost.com/manage/feature-labels.html#beta) feature. Your system admin must enable vision capabilities for your bot, and the underlying AI model must support vision features.
 
-## Call Recording and Meeting Summarization
+## Record calls to summarize meetings
 
-Leverage Mattermost Calls to turn meeting recordings into actionable summaries with a single click. This feature ensures key points are captured and shared easily, enabling effective sharing of meeting insights with your team and the broader organization.
+Mattermost Enterprise customers can leverage Mattermost Calls to turn meeting recordings into actionable summaries with a single action. Ensure key points of your calls and meetings are captured and shared easily, and share meeting insights with your team and the broader organization.
 
-To summarize a Mattermost call recording, start a call in Mattermost and record the call during the meeting. Once the call ends and the call recording and transcription is ready, select the "Create meeting summary" option located directly above the call recording. The meeting summary is generated and shared as a direct message with the person who requested the meeting summary.
+To summarize a Mattermost call recording:
 
-## Additional Resources
+1. [Start a call](https://docs.mattermost.com/collaborate/make-calls.html#start-a-call) in Mattermost and [record the call](https://docs.mattermost.com/collaborate/make-calls.html#record-a-call) during the meeting. 
+2. Once the call ends and the call recording and transcription is ready, select the **Create meeting summary** option located directly above the call recording. 
 
-- [Usage Tips and Best Practices](usage_tips.md): Practical guidance for getting the most out of Agents
-- For more information about how Agents manage LLM context and ensure data privacy, see the Agents Context Management documentation
+The meeting summary is generated and shared as a direct message with the person who requested the meeting summary.
+
+Both call recordings and recorded meeting summarization requires a Mattermost Enterprise license. Contact your system admin if these features aren't available for your Mattermost instance.

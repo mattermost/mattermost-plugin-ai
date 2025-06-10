@@ -14,7 +14,7 @@ const RHSImage = () => (
         xmlns='http://www.w3.org/2000/svg'
     >
         <g
-            id='Illustration / AI Copilot Intro'
+            id='Illustration / AI Agents Intro'
             clipPath='url(#clip0_4209_69457)'
         >
             <ellipse

@@ -68,7 +68,7 @@ func (b *MMBots) EnsureBots(cfgBots []llm.BotConfig) error {
 	}
 
 	// Only allow one bot if not multi-LLM licensed
-	if !b.licenseChecker.IsMultiLLMLicensed() {
+	if len(cfgBots) > 1 && !b.licenseChecker.IsMultiLLMLicensed() {
 		b.pluginAPI.Log.Error("Only one bot allowed with current license.")
 		cfgBots = cfgBots[:1]
 	}

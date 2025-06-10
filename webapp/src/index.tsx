@@ -50,7 +50,7 @@ const RHSTitle = () => {
     return (
         <RHSTitleContainer>
             <IconAIContainer src={aiIcon}/>
-            {'Copilot'}
+            {'Agents'}
         </RHSTitleContainer>
     );
 };
@@ -141,8 +141,8 @@ export default class Plugin {
             registry.registerChannelHeaderButtonAction(<IconAIContainer src={aiIcon}/>, () => {
                 store.dispatch(rhs.toggleRHSPlugin);
             },
-            'Copilot',
-            'Copilot',
+            'Agents',
+            'Agents',
             );
         }
 

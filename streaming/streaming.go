@@ -213,7 +213,7 @@ func (p *MMPostStreamService) StreamToPost(ctx context.Context, stream *llm.Text
 				// Stream has closed cleanly
 				if strings.TrimSpace(post.Message) == "" {
 					p.mmClient.LogError("LLM closed stream with no result")
-					post.Message = T("copilot.stream_to_post_llm_not_return", "Sorry! The LLM did not return a result.")
+					post.Message = T("agents.stream_to_post_llm_not_return", "Sorry! The LLM did not return a result.")
 					p.sendPostStreamingUpdateEvent(post, post.Message)
 				}
 				if err := p.mmClient.UpdatePost(post); err != nil {
@@ -237,7 +237,7 @@ func (p *MMPostStreamService) StreamToPost(ctx context.Context, stream *llm.Text
 					post.Message += "\n\n"
 				}
 				p.mmClient.LogError("Streaming result to post failed partway", "error", err)
-				post.Message = T("copilot.stream_to_post_access_llm_error", "Sorry! An error occurred while accessing the LLM. See server logs for details.")
+				post.Message = T("agents.stream_to_post_access_llm_error", "Sorry! An error occurred while accessing the LLM. See server logs for details.")
 
 				if err := p.mmClient.UpdatePost(post); err != nil {
 					p.mmClient.LogError("Error recovering from streaming error", "error", err)
