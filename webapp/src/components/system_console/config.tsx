@@ -96,6 +96,7 @@ const defaultConfig = {
     mcp: {
         enabled: false,
         servers: {},
+        idleTimeout: 30,
     },
 };
 
@@ -160,6 +161,9 @@ const Config = (props: Props) => {
             </ConfigContainer>
         );
     }
+
+    // Initialize with default empty config if not provided
+    const mcpConfig = value.mcp || defaultConfig.mcp;
 
     return (
         <ConfigContainer>
@@ -234,28 +238,30 @@ const Config = (props: Props) => {
                     props.setSaveNeeded();
                 }}
             />
-            <Panel
-                title={
-                    <Horizontal>
-                        <FormattedMessage defaultMessage='Model Context Protocol (MCP)'/>
-                        <Pill><FormattedMessage defaultMessage='EXPERIMENTAL'/></Pill>
-                    </Horizontal>
-                }
-                subtitle={intl.formatMessage({defaultMessage: 'Configure MCP servers to enable AI tools.'})}
-            >
-                <MCPServers
-                    value={value.mcp || defaultConfig.mcp}
-                    onChange={(config) => {
-                        // Ensure we're creating a valid structure for the server configuration
-                        const updatedConfig = {
-                            ...config,
-                            servers: config.servers || {},
-                        };
-                        props.onChange(props.id, {...value, mcp: updatedConfig});
-                        props.setSaveNeeded();
-                    }}
-                />
-            </Panel>
+            {mcpConfig.enabled &&
+                <Panel
+                    title={
+                        <Horizontal>
+                            <FormattedMessage defaultMessage='Model Context Protocol (MCP)'/>
+                            <Pill><FormattedMessage defaultMessage='EXPERIMENTAL'/></Pill>
+                        </Horizontal>
+                    }
+                    subtitle={intl.formatMessage({defaultMessage: 'Configure MCP servers to enable AI tools.'})}
+                >
+                    <MCPServers
+                        mcpConfig={mcpConfig}
+                        onChange={(config) => {
+                            // Ensure we're creating a valid structure for the server configuration
+                            const updatedConfig = {
+                                ...config,
+                                servers: config.servers || {},
+                            };
+                            props.onChange(props.id, {...value, mcp: updatedConfig});
+                            props.setSaveNeeded();
+                        }}
+                    />
+                </Panel>
+            }
         </ConfigContainer>
     );
 };

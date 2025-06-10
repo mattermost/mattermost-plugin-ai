@@ -22,7 +22,7 @@ export type MCPConfig = {
 };
 
 type Props = {
-    value: MCPConfig;
+    mcpConfig: MCPConfig;
     onChange: (config: MCPConfig) => void;
 };
 
@@ -198,11 +198,8 @@ const MCPServer = ({
 };
 
 // Main component for MCP servers configuration
-const MCPServers = ({value, onChange}: Props) => {
+const MCPServers = ({mcpConfig, onChange}: Props) => {
     const intl = useIntl();
-
-    // Initialize with default empty config if not provided
-    const mcpConfig = value ? {...value} : {enabled: false, servers: {}, idleTimeout: 30};
 
     // Ensure servers object is initialized
     if (!mcpConfig.servers) {
