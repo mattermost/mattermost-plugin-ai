@@ -63,21 +63,21 @@ func printUsage() {
 func runCommand(args []string) {
 	// Execute go test with GOEVALS=1
 	fmt.Println("Running evaluations...")
-	
+
 	// Prepare go test command
 	cmdArgs := []string{"test"}
 	cmdArgs = append(cmdArgs, args...)
-	
+
 	cmd := exec.Command("go", cmdArgs...)
 	cmd.Env = append(os.Environ(), "GOEVALS=1")
-	
+
 	// Run command silently, only capturing exit status
 	if err := cmd.Run(); err != nil {
 		fmt.Printf("Tests completed with errors: %v\n", err)
 	} else {
 		fmt.Println("Tests completed successfully.")
 	}
-	
+
 	// Find and display results
 	evalFile, err := findEvalsFile()
 	if err != nil {
@@ -85,18 +85,14 @@ func runCommand(args []string) {
 		fmt.Println("You can view results manually with: evalviewer view -file /path/to/evals.jsonl")
 		os.Exit(1)
 	}
-	
-	fmt.Printf("\n" + strings.Repeat("=", 80) + "\n")
-	fmt.Println("EVALUATION RESULTS")
-	fmt.Printf(strings.Repeat("=", 80) + "\n\n")
-	
+
 	// Display results with default settings
 	results, err := loadResults(evalFile, false)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading results: %v\n", err)
 		os.Exit(1)
 	}
-	
+
 	// Launch TUI
 	if err := runTUI(results); err != nil {
 		fmt.Fprintf(os.Stderr, "Error running TUI: %v\n", err)
@@ -106,15 +102,15 @@ func runCommand(args []string) {
 
 func viewCommand(args []string) {
 	fs := flag.NewFlagSet("view", flag.ExitOnError)
-	
+
 	var filename string
 	var maxWidth int
 	var showOnlyFailures bool
-	
+
 	fs.StringVar(&filename, "file", "evals.jsonl", "Path to the evals.jsonl file")
 	fs.IntVar(&maxWidth, "width", 80, "Maximum width for output columns")
 	fs.BoolVar(&showOnlyFailures, "failures-only", false, "Show only failed evaluations")
-	
+
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing flags: %v\n", err)
 		os.Exit(1)
@@ -139,13 +135,13 @@ func findEvalsFile() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	for {
 		evalFile := filepath.Join(dir, "evals.jsonl")
 		if _, err := os.Stat(evalFile); err == nil {
 			return evalFile, nil
 		}
-		
+
 		parent := filepath.Dir(dir)
 		if parent == dir {
 			// Reached filesystem root
@@ -153,7 +149,7 @@ func findEvalsFile() (string, error) {
 		}
 		dir = parent
 	}
-	
+
 	return "", fmt.Errorf("evals.jsonl not found in current directory or parent directories")
 }
 
@@ -166,31 +162,30 @@ func loadResults(filename string, showOnlyFailures bool) ([]EvalLogLine, error) 
 
 	var results []EvalLogLine
 	scanner := bufio.NewScanner(file)
-	
+
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
 			continue
 		}
-		
+
 		var result EvalLogLine
 		if err := json.Unmarshal([]byte(line), &result); err != nil {
 			fmt.Fprintf(os.Stderr, "Error parsing line: %v\n", err)
 			continue
 		}
-		
+
 		// Filter based on failures-only flag
 		if showOnlyFailures && result.Pass {
 			continue
 		}
-		
+
 		results = append(results, result)
 	}
 
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("error reading file: %v", err)
 	}
-	
+
 	return results, nil
 }
-

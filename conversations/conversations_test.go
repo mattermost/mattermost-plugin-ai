@@ -18,6 +18,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-ai/llm"
 	"github.com/mattermost/mattermost-plugin-ai/llmcontext"
 	"github.com/mattermost/mattermost-plugin-ai/mmapi/mocks"
+	"github.com/mattermost/mattermost-plugin-ai/mmtools"
 	"github.com/mattermost/mattermost-plugin-ai/prompts"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin/plugintest"
@@ -30,7 +31,19 @@ import (
 type mockToolProvider struct{}
 
 func (m *mockToolProvider) GetTools(isDM bool, bot *bots.Bot) []llm.Tool {
-	return []llm.Tool{}
+	tools := []llm.Tool{}
+
+	tools = append(tools, llm.Tool{
+		Name:        "GetGithubIssue",
+		Description: "Retrieve a single GitHub issue by owner, repo, and issue number.",
+		Schema:      llm.NewJSONSchemaFromStruct(mmtools.GetGithubIssueArgs{}),
+		Resolver: func(context *llm.Context, args llm.ToolArgumentGetter) (string, error) {
+			return "Unable to retrieve GitHub issue", nil
+		},
+	})
+
+	return tools
+
 }
 
 type mockMCPClientManager struct{}

@@ -16,7 +16,7 @@ import (
 
 // ThreadExport represents the format of exported thread data
 type ThreadExport struct {
-	Thread    map[string]*model.Post     `json:"thread"`
+	Posts     map[string]*model.Post     `json:"posts"`
 	Channel   *model.Channel             `json:"channel"`
 	Team      *model.Team                `json:"team"`
 	Users     map[string]*model.User     `json:"users"`
@@ -94,11 +94,11 @@ func LoadThreadFromJSON(t *EvalT, path string) *ThreadExport {
 	var threadExport ThreadExport
 	err = json.Unmarshal(jsonFile, &threadExport)
 	require.NoError(t, err, "Failed to unmarshal JSON data")
-	require.NotEmpty(t, threadExport.Thread, "No posts loaded from file")
+	require.NotEmpty(t, threadExport.Posts, "No posts loaded from file")
 
 	// Convert thread map to slice of posts
-	posts := make([]*model.Post, 0, len(threadExport.Thread))
-	for _, post := range threadExport.Thread {
+	posts := make([]*model.Post, 0, len(threadExport.Posts))
+	for _, post := range threadExport.Posts {
 		posts = append(posts, post)
 	}
 
@@ -128,8 +128,6 @@ func LoadThreadFromJSON(t *EvalT, path string) *ThreadExport {
 
 	threadExport.RootPost = rootPost
 	threadExport.PostList = postList
-
-	t.Log(threadExport.String())
 
 	return &threadExport
 }

@@ -49,8 +49,6 @@ func RecordScore(e *EvalT, result *EvalResult) {
 		Pass:      result.Pass,
 	}
 
-	e.Logf("Eval result: %+v", log)
-
 	dir, err := findCurrentModuleRoot()
 	if err != nil {
 		e.Fatalf("Failed to find module root: %v", err)
