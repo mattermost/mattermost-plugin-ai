@@ -43,7 +43,7 @@ func TestDirectMessageConversations(t *testing.T) {
 				{Message: "Hi, who are you?"},
 			},
 			rubrics: []string{
-				"explaination that they are Matty or @matty an AI agent",
+				"explanation that they are Matty or @matty an AI agent",
 			},
 		},
 		{
@@ -180,27 +180,26 @@ func createDMThreadDataFromConversation(conversation []TestPost) *evals.ThreadEx
 	}
 
 	// Static IDs
-	userId := "testuserid"
-	botId := "testbotid"
-	channelId := "dm_channel_123"
-	teamId := "team123"
+	userID := "testuserid"
+	botID := "testbotid"
+	channelID := "dm_channel_123"
+	teamID := "team123"
 
 	// Static users
 	user := &model.User{
-		Id:       userId,
+		Id:       userID,
 		Username: "corey",
 		Locale:   "en",
 	}
 
 	bot := &model.User{
-		Id:        botId,
+		Id:        botID,
 		Username:  "matty",
 		FirstName: "Matty",
 		IsBot:     true,
 	}
 
 	// Create posts from conversation
-	posts := make([]*model.Post, 0, len(conversation))
 	postsMap := make(map[string]*model.Post)
 	postList := model.NewPostList()
 
@@ -210,16 +209,16 @@ func createDMThreadDataFromConversation(conversation []TestPost) *evals.ThreadEx
 	for i, testPost := range conversation {
 		// Determine who sent this message (user goes first, then alternates)
 		isUserMessage := i%2 == 0
-		senderId := userId
+		senderID := userID
 		if !isUserMessage {
-			senderId = botId
+			senderID = botID
 		}
 
-		postId := fmt.Sprintf("post%d", i+1)
+		postID := fmt.Sprintf("post%d", i+1)
 		post := &model.Post{
-			Id:        postId,
-			UserId:    senderId,
-			ChannelId: channelId,
+			Id:        postID,
+			UserId:    senderID,
+			ChannelId: channelID,
 			Message:   testPost.Message,
 			CreateAt:  baseTime + int64(i*1000), // 1 second apart
 		}
@@ -231,27 +230,26 @@ func createDMThreadDataFromConversation(conversation []TestPost) *evals.ThreadEx
 			post.RootId = rootPost.Id
 		}
 
-		posts = append(posts, post)
-		postsMap[postId] = post
+		postsMap[postID] = post
 		postList.AddPost(post)
-		postList.AddOrder(postId)
+		postList.AddOrder(postID)
 	}
 
 	return &evals.ThreadExport{
 		Team: &model.Team{
-			Id:          teamId,
+			Id:          teamID,
 			Name:        "fastfutures",
 			DisplayName: "Fast Futures",
 		},
 		Channel: &model.Channel{
-			Id:     channelId,
-			TeamId: teamId,
+			Id:     channelID,
+			TeamId: teamID,
 			Type:   model.ChannelTypeDirect,
-			Name:   model.GetDMNameFromIds(userId, botId),
+			Name:   model.GetDMNameFromIds(userID, botID),
 		},
 		Users: map[string]*model.User{
-			userId: user,
-			botId:  bot,
+			userID: user,
+			botID:  bot,
 		},
 		Posts:     postsMap,
 		RootPost:  rootPost,

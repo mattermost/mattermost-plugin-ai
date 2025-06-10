@@ -45,8 +45,8 @@ func (t *ThreadExport) String() string {
 
 	// Posts in reverse chronological order (root post first)
 	for i := len(t.PostList.Order) - 1; i >= 0; i-- {
-		postId := t.PostList.Order[i]
-		post := t.PostList.Posts[postId]
+		postID := t.PostList.Order[i]
+		post := t.PostList.Posts[postID]
 		user := t.Users[post.UserId]
 
 		// Post header
@@ -68,11 +68,11 @@ func (t *ThreadExport) String() string {
 		// File attachments
 		if len(post.FileIds) > 0 {
 			result.WriteString("  Attachments:\n")
-			for _, fileId := range post.FileIds {
-				if fileInfo, exists := t.FileInfos[fileId]; exists {
+			for _, fileID := range post.FileIds {
+				if fileInfo, exists := t.FileInfos[fileID]; exists {
 					result.WriteString(fmt.Sprintf("    - %s (%s)\n", fileInfo.Name, fileInfo.MimeType))
 				} else {
-					result.WriteString(fmt.Sprintf("    - File ID: %s (info not available)\n", fileId))
+					result.WriteString(fmt.Sprintf("    - File ID: %s (info not available)\n", fileID))
 				}
 			}
 		}

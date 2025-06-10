@@ -96,8 +96,8 @@ func setupChannelMocksFromThreadData(mmClient *mocks.MockClient, threadData *eva
 	mmClient.On("GetPostsSince", threadData.Channel.Id, fixedStart).Return(threadData.PostList, nil)
 
 	// Mock users
-	for userId, user := range threadData.Users {
-		mmClient.On("GetUser", userId).Return(user, nil)
+	for userID, user := range threadData.Users {
+		mmClient.On("GetUser", userID).Return(user, nil)
 	}
 
 	// Mock file info if needed
