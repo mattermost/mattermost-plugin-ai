@@ -50,6 +50,16 @@ if err != nil {
 }
 ```
 
+## Security Notice
+
+**Important**: The AI plugin's inter-plugin API endpoints do not perform permission checks. The calling plugin is responsible for:
+- Verifying that the user specified in `RequesterUserID` has permission to use the AI features
+- Ensuring the user has access to any data being sent to the AI model
+- Implementing appropriate rate limiting or usage restrictions
+- Validating that the request is authorized for the intended purpose
+
+The AI plugin will process requests on behalf of any user ID provided by the calling plugin, so proper authorization checks are critical.
+
 ## API Documentation
 
 ### Types

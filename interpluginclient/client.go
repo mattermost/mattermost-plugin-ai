@@ -3,6 +3,10 @@
 
 // Package interpluginclient provides a client for interacting with the Mattermost AI plugin
 // from other Mattermost plugins.
+//
+// Security Notice: The AI plugin's inter-plugin API does not perform permission checks.
+// The calling plugin is responsible for verifying that the user has appropriate permissions
+// before making requests on their behalf.
 package interpluginclient
 
 import (
@@ -70,7 +74,9 @@ type SimpleCompletionResponse struct {
 	Response string `json:"response"`
 }
 
-// CompletionWithContext sends a prompt to the AI plugin with context and returns the generated response
+// SimpleCompletionWithContext sends a prompt to the AI plugin with context and returns the generated response.
+// The calling plugin must ensure that the user specified in RequesterUserID has permission to use AI features
+// and access any data being sent to the AI model.
 func (c *Client) SimpleCompletionWithContext(ctx context.Context, req SimpleCompletionRequest) (string, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -108,7 +114,9 @@ func (c *Client) SimpleCompletionWithContext(ctx context.Context, req SimpleComp
 	return completionResp.Response, nil
 }
 
-// Completion sends a prompt to the AI plugin and returns the generated response (with default timeout)
+// SimpleCompletion sends a prompt to the AI plugin and returns the generated response (with default timeout).
+// The calling plugin must ensure that the user specified in RequesterUserID has permission to use AI features
+// and access any data being sent to the AI model.
 func (c *Client) SimpleCompletion(req SimpleCompletionRequest) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), DefaultTimeout)
 	defer cancel()
