@@ -53,7 +53,7 @@ func (p *Plugin) OnActivate() error {
 	pluginAPI := pluginapi.NewClient(p.API, p.Driver)
 	mmClient := mmapi.NewClient(pluginAPI)
 	licenseChecker := enterprise.NewLicenseChecker(pluginAPI)
-	dbClient := mmClient.DB()
+	dbClient := mmapi.NewDBClient(pluginAPI)
 
 	i18nBundle := i18n.Init()
 
@@ -145,7 +145,6 @@ func (p *Plugin) OnActivate() error {
 	conversationsService := conversations.New(
 		prompts,
 		mmClient,
-		pluginAPI,
 		streamingService,
 		contextBuilder,
 		bots,
@@ -183,6 +182,7 @@ func (p *Plugin) OnActivate() error {
 		&p.configuration,
 		prompts,
 		mmClient,
+		dbClient,
 		licenseChecker,
 		streamingService,
 		i18nBundle,

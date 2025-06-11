@@ -5,6 +5,7 @@
 package mocks
 
 import (
+	"io"
 	"net/http"
 
 	"github.com/mattermost/mattermost-plugin-ai/mmapi"
@@ -278,6 +279,64 @@ func (_c *MockClient_GetChannel_Call) RunAndReturn(run func(channelID string) (*
 	return _c
 }
 
+// GetChannelByName provides a mock function for the type MockClient
+func (_mock *MockClient) GetChannelByName(teamID string, name string, includeDeleted bool) (*model.Channel, error) {
+	ret := _mock.Called(teamID, name, includeDeleted)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetChannelByName")
+	}
+
+	var r0 *model.Channel
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(string, string, bool) (*model.Channel, error)); ok {
+		return returnFunc(teamID, name, includeDeleted)
+	}
+	if returnFunc, ok := ret.Get(0).(func(string, string, bool) *model.Channel); ok {
+		r0 = returnFunc(teamID, name, includeDeleted)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*model.Channel)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(string, string, bool) error); ok {
+		r1 = returnFunc(teamID, name, includeDeleted)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockClient_GetChannelByName_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetChannelByName'
+type MockClient_GetChannelByName_Call struct {
+	*mock.Call
+}
+
+// GetChannelByName is a helper method to define mock.On call
+//   - teamID
+//   - name
+//   - includeDeleted
+func (_e *MockClient_Expecter) GetChannelByName(teamID interface{}, name interface{}, includeDeleted interface{}) *MockClient_GetChannelByName_Call {
+	return &MockClient_GetChannelByName_Call{Call: _e.mock.On("GetChannelByName", teamID, name, includeDeleted)}
+}
+
+func (_c *MockClient_GetChannelByName_Call) Run(run func(teamID string, name string, includeDeleted bool)) *MockClient_GetChannelByName_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(string), args[1].(string), args[2].(bool))
+	})
+	return _c
+}
+
+func (_c *MockClient_GetChannelByName_Call) Return(channel *model.Channel, err error) *MockClient_GetChannelByName_Call {
+	_c.Call.Return(channel, err)
+	return _c
+}
+
+func (_c *MockClient_GetChannelByName_Call) RunAndReturn(run func(teamID string, name string, includeDeleted bool) (*model.Channel, error)) *MockClient_GetChannelByName_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetConfig provides a mock function for the type MockClient
 func (_mock *MockClient) GetConfig() *model.Config {
 	ret := _mock.Called()
@@ -377,6 +436,118 @@ func (_c *MockClient_GetDirectChannel_Call) Return(channel *model.Channel, err e
 }
 
 func (_c *MockClient_GetDirectChannel_Call) RunAndReturn(run func(userID1 string, userID2 string) (*model.Channel, error)) *MockClient_GetDirectChannel_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetFile provides a mock function for the type MockClient
+func (_mock *MockClient) GetFile(fileID string) (io.ReadCloser, error) {
+	ret := _mock.Called(fileID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetFile")
+	}
+
+	var r0 io.ReadCloser
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(string) (io.ReadCloser, error)); ok {
+		return returnFunc(fileID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(string) io.ReadCloser); ok {
+		r0 = returnFunc(fileID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(io.ReadCloser)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(string) error); ok {
+		r1 = returnFunc(fileID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockClient_GetFile_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetFile'
+type MockClient_GetFile_Call struct {
+	*mock.Call
+}
+
+// GetFile is a helper method to define mock.On call
+//   - fileID
+func (_e *MockClient_Expecter) GetFile(fileID interface{}) *MockClient_GetFile_Call {
+	return &MockClient_GetFile_Call{Call: _e.mock.On("GetFile", fileID)}
+}
+
+func (_c *MockClient_GetFile_Call) Run(run func(fileID string)) *MockClient_GetFile_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(string))
+	})
+	return _c
+}
+
+func (_c *MockClient_GetFile_Call) Return(readCloser io.ReadCloser, err error) *MockClient_GetFile_Call {
+	_c.Call.Return(readCloser, err)
+	return _c
+}
+
+func (_c *MockClient_GetFile_Call) RunAndReturn(run func(fileID string) (io.ReadCloser, error)) *MockClient_GetFile_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetFileInfo provides a mock function for the type MockClient
+func (_mock *MockClient) GetFileInfo(fileID string) (*model.FileInfo, error) {
+	ret := _mock.Called(fileID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetFileInfo")
+	}
+
+	var r0 *model.FileInfo
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(string) (*model.FileInfo, error)); ok {
+		return returnFunc(fileID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(string) *model.FileInfo); ok {
+		r0 = returnFunc(fileID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*model.FileInfo)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(string) error); ok {
+		r1 = returnFunc(fileID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockClient_GetFileInfo_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetFileInfo'
+type MockClient_GetFileInfo_Call struct {
+	*mock.Call
+}
+
+// GetFileInfo is a helper method to define mock.On call
+//   - fileID
+func (_e *MockClient_Expecter) GetFileInfo(fileID interface{}) *MockClient_GetFileInfo_Call {
+	return &MockClient_GetFileInfo_Call{Call: _e.mock.On("GetFileInfo", fileID)}
+}
+
+func (_c *MockClient_GetFileInfo_Call) Run(run func(fileID string)) *MockClient_GetFileInfo_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(string))
+	})
+	return _c
+}
+
+func (_c *MockClient_GetFileInfo_Call) Return(fileInfo *model.FileInfo, err error) *MockClient_GetFileInfo_Call {
+	_c.Call.Return(fileInfo, err)
+	return _c
+}
+
+func (_c *MockClient_GetFileInfo_Call) RunAndReturn(run func(fileID string) (*model.FileInfo, error)) *MockClient_GetFileInfo_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -935,6 +1106,53 @@ func (_c *MockClient_HasPermissionTo_Call) RunAndReturn(run func(userID string, 
 	return _c
 }
 
+// HasPermissionToChannel provides a mock function for the type MockClient
+func (_mock *MockClient) HasPermissionToChannel(userID string, channelID string, permission *model.Permission) bool {
+	ret := _mock.Called(userID, channelID, permission)
+
+	if len(ret) == 0 {
+		panic("no return value specified for HasPermissionToChannel")
+	}
+
+	var r0 bool
+	if returnFunc, ok := ret.Get(0).(func(string, string, *model.Permission) bool); ok {
+		r0 = returnFunc(userID, channelID, permission)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	return r0
+}
+
+// MockClient_HasPermissionToChannel_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'HasPermissionToChannel'
+type MockClient_HasPermissionToChannel_Call struct {
+	*mock.Call
+}
+
+// HasPermissionToChannel is a helper method to define mock.On call
+//   - userID
+//   - channelID
+//   - permission
+func (_e *MockClient_Expecter) HasPermissionToChannel(userID interface{}, channelID interface{}, permission interface{}) *MockClient_HasPermissionToChannel_Call {
+	return &MockClient_HasPermissionToChannel_Call{Call: _e.mock.On("HasPermissionToChannel", userID, channelID, permission)}
+}
+
+func (_c *MockClient_HasPermissionToChannel_Call) Run(run func(userID string, channelID string, permission *model.Permission)) *MockClient_HasPermissionToChannel_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(string), args[1].(string), args[2].(*model.Permission))
+	})
+	return _c
+}
+
+func (_c *MockClient_HasPermissionToChannel_Call) Return(b bool) *MockClient_HasPermissionToChannel_Call {
+	_c.Call.Return(b)
+	return _c
+}
+
+func (_c *MockClient_HasPermissionToChannel_Call) RunAndReturn(run func(userID string, channelID string, permission *model.Permission) bool) *MockClient_HasPermissionToChannel_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // KVGet provides a mock function for the type MockClient
 func (_mock *MockClient) KVGet(key string, value interface{}) error {
 	ret := _mock.Called(key, value)
@@ -1024,6 +1242,48 @@ func (_c *MockClient_KVSet_Call) Return(err error) *MockClient_KVSet_Call {
 
 func (_c *MockClient_KVSet_Call) RunAndReturn(run func(key string, value interface{}) error) *MockClient_KVSet_Call {
 	_c.Call.Return(run)
+	return _c
+}
+
+// LogDebug provides a mock function for the type MockClient
+func (_mock *MockClient) LogDebug(msg string, keyValuePairs ...interface{}) {
+	if len(keyValuePairs) > 0 {
+		_mock.Called(msg, keyValuePairs)
+	} else {
+		_mock.Called(msg)
+	}
+
+	return
+}
+
+// MockClient_LogDebug_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'LogDebug'
+type MockClient_LogDebug_Call struct {
+	*mock.Call
+}
+
+// LogDebug is a helper method to define mock.On call
+//   - msg
+//   - keyValuePairs
+func (_e *MockClient_Expecter) LogDebug(msg interface{}, keyValuePairs ...interface{}) *MockClient_LogDebug_Call {
+	return &MockClient_LogDebug_Call{Call: _e.mock.On("LogDebug",
+		append([]interface{}{msg}, keyValuePairs...)...)}
+}
+
+func (_c *MockClient_LogDebug_Call) Run(run func(msg string, keyValuePairs ...interface{})) *MockClient_LogDebug_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		variadicArgs := args[1].([]interface{})
+		run(args[0].(string), variadicArgs...)
+	})
+	return _c
+}
+
+func (_c *MockClient_LogDebug_Call) Return() *MockClient_LogDebug_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *MockClient_LogDebug_Call) RunAndReturn(run func(msg string, keyValuePairs ...interface{})) *MockClient_LogDebug_Call {
+	_c.Run(run)
 	return _c
 }
 

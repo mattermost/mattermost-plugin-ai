@@ -5,7 +5,10 @@ package evals
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/stretchr/testify/require"
@@ -13,7 +16,7 @@ import (
 
 // ThreadExport represents the format of exported thread data
 type ThreadExport struct {
-	Thread    map[string]*model.Post     `json:"thread"`
+	Posts     map[string]*model.Post     `json:"posts"`
 	Channel   *model.Channel             `json:"channel"`
 	Team      *model.Team                `json:"team"`
 	Users     map[string]*model.User     `json:"users"`
@@ -23,6 +26,61 @@ type ThreadExport struct {
 	// Helper fields not in the JSON
 	RootPost *model.Post     `json:"-"`
 	PostList *model.PostList `json:"-"`
+}
+
+func (t *ThreadExport) RequestingUser() *model.User {
+	return t.Users[t.LatestPost().UserId]
+}
+
+func (t *ThreadExport) LatestPost() *model.Post {
+	return t.PostList.Posts[t.PostList.Order[0]]
+}
+
+func (t *ThreadExport) String() string {
+	var result strings.Builder
+
+	// Header with team/channel info
+	result.WriteString(fmt.Sprintf("Thread Export: %s > %s\n", t.Team.DisplayName, t.Channel.DisplayName))
+	result.WriteString(fmt.Sprintf("Posts: %d\n\n", len(t.PostList.Order)))
+
+	// Posts in reverse chronological order (root post first)
+	for i := len(t.PostList.Order) - 1; i >= 0; i-- {
+		postID := t.PostList.Order[i]
+		post := t.PostList.Posts[postID]
+		user := t.Users[post.UserId]
+
+		// Post header
+		if post.RootId == "" {
+			result.WriteString(fmt.Sprintf("[ROOT] %s (@%s) - %s\n",
+				user.GetDisplayName(model.ShowFullName), user.Username,
+				time.Unix(post.CreateAt/1000, 0).Format("2006-01-02 15:04:05")))
+		} else {
+			result.WriteString(fmt.Sprintf("[REPLY] %s (@%s) - %s\n",
+				user.GetDisplayName(model.ShowFullName), user.Username,
+				time.Unix(post.CreateAt/1000, 0).Format("2006-01-02 15:04:05")))
+		}
+
+		// Post content
+		if post.Message != "" {
+			result.WriteString(fmt.Sprintf("  %s\n", post.Message))
+		}
+
+		// File attachments
+		if len(post.FileIds) > 0 {
+			result.WriteString("  Attachments:\n")
+			for _, fileID := range post.FileIds {
+				if fileInfo, exists := t.FileInfos[fileID]; exists {
+					result.WriteString(fmt.Sprintf("    - %s (%s)\n", fileInfo.Name, fileInfo.MimeType))
+				} else {
+					result.WriteString(fmt.Sprintf("    - File ID: %s (info not available)\n", fileID))
+				}
+			}
+		}
+
+		result.WriteString("\n")
+	}
+
+	return result.String()
 }
 
 // LoadThreadFromJSON loads post data from a JSON file containing exported Mattermost thread data
@@ -36,11 +94,11 @@ func LoadThreadFromJSON(t *EvalT, path string) *ThreadExport {
 	var threadExport ThreadExport
 	err = json.Unmarshal(jsonFile, &threadExport)
 	require.NoError(t, err, "Failed to unmarshal JSON data")
-	require.NotEmpty(t, threadExport.Thread, "No posts loaded from file")
+	require.NotEmpty(t, threadExport.Posts, "No posts loaded from file")
 
 	// Convert thread map to slice of posts
-	posts := make([]*model.Post, 0, len(threadExport.Thread))
-	for _, post := range threadExport.Thread {
+	posts := make([]*model.Post, 0, len(threadExport.Posts))
+	for _, post := range threadExport.Posts {
 		posts = append(posts, post)
 	}
 
@@ -66,7 +124,10 @@ func LoadThreadFromJSON(t *EvalT, path string) *ThreadExport {
 		postList.Posts[post.Id] = post
 	}
 
+	postList.SortByCreateAt()
+
 	threadExport.RootPost = rootPost
 	threadExport.PostList = postList
+
 	return &threadExport
 }

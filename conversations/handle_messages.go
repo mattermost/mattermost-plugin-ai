@@ -29,9 +29,9 @@ var (
 func (c *Conversations) MessageHasBeenPosted(ctx *plugin.Context, post *model.Post) {
 	if err := c.handleMessages(post); err != nil {
 		if errors.Is(err, ErrNoResponse) {
-			c.pluginAPI.Log.Debug(err.Error())
+			c.mmClient.LogDebug(err.Error())
 		} else {
-			c.pluginAPI.Log.Error(err.Error())
+			c.mmClient.LogError(err.Error())
 		}
 	}
 }
@@ -62,12 +62,12 @@ func (c *Conversations) handleMessages(post *model.Post) error {
 		return fmt.Errorf("not responding to webhook posts: %w", ErrNoResponse)
 	}
 
-	channel, err := c.pluginAPI.Channel.Get(post.ChannelId)
+	channel, err := c.mmClient.GetChannel(post.ChannelId)
 	if err != nil {
 		return fmt.Errorf("unable to get channel: %w", err)
 	}
 
-	postingUser, err := c.pluginAPI.User.Get(post.UserId)
+	postingUser, err := c.mmClient.GetUser(post.UserId)
 	if err != nil {
 		return err
 	}

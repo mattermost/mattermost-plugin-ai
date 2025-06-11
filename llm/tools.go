@@ -23,8 +23,10 @@ type Tool struct {
 	Name        string
 	Description string
 	Schema      *jsonschema.Schema
-	Resolver    func(context *Context, argsGetter ToolArgumentGetter) (string, error)
+	Resolver    ToolResolver
 }
+
+type ToolResolver func(context *Context, argsGetter ToolArgumentGetter) (string, error)
 
 // ToolCallStatus represents the current status of a tool call
 type ToolCallStatus int

@@ -52,6 +52,7 @@ type API struct {
 	prompts              *llm.Prompts
 	config               Config
 	mmClient             mmapi.Client
+	dbClient             *mmapi.DBClient
 	licenseChecker       *enterprise.LicenseChecker
 	streamingService     streaming.Service
 	i18nBundle           *i18n.Bundle
@@ -70,6 +71,7 @@ func New(
 	config Config,
 	prompts *llm.Prompts,
 	mmClient mmapi.Client,
+	dbClient *mmapi.DBClient,
 	licenseChecker *enterprise.LicenseChecker,
 	streamingService streaming.Service,
 	i18nBundle *i18n.Bundle,
@@ -87,6 +89,7 @@ func New(
 		prompts:              prompts,
 		config:               config,
 		mmClient:             mmClient,
+		dbClient:             dbClient,
 		licenseChecker:       licenseChecker,
 		streamingService:     streamingService,
 		i18nBundle:           i18nBundle,

@@ -66,7 +66,7 @@ func GetMetadataForPosts(client Client, posts *model.PostList) (*ThreadData, err
 	}, nil
 }
 
-func (c *client) GetFirstPostBeforeTimeRangeID(channelID string, startTime, endTime int64) (string, error) {
+func (c *DBClient) GetFirstPostBeforeTimeRangeID(channelID string, startTime, endTime int64) (string, error) {
 	var result struct {
 		ID string `db:"id"`
 	}

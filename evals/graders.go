@@ -61,8 +61,9 @@ func LLMRubricT(e *EvalT, rubric, output string) {
 	e.Helper()
 	result, err := e.LLMRubric(rubric, output)
 	require.NoError(e.T, err)
-	e.Log("Output:", output)
 	RecordScore(e, &EvalResult{
+		Rubric:    rubric,
+		Output:    output,
 		Reasoning: result.Reasoning,
 		Score:     result.Score,
 		Pass:      result.Pass,

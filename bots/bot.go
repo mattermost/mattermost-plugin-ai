@@ -32,3 +32,7 @@ func (b *Bot) GetMMBot() *model.Bot {
 func (b *Bot) LLM() llm.LanguageModel {
 	return b.llm
 }
+
+func (b *Bot) SetLLMForTest(llm llm.LanguageModel) {
+	b.llm = llm
+}

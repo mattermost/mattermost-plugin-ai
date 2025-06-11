@@ -165,6 +165,8 @@ func (b *Builder) WithLLMContextParameters(params map[string]interface{}) llm.Co
 func (b *Builder) WithLLMContextBot(bot *bots.Bot) llm.ContextOption {
 	return func(c *llm.Context) {
 		c.BotName = bot.GetConfig().DisplayName
+		c.BotUsername = bot.GetConfig().Name
+		c.BotModel = bot.GetConfig().Service.DefaultModel
 		c.CustomInstructions = bot.GetConfig().CustomInstructions
 	}
 }

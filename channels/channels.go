@@ -14,20 +14,23 @@ import (
 )
 
 type Channels struct {
-	llm     llm.LanguageModel
-	prompts *llm.Prompts
-	client  mmapi.Client
+	llm      llm.LanguageModel
+	prompts  *llm.Prompts
+	client   mmapi.Client
+	dbClient *mmapi.DBClient
 }
 
 func New(
 	llm llm.LanguageModel,
 	prompts *llm.Prompts,
 	client mmapi.Client,
+	dbClient *mmapi.DBClient,
 ) *Channels {
 	return &Channels{
-		llm:     llm,
-		prompts: prompts,
-		client:  client,
+		llm:      llm,
+		prompts:  prompts,
+		client:   client,
+		dbClient: dbClient,
 	}
 }
 
@@ -103,7 +106,7 @@ const (
 
 func (c *Channels) getPostsByChannelBetween(channelID string, startTime, endTime int64) (*model.PostList, error) {
 	// Find the ID of first post in our time range
-	firstPostID, err := c.client.GetFirstPostBeforeTimeRangeID(channelID, startTime, endTime)
+	firstPostID, err := c.dbClient.GetFirstPostBeforeTimeRangeID(channelID, startTime, endTime)
 	if err != nil {
 		return nil, err
 	}

@@ -23,7 +23,7 @@ func (c *Conversations) HandleToolCall(userID string, post *model.Post, channel 
 		return fmt.Errorf("unable to get bot")
 	}
 
-	user, err := c.pluginAPI.User.Get(userID)
+	user, err := c.mmClient.GetUser(userID)
 	if err != nil {
 		return err
 	}
@@ -77,7 +77,7 @@ func (c *Conversations) HandleToolCall(userID string, post *model.Post, channel 
 	}
 	post.AddProp(streaming.ToolCallProp, string(resolvedToolsJSON))
 
-	if updateErr := c.pluginAPI.Post.UpdatePost(post); updateErr != nil {
+	if updateErr := c.mmClient.UpdatePost(post); updateErr != nil {
 		return fmt.Errorf("failed to update post with tool call results: %w", updateErr)
 	}
 

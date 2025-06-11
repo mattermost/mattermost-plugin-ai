@@ -126,7 +126,7 @@ func (a *API) handleInterval(c *gin.Context) {
 	}
 
 	// Call channels interval processing
-	resultStream, err := channels.New(bot.LLM(), a.prompts, a.mmClient).Interval(context, channel.Id, data.StartTime, data.EndTime, promptPreset)
+	resultStream, err := channels.New(bot.LLM(), a.prompts, a.mmClient, a.dbClient).Interval(context, channel.Id, data.StartTime, data.EndTime, promptPreset)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return

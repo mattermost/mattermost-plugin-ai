@@ -4,6 +4,7 @@
 package mmapi
 
 import (
+	"io"
 	"net/http"
 
 	"github.com/mattermost/mattermost/server/public/model"
@@ -16,7 +17,6 @@ type Client interface {
 	AddReaction(*model.Reaction) error
 	GetPostThread(postID string) (*model.PostList, error)
 	GetPostsSince(channelID string, since int64) (*model.PostList, error)
-	GetFirstPostBeforeTimeRangeID(channelID string, startTime, endTime int64) (string, error)
 	GetPostsBefore(channelID, postID string, page, perPage int) (*model.PostList, error)
 	CreatePost(post *model.Post) error
 	UpdatePost(post *model.Post) error
@@ -34,7 +34,11 @@ type Client interface {
 	HasPermissionTo(userID string, permission *model.Permission) bool
 	GetPluginStatus(pluginID string) (*model.PluginStatus, error)
 	PluginHTTP(req *http.Request) *http.Response
-	DB() *DBClient
+	LogDebug(msg string, keyValuePairs ...interface{})
+	GetChannelByName(teamID, name string, includeDeleted bool) (*model.Channel, error)
+	HasPermissionToChannel(userID, channelID string, permission *model.Permission) bool
+	GetFileInfo(fileID string) (*model.FileInfo, error)
+	GetFile(fileID string) (io.ReadCloser, error)
 }
 
 func NewClient(pluginAPI *pluginapi.Client) Client {
@@ -44,7 +48,6 @@ func NewClient(pluginAPI *pluginapi.Client) Client {
 		FrontendService:      pluginAPI.Frontend,
 		ConfigurationService: pluginAPI.Configuration,
 		pluginAPI:            pluginAPI,
-		DBClient:             NewDBClient(pluginAPI),
 	}
 }
 
@@ -53,12 +56,7 @@ type client struct {
 	pluginapi.UserService
 	pluginapi.FrontendService
 	pluginapi.ConfigurationService
-	*DBClient
 	pluginAPI *pluginapi.Client
-}
-
-func (m *client) DB() *DBClient {
-	return m.DBClient
 }
 
 func (m *client) GetUser(userID string) (*model.User, error) {
@@ -104,4 +102,24 @@ func (m *client) GetPluginStatus(pluginID string) (*model.PluginStatus, error) {
 
 func (m *client) PluginHTTP(req *http.Request) *http.Response {
 	return m.pluginAPI.Plugin.HTTP(req)
+}
+
+func (m *client) LogDebug(msg string, keyValuePairs ...interface{}) {
+	m.pluginAPI.Log.Debug(msg, keyValuePairs...)
+}
+
+func (m *client) GetChannelByName(teamID, name string, includeDeleted bool) (*model.Channel, error) {
+	return m.pluginAPI.Channel.GetByName(teamID, name, includeDeleted)
+}
+
+func (m *client) GetFileInfo(fileID string) (*model.FileInfo, error) {
+	return m.pluginAPI.File.GetInfo(fileID)
+}
+
+func (m *client) GetFile(fileID string) (io.ReadCloser, error) {
+	file, err := m.pluginAPI.File.Get(fileID)
+	if err != nil {
+		return nil, err
+	}
+	return io.NopCloser(file), nil
 }
