@@ -161,7 +161,7 @@ func TestThreadsSummarizeFromExportedData(t *testing.T) {
 		{
 			filename: "eval_timed_dnd.json",
 			rubrics: []string{
-				"mentions that the issue being discussed is a consistancy isue on time units of seconds vs milliseconds",
+				"mentions that the issue being discussed is a consistency issue on time units of seconds vs milliseconds",
 				"contains the usernames involved as @mentions if referenced",
 			},
 		},
