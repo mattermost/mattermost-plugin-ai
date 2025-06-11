@@ -6,12 +6,13 @@ package main
 import (
 	"bufio"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/spf13/cobra"
 )
 
 // EvalLogLine matches the structure from evals/record.go
@@ -26,38 +27,61 @@ type EvalLogLine struct {
 	Pass      bool    `json:"pass"`
 }
 
+var (
+	// Flags for view command
+	filename         string
+	showOnlyFailures bool
+)
+
 func main() {
-	if len(os.Args) < 2 {
-		printUsage()
+	var rootCmd = &cobra.Command{
+		Use:   "evalviewer",
+		Short: "Display evaluation results from evals.jsonl",
+		Long: `evalviewer is a CLI tool to run evaluations and display results in a nice table format.
+
+It can either run tests and display results, or view existing evaluation results.`,
+	}
+
+	var runCmd = &cobra.Command{
+		Use:   "run [go test flags and args]",
+		Short: "Run eval tests and display results",
+		Long: `Run go test with GOEVALS=1 environment variable set, then automatically
+find and display the evaluation results in a TUI.
+
+All arguments after 'run' are passed directly to 'go test'.`,
+		Example: `  evalviewer run -v ./conversations         # Run evals for conversations package
+  evalviewer run -v ./...                   # Run all evals
+  evalviewer run -v -cover ./conversations  # Run with test coverage`,
+		DisableFlagParsing: true,
+		Run: func(cmd *cobra.Command, args []string) {
+			runCommand(args)
+		},
+	}
+
+	var viewCmd = &cobra.Command{
+		Use:   "view",
+		Short: "Display existing evaluation results",
+		Long:  `Display evaluation results from an existing evals.jsonl file in a TUI.`,
+		Example: `  evalviewer view -file evals.jsonl         # View existing results
+  evalviewer view -failures-only            # Show only failures`,
+		Run: func(cmd *cobra.Command, args []string) {
+			viewCommandWithFlags()
+		},
+	}
+
+	// Add flags to view command
+	viewCmd.Flags().StringVarP(&filename, "file", "f", "evals.jsonl", "Path to the evals.jsonl file")
+	viewCmd.Flags().BoolVar(&showOnlyFailures, "failures-only", false, "Show only failed evaluations")
+
+	// Add commands to root
+	rootCmd.AddCommand(runCmd)
+	rootCmd.AddCommand(viewCmd)
+
+	// Execute
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-
-	command := os.Args[1]
-	args := os.Args[2:]
-
-	switch command {
-	case "run":
-		runCommand(args)
-	case "view":
-		viewCommand(args)
-	default:
-		// Default to view command for backward compatibility
-		viewCommand(os.Args[1:])
-	}
-}
-
-func printUsage() {
-	fmt.Println("evalviewer - Display evaluation results from evals.jsonl")
-	fmt.Println()
-	fmt.Println("Usage:")
-	fmt.Println("  evalviewer run [go test flags and args]   Run tests with GOEVALS=1 then display results")
-	fmt.Println("  evalviewer view [flags]                   Display existing results")
-	fmt.Println()
-	fmt.Println("Examples:")
-	fmt.Println("  evalviewer run -v ./conversations         Run evals for conversations package")
-	fmt.Println("  evalviewer run -v ./...                   Run all evals")
-	fmt.Println("  evalviewer view -file evals.jsonl         View existing results")
-	fmt.Println("  evalviewer view -failures-only            Show only failures")
 }
 
 func runCommand(args []string) {
@@ -70,12 +94,14 @@ func runCommand(args []string) {
 
 	cmd := exec.Command("go", cmdArgs...)
 	cmd.Env = append(os.Environ(), "GOEVALS=1")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 
-	// Run command silently, only capturing exit status
+	// Run command and show output
 	if err := cmd.Run(); err != nil {
-		fmt.Printf("Tests completed with errors: %v\n", err)
+		fmt.Printf("\nTests completed with errors: %v\n", err)
 	} else {
-		fmt.Println("Tests completed successfully.")
+		fmt.Println("\nTests completed successfully.")
 	}
 
 	// Find and display results
@@ -100,22 +126,7 @@ func runCommand(args []string) {
 	}
 }
 
-func viewCommand(args []string) {
-	fs := flag.NewFlagSet("view", flag.ExitOnError)
-
-	var filename string
-	var maxWidth int
-	var showOnlyFailures bool
-
-	fs.StringVar(&filename, "file", "evals.jsonl", "Path to the evals.jsonl file")
-	fs.IntVar(&maxWidth, "width", 80, "Maximum width for output columns")
-	fs.BoolVar(&showOnlyFailures, "failures-only", false, "Show only failed evaluations")
-
-	if err := fs.Parse(args); err != nil {
-		fmt.Fprintf(os.Stderr, "Error parsing flags: %v\n", err)
-		os.Exit(1)
-	}
-
+func viewCommandWithFlags() {
 	results, err := loadResults(filename, false) // Don't pre-filter, let TUI handle it
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading results: %v\n", err)

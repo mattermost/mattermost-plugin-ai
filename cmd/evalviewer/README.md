@@ -1,69 +1,51 @@
 # Eval Viewer
 
-A CLI tool to run evaluations and display results in a nice table format.
+A CLI tool to run evaluations and display results in a TUI (Terminal User Interface).
+
+## Installation
+
+### From Local Repository (Recommended)
+```bash
+cd cmd/evalviewer
+go install
+```
+
+After installation, the `evalviewer` command will be available in your PATH.
 
 ## Usage
 
 ### Run Command (Recommended)
-Run tests with `GOEVALS=1` and automatically display results:
+Run go test with `GOEVALS=1` environment variable set, then automatically find and display the evaluation results in a TUI.
+
+All arguments after 'run' are passed directly to 'go test'.
 
 ```bash
 # Run evaluations for conversations package
-go run main.go run -v ./conversations
+evalviewer run ./conversations
 
 # Run all evaluations
-go run main.go run -v ./...
+evalviewer run -v ./...
 
 # Run with test coverage
-go run main.go run -v -cover ./conversations
+evalviewer run -cover ./conversations
 ```
+
+The run command will:
+1. Execute go test with GOEVALS=1
+2. Search for evals.jsonl in current and parent directories
+3. Launch the TUI to display results
 
 ### View Command  
-Display existing evaluation results:
+Display evaluation results from an existing evals.jsonl file in a TUI.
 
 ```bash
-# View all results
-go run main.go view -file ../../evals.jsonl
+# View existing results (defaults to evals.jsonl in current directory)
+evalviewer view
 
-# Show only failures (highlighted in red)
-go run main.go view -failures-only
+# View results from specific file
+evalviewer view -file evals.jsonl
+evalviewer view -f /path/to/evals.jsonl
 
-# Adjust column widths for wider terminals  
-go run main.go view -width 200
-```
-
-## Commands
-
-### `evalviewer run [go test flags and args]`
-- Executes `go test` with `GOEVALS=1` environment variable
-- Streams test output in real-time
-- Auto-detects and displays results table
-- Shows pass/fail summary
-
-### `evalviewer view [flags]`  
-- `-file`: Path to the evals.jsonl file (default: "evals.jsonl")
-- `-failures-only`: Show only failed evaluations
-- `-width`: Maximum width for output columns (default: 80)
-
-## Table Columns
-
-- **TEST**: Test name (shortened)
-- **RUBRIC**: Evaluation rubric being tested
-- **OUTPUT**: LLM output being evaluated  
-- **RESULT**: ✓ PASS or ✗ FAIL (failures highlighted in red)
-- **SCORE**: Numeric score (0.00-1.00)
-- **REASONING**: Grader LLM's reasoning for the score
-
-## Examples
-
-```bash
-# One-command evaluation workflow
-go run main.go run -v ./conversations
-
-# View only failures from previous run
-go run main.go view -failures-only
-
-# Build and use as standalone binary
-go build -o evalviewer main.go
-./evalviewer run -v ./...
+# Show only failed evaluations
+evalviewer view -failures-only
 ```
