@@ -49,7 +49,7 @@ export const DropdownInfoOnlyVisibleToYou = () => {
     return (
         <DropdownMenuItemInfo>
             <LightbulbOutlineIconStyled/>
-            <FormattedMessage defaultMessage='Agents posts responses in the right panel which will only be visible to you.'/>
+            <FormattedMessage defaultMessage='Agents post responses in the right panel which will only be visible to you.'/>
         </DropdownMenuItemInfo>
     );
 };
