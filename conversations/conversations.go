@@ -30,11 +30,12 @@ const AnalysisTypeProp = "prompt_type"
 
 // AIThread represents a user's conversation with an AI
 type AIThread struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	ChannelID string `json:"channel_id"`
-	BotID     string `json:"bot_id"`
-	UpdatedAt int64  `json:"updated_at"`
+	ID         string `json:"id"`
+	Message    string `json:"message"`
+	Title      string `json:"title"`
+	ChannelID  string `json:"channel_id"`
+	ReplyCount int    `json:"reply_count"`
+	UpdateAt   int64  `json:"update_at"`
 }
 
 type Conversations struct {
