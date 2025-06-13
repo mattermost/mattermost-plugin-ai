@@ -229,7 +229,7 @@ const RHSNewTab = ({selectPost, setCurrentTab, activeBot}: Props) => {
             <ReverseScroll>
                 <RHSImage/>
                 <RHSTitle><FormattedMessage defaultMessage='Ask Agents anything'/></RHSTitle>
-                <RHSText><FormattedMessage defaultMessage='The Agents is here to help. Choose from the prompts below or write your own.'/></RHSText>
+                <RHSText><FormattedMessage defaultMessage='Agents are here to help. Choose from the prompts below or write your own.'/></RHSText>
                 <QuestionOptions>
                     <OptionButton onClick={addBrainstormingIdeas}>
                         <LightbulbOutlineIcon/>
