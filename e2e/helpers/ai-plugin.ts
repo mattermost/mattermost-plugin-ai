@@ -6,6 +6,8 @@ export class AIPlugin {
   readonly rhsPostTextarea: Locator;
   readonly rhsSendButton: Locator;
   readonly regenerateButton: Locator;
+  readonly chatHistoryButton: Locator;
+  readonly threadsListContainer: Locator;
   readonly promptTemplates: {
     [key: string]: Locator;
   };
@@ -16,6 +18,8 @@ export class AIPlugin {
     this.rhsPostTextarea = page.getByTestId('rhs-new-tab-create-post').locator('textarea');
     this.rhsSendButton = page.locator('#rhsContainer').getByTestId('SendMessageButton');
     this.regenerateButton = page.getByRole('button', { name: 'Regenerate' });
+    this.chatHistoryButton = page.getByTestId('chat-history');
+    this.threadsListContainer = page.getByTestId('rhs-threads-list');
     this.promptTemplates = {
       'brainstorm': page.getByRole('button', { name: 'Brainstorm ideas' }),
       'todo': page.getByRole('button', { name: 'To-do list' }),
@@ -54,4 +58,19 @@ export class AIPlugin {
   async expectTextInTextarea(text: string) {
     await expect(this.rhsPostTextarea).toHaveText(text);
   }
+
+  async openChatHistory() {
+    await this.chatHistoryButton.click();
+    await expect(this.threadsListContainer).toBeVisible();
+  }
+
+  async expectChatHistoryVisible() {
+    await expect(this.threadsListContainer).toBeVisible();
+  }
+
+  async clickChatHistoryItem(index: number = 0) {
+    const threadItems = this.threadsListContainer.locator('div').first();
+    await threadItems.nth(index).click();
+  }
+
 }
