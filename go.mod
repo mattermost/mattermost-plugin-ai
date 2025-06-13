@@ -20,7 +20,7 @@ require (
 	github.com/pgvector/pgvector-go v0.3.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.21.1
-	github.com/sashabaranov/go-openai v1.38.1
+	github.com/sashabaranov/go-openai v1.40.1
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.10.0
 	github.com/tmc/langchaingo v0.1.13

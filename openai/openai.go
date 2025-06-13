@@ -316,6 +316,28 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 		// Ping the watchdog when we receive a response
 		watchdog <- struct{}{}
 
+		delta := response.Choices[0].Delta
+		numTools := len(delta.ToolCalls)
+
+		if numTools != 0 {
+			if toolsBuffer == nil {
+				toolsBuffer = make(map[int]*ToolBufferElement)
+			}
+			for _, toolCall := range delta.ToolCalls {
+				if toolCall.Index == nil {
+					continue
+				}
+				toolIndex := *toolCall.Index
+				if toolsBuffer[toolIndex] == nil {
+					toolsBuffer[toolIndex] = &ToolBufferElement{}
+				}
+
+				toolsBuffer[toolIndex].name.WriteString(toolCall.Function.Name)
+				toolsBuffer[toolIndex].args.WriteString(toolCall.Function.Arguments)
+				toolsBuffer[toolIndex].id.WriteString(toolCall.ID)
+			}
+		}
+
 		if len(response.Choices) == 0 {
 			continue
 		}
@@ -385,26 +407,6 @@ func (s *OpenAI) streamResultToChannels(request openaiClient.ChatCompletionReque
 		default:
 			fmt.Printf("Unknown finish reason: %s", response.Choices[0].FinishReason)
 			return
-		}
-
-		delta := response.Choices[0].Delta
-		numTools := len(delta.ToolCalls)
-		if numTools != 0 {
-			if toolsBuffer == nil {
-				toolsBuffer = make(map[int]*ToolBufferElement)
-			}
-			for _, toolCall := range delta.ToolCalls {
-				if toolCall.Index == nil {
-					continue
-				}
-				toolIndex := *toolCall.Index
-				if toolsBuffer[toolIndex] == nil {
-					toolsBuffer[toolIndex] = &ToolBufferElement{}
-				}
-				toolsBuffer[toolIndex].name.WriteString(toolCall.Function.Name)
-				toolsBuffer[toolIndex].args.WriteString(toolCall.Function.Arguments)
-				toolsBuffer[toolIndex].id.WriteString(toolCall.ID)
-			}
 		}
 
 		if response.Choices[0].Delta.Content != "" {
