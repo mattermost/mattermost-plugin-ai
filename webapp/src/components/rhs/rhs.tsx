@@ -52,12 +52,12 @@ const RHSBullet = styled.li`
 `;
 
 export interface AIThread {
-    ID: string;
-    Message: string;
-    ChannelID: string;
-    Title: string;
-    ReplyCount: number;
-    UpdateAt: number;
+    id: string;
+    message: string;
+    channel_id: string;
+    title: string;
+    reply_count: number;
+    update_at: number;
 }
 
 const twentyFourHoursInMS = 24 * 60 * 60 * 1000;
@@ -142,15 +142,15 @@ export default function RHS() {
                 >
                     {threads.map((p) => (
                         <ThreadItem
-                            key={p.ID}
-                            postTitle={p.Title}
-                            postMessage={p.Message}
-                            repliesCount={p.ReplyCount}
-                            lastActivityDate={p.UpdateAt}
-                            label={bots.find((bot) => bot.dmChannelID === p.ChannelID)?.displayName ?? ''}
+                            key={p.id}
+                            postTitle={p.title}
+                            postMessage={p.message}
+                            repliesCount={p.reply_count}
+                            lastActivityDate={p.update_at}
+                            label={bots.find((bot) => bot.dmChannelID === p.channel_id)?.displayName ?? ''}
                             onClick={() => {
                                 setCurrentTab('thread');
-                                selectPost(p.ID);
+                                selectPost(p.id);
                             }}
                         />))}
                 </ThreadsList>

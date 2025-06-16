@@ -30,18 +30,8 @@ func (c *Conversations) SaveTitle(threadID, title string) error {
 	return err
 }
 
-// This is a different AIThread struct than the one in conversations.go, used for database queries
-type aiThreadData struct {
-	ID         string
-	Message    string
-	ChannelID  string
-	Title      string
-	ReplyCount int
-	UpdateAt   int64
-}
-
 func (c *Conversations) getAIThreads(dmChannelIDs []string) ([]AIThread, error) {
-	var dbPosts []aiThreadData
+	var dbPosts []AIThread
 	if err := c.db.DoQuery(&dbPosts, c.db.Builder().
 		Select(
 			"p.Id",
@@ -63,17 +53,5 @@ func (c *Conversations) getAIThreads(dmChannelIDs []string) ([]AIThread, error) 
 		return nil, fmt.Errorf("failed to get posts for bot DM: %w", err)
 	}
 
-	// Convert from internal type to public AIThread type
-	result := make([]AIThread, len(dbPosts))
-	for i, post := range dbPosts {
-		result[i] = AIThread{
-			ID:        post.ID,
-			Title:     post.Title,
-			ChannelID: post.ChannelID,
-			BotID:     "", // We don't have this info in the query
-			UpdatedAt: post.UpdateAt,
-		}
-	}
-
-	return result, nil
+	return dbPosts, nil
 }
