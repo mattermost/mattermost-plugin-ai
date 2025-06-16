@@ -40,8 +40,8 @@ const defaultNewBot: LLMBotConfig = {
 
 export const firstNewBot = {
     ...defaultNewBot,
-    name: 'ai',
-    displayName: 'Agents',
+    name: 'matty',
+    displayName: 'Matty',
 };
 
 type Props = {
