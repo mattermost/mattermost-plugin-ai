@@ -73,8 +73,23 @@ export default class Plugin {
 
         let rhs: any = null;
         if (isRHSCompatable()) {
-            rhs = registry.registerRightHandSidebarComponent(RHS, RHSTitle);
-            setOpenRHSAction(rhs.showRHSPlugin);
+            if (!registry.registerAppBarComponent) {
+                return;
+            }
+
+            // Register with the app bar
+            const appBarComponent = registry.registerAppBarComponent({
+                iconUrl: aiIcon,
+                tooltipText: 'Copilot',
+                supportedProductIds: null,
+                rhsComponent: RHS,
+                rhsTitle: RHSTitle,
+            });
+
+            if (typeof appBarComponent === 'object' && appBarComponent.rhsComponent) {
+                rhs = appBarComponent.rhsComponent;
+                setOpenRHSAction(rhs.showRHSPlugin);
+            }
         }
 
         let currentUserId = store.getState().entities.users.currentUserId;
@@ -137,7 +152,8 @@ export default class Plugin {
         }
 
         registry.registerAdminConsoleCustomSetting('Config', Config);
-        if (rhs) {
+
+        if (rhs && !registry.registerAppBarComponent) {
             registry.registerChannelHeaderButtonAction(<IconAIContainer src={aiIcon}/>, () => {
                 store.dispatch(rhs.toggleRHSPlugin);
             },
