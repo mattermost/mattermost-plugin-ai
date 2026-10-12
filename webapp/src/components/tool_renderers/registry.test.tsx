@@ -486,6 +486,50 @@ describe('channel membership tool cards', () => {
             notShown: ['dana.holloway', 'Quarterly Planning'],
         },
         {
+            label: 'a singular add call carrying user_ids renders the generic field list',
+            tool: {
+                name: 'mattermost__add_channel_member',
+                mcp_bare_name: 'add_channel_member',
+                server_origin: 'embedded://mattermost',
+                arguments: {channel_id: memberChannelId, user_ids: [memberUserId]},
+            },
+            visible: ['Channel Id', memberChannelId, 'User Ids', memberUserId],
+            notShown: ['dana.holloway', 'Quarterly Planning'],
+        },
+        {
+            label: 'a bulk add call carrying user_id renders the generic field list',
+            tool: {
+                name: 'mattermost__add_channel_members',
+                mcp_bare_name: 'add_channel_members',
+                server_origin: 'embedded://mattermost',
+                arguments: {channel_id: memberChannelId, user_id: memberUserId},
+            },
+            visible: ['Channel Id', memberChannelId, 'User Id', memberUserId],
+            notShown: ['dana.holloway', 'Quarterly Planning'],
+        },
+        {
+            label: 'a singular remove call carrying mixed member fields renders the generic field list',
+            tool: {
+                name: 'mattermost__remove_channel_member',
+                mcp_bare_name: 'remove_channel_member',
+                server_origin: 'embedded://mattermost',
+                arguments: {channel_id: memberChannelId, user_id: memberUserId, user_ids: [secondMemberUserId]},
+            },
+            visible: ['Channel Id', memberChannelId, 'User Id', memberUserId, 'User Ids', secondMemberUserId],
+            notShown: ['dana.holloway', 'omar.reyes', 'Quarterly Planning'],
+        },
+        {
+            label: 'a bulk add call carrying mixed member fields renders the generic field list',
+            tool: {
+                name: 'mattermost__add_channel_members',
+                mcp_bare_name: 'add_channel_members',
+                server_origin: 'embedded://mattermost',
+                arguments: {channel_id: memberChannelId, user_ids: [memberUserId], user_id: secondMemberUserId},
+            },
+            visible: ['Channel Id', memberChannelId, 'User Ids', memberUserId, 'User Id', secondMemberUserId],
+            notShown: ['dana.holloway', 'omar.reyes', 'Quarterly Planning'],
+        },
+        {
             label: 'an executed call renders the generic field list',
             tool: {
                 name: 'mattermost__add_channel_member',

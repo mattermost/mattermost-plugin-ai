@@ -34,6 +34,8 @@ const ResolvedName = styled.span`
 `;
 
 // The bare name of the membership tool that removes rather than adds.
+const AddMemberTool = 'add_channel_member';
+const AddMembersTool = 'add_channel_members';
 const RemoveMemberTool = 'remove_channel_member';
 
 interface MembershipParsed {
@@ -47,7 +49,7 @@ interface MembershipParsed {
  * that doesn't match that shape exactly yields null so the caller renders the
  * generic card.
  */
-function parseMembership(args: ToolCall['arguments']): MembershipParsed | null {
+function parseMembership(toolName: string, args: ToolCall['arguments']): MembershipParsed | null {
     if (args == null || typeof args !== 'object' || Array.isArray(args)) {
         return null;
     }
@@ -58,29 +60,33 @@ function parseMembership(args: ToolCall['arguments']): MembershipParsed | null {
         return null;
     }
 
-    const userIds: string[] = [];
-    if ('user_id' in obj) {
-        if (typeof obj.user_id !== 'string' || obj.user_id === '') {
+    if (toolName === AddMemberTool || toolName === RemoveMemberTool) {
+        if ('user_ids' in obj || typeof obj.user_id !== 'string' || obj.user_id === '') {
             return null;
         }
-        userIds.push(obj.user_id);
+        return {channelId, userIds: [obj.user_id]};
     }
-    if ('user_ids' in obj) {
-        if (!Array.isArray(obj.user_ids)) {
+
+    if (toolName === AddMembersTool) {
+        if ('user_id' in obj || !Array.isArray(obj.user_ids)) {
             return null;
         }
+
+        const userIds: string[] = [];
         for (const userId of obj.user_ids) {
             if (typeof userId !== 'string' || userId === '') {
                 return null;
             }
             userIds.push(userId);
         }
-    }
-    if (userIds.length === 0) {
-        return null;
+        if (userIds.length === 0) {
+            return null;
+        }
+
+        return {channelId, userIds};
     }
 
-    return {channelId, userIds};
+    return null;
 }
 
 /**
@@ -94,7 +100,8 @@ function parseMembership(args: ToolCall['arguments']): MembershipParsed | null {
  * has already executed.
  */
 const ChannelMembershipCard: React.FC<RichCardProps> = (props) => {
-    const parsed = useMemo(() => parseMembership(props.tool.arguments), [props.tool.arguments]);
+    const toolName = bareToolName(props.tool);
+    const parsed = useMemo(() => parseMembership(toolName, props.tool.arguments), [toolName, props.tool.arguments]);
     const awaiting = isAwaitingDecision(props.tool);
     const resolving = Boolean(parsed) && awaiting;
 
@@ -173,7 +180,7 @@ const ChannelMembershipCard: React.FC<RichCardProps> = (props) => {
         <ToolCardShell {...props}>
             {channelName ? (
                 <Summary>
-                    {bareToolName(props.tool) === RemoveMemberTool ? (
+                    {toolName === RemoveMemberTool ? (
                         <FormattedMessage
                             id='ai.tool_call.channel_membership.remove'
                             defaultMessage='Remove <name>{members}</name> from <name>{channel}</name>'
