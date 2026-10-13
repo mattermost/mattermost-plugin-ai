@@ -41,15 +41,47 @@
     const parseFloatFn = parseFloat;
     const CustomEventCtor = CustomEvent;
     const dispatchEventFn = window.dispatchEvent.bind(window);
+    const reflectApply = Reflect.apply;
+    const DOMExceptionCtor = DOMException;
 
     if (document.currentScript) {
         document.currentScript.remove();
     }
 
-    // Best-effort defense in depth: CSP cannot block WebRTC in Chromium, so a
-    // peer connection could reach the network (e.g. STUN to reveal the
-    // viewer's IP). A fresh realm with intact constructors would need a child
-    // frame, which the artifact CSP (frame-src 'none') already blocks.
+    // Opening the document (document.open(), and document.write() or
+    // writeln() outside parsing, which open it implicitly) erases every
+    // listener on the window and document, the bridge's included. Writes from
+    // a script the parser is running keep working. Best-effort: a script that
+    // artifact code inserts while the document is still loading also passes.
+    (function () {
+        const DocumentProto = Document.prototype;
+        const readyStateGetter = Object.getOwnPropertyDescriptor(DocumentProto, 'readyState').get;
+        const currentScriptGetter = Object.getOwnPropertyDescriptor(DocumentProto, 'currentScript').get;
+
+        function lock(name, fn) {
+            Object.defineProperty(DocumentProto, name, {value: fn, writable: false, enumerable: true, configurable: false});
+        }
+        function guardWrite(original) {
+            return function () {
+                if (reflectApply(readyStateGetter, this, []) !== 'loading' || reflectApply(currentScriptGetter, this, []) === null) {
+                    throw new DOMExceptionCtor('Artifacts cannot write to the document after it has loaded.', 'InvalidStateError');
+                }
+                return reflectApply(original, this, arguments);
+            };
+        }
+
+        lock('write', guardWrite(DocumentProto.write));
+        lock('writeln', guardWrite(DocumentProto.writeln));
+        lock('open', function () {
+            throw new DOMExceptionCtor('Artifacts cannot reopen the document.', 'InvalidStateError');
+        });
+    }());
+
+    // Best-effort defense in depth: CSP cannot block WebRTC, so a peer
+    // connection could reach the network (e.g. STUN to reveal the viewer's
+    // IP). Child frames (srcdoc, about:blank) and blob:/data: documents get
+    // fresh constructors; the real block is the Connection-Allowlist response
+    // header (Chromium 152+).
     ['RTCPeerConnection', 'webkitRTCPeerConnection', 'mozRTCPeerConnection', 'RTCDataChannel'].forEach(function (name) {
         try {
             Object.defineProperty(window, name, {value: undefined, writable: false, configurable: false});
