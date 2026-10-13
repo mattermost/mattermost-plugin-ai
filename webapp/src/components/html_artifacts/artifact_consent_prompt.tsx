@@ -25,8 +25,14 @@ const ArtifactConsentPrompt = ({fileName, onAllow, onDeny}: Props) => {
     const dialogRef = useRef<HTMLDivElement>(null);
     const [armed, setArmed] = useState(false);
 
-    // Buttons that received a pointerdown after the prompt mounted.
+    // Buttons that received a pointerdown after the prompt armed, while the
+    // pointer was already on them.
     const pressedRef = useRef(new Set<string>());
+
+    // Buttons the pointer entered after the prompt armed. A click at a spot
+    // the cursor was already resting on (or that the artifact lured the viewer
+    // to click repeatedly) never counts.
+    const enteredRef = useRef(new Set<string>());
 
     // Focus the safe choice so a stray Enter never grants access.
     // Focus returns to where it was once the prompt goes away, unless it
@@ -51,16 +57,25 @@ const ArtifactConsentPrompt = ({fileName, onAllow, onDeny}: Props) => {
             return;
         }
 
-        // detail > 0 means a pointer click; it only counts when the press
-        // started on this button after the prompt appeared.
-        if (e.detail > 0 && !pressedRef.current.has(key)) {
+        // detail > 0 means a pointer click; it only counts when the pointer
+        // entered this button after the prompt armed and the press started on
+        // it. Keyboard activation (detail 0) is not affected.
+        if (e.detail > 0 && !(pressedRef.current.has(key) && enteredRef.current.has(key))) {
             return;
         }
         action();
     }, [armed]);
 
+    const onPointerEnter = (key: string) => () => {
+        if (armed) {
+            enteredRef.current.add(key);
+        }
+    };
+
     const onPointerDown = (key: string) => () => {
-        pressedRef.current.add(key);
+        if (armed && enteredRef.current.has(key)) {
+            pressedRef.current.add(key);
+        }
     };
 
     return (
@@ -98,6 +113,7 @@ const ArtifactConsentPrompt = ({fileName, onAllow, onDeny}: Props) => {
                         emphasis='tertiary'
                         size='small'
                         aria-disabled={!armed}
+                        onPointerEnter={onPointerEnter('deny')}
                         onPointerDown={onPointerDown('deny')}
                         onClick={guarded('deny', onDeny)}
                         data-testid='html-artifact-consent-deny'
@@ -108,6 +124,7 @@ const ArtifactConsentPrompt = ({fileName, onAllow, onDeny}: Props) => {
                         emphasis='primary'
                         size='small'
                         aria-disabled={!armed}
+                        onPointerEnter={onPointerEnter('allow')}
                         onPointerDown={onPointerDown('allow')}
                         onClick={guarded('allow', onAllow)}
                         data-testid='html-artifact-consent-allow'

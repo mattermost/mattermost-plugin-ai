@@ -32,6 +32,7 @@ export type ArtifactErrorCode = 'permission_denied' | 'unknown_method' | 'busy' 
 
 export type ArtifactInboundMessage =
     {mmArtifact: 1; type: 'ready'} |
+    {mmArtifact: 1; type: 'heartbeat'} |
     {mmArtifact: 1; type: 'escape'} |
     {mmArtifact: 1; type: 'resize'; height: number} |
     {mmArtifact: 1; type: 'request'; id: string; method: string; params?: Record<string, unknown>};
@@ -55,6 +56,8 @@ export function parseArtifactMessage(data: unknown): ArtifactInboundMessage | nu
     switch (data.type) {
     case 'ready':
         return {mmArtifact: 1, type: 'ready'};
+    case 'heartbeat':
+        return {mmArtifact: 1, type: 'heartbeat'};
     case 'escape':
         return {mmArtifact: 1, type: 'escape'};
     case 'resize':
@@ -85,8 +88,8 @@ export function parseArtifactMessage(data: unknown): ArtifactInboundMessage | nu
 
 // ---- Consent store -------------------------------------------------------
 // Module level so the inline card and the fullscreen viewer share decisions.
-// Decisions are cached per fileId for the page lifetime only. That is per
-// user: Mattermost logout performs a full page reload, which clears this map.
+// Decisions are cached per viewer and file for the page lifetime only;
+// Mattermost logout also performs a full page reload, which clears this map.
 
 export type ConsentDecision = 'allow' | 'deny';
 
@@ -95,12 +98,12 @@ const consentDecisions = new Map<string, ConsentDecision>();
 // At most one prompt is shown at a time, across all artifact frames.
 let pendingPrompt: {fileId: string; cancel: () => void} | null = null;
 
-export function getConsentDecision(fileId: string): ConsentDecision | undefined {
-    return consentDecisions.get(fileId);
+export function getConsentDecision(viewerId: string, fileId: string): ConsentDecision | undefined {
+    return consentDecisions.get(`${viewerId}:${fileId}`);
 }
 
-export function setConsentDecision(fileId: string, decision: ConsentDecision) {
-    consentDecisions.set(fileId, decision);
+export function setConsentDecision(viewerId: string, fileId: string, decision: ConsentDecision) {
+    consentDecisions.set(`${viewerId}:${fileId}`, decision);
 }
 
 // Test-only reset.
@@ -221,6 +224,9 @@ export function colorSchemeFor(centerChannelBg: string | undefined): ColorScheme
 export interface ArtifactBrokerOptions {
     fileId: string;
 
+    // The viewer whose consent decisions apply.
+    viewerId: string;
+
     // The viewer's bridge token for this file. Only the genuine bridge script
     // knows it; a document that replaced the artifact in the frame does not.
     token: string;
@@ -235,9 +241,14 @@ export interface ArtifactBrokerOptions {
     dismissConsent?: () => void;
 
     // False while this frame's prompt would not be visible to the viewer
-    // (e.g. the inline card is covered by the fullscreen viewer).
+    // (e.g. the inline card is covered by the fullscreen viewer) or the
+    // viewer is not interacting with the artifact.
     canPrompt?: () => boolean;
     onReady?: () => void;
+
+    // The genuine bridge's periodic liveness signal (sent from before the
+    // artifact's own code runs); it stops when the document is replaced.
+    onHeartbeat?: () => void;
     onResize?: (height: number) => void;
 
     // Escape pressed inside the artifact (focus there never reaches the host).
@@ -297,6 +308,9 @@ export class ArtifactBroker {
             this.ready = true;
             this.opts.onReady?.();
             this.sendContext();
+            break;
+        case 'heartbeat':
+            this.opts.onHeartbeat?.();
             break;
         case 'resize':
             this.opts.onResize?.(msg.height);
@@ -361,8 +375,8 @@ export class ArtifactBroker {
     }
 
     private handleGetCurrentUser(id: string) {
-        const {fileId} = this.opts;
-        const decision = getConsentDecision(fileId);
+        const {fileId, viewerId} = this.opts;
+        const decision = getConsentDecision(viewerId, fileId);
         if (decision === 'allow') {
             this.respondCurrentUser(id);
             return;
@@ -371,8 +385,12 @@ export class ArtifactBroker {
             this.respondError(id, 'permission_denied', 'The viewer declined access to their profile');
             return;
         }
-        if (pendingPrompt || (this.opts.canPrompt && !this.opts.canPrompt())) {
+        if (pendingPrompt) {
             this.respondError(id, 'busy', 'Another permission prompt is pending');
+            return;
+        }
+        if (this.opts.canPrompt && !this.opts.canPrompt()) {
+            this.respondError(id, 'busy', 'The viewer must interact with the artifact before it can ask for permission');
             return;
         }
 
@@ -385,7 +403,7 @@ export class ArtifactBroker {
             };
             this.opts.requestConsent().then(resolve, reject);
         }).then((allowed) => {
-            setConsentDecision(fileId, allowed ? 'allow' : 'deny');
+            setConsentDecision(viewerId, fileId, allowed ? 'allow' : 'deny');
             return allowed;
         }, () => {
             // Dismissed without an answer: no decision is recorded.

