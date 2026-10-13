@@ -8,7 +8,7 @@ import {createStore} from 'redux';
 
 import {getArtifactToken} from '@/client';
 
-import {resetConsentStore} from './artifact_broker';
+import {getConsentDecision, isConsentPromptPending, resetConsentStore} from './artifact_broker';
 import ArtifactConsentPrompt, {CONSENT_ARM_DELAY_MS} from './artifact_consent_prompt';
 import ArtifactFrame, {HEARTBEAT_HIDE_MS, HEARTBEAT_STOP_MS} from './artifact_frame';
 import HTMLArtifactCard, {resetArtifactRunDecisions} from './html_artifact_card';
@@ -486,26 +486,30 @@ describe('ArtifactFrame focus guard', () => {
         expect(frameIframe()).toBe(frame);
     });
 
-    test('answering the consent prompt does not re-engage a frame hidden by a heartbeat lapse', async () => {
-        const {frame, send} = await renderReadyFrame({initiallyEngaged: true});
+    test('a heartbeat lapse drops the open consent prompt without recording a decision', async () => {
+        const {frame, win, send} = await renderReadyFrame({initiallyEngaged: true});
         act(() => frame.focus());
         send({mmArtifact: 1, type: 'heartbeat'});
         send({mmArtifact: 1, type: 'request', id: 'r1', method: 'getCurrentUser'});
-        expect(document.activeElement).toBe(screen.getByTestId('html-artifact-consent-deny'));
-
-        advance(HEARTBEAT_HIDE_MS + 500);
-        expect(screen.getByTestId('html-artifact-unresponsive')).toBeTruthy();
         expect(screen.getByTestId('html-artifact-consent')).toBeTruthy();
 
-        answerPrompt();
-        expect(screen.getByTestId('html-artifact-frame').getAttribute('data-engaged')).toBe('false');
-        advance(300);
-        expect(screen.getByTestId('html-artifact-frame').getAttribute('data-engaged')).toBe('false');
-        expect(frameIframe() !== null && document.activeElement === frameIframe()).toBe(false);
+        const posted = jest.spyOn(win, 'postMessage');
+        advance(HEARTBEAT_HIDE_MS + 500);
+        await act(async () => {
+            await Promise.resolve();
+        });
+        expect(screen.getByTestId('html-artifact-unresponsive')).toBeTruthy();
+        expect(screen.queryByTestId('html-artifact-consent')).toBeNull();
+        expect(getConsentDecision('u1', 'abcdefghijklmnopqrstuvwxyz')).toBeUndefined();
+        expect(isConsentPromptPending()).toBe(false);
+        expect(posted).not.toHaveBeenCalledWith(expect.objectContaining({result: expect.anything()}), '*');
 
-        // The prompt hands focus back to the hidden frame it opened over; the
-        // guard stops a disengaged frame holding it.
-        expect(stopped()?.getAttribute('data-stop-reason')).toBe('focus');
+        // Once the bridge is back and the viewer engages again, it must ask again.
+        send({mmArtifact: 1, type: 'heartbeat'});
+        trustedClick(interact()!);
+        send({mmArtifact: 1, type: 'request', id: 'r2', method: 'getCurrentUser'});
+        expect(screen.getByTestId('html-artifact-consent')).toBeTruthy();
+        expect(posted).not.toHaveBeenCalledWith(expect.objectContaining({result: expect.anything()}), '*');
     });
 
     test('an artifact that takes focus and opens a prompt at once gets no prompt and is stopped', async () => {

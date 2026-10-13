@@ -220,6 +220,7 @@ describe('ArtifactBroker getCurrentUser', () => {
         const {send, target, requestConsent} = setup({currentUser: leaky});
         send(request);
         await flush();
+        send({mmArtifact: 1, type: 'heartbeat'});
 
         expect(requestConsent).toHaveBeenCalledTimes(1);
         const response = target.postMessage.mock.calls[0][0];
@@ -267,6 +268,7 @@ describe('ArtifactBroker getCurrentUser', () => {
 
         resolve(true);
         await flush();
+        send({mmArtifact: 1, type: 'heartbeat'});
         expect(target.postMessage).toHaveBeenLastCalledWith(expect.objectContaining({id: 'r1', result: user}), '*');
     });
 
@@ -361,14 +363,49 @@ describe('ArtifactBroker getCurrentUser', () => {
         const fullscreen = setup({fileId: 'file1'});
         fullscreen.send(request);
         await flush();
+        fullscreen.send({mmArtifact: 1, type: 'heartbeat'});
         expect(fullscreen.requestConsent).toHaveBeenCalledTimes(1);
         expect(fullscreen.target.postMessage).toHaveBeenCalledWith(expect.objectContaining({result: user}), '*');
+    });
+
+    describe('a consented profile waits for the bridge heartbeat', () => {
+        const heartbeat = {mmArtifact: 1, type: 'heartbeat'};
+        const profileResponses = (target: {postMessage: jest.Mock}) =>
+            target.postMessage.mock.calls.filter(([msg]) => msg.type === 'response' && 'result' in msg);
+
+        test('is posted once, only after a valid heartbeat', async () => {
+            const leaky = {...user, email: 'alice@example.com'} as ArtifactUser;
+            const {send, target} = setup({currentUser: leaky});
+            send(request);
+            await flush();
+            expect(target.postMessage).not.toHaveBeenCalled();
+
+            // A heartbeat without the bridge token proves nothing.
+            expect(send({...heartbeat, token: 'forged'}, {}, false)).toBe(false);
+            expect(target.postMessage).not.toHaveBeenCalled();
+
+            send(heartbeat);
+            expect(profileResponses(target)).toEqual([[{mmArtifact: 1, type: 'response', id: 'r1', result: user}, '*']]);
+
+            send(heartbeat);
+            expect(profileResponses(target)).toHaveLength(1);
+        });
+
+        test('is never posted when the broker is disposed first', async () => {
+            const {broker, send, target} = setup();
+            send(request);
+            await flush();
+            broker.dispose();
+            send(heartbeat);
+            expect(target.postMessage).not.toHaveBeenCalled();
+        });
     });
 
     test('missing user returns unavailable', async () => {
         const {send, target} = setup({currentUser: null});
         send(request);
         await flush();
+        send({mmArtifact: 1, type: 'heartbeat'});
         expect(target.postMessage).toHaveBeenCalledWith(expect.objectContaining({
             error: expect.objectContaining({code: 'unavailable'}),
         }), '*');

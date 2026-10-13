@@ -260,6 +260,9 @@ export class ArtifactBroker {
     private ready = false;
     private disposed = false;
 
+    // Privileged replies held until the bridge proves it is still in the frame.
+    private heldReplies: Array<() => void> = [];
+
     constructor(opts: ArtifactBrokerOptions) {
         this.opts = opts;
     }
@@ -271,6 +274,7 @@ export class ArtifactBroker {
 
     dispose() {
         this.disposed = true;
+        this.heldReplies = [];
     }
 
     isReady() {
@@ -309,9 +313,13 @@ export class ArtifactBroker {
             this.opts.onReady?.();
             this.sendContext();
             break;
-        case 'heartbeat':
+        case 'heartbeat': {
             this.opts.onHeartbeat?.();
+            const held = this.heldReplies;
+            this.heldReplies = [];
+            held.forEach((reply) => reply());
             break;
+        }
         case 'resize':
             this.opts.onResize?.(msg.height);
             break;
@@ -413,7 +421,13 @@ export class ArtifactBroker {
                 pendingPrompt = null;
             }
             if (allowed) {
-                this.respondCurrentUser(id);
+                // While the viewer was deciding, the artifact may have navigated
+                // its frame to a document that never fires load and listens for
+                // our reply. Only the bridge knows the token, so answer after
+                // its next heartbeat shows it is still the frame's document.
+                if (!this.disposed) {
+                    this.heldReplies.push(() => this.respondCurrentUser(id));
+                }
             } else {
                 this.respondError(id, 'permission_denied', 'The viewer declined access to their profile');
             }

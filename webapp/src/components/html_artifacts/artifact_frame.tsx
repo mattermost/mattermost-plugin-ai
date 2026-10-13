@@ -347,6 +347,11 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
                 unresponsiveRef.current = true;
                 setUnresponsive(true);
 
+                // The document now in the frame may not be the one that
+                // asked: drop its prompt undecided.
+                pendingConsentRef.current?.reject();
+                setPendingConsent(null);
+
                 // Keystrokes must not go to a page the viewer can no longer see.
                 releaseFocus();
                 setEngaged(false);
