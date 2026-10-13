@@ -283,6 +283,7 @@ describe('ArtifactFrame navigation guard', () => {
 
     test.each([
         {name: 'the artifact frame loads a second document', reload: 'inner'},
+        {name: 'the artifact frame reports an error after loading (Firefox, blocked navigation)', reload: 'inner-error'},
         {name: 'the wrapper document is replaced', reload: 'wrapper'},
     ])('stops answering the frame and drops a pending consent prompt when $name', async ({reload}) => {
         const {frame, inner, win, send} = await renderReadyFrame({initiallyEngaged: true});
@@ -290,7 +291,11 @@ describe('ArtifactFrame navigation guard', () => {
         send({mmArtifact: 1, type: 'request', id: 'r1', method: 'getCurrentUser'});
         expect(screen.getByTestId('html-artifact-consent-deny')).toBeTruthy();
 
-        fireEvent.load(reload === 'inner' ? inner : frame);
+        if (reload === 'inner-error') {
+            fireEvent.error(inner);
+        } else {
+            fireEvent.load(reload === 'inner' ? inner : frame);
+        }
         expect(screen.queryByTestId('html-artifact-consent-deny')).toBeNull();
         expect(stopped()?.getAttribute('data-stop-reason')).toBe('navigation');
 
@@ -653,6 +658,21 @@ describe('ArtifactFrame bridge token', () => {
         });
         await flushLoad();
         expect(wrapperIframe()).not.toBeNull();
+        expect(innerIframe()).not.toBeNull();
+    });
+
+    // Firefox: a navigation the wrapper blocked before the artifact's first
+    // load event only fires an error on its frame.
+    test('unloads a frame that errors before it loaded, and retry remounts it', async () => {
+        renderFrame('replaced.html');
+        await flushLoad();
+        fireEvent.error(innerIframe(wrapperIframe()!)!);
+        expect(wrapperIframe()).toBeNull();
+        expect(screen.getByRole('alert').textContent).toContain('could not be loaded');
+        expect(stopped()).toBeNull();
+
+        fireEvent.click(screen.getByRole('button', {name: 'Retry'}));
+        await flushLoad();
         expect(innerIframe()).not.toBeNull();
     });
 

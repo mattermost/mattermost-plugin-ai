@@ -522,6 +522,17 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
 
     const handleError = failLoad;
 
+    // Firefox reports a navigation the wrapper blocked as an error on the
+    // artifact's frame, where Chromium loads an error page into it. After the
+    // artifact has loaded, either one is the artifact navigating itself.
+    const handleInnerError = useCallback(() => {
+        if (loadCountRef.current > 0) {
+            stopFrame('navigation');
+        } else {
+            failLoad();
+        }
+    }, [stopFrame, failLoad]);
+
     // Focus can rest on the wrapper document instead of the artifact, where
     // neither this page's key handlers nor the bridge see the keystroke.
     const handleWrapperKeyDown = useCallback((e: KeyboardEvent) => {
@@ -551,12 +562,12 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
         inner.setAttribute('data-testid', 'html-artifact-content');
         syncInnerFrame(inner, titleRef.current, engagedRef.current);
         inner.addEventListener('load', handleLoad);
-        inner.addEventListener('error', failLoad);
+        inner.addEventListener('error', handleInnerError);
         inner.setAttribute('src', artifactURL(load.fileId, load.nonce));
         doc.addEventListener('keydown', handleWrapperKeyDown);
         innerRef.current = inner;
         doc.body.appendChild(inner);
-    }, [load, stopFrame, failLoad, handleLoad, handleWrapperKeyDown]);
+    }, [load, stopFrame, failLoad, handleLoad, handleInnerError, handleWrapperKeyDown]);
 
     // Focusing the wrapper alone leaves keystrokes in the wrapper document,
     // and focus() on an inner frame that is still its document's focused
