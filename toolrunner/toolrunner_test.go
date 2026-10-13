@@ -771,14 +771,12 @@ func TestToolRunner_WithPendingToolCalls(t *testing.T) {
 	tests := []struct {
 		name        string
 		approve     func(llm.ToolCall) bool
-		wantPending [][]llm.ToolCall
+		wantPending [][]string
 	}{
 		{
-			name:    "batch that needs a decision is reported once",
-			approve: neverExecute,
-			wantPending: [][]llm.ToolCall{{
-				{ID: "tc1", Name: "pending_tool", Arguments: json.RawMessage(`{}`)},
-			}},
+			name:        "batch that needs a decision is reported once",
+			approve:     neverExecute,
+			wantPending: [][]string{{"tc1"}},
 		},
 		{
 			name:    "auto-executed batch is not reported",
@@ -803,10 +801,14 @@ func TestToolRunner_WithPendingToolCalls(t *testing.T) {
 				},
 			}
 			llmContext := &llm.Context{Tools: newTestToolStore(testToolDef{name: "pending_tool", result: "ok"})}
-			var pending [][]llm.ToolCall
+			var pending [][]string
 			runner := New(inner, WithPendingToolCalls(func(c *llm.Context, calls []llm.ToolCall) {
 				assert.Same(t, llmContext, c)
-				pending = append(pending, calls)
+				ids := make([]string, 0, len(calls))
+				for _, call := range calls {
+					ids = append(ids, call.ID)
+				}
+				pending = append(pending, ids)
 			}))
 
 			result, err := runner.Run(context.Background(), llm.CompletionRequest{

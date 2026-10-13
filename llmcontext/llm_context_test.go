@@ -582,4 +582,3 @@ func TestWithLLMContextResponseFiles(t *testing.T) {
 
 	assert.False(t, llm.NewContext().ToolCatalog.ResponseFilesSupported)
 }
-
