@@ -4,15 +4,24 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import styled from 'styled-components';
 import {FormattedMessage} from 'react-intl';
-import {CheckIcon, CloseCircleOutlineIcon, AlertCircleOutlineIcon} from '@mattermost/compass-icons/components';
+import {AlertCircleOutlineIcon} from '@mattermost/compass-icons/components';
 
 import {Button} from '@mattermost/compass-ui/components/button';
 import {Spinner} from '@mattermost/compass-ui/components/spinner';
 
-import {getUserMCPTools} from '@/client';
 import {useMCPConnectionEvents} from '@/hooks/use_mcp_connection_events';
+import {getUserMCPServers} from '@/utils/user_mcp_servers';
 
 import {ToolCall, ToolCallStatus} from './tool_types';
+import {
+    InteractionCard,
+    InteractionFooter,
+    InteractionFooterButtons,
+    InteractionStatusLine,
+    InteractionTitle,
+    ResolvedIcon,
+    SkippedIcon,
+} from './interaction_card_shell';
 
 // Parsed shape of the ConnectMCPServer tool arguments. Mirrors the server-side
 // ConnectMCPServer args ({"server": "<configured server name>"}).
@@ -34,7 +43,9 @@ export function parseConnectArgs(args: ToolCall['arguments']): ConnectArgs | nul
     return {server};
 }
 
-type ConnectCardState = 'interactive' | 'submitting' | 'waiting' | 'connected' | 'skipped' | 'failed';
+// 'unexpected' covers statuses a connect call never reaches (it is never
+// auto-executed); the card then shows only its title.
+type ConnectCardState = 'interactive' | 'submitting' | 'waiting' | 'connected' | 'skipped' | 'failed' | 'unexpected';
 
 function computeState(status: ToolCallStatus, canAnswer: boolean, busy: boolean): ConnectCardState {
     switch (status) {
@@ -43,14 +54,19 @@ function computeState(status: ToolCallStatus, canAnswer: boolean, busy: boolean)
             return 'submitting';
         }
         return canAnswer ? 'interactive' : 'waiting';
+
+    // Accepted: the server is still verifying the connection; it records
+    // Success only once the server's tools are available.
     case ToolCallStatus.Accepted:
+        return 'submitting';
     case ToolCallStatus.Success:
-    case ToolCallStatus.AutoApproved:
         return 'connected';
     case ToolCallStatus.Rejected:
         return 'skipped';
     case ToolCallStatus.Error:
         return 'failed';
+    case ToolCallStatus.AutoApproved:
+        return 'unexpected';
     default: {
         const unreachable: never = status;
         return unreachable;
@@ -58,52 +74,26 @@ function computeState(status: ToolCallStatus, canAnswer: boolean, busy: boolean)
     }
 }
 
-type ServerStatus = {
-    authenticated: boolean;
-    authURL?: string;
-};
+// The requester's connection status for the server, from the user's MCP
+// server list.
+type ServerLookup =
+    | {kind: 'loading'}
+    | {kind: 'error'}
+    | {kind: 'missing'}
+    | {kind: 'found'; authenticated: boolean; authURL?: string};
 
-async function fetchServerStatus(server: string): Promise<ServerStatus | null> {
-    const response = await getUserMCPTools();
-    const match = response.servers.find((s) => s.name === server);
-    if (!match) {
-        return null;
+async function lookupServer(server: string): Promise<ServerLookup> {
+    try {
+        const response = await getUserMCPServers();
+        const match = response.servers.find((s) => s.name === server);
+        if (!match || (!match.authenticated && !match.authURL)) {
+            return {kind: 'missing'};
+        }
+        return {kind: 'found', authenticated: match.authenticated, authURL: match.authURL};
+    } catch {
+        return {kind: 'error'};
     }
-    return {authenticated: match.authenticated, authURL: match.authURL};
 }
-
-const Card = styled.div`
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    padding: 16px 16px 16px 12px;
-    margin: 8px 0 12px;
-    overflow: hidden;
-    background: var(--center-channel-bg);
-    border: 1px solid rgba(var(--center-channel-color-rgb), 0.12);
-    border-radius: 4px;
-    box-shadow: 0 2px 3px rgba(0, 0, 0, 0.08);
-
-    &::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        bottom: 0;
-        width: 3px;
-        background: var(--button-bg);
-    }
-`;
-
-const Title = styled.div`
-    padding-left: 12px;
-    font-size: 14px;
-    font-weight: 600;
-    line-height: 20px;
-    color: var(--center-channel-color);
-    word-break: break-word;
-`;
 
 const ServerName = styled.span`
     font-weight: 600;
@@ -116,34 +106,6 @@ const Explanation = styled.div`
     line-height: 20px;
     color: rgba(var(--center-channel-color-rgb), 0.75);
     word-break: break-word;
-`;
-
-const Footer = styled.div`
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 8px;
-    padding-left: 12px;
-    padding-top: 4px;
-`;
-
-const StatusLine = styled.div`
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding-left: 12px;
-    font-size: 12px;
-    font-weight: 400;
-    line-height: 16px;
-    color: rgba(var(--center-channel-color-rgb), 0.75);
-`;
-
-const ConnectedIcon = styled(CheckIcon)`
-    color: var(--online-indicator);
-`;
-
-const SkippedIcon = styled(CloseCircleOutlineIcon)`
-    color: var(--dnd-indicator);
 `;
 
 const FailedIcon = styled(AlertCircleOutlineIcon)`
@@ -175,8 +137,7 @@ const ConnectCard: React.FC<ConnectCardProps> = ({
     const state = computeState(tool.status, canAnswer && Boolean(server && onAccept && onSkip), busy);
     const interactive = state === 'interactive';
 
-    const [serverStatus, setServerStatus] = useState<ServerStatus | null>(null);
-    const [statusLoaded, setStatusLoaded] = useState(false);
+    const [lookup, setLookup] = useState<ServerLookup>({kind: 'loading'});
     const [connectStarted, setConnectStarted] = useState(false);
 
     // Refs so the websocket listener stays stable while reading fresh values.
@@ -184,50 +145,55 @@ const ConnectCard: React.FC<ConnectCardProps> = ({
     const autoSubmittedRef = useRef(false);
     const interactiveRef = useRef(interactive);
     const onAcceptRef = useRef(onAccept);
+    const lookupSeqRef = useRef(0);
     interactiveRef.current = interactive;
     onAcceptRef.current = onAccept;
 
-    const refreshStatus = useCallback(async (): Promise<ServerStatus | null> => {
+    const refreshLookup = useCallback(async (): Promise<ServerLookup | null> => {
         if (!server) {
             return null;
         }
-        try {
-            const next = await fetchServerStatus(server);
-            setServerStatus(next);
-            return next;
-        } catch {
+        const seq = ++lookupSeqRef.current;
+        const next = await lookupServer(server);
+
+        // A newer lookup (e.g. after a connection event) supersedes this one.
+        if (seq !== lookupSeqRef.current) {
             return null;
-        } finally {
-            setStatusLoaded(true);
         }
+        setLookup(next);
+        return next;
     }, [server]);
 
     useEffect(() => {
         if (interactive) {
-            refreshStatus();
+            refreshLookup();
         }
-    }, [interactive, refreshStatus]);
+    }, [interactive, refreshLookup]);
 
     useMCPConnectionEvents(useCallback(() => {
         if (!interactiveRef.current) {
             return;
         }
-        refreshStatus().then((next) => {
-            if (!next?.authenticated || !connectStartedRef.current || autoSubmittedRef.current || !interactiveRef.current) {
+        refreshLookup().then((next) => {
+            const authenticated = next?.kind === 'found' && next.authenticated;
+            if (!authenticated || !connectStartedRef.current || autoSubmittedRef.current || !interactiveRef.current) {
                 return;
             }
             autoSubmittedRef.current = true;
             onAcceptRef.current?.();
         });
-    }, [refreshStatus]));
+    }, [refreshLookup]));
+
+    const authenticated = lookup.kind === 'found' && lookup.authenticated;
+    const authURL = lookup.kind === 'found' ? lookup.authURL : undefined; // eslint-disable-line no-undefined
 
     const handleConnect = () => {
-        if (!serverStatus?.authURL) {
+        if (!authURL) {
             return;
         }
         connectStartedRef.current = true;
         setConnectStarted(true);
-        window.open(serverStatus.authURL, '_blank', 'noopener,noreferrer');
+        window.open(authURL, '_blank', 'noopener,noreferrer');
     };
 
     const handleContinue = () => {
@@ -235,10 +201,10 @@ const ConnectCard: React.FC<ConnectCardProps> = ({
         onAccept?.();
     };
 
-    const authenticated = serverStatus?.authenticated === true;
-    const authURL = serverStatus?.authURL;
+    // Continue is the manual path whenever Connect cannot finish the flow on
+    // its own: already connected, connect started, or no usable link.
     const showConnect = !authenticated;
-    const showContinue = authenticated || connectStarted || (statusLoaded && !authURL);
+    const showContinue = authenticated || connectStarted || lookup.kind === 'missing' || lookup.kind === 'error';
 
     const renderTitle = () => {
         if (!server) {
@@ -272,49 +238,81 @@ const ConnectCard: React.FC<ConnectCardProps> = ({
         if (!interactive) {
             return null;
         }
-        if (authenticated) {
+        switch (lookup.kind) {
+        case 'loading':
             return (
-                <FormattedMessage
-                    id='ai.connect_mcp.already_connected'
-                    defaultMessage='{server} is connected. Continue so the agent can use it for your request.'
-                    values={{server}}
-                />
+                <Explanation>
+                    <FormattedMessage
+                        id='ai.connect_mcp.explanation'
+                        defaultMessage='The agent needs {server} to continue with your request, but your account is not connected to it yet.'
+                        values={{server}}
+                    />
+                </Explanation>
             );
-        }
-        if (statusLoaded && !authURL) {
+        case 'error':
             return (
-                <FormattedMessage
-                    id='ai.connect_mcp.no_auth_url'
-                    defaultMessage='A connection link for {server} is not available. Connect it from the tools menu, then continue.'
-                    values={{server}}
-                />
+                <Explanation data-testid='connect-mcp-status-error'>
+                    <FormattedMessage
+                        id='ai.connect_mcp.status_error'
+                        defaultMessage='Could not check your connection to {server}. You can continue if you have already connected it, or skip.'
+                        values={{server}}
+                    />
+                </Explanation>
             );
-        }
-        if (connectStarted) {
+        case 'missing':
             return (
-                <FormattedMessage
-                    id='ai.connect_mcp.in_progress'
-                    defaultMessage='Finish connecting {server} in the new window. The agent continues automatically once you are connected.'
-                    values={{server}}
-                />
+                <Explanation>
+                    <FormattedMessage
+                        id='ai.connect_mcp.no_auth_url'
+                        defaultMessage='A connection link for {server} is not available. Connect it from the tools menu, then continue.'
+                        values={{server}}
+                    />
+                </Explanation>
             );
+        case 'found':
+            if (lookup.authenticated) {
+                return (
+                    <Explanation>
+                        <FormattedMessage
+                            id='ai.connect_mcp.already_connected'
+                            defaultMessage='{server} is connected. Continue so the agent can use it for your request.'
+                            values={{server}}
+                        />
+                    </Explanation>
+                );
+            }
+            return (
+                <Explanation>
+                    {connectStarted ? (
+                        <FormattedMessage
+                            id='ai.connect_mcp.in_progress'
+                            defaultMessage='Finish connecting {server} in the new window. The agent continues automatically once you are connected.'
+                            values={{server}}
+                        />
+                    ) : (
+                        <FormattedMessage
+                            id='ai.connect_mcp.explanation'
+                            defaultMessage='The agent needs {server} to continue with your request, but your account is not connected to it yet.'
+                            values={{server}}
+                        />
+                    )}
+                </Explanation>
+            );
+        default: {
+            const unreachable: never = lookup;
+            return unreachable;
         }
-        return (
-            <FormattedMessage
-                id='ai.connect_mcp.explanation'
-                defaultMessage='The agent needs {server} to continue with your request, but your account is not connected to it yet.'
-                values={{server}}
-            />
-        );
+        }
     };
 
     const renderStatus = () => {
         switch (state) {
         case 'interactive':
+        case 'unexpected':
             return null;
         case 'submitting':
             return (
-                <StatusLine>
+                <InteractionStatusLine data-testid='connect-mcp-submitting'>
                     <Spinner
                         size='12'
                         aria-hidden={true}
@@ -323,11 +321,11 @@ const ConnectCard: React.FC<ConnectCardProps> = ({
                         id='ai.connect_mcp.submitting'
                         defaultMessage='Submitting…'
                     />
-                </StatusLine>
+                </InteractionStatusLine>
             );
         case 'waiting':
             return (
-                <StatusLine data-testid='connect-mcp-waiting'>
+                <InteractionStatusLine data-testid='connect-mcp-waiting'>
                     {server ? (
                         <FormattedMessage
                             id='ai.connect_mcp.waiting_for_requester'
@@ -340,37 +338,37 @@ const ConnectCard: React.FC<ConnectCardProps> = ({
                             defaultMessage='Waiting for the requester to connect a tool provider'
                         />
                     )}
-                </StatusLine>
+                </InteractionStatusLine>
             );
         case 'connected':
             return (
-                <StatusLine data-testid='connect-mcp-connected'>
-                    <ConnectedIcon size={16}/>
+                <InteractionStatusLine data-testid='connect-mcp-connected'>
+                    <ResolvedIcon size={16}/>
                     <FormattedMessage
                         id='ai.connect_mcp.connected'
                         defaultMessage='Connected'
                     />
-                </StatusLine>
+                </InteractionStatusLine>
             );
         case 'skipped':
             return (
-                <StatusLine data-testid='connect-mcp-skipped'>
+                <InteractionStatusLine data-testid='connect-mcp-skipped'>
                     <SkippedIcon size={16}/>
                     <FormattedMessage
                         id='ai.connect_mcp.skipped'
                         defaultMessage='Skipped'
                     />
-                </StatusLine>
+                </InteractionStatusLine>
             );
         case 'failed':
             return (
-                <StatusLine data-testid='connect-mcp-failed'>
+                <InteractionStatusLine data-testid='connect-mcp-failed'>
                     <FailedIcon size={16}/>
                     <FormattedMessage
                         id='ai.connect_mcp.failed'
                         defaultMessage='Could not connect'
                     />
-                </StatusLine>
+                </InteractionStatusLine>
             );
         default: {
             const unreachable: never = state;
@@ -379,56 +377,56 @@ const ConnectCard: React.FC<ConnectCardProps> = ({
         }
     };
 
-    const explanation = renderExplanation();
-
     return (
-        <Card data-testid='connect-mcp-card'>
-            <Title>{renderTitle()}</Title>
-            {explanation && <Explanation>{explanation}</Explanation>}
+        <InteractionCard data-testid='connect-mcp-card'>
+            <InteractionTitle>{renderTitle()}</InteractionTitle>
+            {renderExplanation()}
             {interactive && (
-                <Footer>
-                    <Button
-                        emphasis='tertiary'
-                        size='small'
-                        onClick={onSkip}
-                        data-testid='connect-mcp-skip-button'
-                    >
-                        <FormattedMessage
-                            id='ai.connect_mcp.skip'
-                            defaultMessage='Skip'
-                        />
-                    </Button>
-                    {showConnect && (
+                <InteractionFooter>
+                    <InteractionFooterButtons>
                         <Button
-                            emphasis={showContinue ? 'secondary' : 'primary'}
+                            emphasis='tertiary'
                             size='small'
-                            disabled={!authURL}
-                            onClick={handleConnect}
-                            data-testid='connect-mcp-connect-button'
+                            onClick={onSkip}
+                            data-testid='connect-mcp-skip-button'
                         >
                             <FormattedMessage
-                                id='ai.connect_mcp.connect'
-                                defaultMessage='Connect'
+                                id='ai.connect_mcp.skip'
+                                defaultMessage='Skip'
                             />
                         </Button>
-                    )}
-                    {showContinue && (
-                        <Button
-                            emphasis='primary'
-                            size='small'
-                            onClick={handleContinue}
-                            data-testid='connect-mcp-continue-button'
-                        >
-                            <FormattedMessage
-                                id='ai.connect_mcp.continue'
-                                defaultMessage='Continue'
-                            />
-                        </Button>
-                    )}
-                </Footer>
+                        {showConnect && (
+                            <Button
+                                emphasis={showContinue ? 'secondary' : 'primary'}
+                                size='small'
+                                disabled={!authURL}
+                                onClick={handleConnect}
+                                data-testid='connect-mcp-connect-button'
+                            >
+                                <FormattedMessage
+                                    id='ai.connect_mcp.connect'
+                                    defaultMessage='Connect'
+                                />
+                            </Button>
+                        )}
+                        {showContinue && (
+                            <Button
+                                emphasis='primary'
+                                size='small'
+                                onClick={handleContinue}
+                                data-testid='connect-mcp-continue-button'
+                            >
+                                <FormattedMessage
+                                    id='ai.connect_mcp.continue'
+                                    defaultMessage='Continue'
+                                />
+                            </Button>
+                        )}
+                    </InteractionFooterButtons>
+                </InteractionFooter>
             )}
             {renderStatus()}
-        </Card>
+        </InteractionCard>
     );
 };
 

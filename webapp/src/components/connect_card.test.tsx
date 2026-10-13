@@ -7,6 +7,7 @@ import {IntlProvider} from 'react-intl';
 
 import {getUserMCPTools, UserMCPServerInfo} from '@/client';
 import {notifyMCPConnectionUpdated} from '@/hooks/use_mcp_connection_events';
+import {invalidateUserMCPServers} from '@/utils/user_mcp_servers';
 
 import ConnectCard, {ConnectArgs, parseConnectArgs} from './connect_card';
 import {ToolCall, ToolCallStatus} from './tool_types';
@@ -71,6 +72,7 @@ function renderCard(props: Partial<React.ComponentProps<typeof ConnectCard>> = {
 let openSpy: jest.SpyInstance;
 
 beforeEach(() => {
+    invalidateUserMCPServers();
     mockGetUserMCPTools.mockReset();
     openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
 });
@@ -214,7 +216,7 @@ describe('ConnectCard', () => {
     });
 
     test.each([
-        {name: 'accepted', status: ToolCallStatus.Accepted, testID: 'connect-mcp-connected'},
+        {name: 'accepted (server still verifying)', status: ToolCallStatus.Accepted, testID: 'connect-mcp-submitting'},
         {name: 'success', status: ToolCallStatus.Success, testID: 'connect-mcp-connected'},
         {name: 'rejected', status: ToolCallStatus.Rejected, testID: 'connect-mcp-skipped'},
         {name: 'error', status: ToolCallStatus.Error, testID: 'connect-mcp-failed'},
@@ -227,10 +229,75 @@ describe('ConnectCard', () => {
         expect(mockGetUserMCPTools).not.toHaveBeenCalled();
     });
 
+    test('an auto-approved status is never shown as connected', () => {
+        renderCard({tool: makeTool({status: ToolCallStatus.AutoApproved})});
+
+        expect(screen.getByTestId('connect-mcp-card')).not.toBeNull();
+        expect(screen.queryByTestId('connect-mcp-connected')).toBeNull();
+        expect(screen.queryByTestId('connect-mcp-skip-button')).toBeNull();
+    });
+
+    test('a status lookup failure has its own message and still offers Continue', async () => {
+        mockGetUserMCPTools.mockRejectedValue(new Error('boom'));
+        const {onAccept} = renderCard();
+
+        expect(await screen.findByTestId('connect-mcp-status-error')).not.toBeNull();
+        expect(screen.queryByText(/connection link for Jira is not available/)).toBeNull();
+        expect((screen.getByTestId('connect-mcp-connect-button') as HTMLButtonElement).disabled).toBe(true);
+        fireEvent.click(screen.getByTestId('connect-mcp-continue-button'));
+        expect(onAccept).toHaveBeenCalledTimes(1);
+    });
+
+    test('a connection event after a failed lookup retries and recovers', async () => {
+        mockGetUserMCPTools.mockRejectedValue(new Error('boom'));
+        renderCard();
+        await screen.findByTestId('connect-mcp-status-error');
+
+        mockServers(makeServer());
+        act(() => {
+            notifyMCPConnectionUpdated({status: 'connected', serverName: 'Other'});
+        });
+
+        const connect = screen.getByTestId('connect-mcp-connect-button') as HTMLButtonElement;
+        await waitFor(() => expect(connect.disabled).toBe(false));
+        expect(screen.queryByTestId('connect-mcp-status-error')).toBeNull();
+    });
+
+    test('several pending cards share one status request', async () => {
+        mockServers(makeServer());
+        render(
+            <IntlProvider locale='en'>
+                <ConnectCard
+                    tool={makeTool({id: 'c_1'})}
+                    server='Jira'
+                    isProcessing={false}
+                    canAnswer={true}
+                    onAccept={jest.fn()}
+                    onSkip={jest.fn()}
+                />
+                <ConnectCard
+                    tool={makeTool({id: 'c_2'})}
+                    server='Jira'
+                    isProcessing={false}
+                    canAnswer={true}
+                    onAccept={jest.fn()}
+                    onSkip={jest.fn()}
+                />
+            </IntlProvider>,
+        );
+
+        await waitFor(() => {
+            for (const button of screen.getAllByTestId('connect-mcp-connect-button')) {
+                expect((button as HTMLButtonElement).disabled).toBe(false);
+            }
+        });
+        expect(mockGetUserMCPTools).toHaveBeenCalledTimes(1);
+    });
+
     test('a local decision shows the submitting state without buttons', () => {
         renderCard({localDecision: true});
 
-        expect(screen.getByText('Submitting…')).not.toBeNull();
+        expect(screen.getByTestId('connect-mcp-submitting')).not.toBeNull();
         expect(screen.queryByTestId('connect-mcp-skip-button')).toBeNull();
     });
 });
