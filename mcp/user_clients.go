@@ -126,7 +126,11 @@ type connectTask struct {
 	// identity is the connection identity recorded on the attempt so ReInit
 	// can tell a still-valid session from a stale one.
 	identity originIdentity
-	dial     func() (*Client, error)
+	// description and toolNames are admin-authored metadata attached to an
+	// OAuth-needed failure so the server can be advertised to the user.
+	description string
+	toolNames   []string
+	dial        func() (*Client, error)
 }
 
 // connectPlan is a connectTask bound to the attempt that will produce (or has
@@ -400,10 +404,12 @@ func (c *UserClients) recordConnectFailure(mcpErrors *Errors, plan connectPlan) 
 
 	if oauthErr, ok := errors.AsType[*OAuthNeededError](plan.err); ok {
 		mcpErrors.ToolAuthErrors = append(mcpErrors.ToolAuthErrors, llm.ToolAuthError{
-			ServerName:   plan.task.serverName,
-			ServerOrigin: plan.task.origin,
-			AuthURL:      oauthErr.AuthURL(),
-			Error:        plan.err,
+			ServerName:        plan.task.serverName,
+			ServerOrigin:      plan.task.origin,
+			AuthURL:           oauthErr.AuthURL(),
+			Error:             plan.err,
+			ServerDescription: plan.task.description,
+			ToolNames:         plan.task.toolNames,
 		})
 		return mcpErrors
 	}
@@ -436,10 +442,12 @@ func (c *UserClients) remoteConnectTask(ctx context.Context, serverConfig Server
 	dialCtx := cacheableContext(ctx)
 	serviceAccount := c.serviceAccount()
 	return connectTask{
-		origin:     serverConfig.BaseURL,
-		serverID:   serverConfig.Name,
-		serverName: serverConfig.Name,
-		identity:   remoteOriginIdentityForMode(serverConfig, false, serviceAccount),
+		origin:      serverConfig.BaseURL,
+		serverID:    serverConfig.Name,
+		serverName:  serverConfig.Name,
+		identity:    remoteOriginIdentityForMode(serverConfig, false, serviceAccount),
+		description: serverConfig.Description,
+		toolNames:   adminConfiguredToolNames(serverConfig.ToolConfigs),
 		dial: func() (*Client, error) {
 			return c.dialAdmitted(dialCtx, func() (*Client, error) {
 				return newClientWithTimeout(dialCtx, budget, c.userID, serverConfig, clientParams{
@@ -772,27 +780,32 @@ func (c *UserClients) clearOAuthNeededForServer(client *Client) {
 	}
 }
 
-func (c *UserClients) rememberOAuthNeededForToolCall(client *Client, err error) {
+// rememberOAuthNeededForToolCall handles a tool call that failed because the
+// user's authorization for the server lapsed: it persists the OAuth-needed
+// state and drops the cached session so the next catalog build re-dials and
+// reports the server as unconnected instead of offering its dead tools. It
+// returns the server's OAuth start URL, or "" when err is not OAuth-related.
+func (c *UserClients) rememberOAuthNeededForToolCall(client *Client, err error) string {
 	if c.oauthManager == nil || client == nil || client.config.Name == "" || err == nil {
-		return
+		return ""
 	}
 
-	oauthErr := client.oauthNeededError(err)
-	if oauthErr == nil {
-		return
-	}
-
-	needed, ok := errors.AsType[*OAuthNeededError](oauthErr)
+	needed, ok := errors.AsType[*OAuthNeededError](err)
 	if !ok {
-		return
+		needed, ok = errors.AsType[*OAuthNeededError](client.oauthNeededError(err))
 	}
+	if !ok {
+		return ""
+	}
+
+	closeDetachedClients(c.log, c.detachOrigins(clientOrigin(client, client.config.Name)))
 
 	authURL := needed.AuthURL()
 	if authURL == "" {
 		authURL = c.oauthManager.StartURL(client.config.Name)
 	}
 	if authURL == "" {
-		return
+		return ""
 	}
 
 	if storeErr := c.oauthManager.StoreAuthNeededState(c.userID, client.config.Name, authURL); storeErr != nil {
@@ -801,6 +814,42 @@ func (c *UserClients) rememberOAuthNeededForToolCall(client *Client, err error) 
 			"serverID", client.config.Name,
 			"error", storeErr)
 	}
+	return authURL
+}
+
+// reconnectNeededToolError rewrites an OAuth-needed tool failure into guidance
+// for the model. When the turn can offer ConnectMCPServer for the server, the
+// model is told to call it; otherwise it is told to ask the user to reconnect.
+func reconnectNeededToolError(llmContext *llm.Context, client *Client, authURL string, err error) error {
+	name := client.config.Name
+	server, ok := llm.NewUnconnectedMCPServer(llm.ToolAuthError{
+		ServerName:        name,
+		ServerOrigin:      client.config.BaseURL,
+		AuthURL:           authURL,
+		ServerDescription: client.config.Description,
+		ToolNames:         adminConfiguredToolNames(client.config.ToolConfigs),
+	})
+	if ok && llmContext.ReportMCPServerNeedsReconnect(server) {
+		return fmt.Errorf("MCP server %q needs the user to reconnect because their authorization expired or was revoked. "+
+			"Call %s with {\"server\":%q} so the user can reconnect it, then retry. Do not claim the action was performed: %w",
+			name, llm.ConnectMCPServerToolName, name, err)
+	}
+	return fmt.Errorf("MCP server %q needs the user to reconnect because their authorization expired or was revoked. "+
+		"Ask the user to reconnect %s and then try again. Do not claim the action was performed: %w",
+		name, name, err)
+}
+
+// adminConfiguredToolNames returns the enabled tool names an admin configured
+// for a server. It is the only tool metadata advertised for a server the user
+// has not connected: the shared tools cache reflects another user's view.
+func adminConfiguredToolNames(toolConfigs []ToolConfig) []string {
+	names := make([]string, 0, len(toolConfigs))
+	for _, toolConfig := range toolConfigs {
+		if toolConfig.Enabled && toolConfig.Name != "" {
+			names = append(names, toolConfig.Name)
+		}
+	}
+	return names
 }
 
 // createToolResolver creates a resolver function for the given tool
@@ -815,7 +864,9 @@ func (c *UserClients) createToolResolver(client *Client, toolName string) llm.To
 
 		result, err := client.CallToolWithMetadata(ctx, toolName, args, metadata)
 		if err != nil {
-			c.rememberOAuthNeededForToolCall(client, err)
+			if authURL := c.rememberOAuthNeededForToolCall(client, err); authURL != "" {
+				return result, reconnectNeededToolError(llmContext, client, authURL, err)
+			}
 			return result, err
 		}
 

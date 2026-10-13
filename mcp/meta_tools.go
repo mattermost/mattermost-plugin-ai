@@ -36,7 +36,24 @@ type LoadToolArgs struct {
 
 type SearchToolsResult struct {
 	Tools []SearchToolsResultItem `json:"tools"`
+	// UnavailableServers lists MCP servers matching the query that the user
+	// has not connected, so the model can offer to connect them instead of
+	// concluding the capability does not exist.
+	UnavailableServers []SearchToolsUnavailableServer `json:"unavailable_servers,omitempty"`
 }
+
+// SearchToolsUnavailableServer is an unconnected MCP server matching a
+// search_tools query.
+type SearchToolsUnavailableServer struct {
+	Server string `json:"server"`
+	Status string `json:"status"`
+	Hint   string `json:"hint"`
+}
+
+const (
+	unavailableServerStatusNeedsAuthentication = "needs_authentication"
+	maxUnavailableServerSearchResults          = 3
+)
 
 type SearchToolsResultItem struct {
 	Name    string `json:"name"`
@@ -88,6 +105,7 @@ func searchToolsResolver(registry *ToolRegistry) llm.ToolResolver {
 
 		query := strings.TrimSpace(args.Query)
 		items := []SearchToolsResultItem{}
+		var unavailable []SearchToolsUnavailableServer
 		if query != "" {
 			if llmContext != nil {
 				llmContext.MarkMCPDynamicToolSearch()
@@ -97,6 +115,7 @@ func searchToolsResolver(registry *ToolRegistry) llm.ToolResolver {
 					items = found
 				}
 			}
+			unavailable = searchUnconnectedMCPServers(llmContext, query)
 		}
 
 		if len(items) == 0 {
@@ -105,8 +124,40 @@ func searchToolsResolver(registry *ToolRegistry) llm.ToolResolver {
 			observe("success")
 		}
 
-		return marshalMetaToolResult(SearchToolsResult{Tools: items})
+		return marshalMetaToolResult(SearchToolsResult{Tools: items, UnavailableServers: unavailable})
 	}
+}
+
+// searchUnconnectedMCPServers matches query against this turn's unconnected
+// servers by name, admin description, and admin-configured tool names. Only
+// servers the model can actually offer to connect are returned.
+func searchUnconnectedMCPServers(llmContext *llm.Context, query string) []SearchToolsUnavailableServer {
+	if llmContext == nil || len(llmContext.ToolCatalog.UnconnectedMCPServers) == 0 || !llmContext.IsToolCallable(llm.ConnectMCPServerToolName) {
+		return nil
+	}
+
+	servers := llmContext.ToolCatalog.UnconnectedMCPServers
+	docs := make([]BM25Document, 0, len(servers))
+	for _, server := range servers {
+		docs = append(docs, BM25Document{
+			ID:   server.Name,
+			Text: strings.Join(append([]string{server.Name, server.Description}, server.ToolNames...), " "),
+		})
+	}
+
+	matches := NewBM25Index(docs).Search(query, maxUnavailableServerSearchResults)
+	if len(matches) == 0 {
+		return nil
+	}
+	result := make([]SearchToolsUnavailableServer, 0, len(matches))
+	for _, match := range matches {
+		result = append(result, SearchToolsUnavailableServer{
+			Server: match.ID,
+			Status: unavailableServerStatusNeedsAuthentication,
+			Hint:   fmt.Sprintf(`The user has not connected %s. Call %s with {"server":%q} to ask them to connect it.`, match.ID, llm.ConnectMCPServerToolName, match.ID),
+		})
+	}
+	return result
 }
 
 func loadToolResolver(registry *ToolRegistry) llm.ToolResolver {
