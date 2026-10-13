@@ -1091,15 +1091,18 @@ func TestGetBotByUsernameFindsRenamedBotAccount(t *testing.T) {
 			expectedFirst: renamed,
 		},
 		{
-			name:          "name held by a bot account outside the registry",
-			username:      "unmanaged",
-			account:       &model.User{Id: "bot-3", Username: "unmanaged", IsBot: true},
-			expectedFirst: other,
+			name:     "name held by a bot account outside the registry",
+			username: "unmanaged",
+			account:  &model.User{Id: "bot-3", Username: "unmanaged", IsBot: true},
 		},
 		{
-			name:          "name nobody holds",
-			username:      "missing",
-			accountErr:    notFound,
+			name:       "name nobody holds",
+			username:   "missing",
+			accountErr: notFound,
+		},
+		{
+			name:          "no name given",
+			username:      "",
 			expectedFirst: other,
 		},
 	}

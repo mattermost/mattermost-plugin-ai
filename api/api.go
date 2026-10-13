@@ -502,7 +502,7 @@ func (a *API) aiBotRequired(c *gin.Context) {
 
 	bot := a.bots.GetBotByUsernameOrFirst(botUsername)
 	if bot == nil {
-		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to get bot: %s", botUsername))
+		c.AbortWithError(http.StatusNotFound, fmt.Errorf("agent not available: %s", botUsername))
 		return
 	}
 	c.Set(ContextBotKey, bot)

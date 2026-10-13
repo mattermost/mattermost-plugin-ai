@@ -69,10 +69,11 @@ type testConfigImpl struct {
 	enableChannelMentionToolCalling bool
 	mcpConfig                       mcp.Config
 	services                        []llm.ServiceConfig
+	defaultBotName                  string
 }
 
 func (tc *testConfigImpl) GetDefaultBotName() string {
-	return "ai"
+	return tc.defaultBotName
 }
 
 func (tc *testConfigImpl) MCP() mcp.Config {
@@ -777,11 +778,6 @@ func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 	// behavior replace this with CaptureAuditRecords.
 	mockAPI.On("LogAuditRec", mock.Anything).Maybe()
 
-	// Most tests register a bot under another name, so routing resolves the
-	// default name through its account before falling back to the first bot.
-	mockAPI.On("GetUserByUsername", cfg.GetDefaultBotName()).
-		Return(nil, model.NewAppError("GetUserByUsername", "app.user.missing_account.const", nil, "", http.StatusNotFound)).Maybe()
-
 	conversationsService := conversations.New(
 		llmPrompts,
 		nil,
@@ -844,6 +840,7 @@ func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 func TestAIBotRequiredUsesConfiguredDefaultBot(t *testing.T) {
 	e := SetupTestEnvironment(t)
 	defer e.Cleanup(t)
+	e.config.defaultBotName = "ai"
 
 	defaultBot := bots.NewBot(
 		llm.BotConfig{Name: "ai", DisplayName: "AI"},
@@ -871,6 +868,60 @@ func TestAIBotRequiredUsesConfiguredDefaultBot(t *testing.T) {
 
 	selectedBot := ctx.MustGet(ContextBotKey).(*bots.Bot)
 	require.Equal(t, "ai", selectedBot.GetMMBot().Username)
+}
+
+func TestAIBotRequiredDoesNotSubstituteAnotherAgent(t *testing.T) {
+	first := bots.NewBot(
+		llm.BotConfig{Name: "first", DisplayName: "First"},
+		llm.ServiceConfig{},
+		&model.Bot{UserId: "firstbotuserid12345678901", Username: "first", DisplayName: "First"},
+		nil,
+	)
+	named := bots.NewBot(
+		llm.BotConfig{Name: "named", DisplayName: "Named"},
+		llm.ServiceConfig{},
+		&model.Bot{UserId: "namedbotuserid12345678901", Username: "named", DisplayName: "Named"},
+		nil,
+	)
+
+	tests := []struct {
+		name           string
+		query          string
+		defaultBotName string
+		expected       *bots.Bot
+	}{
+		{name: "requested agent is served", query: "?botUsername=named", expected: named},
+		{name: "requested agent is unavailable", query: "?botUsername=renamed"},
+		{name: "configured default agent is unavailable", defaultBotName: "renamed"},
+		{name: "no agent requested and no default configured", expected: first},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			e := SetupTestEnvironment(t)
+			defer e.Cleanup(t)
+			e.config.defaultBotName = tc.defaultBotName
+			e.mockAPI.On("GetUserByUsername", "renamed").
+				Return(nil, model.NewAppError("GetUserByUsername", "app.user.missing_account.const", nil, "", http.StatusNotFound)).Maybe()
+			e.bots.SetBotsForTesting([]*bots.Bot{first, named})
+
+			w := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(w)
+			ctx.Request = httptest.NewRequest(http.MethodPost, "/post/postid/react"+tc.query, nil)
+
+			e.api.aiBotRequired(ctx)
+
+			if tc.expected == nil {
+				require.True(t, ctx.IsAborted())
+				require.Equal(t, http.StatusNotFound, w.Code)
+				_, set := ctx.Get(ContextBotKey)
+				require.False(t, set, "no other agent may be selected in place of the requested one")
+				return
+			}
+			require.False(t, ctx.IsAborted())
+			require.Same(t, tc.expected, ctx.MustGet(ContextBotKey).(*bots.Bot))
+		})
+	}
 }
 
 func TestPostRouter(t *testing.T) {
@@ -1290,6 +1341,7 @@ func TestHandleGetAIBotsDefaultBotAfterFilteredBot(t *testing.T) {
 
 	e := SetupTestEnvironment(t)
 	defer e.Cleanup(t)
+	e.config.defaultBotName = "ai"
 
 	filteredBot := bots.NewBot(
 		llm.BotConfig{
@@ -1339,6 +1391,7 @@ func TestHandleGetAIBotsIsDefaultFlag(t *testing.T) {
 
 	e := SetupTestEnvironment(t)
 	defer e.Cleanup(t)
+	e.config.defaultBotName = "ai"
 
 	defaultBot := bots.NewBot(
 		llm.BotConfig{Name: "ai", DisplayName: "Default Agent"},
