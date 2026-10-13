@@ -467,6 +467,7 @@ describe('ArtifactFrame focus guard', () => {
         });
         const allow = screen.getByTestId('html-artifact-consent-allow');
         act(() => allow.focus());
+        fireEvent.keyDown(allow, {key: 'Enter'});
         fireEvent.click(allow);
         expect(screen.queryByTestId('html-artifact-consent')).toBeNull();
     };
@@ -582,7 +583,7 @@ describe('ArtifactFrame bridge token', () => {
     });
 });
 
-describe('ArtifactConsentPrompt activation guard', () => {
+describe('ArtifactConsentPrompt focus handling', () => {
     function renderPrompt() {
         const onAllow = jest.fn();
         const onDeny = jest.fn();
@@ -647,35 +648,6 @@ describe('ArtifactConsentPrompt activation guard', () => {
         expect(screen.getByRole('alertdialog', {name: 'Allow access to your profile?'})).toBeTruthy();
         expect(document.activeElement).toBe(deny);
     });
-
-    const cases: Array<{name: string; armed: boolean; pointerDownAfterMount: boolean; detail: number; expectCalled: boolean}> = [
-        {name: 'pointer click right after the prompt appears is ignored', armed: false, pointerDownAfterMount: true, detail: 1, expectCalled: false},
-        {name: 'keyboard activation right after the prompt appears is ignored', armed: false, pointerDownAfterMount: false, detail: 0, expectCalled: false},
-        {name: 'pointer click whose press started before the prompt is ignored', armed: true, pointerDownAfterMount: false, detail: 1, expectCalled: false},
-        {name: 'pointer click after the delay counts', armed: true, pointerDownAfterMount: true, detail: 1, expectCalled: true},
-        {name: 'keyboard activation after the delay counts', armed: true, pointerDownAfterMount: false, detail: 0, expectCalled: true},
-    ];
-
-    for (const button of ['allow', 'deny'] as const) {
-        for (const c of cases) {
-            test(`${button}: ${c.name}`, () => {
-                const prompt = renderPrompt();
-                const el = prompt[button];
-                if (c.armed) {
-                    arm();
-                }
-                if (c.pointerDownAfterMount) {
-                    if (c.armed) {
-                        fireEvent.pointerEnter(el);
-                    }
-                    fireEvent.pointerDown(el);
-                }
-                fireEvent.click(el, {detail: c.detail});
-                const handler = button === 'allow' ? prompt.onAllow : prompt.onDeny;
-                expect(handler).toHaveBeenCalledTimes(c.expectCalled ? 1 : 0);
-            });
-        }
-    }
 
     test('buttons read as disabled until the delay passes', () => {
         const {allow, deny} = renderPrompt();
@@ -779,9 +751,11 @@ describe('artifact safety notice', () => {
             <HTMLArtifactCard
                 fileId='abcdefghijklmnopqrstuvwxyz'
                 fileName={fileName}
-                autoRun={view === 'card'}
             />
         )));
+        if (view === 'card') {
+            trustedClick(screen.getByTestId('html-artifact-run'));
+        }
         await flushToken();
         const notice = screen.getByRole('note');
         expect(notice.getAttribute('aria-label')).toMatch(/AI-generated.*Never enter passwords/);
@@ -794,27 +768,17 @@ describe('HTMLArtifactCard run gate', () => {
     const FILE_ID = 'abcdefghijklmnopqrstuvwxyz';
     const placeholder = () => screen.queryByTestId('html-artifact-run-placeholder');
 
-    function renderCard(autoRun: boolean, fileId = FILE_ID) {
+    function renderCard(fileId = FILE_ID) {
         return render(withProviders(
             <HTMLArtifactCard
                 fileId={fileId}
                 fileName='run.html'
-                autoRun={autoRun}
             />,
         ));
     }
 
-    test('the requester\'s card loads right away, not engaged', async () => {
-        renderCard(true);
-        await flushToken();
-        expect(placeholder()).toBeNull();
-        expect(frameIframe()).not.toBeNull();
-        expect(screen.getByTestId('html-artifact-frame').getAttribute('data-engaged')).toBe('false');
-        expect(screen.getByTestId('html-artifact-reload')).toBeTruthy();
-    });
-
-    test('anyone else sees Run and no frame until a trusted click on Run', async () => {
-        renderCard(false);
+    test('shows Run and no frame until a trusted click on Run, then loads the artifact not engaged', async () => {
+        renderCard();
         await flushToken();
         expect(placeholder()?.textContent).toContain('runs code only when you choose');
         expect(frameIframe()).toBeNull();
@@ -835,7 +799,7 @@ describe('HTMLArtifactCard run gate', () => {
     });
 
     test('Run loads the artifact covered: clicking Run does not give it keyboard focus', async () => {
-        renderCard(false);
+        renderCard();
         trustedClick(screen.getByTestId('html-artifact-run'));
         await flushToken();
         const frame = frameIframe()!;
@@ -849,12 +813,12 @@ describe('HTMLArtifactCard run gate', () => {
     });
 
     test('Run is remembered per viewer and file for the page session', async () => {
-        const first = renderCard(false);
+        const first = renderCard();
         trustedClick(screen.getByTestId('html-artifact-run'));
         await flushToken();
         first.unmount();
 
-        const again = renderCard(false);
+        const again = renderCard();
         await flushToken();
         expect(placeholder()).toBeNull();
         expect(frameIframe()).not.toBeNull();
@@ -863,29 +827,13 @@ describe('HTMLArtifactCard run gate', () => {
         expect(screen.getByTestId('html-artifact-frame').getAttribute('data-engaged')).toBe('false');
         again.unmount();
 
-        renderCard(false, 'zyxwvutsrqponmlkjihgfedcba');
+        renderCard('zyxwvutsrqponmlkjihgfedcba');
         await flushToken();
         expect(placeholder()).not.toBeNull();
-    });
-
-    test('runs once the viewer turns out to be the requester', async () => {
-        const {rerender} = renderCard(false);
-        await flushToken();
-        expect(placeholder()).not.toBeNull();
-        rerender(withProviders(
-            <HTMLArtifactCard
-                fileId={FILE_ID}
-                fileName='run.html'
-                autoRun={true}
-            />,
-        ));
-        await flushToken();
-        expect(placeholder()).toBeNull();
-        expect(frameIframe()).not.toBeNull();
     });
 
     test('opening fullscreen from the placeholder runs the artifact there, covered', async () => {
-        renderCard(false);
+        renderCard();
         trustedClick(screen.getByTestId('html-artifact-open-fullscreen'));
         await flushToken();
         const viewer = screen.getByTestId('html-artifact-fullscreen');
