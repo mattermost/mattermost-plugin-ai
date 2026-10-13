@@ -201,9 +201,9 @@ test.describe('Connect MCP server from a conversation (Mocked LLM)', () => {
             const connectTool = offeredTool(request, CONNECT_TOOL);
             expect(connectTool, 'ConnectMCPServer offered to the model').toBeDefined();
             expect(connectTool.function.description).toContain(MOCK_OAUTH_SERVER_NAME);
-            const prompt = systemPrompt(request);
-            expect(prompt).toContain(MOCK_OAUTH_SERVER_NAME);
-            expect(prompt).toContain(SERVER_DESCRIPTION);
+            expect(connectTool.function.description).toContain(SERVER_DESCRIPTION);
+            // The per-turn tool description is the only list of unconnected servers.
+            expect(systemPrompt(request)).not.toContain(SERVER_DESCRIPTION);
 
             await card.getByTestId('connect-mcp-skip-button').click();
 
@@ -281,8 +281,9 @@ test.describe('Connect MCP server from a conversation (Mocked LLM)', () => {
 
             const request = await firstTurnRequest(userMessage);
             expect(offeredTool(request, 'search_tools'), 'dynamic mode is active').toBeDefined();
-            expect(offeredTool(request, CONNECT_TOOL), 'ConnectMCPServer offered to the model').toBeDefined();
-            expect(systemPrompt(request)).toContain(MOCK_OAUTH_SERVER_NAME);
+            const connectTool = offeredTool(request, CONNECT_TOOL);
+            expect(connectTool, 'ConnectMCPServer offered to the model').toBeDefined();
+            expect(connectTool.function.description).toContain(MOCK_OAUTH_SERVER_NAME);
 
             await card.getByTestId('connect-mcp-skip-button').click();
             await expect(botPost.getByText(followUpText)).toBeVisible({ timeout: 60000 });

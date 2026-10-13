@@ -41,7 +41,7 @@ func TestSearchToolsReportsUnavailableServers(t *testing.T) {
 		name       string
 		query      string
 		llmContext *llm.Context
-		want       []SearchToolsUnavailableServer
+		want       []llm.UnconnectedMCPServer
 	}{
 		{
 			name:  "matches by admin tool name",
@@ -50,11 +50,7 @@ func TestSearchToolsReportsUnavailableServers(t *testing.T) {
 				Tools:       connectCallableStore(),
 				ToolCatalog: llm.ToolCatalogContext{UnconnectedMCPServers: unconnected},
 			},
-			want: []SearchToolsUnavailableServer{{
-				Server: "Jira",
-				Status: "needs_authentication",
-				Hint:   `The user has not connected Jira. Call ConnectMCPServer with {"server":"Jira"} to ask them to connect it.`,
-			}},
+			want: unconnected[:1],
 		},
 		{
 			name:  "matches by description",
@@ -63,11 +59,7 @@ func TestSearchToolsReportsUnavailableServers(t *testing.T) {
 				Tools:       connectCallableStore(),
 				ToolCatalog: llm.ToolCatalogContext{UnconnectedMCPServers: unconnected},
 			},
-			want: []SearchToolsUnavailableServer{{
-				Server: "Calendar",
-				Status: "needs_authentication",
-				Hint:   `The user has not connected Calendar. Call ConnectMCPServer with {"server":"Calendar"} to ask them to connect it.`,
-			}},
+			want: unconnected[1:],
 		},
 		{
 			name:  "no match",
@@ -116,7 +108,14 @@ func TestSearchToolsReportsUnavailableServers(t *testing.T) {
 
 			var result SearchToolsResult
 			require.NoError(t, json.Unmarshal([]byte(raw), &result))
-			assert.Equal(t, tt.want, result.UnavailableServers)
+			require.Len(t, result.UnavailableServers, len(tt.want))
+			for i, server := range tt.want {
+				got := result.UnavailableServers[i]
+				assert.Equal(t, server.Name, got.Server)
+				assert.Equal(t, "needs_authentication", got.Status)
+				assert.Contains(t, got.Hint, server.PromptLine())
+				assert.Contains(t, got.Hint, `ConnectMCPServer with {"server":"`+server.Name+`"}`)
+			}
 			if tt.want == nil {
 				assert.NotContains(t, raw, "unavailable_servers")
 			}

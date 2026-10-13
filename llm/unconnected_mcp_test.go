@@ -109,57 +109,36 @@ func TestNewUnconnectedMCPServerBoundsDescription(t *testing.T) {
 	assert.Len(t, []rune(got.Description), maxUnconnectedMCPServerDescriptionRunes)
 }
 
-func TestReportMCPServerNeedsReconnect(t *testing.T) {
-	server := UnconnectedMCPServer{Name: "Jira", AuthURL: "https://example.com/start"}
-	connectTool := Tool{
-		Name: ConnectMCPServerToolName,
-		Resolver: func(context.Context, *Context, ToolArgumentGetter) (string, error) {
-			return "", nil
-		},
-	}
-
+func TestUnconnectedMCPServerPromptLine(t *testing.T) {
 	tests := []struct {
-		name         string
-		hook         bool
-		addTool      bool
-		disableTool  bool
-		wantCallable bool
+		name   string
+		server UnconnectedMCPServer
+		want   string
 	}{
-		{name: "no hook outside interactive flows"},
-		{name: "hook adds callable tool", hook: true, addTool: true, wantCallable: true},
-		{name: "hook ran but tool disabled in this context", hook: true, addTool: true, disableTool: true},
-		{name: "hook ran but tool not cataloged", hook: true},
+		{name: "name only", server: UnconnectedMCPServer{Name: "Jira"}, want: "Jira"},
+		{
+			name:   "description and tools",
+			server: UnconnectedMCPServer{Name: "Jira", Description: "Issue tracking", ToolNames: []string{"create_issue", "search"}},
+			want:   "Jira: Issue tracking (tools include: create_issue, search)",
+		},
+		{name: "tools without description", server: UnconnectedMCPServer{Name: "Jira", ToolNames: []string{"search"}}, want: "Jira (tools include: search)"},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &Context{Tools: NewToolStore()}
-			if tt.disableTool {
-				c.DisabledToolsInfo = []ToolInfo{{Name: ConnectMCPServerToolName}}
-			}
-			var reported []UnconnectedMCPServer
-			if tt.hook {
-				c.ToolRuntime.MCPServerNeedsReconnect = func(s UnconnectedMCPServer) {
-					reported = append(reported, s)
-					c.ToolCatalog.UnconnectedMCPServers = append(c.ToolCatalog.UnconnectedMCPServers, s)
-					if tt.addTool {
-						c.Tools.AddTools([]Tool{connectTool})
-					}
-				}
-			}
-
-			assert.Equal(t, tt.wantCallable, c.ReportMCPServerNeedsReconnect(server))
-			if tt.hook {
-				assert.Equal(t, []UnconnectedMCPServer{server}, reported)
-				_, listed := c.UnconnectedMCPServerByName("Jira")
-				assert.True(t, listed)
-			}
+			assert.Equal(t, tt.want, tt.server.PromptLine())
 		})
 	}
+}
+
+func TestUnconnectedMCPServerByName(t *testing.T) {
+	c := &Context{ToolCatalog: ToolCatalogContext{UnconnectedMCPServers: []UnconnectedMCPServer{{Name: "Jira"}}}}
+	_, listed := c.UnconnectedMCPServerByName("Jira")
+	assert.True(t, listed)
+	_, listed = c.UnconnectedMCPServerByName("GitHub")
+	assert.False(t, listed)
 
 	var nilContext *Context
-	assert.False(t, nilContext.ReportMCPServerNeedsReconnect(server))
-	_, listed := nilContext.UnconnectedMCPServerByName("Jira")
+	_, listed = nilContext.UnconnectedMCPServerByName("Jira")
 	assert.False(t, listed)
 }
 

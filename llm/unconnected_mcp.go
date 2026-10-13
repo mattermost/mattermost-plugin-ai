@@ -34,9 +34,17 @@ type UnconnectedMCPServer struct {
 	ToolNames   []string
 }
 
-// ToolNamesList joins ToolNames for prompt and tool-description rendering.
-func (s UnconnectedMCPServer) ToolNamesList() string {
-	return strings.Join(s.ToolNames, ", ")
+// PromptLine renders the server as one line of model-facing text. Every
+// field is admin-authored and already single-line (see NewUnconnectedMCPServer).
+func (s UnconnectedMCPServer) PromptLine() string {
+	line := s.Name
+	if s.Description != "" {
+		line += ": " + s.Description
+	}
+	if len(s.ToolNames) > 0 {
+		line += " (tools include: " + strings.Join(s.ToolNames, ", ") + ")"
+	}
+	return line
 }
 
 // NewUnconnectedMCPServer converts an OAuth-needed connect failure into an

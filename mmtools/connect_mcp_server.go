@@ -76,16 +76,7 @@ func connectMCPServerToolDescription(servers []llm.UnconnectedMCPServer) string 
 	b.WriteString("\n\nServers the user has not connected:")
 	for _, server := range servers {
 		b.WriteString("\n- ")
-		b.WriteString(server.Name)
-		if server.Description != "" {
-			b.WriteString(": ")
-			b.WriteString(server.Description)
-		}
-		if len(server.ToolNames) > 0 {
-			b.WriteString(" (tools include: ")
-			b.WriteString(server.ToolNamesList())
-			b.WriteString(")")
-		}
+		b.WriteString(server.PromptLine())
 	}
 	return b.String()
 }

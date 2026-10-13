@@ -137,8 +137,10 @@ func searchUnconnectedMCPServers(llmContext *llm.Context, query string) []Search
 	}
 
 	servers := llmContext.ToolCatalog.UnconnectedMCPServers
+	byName := make(map[string]llm.UnconnectedMCPServer, len(servers))
 	docs := make([]BM25Document, 0, len(servers))
 	for _, server := range servers {
+		byName[server.Name] = server
 		docs = append(docs, BM25Document{
 			ID:   server.Name,
 			Text: strings.Join(append([]string{server.Name, server.Description}, server.ToolNames...), " "),
@@ -154,7 +156,7 @@ func searchUnconnectedMCPServers(llmContext *llm.Context, query string) []Search
 		result = append(result, SearchToolsUnavailableServer{
 			Server: match.ID,
 			Status: unavailableServerStatusNeedsAuthentication,
-			Hint:   fmt.Sprintf(`The user has not connected %s. Call %s with {"server":%q} to ask them to connect it.`, match.ID, llm.ConnectMCPServerToolName, match.ID),
+			Hint:   fmt.Sprintf(`The user has not connected %s. Call %s with {"server":%q} to ask them to connect it.`, byName[match.ID].PromptLine(), llm.ConnectMCPServerToolName, match.ID),
 		})
 	}
 	return result

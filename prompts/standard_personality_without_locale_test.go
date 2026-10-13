@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
@@ -343,8 +344,11 @@ func TestStandardPersonalitySandboxFileGuidance(t *testing.T) {
 	}
 }
 
+// The system prompt is fixed when a conversation starts, so it carries only
+// static guidance; the per-turn ConnectMCPServer tool description is the one
+// place unconnected servers are listed.
 func TestStandardPersonalityUnconnectedMCPServers(t *testing.T) {
-	const heading = "had not connected these MCP servers"
+	const guidance = "integration listed in the ConnectMCPServer tool"
 	connectTool := llm.Tool{
 		Name:            "ConnectMCPServer",
 		Description:     "Connect",
@@ -359,55 +363,19 @@ func TestStandardPersonalityUnconnectedMCPServers(t *testing.T) {
 	}
 
 	tests := []struct {
-		name        string
-		tools       *llm.ToolStore
-		dynamic     bool
-		disabled    []llm.ToolInfo
-		servers     []llm.UnconnectedMCPServer
-		contains    []string
-		notContains []string
+		name         string
+		tools        *llm.ToolStore
+		dynamic      bool
+		disabled     []llm.ToolInfo
+		wantGuidance bool
 	}{
+		{name: "guidance when ConnectMCPServer is callable", tools: storeWith(llm.NewToolStore(), connectTool), wantGuidance: true},
+		{name: "guidance alongside the meta-tool workflow", tools: storeWith(dynamicMetaToolStore(), connectTool), dynamic: true, wantGuidance: true},
+		{name: "omitted when ConnectMCPServer is not cataloged", tools: llm.NewToolStore()},
 		{
-			name:    "non-dynamic lists servers with metadata",
-			tools:   storeWith(llm.NewToolStore(), connectTool),
-			servers: testUnconnectedMCPServers(),
-			contains: []string{
-				heading,
-				"- Jira: Atlassian Jira issues (tools include: create_issue, search_issues)",
-				"- Notes\n",
-				"must call ConnectMCPServer with that server instead of saying the capability does not exist",
-				"must never claim to have performed an action that needs an unconnected server",
-			},
-			notContains: []string{"You have access to a large set of MCP tools"},
-		},
-		{
-			name:    "dynamic lists servers alongside meta-tool workflow",
-			tools:   storeWith(dynamicMetaToolStore(), connectTool),
-			dynamic: true,
-			servers: testUnconnectedMCPServers(),
-			contains: []string{
-				heading,
-				"- Jira: Atlassian Jira issues (tools include: create_issue, search_issues)",
-				"You have access to a large set of MCP tools",
-			},
-		},
-		{
-			name:        "omitted without unconnected servers",
-			tools:       storeWith(llm.NewToolStore(), connectTool),
-			notContains: []string{heading, "ConnectMCPServer"},
-		},
-		{
-			name:        "omitted when ConnectMCPServer is not cataloged",
-			tools:       llm.NewToolStore(),
-			servers:     testUnconnectedMCPServers(),
-			notContains: []string{heading, "Jira"},
-		},
-		{
-			name:        "omitted when ConnectMCPServer is disabled in this context",
-			tools:       storeWith(llm.NewToolStore(), connectTool),
-			disabled:    []llm.ToolInfo{{Name: "ConnectMCPServer", Description: "Connect"}},
-			servers:     testUnconnectedMCPServers(),
-			notContains: []string{heading},
+			name:     "omitted when ConnectMCPServer is disabled in this context",
+			tools:    storeWith(llm.NewToolStore(), connectTool),
+			disabled: []llm.ToolInfo{{Name: "ConnectMCPServer", Description: "Connect"}},
 		},
 	}
 
@@ -419,14 +387,15 @@ func TestStandardPersonalityUnconnectedMCPServers(t *testing.T) {
 				DisabledToolsInfo: tt.disabled,
 				ToolCatalog: llm.ToolCatalogContext{
 					MCPDynamicToolLoading: tt.dynamic,
-					UnconnectedMCPServers: tt.servers,
+					UnconnectedMCPServers: testUnconnectedMCPServers(),
 				},
 			})
-			for _, expected := range tt.contains {
-				assert.Contains(t, output, expected)
-			}
-			for _, unexpected := range tt.notContains {
-				assert.NotContains(t, output, unexpected)
+			assert.Equal(t, tt.wantGuidance, strings.Contains(output, guidance))
+			assert.NotContains(t, output, "Atlassian Jira issues")
+			assert.NotContains(t, output, "create_issue")
+			assert.NotContains(t, output, "/mcp/oauth/")
+			if tt.dynamic {
+				assert.Contains(t, output, "You have access to a large set of MCP tools")
 			}
 		})
 	}
