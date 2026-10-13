@@ -625,6 +625,7 @@ const AgentConfigView = (props: Props) => {
                 cancelButtonText={<FormattedMessage defaultMessage='Keep current username'/>}
                 onConfirm={handleRenameConfirm}
                 onCancel={handleRenameCancel}
+                confirmPending={saving}
                 managedAccessibility={true}
                 zIndex={2100}
             />

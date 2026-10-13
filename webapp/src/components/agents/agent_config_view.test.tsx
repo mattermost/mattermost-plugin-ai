@@ -672,6 +672,20 @@ describe('AgentConfigView', () => {
             await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
         });
 
+        test('confirming twice while the dialog closes saves only once', async () => {
+            mockUpdateAgent.mockReturnValueOnce(new Promise(() => null));
+            renderEdit();
+
+            fireEvent.change(screen.getByLabelText('Username'), {target: {value: 'renamed'}});
+            fireEvent.click(screen.getByRole('button', {name: 'Save'}));
+            const confirm = screen.getByRole('button', {name: 'Change username'});
+            fireEvent.click(confirm);
+            fireEvent.click(confirm);
+
+            await waitFor(() => expect(mockUpdateAgent).toHaveBeenCalledTimes(1));
+            expect(mockUpdateAgent).toHaveBeenCalledTimes(1);
+        });
+
         test('keeping the current username does not save', async () => {
             renderEdit();
 
