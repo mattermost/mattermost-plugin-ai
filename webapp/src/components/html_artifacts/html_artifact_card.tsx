@@ -1,10 +1,13 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import React, {useRef, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {FormattedMessage, useIntl} from 'react-intl';
+import {useSelector} from 'react-redux';
 import styled from 'styled-components';
 
+import {GlobalState} from '@mattermost/types/store';
+import {Button} from '@mattermost/compass-ui/components/button';
 import {Icon} from '@mattermost/compass-ui/components/icon';
 import {IconButton} from '@mattermost/compass-ui/components/icon-button';
 import {Tag} from '@mattermost/compass-ui/components/tag';
@@ -12,6 +15,7 @@ import {
     ArrowExpandIcon,
     DownloadOutlineIcon,
     FileCodeOutlineIcon,
+    PlayIcon,
     RefreshIcon,
 } from '@mattermost/compass-icons/components';
 
@@ -20,15 +24,65 @@ import ArtifactNotice from './artifact_notice';
 import {downloadArtifact} from './download';
 import HTMLArtifactFullscreen from './html_artifact_fullscreen';
 
+// Artifacts the viewer chose to run, keyed by viewer and file, so the same
+// artifact rendered again (e.g. in the RHS) does not ask again. Page lifetime
+// only: Mattermost logout performs a full page reload, which clears it.
+const runDecisions = new Set<string>();
+
+// Test-only reset.
+export function resetArtifactRunDecisions() {
+    runDecisions.clear();
+}
+
 interface Props {
     fileId: string;
     fileName: string;
+
+    // Load the artifact right away. Only for the viewer who asked the agent
+    // for it; anyone else sees a placeholder and runs it with a click.
+    autoRun: boolean;
 }
 
-const HTMLArtifactCard = ({fileId, fileName}: Props) => {
+const HTMLArtifactCard = ({fileId, fileName, autoRun}: Props) => {
     const intl = useIntl();
     const frameRef = useRef<ArtifactFrameHandle>(null);
     const [fullscreen, setFullscreen] = useState(false);
+    const currentUserId = useSelector<GlobalState, string>((state) => state.entities.users.currentUserId);
+    const runKey = `${currentUserId}:${fileId}`;
+    const [run, setRun] = useState(() => autoRun || runDecisions.has(runKey));
+
+    // Whether the inline frame mounts engaged: only right after a click on Run.
+    const [engageOnRun, setEngageOnRun] = useState(false);
+
+    // The requester is only known once the conversation loads.
+    useEffect(() => {
+        if (autoRun) {
+            setRun(true);
+        }
+    }, [autoRun]);
+
+    const startRun = (engage: boolean) => {
+        runDecisions.add(runKey);
+        setEngageOnRun(engage);
+        setRun(true);
+    };
+
+    const onRun = (e: React.MouseEvent) => {
+        if (!e.nativeEvent.isTrusted) {
+            return;
+        }
+        startRun(true);
+    };
+
+    const openFullscreen = (e: React.MouseEvent) => {
+        if (!run) {
+            if (!e.nativeEvent.isTrusted) {
+                return;
+            }
+            startRun(false);
+        }
+        setFullscreen(true);
+    };
 
     const fullscreenLabel = intl.formatMessage({defaultMessage: 'Open fullscreen'});
     const downloadLabel = intl.formatMessage({defaultMessage: 'Download'});
@@ -60,7 +114,7 @@ const HTMLArtifactCard = ({fileId, fileName}: Props) => {
                         icon={<Icon glyph={<ArrowExpandIcon/>}/>}
                         aria-label={fullscreenLabel}
                         title={fullscreenLabel}
-                        onClick={() => setFullscreen(true)}
+                        onClick={openFullscreen}
                         data-testid='html-artifact-open-fullscreen'
                     />
                     <IconButton
@@ -70,23 +124,43 @@ const HTMLArtifactCard = ({fileId, fileName}: Props) => {
                         title={downloadLabel}
                         onClick={() => downloadArtifact(fileId)}
                     />
-                    <IconButton
-                        size='x-small'
-                        icon={<Icon glyph={<RefreshIcon/>}/>}
-                        aria-label={reloadLabel}
-                        title={reloadLabel}
-                        onClick={() => frameRef.current?.reload()}
-                        data-testid='html-artifact-reload'
-                    />
+                    {run && (
+                        <IconButton
+                            size='x-small'
+                            icon={<Icon glyph={<RefreshIcon/>}/>}
+                            aria-label={reloadLabel}
+                            title={reloadLabel}
+                            onClick={() => frameRef.current?.reload()}
+                            data-testid='html-artifact-reload'
+                        />
+                    )}
                 </Actions>
             </Header>
-            <ArtifactFrame
-                ref={frameRef}
-                fileId={fileId}
-                fileName={fileName}
-                displayMode='inline'
-                obscured={fullscreen}
-            />
+            {run ? (
+                <ArtifactFrame
+                    ref={frameRef}
+                    fileId={fileId}
+                    fileName={fileName}
+                    displayMode='inline'
+                    obscured={fullscreen}
+                    initiallyEngaged={engageOnRun}
+                />
+            ) : (
+                <RunPlaceholder data-testid='html-artifact-run-placeholder'>
+                    <RunText>
+                        <FormattedMessage defaultMessage='Generated by an agent. It runs code only when you choose to run it.'/>
+                    </RunText>
+                    <Button
+                        emphasis='primary'
+                        size='small'
+                        leadingIcon={<Icon glyph={<PlayIcon/>}/>}
+                        onClick={onRun}
+                        data-testid='html-artifact-run'
+                    >
+                        <FormattedMessage defaultMessage='Run'/>
+                    </Button>
+                </RunPlaceholder>
+            )}
             {fullscreen && (
                 <HTMLArtifactFullscreen
                     fileId={fileId}
@@ -176,4 +250,20 @@ const Actions = styled.span`
     flex: none;
     align-items: center;
     gap: 6px;
+`;
+
+const RunPlaceholder = styled.div`
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px;
+`;
+
+const RunText = styled.span`
+    flex: 1 1 240px;
+    color: rgba(var(--center-channel-color-rgb), 0.72);
+    font-size: 14px;
+    line-height: 20px;
 `;

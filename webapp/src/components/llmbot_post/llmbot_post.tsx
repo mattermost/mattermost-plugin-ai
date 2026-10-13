@@ -726,6 +726,7 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
             <HTMLArtifacts
                 postId={props.post.id}
                 files={props.post.metadata?.files}
+                autoRun={requesterIsCurrentUser}
             />
             {searchSources.length > 0 && (
                 <SearchSources

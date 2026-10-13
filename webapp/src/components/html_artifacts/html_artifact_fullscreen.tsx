@@ -22,7 +22,9 @@ interface Props {
     onClose: () => void;
 }
 
-const FOCUSABLE = 'button, [href], iframe, [tabindex]:not([tabindex="-1"])';
+// An artifact the viewer has not engaged is no tab stop (tabindex -1); the
+// frame's interact overlay button stands in for it.
+const FOCUSABLE = 'button, [href], iframe:not([tabindex="-1"]), [tabindex]:not([tabindex="-1"])';
 
 function focusableControls(root: HTMLElement | null): HTMLElement[] {
     if (!root) {
@@ -141,6 +143,11 @@ const HTMLArtifactFullscreen = ({fileId, fileName, onClose}: Props) => {
                     fileName={fileName}
                     displayMode='fullscreen'
                     onEscape={onClose}
+
+                    // Opened by the viewer's click; the viewer's own
+                    // controls (e.g. Close, focused on open) keep it engaged.
+                    initiallyEngaged={true}
+                    focusScopeRef={rootRef}
                 />
             </Body>
             <FocusSentinel

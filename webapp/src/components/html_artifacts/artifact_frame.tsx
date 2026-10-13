@@ -32,6 +32,14 @@ export const MAX_INLINE_HEIGHT = 600;
 export const DEFAULT_INLINE_HEIGHT = 320;
 const READY_TIMEOUT_MS = 10000;
 
+// The bridge sends a heartbeat every 500 ms. A busy artifact can delay its
+// own heartbeat for a moment, so a short lapse only hides the frame; a long
+// one means the document in the frame is no longer the bridge's.
+export const HEARTBEAT_HIDE_MS = 2000;
+export const HEARTBEAT_STOP_MS = 8000;
+const HEARTBEAT_CHECK_MS = 250;
+const FOCUS_CHECK_MS = 250;
+
 export function clampInlineHeight(height: number): number {
     return Math.min(MAX_INLINE_HEIGHT, Math.max(MIN_INLINE_HEIGHT, Math.ceil(height)));
 }
@@ -49,17 +57,36 @@ interface Props {
     // True while the frame is covered (the inline card under the fullscreen
     // viewer): it must not show a consent prompt the viewer cannot see.
     obscured?: boolean;
+
+    // The viewer mounted this frame with an explicit click (Run, fullscreen),
+    // so the artifact may take keyboard focus without clicking it first.
+    initiallyEngaged?: boolean;
+
+    // Focus moving within this element does not count as leaving the
+    // artifact (e.g. the fullscreen viewer's own controls).
+    focusScopeRef?: React.RefObject<HTMLElement | null>;
 }
 
 type Status = 'loading' | 'ready' | 'error';
+
+type StopReason = 'navigation' | 'focus' | 'unresponsive';
 
 interface PendingConsent {
     resolve: (allowed: boolean) => void;
     reject: () => void;
 }
 
-const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({fileId, fileName, displayMode, onEscape, obscured = false}, ref) => {
+const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
+    fileId,
+    fileName,
+    displayMode,
+    onEscape,
+    obscured = false,
+    initiallyEngaged = false,
+    focusScopeRef,
+}, ref) => {
     const intl = useIntl();
+    const containerRef = useRef<HTMLDivElement>(null);
     const iframeRef = useRef<HTMLIFrameElement>(null);
 
     // Bumping loadKey remounts the iframe (with a fresh broker), which is the
@@ -68,8 +95,28 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({fileId, fileName,
     const loadCountRef = useRef(0);
     const [status, setStatus] = useState<Status>('loading');
     const [height, setHeight] = useState(DEFAULT_INLINE_HEIGHT);
-    const [navigationStopped, setNavigationStopped] = useState(false);
+    const [stopReason, setStopReason] = useState<StopReason | null>(null);
+    const [unresponsive, setUnresponsive] = useState(false);
     const [pendingConsent, setPendingConsent] = useState<PendingConsent | null>(null);
+
+    // Engaged: the viewer chose to interact with the artifact, so it may hold
+    // keyboard focus. Until then a host overlay takes every click, the iframe
+    // is not a tab stop, and an artifact that focuses itself is stopped.
+    const [engaged, setEngagedState] = useState(initiallyEngaged);
+    const engagedRef = useRef(initiallyEngaged);
+    const setEngaged = useCallback((value: boolean) => {
+        engagedRef.current = value;
+        setEngagedState(value);
+    }, []);
+
+    // Where focus goes back to when it has to leave the artifact.
+    const lastHostFocusRef = useRef<HTMLElement | null>(null);
+    const lastHeartbeatRef = useRef<number | null>(null);
+    const unresponsiveRef = useRef(false);
+
+    // The prompt returns focus to where it was when it opened: true when that
+    // was this artifact, engaged.
+    const consentReturnsToFrameRef = useRef(false);
 
     // Re-read the theme whenever preferences change (theme switches live there).
     const preferences = useSelector<GlobalState, unknown>((state) => state.entities.preferences?.myPreferences);
@@ -108,6 +155,12 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({fileId, fileName,
     pendingConsentRef.current = pendingConsent;
     const obscuredRef = useRef(obscured);
     obscuredRef.current = obscured;
+    const initiallyEngagedRef = useRef(initiallyEngaged);
+    initiallyEngagedRef.current = initiallyEngaged;
+    const focusScopeRefRef = useRef(focusScopeRef);
+    focusScopeRefRef.current = focusScopeRef;
+    const stopReasonRef = useRef(stopReason);
+    stopReasonRef.current = stopReason;
 
     // The frame is only rendered once the viewer's bridge token is known.
     useEffect(() => {
@@ -146,11 +199,19 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({fileId, fileName,
         getContext: () => contextRef.current,
         getCurrentUser: () => userRef.current,
         requestConsent: () => new Promise<boolean>((resolve, reject) => {
+            consentReturnsToFrameRef.current = engagedRef.current && Boolean(iframeRef.current) && document.activeElement === iframeRef.current;
             setPendingConsent({resolve, reject});
         }),
         dismissConsent: () => setPendingConsent(null),
         canPrompt: () => !obscuredRef.current,
         onReady: () => setStatus('ready'),
+        onHeartbeat: () => {
+            lastHeartbeatRef.current = performance.now();
+            if (unresponsiveRef.current) {
+                unresponsiveRef.current = false;
+                setUnresponsive(false);
+            }
+        },
         onResize: (h) => setHeight(clampInlineHeight(h)),
         onEscape: () => onEscapeRef.current?.(),
     }) : null),
@@ -158,6 +219,8 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({fileId, fileName,
     // loadKey: every host load gets its own broker, so a disposed one is never reused.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [fileId, token, loadKey]);
+    const brokerRef = useRef(broker);
+    brokerRef.current = broker;
 
     useEffect(() => {
         if (!broker) {
@@ -193,50 +256,230 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({fileId, fileName,
         return () => window.clearTimeout(timer);
     }, [broker]);
 
+    // Whatever is in the frame now is not the artifact we served, or the
+    // artifact is acting against the viewer. Stop answering it at once and
+    // unload it; remounting would only run it again. Unanswered prompts are
+    // dropped undecided.
+    const stopFrame = useCallback((reason: StopReason) => {
+        brokerRef.current?.dispose();
+        pendingConsentRef.current?.reject();
+        setPendingConsent(null);
+        setStopReason(reason);
+    }, []);
+
+    // Takes keyboard focus out of the iframe, back to where the viewer last
+    // was on the page. Never onto the interact overlay: a viewer typing there
+    // would activate it with Space or Enter.
+    const releaseFocus = useCallback(() => {
+        const iframe = iframeRef.current;
+        if (!iframe || document.activeElement !== iframe) {
+            return;
+        }
+        const last = lastHostFocusRef.current;
+        if (last?.isConnected) {
+            last.focus({preventScroll: true});
+        }
+        if (document.activeElement === iframe) {
+            iframe.blur();
+        }
+    }, []);
+
+    // Heartbeat watchdog. A navigation to a response that never finishes
+    // fires no second load event, but it does stop the bridge's heartbeat.
+    useEffect(() => {
+        if (!broker || stopReason) {
+            return undefined; // eslint-disable-line no-undefined
+        }
+        lastHeartbeatRef.current = null;
+        unresponsiveRef.current = false;
+        setUnresponsive(false);
+
+        // Hidden tabs throttle timers in the frame and here alike, so a
+        // lapse means nothing until the page is visible again, and the
+        // viewer coming back gets a fresh grace period. The same goes for a
+        // check that itself ran very late (the page was stalled).
+        let paused = document.visibilityState === 'hidden';
+        let lastCheck = performance.now();
+        const grace = () => {
+            if (lastHeartbeatRef.current !== null) {
+                lastHeartbeatRef.current = performance.now();
+            }
+        };
+        const onVisibilityChange = () => {
+            if (document.visibilityState === 'hidden') {
+                paused = true;
+            } else if (paused) {
+                paused = false;
+                grace();
+            }
+        };
+        const check = () => {
+            const now = performance.now();
+            const late = now - lastCheck > HEARTBEAT_HIDE_MS;
+            lastCheck = now;
+            onVisibilityChange();
+            if (paused) {
+                return;
+            }
+            if (late) {
+                grace();
+                return;
+            }
+
+            // Until ready the frame is hidden anyway, and the ready timeout
+            // handles a document that replaced the artifact before that.
+            const last = lastHeartbeatRef.current;
+            if (last === null || !broker.isReady()) {
+                return;
+            }
+            const lapse = now - last;
+            if (lapse > HEARTBEAT_STOP_MS) {
+                releaseFocus();
+                stopFrame('unresponsive');
+            } else if (lapse > HEARTBEAT_HIDE_MS && !unresponsiveRef.current) {
+                unresponsiveRef.current = true;
+                setUnresponsive(true);
+
+                // Keystrokes must not go to a page the viewer can no longer see.
+                if (document.activeElement === iframeRef.current) {
+                    releaseFocus();
+                    setEngaged(false);
+                }
+            }
+        };
+        const timer = window.setInterval(check, HEARTBEAT_CHECK_MS);
+        document.addEventListener('visibilitychange', onVisibilityChange);
+        return () => {
+            window.clearInterval(timer);
+            document.removeEventListener('visibilitychange', onVisibilityChange);
+        };
+    }, [broker, stopReason, stopFrame, releaseFocus, setEngaged]);
+
+    // Focus guard. Sandboxed frames can still call focus() on themselves and
+    // take keystrokes meant for the page (e.g. the message box), so an
+    // artifact holding focus the viewer did not give it is stopped.
+    useEffect(() => {
+        const isInside = (node: unknown): boolean => node instanceof Node && (
+            Boolean(containerRef.current?.contains(node)) ||
+            Boolean(focusScopeRefRef.current?.current?.contains(node))
+        );
+
+        if (document.activeElement instanceof HTMLElement && document.activeElement !== document.body && !isInside(document.activeElement)) {
+            lastHostFocusRef.current = document.activeElement;
+        }
+
+        // Focus leaving for the page (outside this frame and its own
+        // controls) ends the engagement.
+        const onFocusIn = (e: FocusEvent) => {
+            if (isInside(e.target)) {
+                return;
+            }
+            if (e.target instanceof HTMLElement) {
+                lastHostFocusRef.current = e.target;
+            }
+            if (engagedRef.current) {
+                setEngaged(false);
+            }
+        };
+
+        // Clicking a part of the page that takes no focus focuses the page
+        // itself, without a focusin.
+        const onWindowFocus = () => {
+            if (engagedRef.current && !isInside(document.activeElement)) {
+                setEngaged(false);
+            }
+        };
+
+        const check = () => {
+            const iframe = iframeRef.current;
+            if (!iframe || engagedRef.current || stopReasonRef.current || document.activeElement !== iframe) {
+                return;
+            }
+            releaseFocus();
+            stopFrame('focus');
+        };
+
+        // Focus moving into the frame blurs the page; the interval covers a
+        // page that was not focused to begin with.
+        const blurTimers = new Set<number>();
+        const onWindowBlur = () => {
+            const id = window.setTimeout(() => {
+                blurTimers.delete(id);
+                check();
+            }, 0);
+            blurTimers.add(id);
+        };
+        const timer = window.setInterval(check, FOCUS_CHECK_MS);
+
+        document.addEventListener('focusin', onFocusIn, true);
+        document.addEventListener('visibilitychange', check);
+        window.addEventListener('focus', onWindowFocus);
+        window.addEventListener('blur', onWindowBlur);
+        return () => {
+            document.removeEventListener('focusin', onFocusIn, true);
+            document.removeEventListener('visibilitychange', check);
+            window.removeEventListener('focus', onWindowFocus);
+            window.removeEventListener('blur', onWindowBlur);
+            window.clearInterval(timer);
+            blurTimers.forEach((id) => window.clearTimeout(id));
+        };
+    }, [releaseFocus, stopFrame, setEngaged]);
+
     const reload = useCallback(() => {
-        setNavigationStopped(false);
+        setStopReason(null);
+        setUnresponsive(false);
+        setEngaged(initiallyEngagedRef.current);
         setHeight(DEFAULT_INLINE_HEIGHT);
         setLoadKey((k) => k + 1);
-    }, []);
+    }, [setEngaged]);
 
     useImperativeHandle(ref, () => ({reload}), [reload]);
 
+    // The artifact navigated its own frame (reload, meta refresh, link):
+    // whatever is in the frame now is not the artifact we served.
     const handleLoad = useCallback(() => {
         loadCountRef.current += 1;
-        if (loadCountRef.current <= 1) {
-            return;
+        if (loadCountRef.current > 1) {
+            stopFrame('navigation');
         }
-
-        // The artifact navigated its own frame (reload, meta refresh, link):
-        // whatever is in the frame now is not the artifact we served. Stop
-        // answering it at once and unload it; remounting would only re-run
-        // the same navigation. Unanswered prompts are dropped undecided.
-        broker?.dispose();
-        pendingConsentRef.current?.reject();
-        setPendingConsent(null);
-        setNavigationStopped(true);
-    }, [broker]);
+    }, [stopFrame]);
 
     const handleError = useCallback(() => setStatus('error'), []);
 
+    const engage = useCallback((e: React.MouseEvent) => {
+        if (!e.nativeEvent.isTrusted) {
+            return;
+        }
+        setEngaged(true);
+        iframeRef.current?.focus();
+    }, [setEngaged]);
+
     const answerConsent = useCallback((allowed: boolean) => {
+        // The prompt is about to hand focus back to this artifact, which had
+        // it when the prompt opened; the viewer answering it is returning there.
+        if (consentReturnsToFrameRef.current) {
+            setEngaged(true);
+        }
         pendingConsentRef.current?.resolve(allowed);
         setPendingConsent(null);
-    }, []);
+    }, [setEngaged]);
 
     const shownStatus: Status = tokenFailed ? 'error' : status;
-    const showStatus = !navigationStopped && !tooLarge;
+    const showStatus = !stopReason && !tooLarge;
+    const visible = showStatus && Boolean(token) && shownStatus === 'ready' && !unresponsive;
 
     const title = intl.formatMessage({defaultMessage: 'Interactive artifact: {fileName}'}, {fileName});
 
     return (
         <Container
+            ref={containerRef}
             $displayMode={displayMode}
             $height={height}
             $consentShown={Boolean(pendingConsent)}
             data-testid='html-artifact-frame'
+            data-engaged={engaged}
         >
-            {!navigationStopped && token && (
+            {!stopReason && token && (
                 <Frame
                     key={loadKey}
                     ref={iframeRef}
@@ -244,19 +487,43 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({fileId, fileName,
                     sandbox='allow-scripts'
                     referrerPolicy='no-referrer'
                     title={title}
+                    tabIndex={engaged ? undefined : -1} // eslint-disable-line no-undefined
                     onLoad={handleLoad}
                     onError={handleError}
-                    $hidden={shownStatus !== 'ready'}
+                    $hidden={shownStatus !== 'ready' || unresponsive}
                 />
             )}
-            {navigationStopped && (
-                <Overlay data-testid='html-artifact-navigation-stopped'>
+            {visible && !engaged && (
+                <InteractOverlay
+                    type='button'
+                    aria-label={intl.formatMessage({defaultMessage: 'Interact with this artifact'})}
+                    onClick={engage}
+                    data-testid='html-artifact-interact'
+                >
+                    <InteractHint aria-hidden='true'>
+                        <FormattedMessage defaultMessage='Click to interact'/>
+                    </InteractHint>
+                </InteractOverlay>
+            )}
+            {stopReason && (
+                <Overlay
+                    data-testid='html-artifact-navigation-stopped'
+                    data-stop-reason={stopReason}
+                >
                     <ErrorBox role='alert'>
                         <Icon
                             size='20'
                             glyph={<AlertCircleOutlineIcon/>}
                         />
-                        <FormattedMessage defaultMessage='This artifact tried to navigate away and was stopped.'/>
+                        {stopReason === 'navigation' && (
+                            <FormattedMessage defaultMessage='This artifact tried to navigate away and was stopped.'/>
+                        )}
+                        {stopReason === 'focus' && (
+                            <FormattedMessage defaultMessage='This artifact tried to take keyboard focus and was stopped.'/>
+                        )}
+                        {stopReason === 'unresponsive' && (
+                            <FormattedMessage defaultMessage='This artifact stopped responding and was unloaded.'/>
+                        )}
                         <Button
                             emphasis='tertiary'
                             size='x-small'
@@ -266,6 +533,17 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({fileId, fileName,
                             <FormattedMessage defaultMessage='Reload'/>
                         </Button>
                     </ErrorBox>
+                </Overlay>
+            )}
+            {showStatus && shownStatus === 'ready' && unresponsive && (
+                <Overlay data-testid='html-artifact-unresponsive'>
+                    <StatusBox role='status'>
+                        <Spinner
+                            size='24'
+                            aria-hidden='true'
+                        />
+                        <FormattedMessage defaultMessage='This artifact stopped responding.'/>
+                    </StatusBox>
                 </Overlay>
             )}
             {showStatus && shownStatus === 'loading' && (
@@ -359,6 +637,49 @@ const Frame = styled.iframe<{$hidden: boolean}>`
     visibility: ${(props) => (props.$hidden ? 'hidden' : 'visible')};
 `;
 
+const InteractHint = styled.span`
+    padding: 4px 10px;
+    border-radius: 12px;
+    background: rgba(var(--center-channel-color-rgb), 0.8);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+    color: var(--center-channel-bg);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease-out;
+`;
+
+// Transparent: the artifact stays fully visible (and readable by assistive
+// technology) underneath; only the hint shows on hover or keyboard focus.
+const InteractOverlay = styled.button`
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    width: 100%;
+    margin: 0;
+    padding: 0 0 12px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+
+    &:focus {
+        outline: none;
+    }
+
+    &:focus-visible {
+        box-shadow: inset 0 0 0 2px var(--button-bg);
+    }
+
+    &:hover ${InteractHint},
+    &:focus-visible ${InteractHint} {
+        opacity: 1;
+    }
+`;
+
 const Overlay = styled.div`
     position: absolute;
     inset: 0;
@@ -381,4 +702,15 @@ const ErrorBox = styled.div`
     > :first-child {
         color: var(--error-text);
     }
+`;
+
+const StatusBox = styled.div`
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 16px;
+    color: rgba(var(--center-channel-color-rgb), 0.72);
+    font-size: 14px;
+    text-align: center;
 `;
