@@ -94,6 +94,8 @@ Some newer models think even when no thinking is requested, and some can't turn 
 | Claude Opus 5, Sonnet 5 | Thinking is explicitly disabled. |
 | Claude Opus 5.5+, Sonnet 5.5+, Fable / Mythos | These models always think. They run at low effort, and their reasoning isn't shown. |
 
+When a service has a fallback chain, these rules are applied separately to each fallback service's model, so a fallback never receives a thinking setting meant for a different model.
+
 ## AWS Bedrock
 
 AWS Bedrock provides access to foundation models from Anthropic (Claude), Amazon (Nova, Titan), and other providers via a unified API. For full setup instructions — including IAM policy configuration and Anthropic-specific Claude requirements — see the [AWS Bedrock Setup Guide](aws_bedrock_setup.md).
