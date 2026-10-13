@@ -15,6 +15,7 @@ import HTMLArtifactCard, {resetArtifactRunDecisions} from './html_artifact_card'
 import HTMLArtifactFullscreen from './html_artifact_fullscreen';
 
 jest.mock('@/client', () => ({
+    artifactPath: (fileId: string) => `/plugins/mattermost-ai/artifacts/${fileId}`,
     artifactURL: (fileId: string, nonce: string) => `/plugins/mattermost-ai/artifacts/${fileId}?n=${nonce}`,
     fileDownloadURL: (fileId: string) => `/api/v4/files/${fileId}?download=1`,
     getArtifactToken: jest.fn(),
@@ -22,10 +23,14 @@ jest.mock('@/client', () => ({
 
 const mockGetToken = getArtifactToken as jest.MockedFunction<typeof getArtifactToken>;
 const TOKEN = 'bridge-token';
+const FILE_ID = 'abcdefghijklmnopqrstuvwxyz';
 
-// Lets the token fetch resolve and the frame mount.
-const flushToken = () => act(async () => {
-    await Promise.resolve();
+// Lets the token fetch resolve, the wrapper mount and load (jsdom loads it
+// as an empty document), and the artifact's frame get created inside it.
+const flushLoad = () => act(async () => {
+    for (let i = 0; i < 5; i++) {
+        await Promise.resolve(); // eslint-disable-line no-await-in-loop
+    }
 });
 
 // Messages carry no ids until the build extracts them; render defaultMessage.
@@ -93,88 +98,201 @@ function addComposer(): HTMLTextAreaElement {
     return composer;
 }
 
-const frameIframe = () => screen.queryByTitle(/Interactive artifact/) as HTMLIFrameElement | null;
+// The host's frame, holding the wrapper document.
+const wrapperIframe = () => screen.queryByTestId('html-artifact-wrapper') as HTMLIFrameElement | null;
+
+// The sandboxed frame inside the wrapper that runs the artifact.
+const innerIframe = (wrapper = wrapperIframe()) => (wrapper?.contentDocument?.querySelector('iframe') ?? null) as HTMLIFrameElement | null;
+
+// Focus going into the artifact (the artifact focusing itself, or the
+// viewer clicking it): on this page the wrapper becomes the active element.
+const focusArtifact = (wrapper: HTMLIFrameElement) => act(() => {
+    wrapper.focus();
+    innerIframe(wrapper)!.focus();
+});
+
+function postFrom(source: Window | null, data: Record<string, unknown>) {
+    act(() => {
+        window.dispatchEvent(new MessageEvent('message', {data, origin: 'null', source}));
+    });
+}
 
 // Renders an inline frame and walks it through the host load and the bridge's ready.
 async function renderReadyFrame(props: Partial<React.ComponentProps<typeof ArtifactFrame>> = {}) {
     const result = render(withProviders(
         <ArtifactFrame
-            fileId='abcdefghijklmnopqrstuvwxyz'
+            fileId={FILE_ID}
             fileName='guard.html'
             displayMode='inline'
             {...props}
         />,
     ));
-    await flushToken();
-    const frame = frameIframe()!;
-    const win = frame.contentWindow!;
-    const send = (data: Record<string, unknown>) => act(() => {
-        window.dispatchEvent(new MessageEvent('message', {data: {...data, token: TOKEN}, origin: 'null', source: win}));
-    });
-    fireEvent.load(frame);
+    await flushLoad();
+    const frame = wrapperIframe()!;
+    const inner = innerIframe(frame)!;
+    const win = inner.contentWindow!;
+    const send = (data: Record<string, unknown>) => postFrom(win, {...data, token: TOKEN});
+    fireEvent.load(inner);
     send({mmArtifact: 1, type: 'ready'});
-    return {...result, frame, win, send};
+    return {...result, frame, inner, win, send};
+}
+
+function renderFrame(fileName = 'frame.html') {
+    return render(withProviders(
+        <ArtifactFrame
+            fileId={FILE_ID}
+            fileName={fileName}
+            displayMode='inline'
+        />,
+    ));
 }
 
 const stopped = () => screen.queryByTestId('html-artifact-navigation-stopped');
 
-describe('ArtifactFrame navigation guard', () => {
-    const iframe = () => screen.queryByTitle(/Interactive artifact/) as HTMLIFrameElement | null;
+describe('ArtifactFrame wrapper', () => {
+    const wrapperDoc = (wrapper: HTMLIFrameElement) => new DOMParser().parseFromString(wrapper.getAttribute('srcdoc') ?? '', 'text/html');
 
-    test('unloads a self-navigating artifact without remounting until the viewer reloads', async () => {
+    test('the host frame is an unsandboxed, script-free wrapper that only lets its child load the artifact', async () => {
+        const fileName = '"><script>alert(1)</script><iframe src="https://evil.example/">.html';
+        renderFrame(fileName);
+        await flushLoad();
+        const wrapper = wrapperIframe()!;
+
+        expect(wrapper.hasAttribute('sandbox')).toBe(false);
+        expect(wrapper.hasAttribute('src')).toBe(false);
+        const srcdoc = wrapper.getAttribute('srcdoc')!;
+        expect(srcdoc).not.toContain('alert(1)');
+        expect(srcdoc).not.toContain('evil.example');
+
+        const doc = wrapperDoc(wrapper);
+        const csp = doc.querySelectorAll('meta[http-equiv="Content-Security-Policy"]');
+        expect(csp).toHaveLength(1);
+        expect(csp[0].getAttribute('content')).toBe(
+            `default-src 'none'; style-src 'unsafe-inline'; frame-src http://localhost/plugins/mattermost-ai/artifacts/${FILE_ID}`,
+        );
+        expect(doc.querySelectorAll('script, iframe, object, embed, link, base')).toHaveLength(0);
+    });
+
+    test('the artifact runs in a sandboxed frame inside the wrapper, loaded with the nonce its token was issued for', async () => {
+        renderFrame('inner.html');
+        await flushLoad();
+        const inner = innerIframe()!;
+
+        expect(mockGetToken).toHaveBeenCalledTimes(1);
+        const [fileId, nonce] = mockGetToken.mock.calls[0];
+        expect(fileId).toBe(FILE_ID);
+        expect(nonce).toMatch(/^[A-Za-z0-9_-]{22}$/);
+        expect(inner.getAttribute('sandbox')).toBe('allow-scripts');
+        expect(inner.getAttribute('referrerpolicy')).toBe('no-referrer');
+        expect(inner.getAttribute('src')).toBe(`/plugins/mattermost-ai/artifacts/${FILE_ID}?n=${nonce}`);
+        expect(inner.getAttribute('title')).toBe('Interactive artifact: inner.html');
+    });
+
+    test.each([
+        {name: 'the artifact frame inside the wrapper', source: 'inner', answered: true},
+        {name: 'the wrapper document', source: 'wrapper', answered: false},
+        {name: 'the host page itself', source: 'host', answered: false},
+    ])('a message from $name is answered: $answered', async ({source, answered}) => {
+        renderFrame();
+        await flushLoad();
+        const wrapper = wrapperIframe()!;
+        const inner = innerIframe(wrapper)!;
+        fireEvent.load(inner);
+        const posted = jest.spyOn(inner.contentWindow!, 'postMessage');
+        const from = {inner: inner.contentWindow, wrapper: wrapper.contentWindow, host: window}[source]!;
+        postFrom(from, {mmArtifact: 1, type: 'ready', token: TOKEN});
+        expect(posted).toHaveBeenCalledTimes(answered ? 1 : 0);
+        if (answered) {
+            expect(posted).toHaveBeenCalledWith(expect.objectContaining({type: 'context'}), '*');
+        }
+    });
+
+    test('each host load uses a new nonce and only that load\'s token', async () => {
+        mockGetToken.
+            mockResolvedValueOnce({token: 'first-token', tooLarge: false}).
+            mockResolvedValueOnce({token: 'second-token', tooLarge: false});
+        renderFrame();
+        await flushLoad();
+        const firstInner = innerIframe()!;
+        fireEvent.load(firstInner);
+        fireEvent.load(firstInner);
+        expect(stopped()).not.toBeNull();
+
+        fireEvent.click(screen.getByRole('button', {name: 'Reload'}));
+        await flushLoad();
+        expect(mockGetToken).toHaveBeenCalledTimes(2);
+        const [firstNonce, secondNonce] = mockGetToken.mock.calls.map(([, nonce]) => nonce);
+        expect(secondNonce).not.toBe(firstNonce);
+
+        const inner = innerIframe()!;
+        expect(inner).not.toBe(firstInner);
+        expect(inner.getAttribute('src')).toBe(`/plugins/mattermost-ai/artifacts/${FILE_ID}?n=${secondNonce}`);
+        fireEvent.load(inner);
+        const posted = jest.spyOn(inner.contentWindow!, 'postMessage');
+        postFrom(inner.contentWindow, {mmArtifact: 1, type: 'ready', token: 'first-token'});
+        expect(posted).not.toHaveBeenCalled();
+        postFrom(inner.contentWindow, {mmArtifact: 1, type: 'ready', token: 'second-token'});
+        expect(posted).toHaveBeenCalledTimes(1);
+    });
+
+    test('Escape in the wrapper document closes the fullscreen viewer', async () => {
+        const onClose = jest.fn();
         render(withProviders(
-            <ArtifactFrame
-                fileId='abcdefghijklmnopqrstuvwxyz'
-                fileName='nav.html'
-                displayMode='inline'
+            <HTMLArtifactFullscreen
+                fileId={FILE_ID}
+                fileName='esc.html'
+                onClose={onClose}
             />,
         ));
+        await flushLoad();
+        const doc = wrapperIframe()!.contentDocument!;
+        act(() => {
+            doc.dispatchEvent(new KeyboardEvent('keydown', {key: 'a', bubbles: true}));
+        });
+        expect(onClose).not.toHaveBeenCalled();
+        act(() => {
+            doc.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
+        });
+        expect(onClose).toHaveBeenCalledTimes(1);
+    });
+});
 
-        await flushToken();
+describe('ArtifactFrame navigation guard', () => {
+    test('unloads a self-navigating artifact without remounting until the viewer reloads', async () => {
+        renderFrame('nav.html');
+        await flushLoad();
 
         // Host load, then the artifact navigates: the frame is unloaded, never remounted.
-        const first = iframe()!;
-        fireEvent.load(first);
-        expect(iframe()).toBe(first);
-        fireEvent.load(first);
-        expect(iframe()).toBeNull();
+        const first = wrapperIframe()!;
+        fireEvent.load(innerIframe(first)!);
+        expect(wrapperIframe()).toBe(first);
+        fireEvent.load(innerIframe(first)!);
+        expect(wrapperIframe()).toBeNull();
         expect(screen.getByTestId('html-artifact-navigation-stopped').textContent).toContain('tried to navigate away');
 
         // A manual reload mounts a fresh frame, guarded the same way.
         fireEvent.click(screen.getByRole('button', {name: 'Reload'}));
-        await flushToken();
-        const second = iframe()!;
+        await flushLoad();
+        const second = wrapperIframe()!;
         expect(second).not.toBeNull();
         expect(second).not.toBe(first);
-        fireEvent.load(second);
-        fireEvent.load(second);
-        expect(iframe()).toBeNull();
+        fireEvent.load(innerIframe(second)!);
+        fireEvent.load(innerIframe(second)!);
+        expect(wrapperIframe()).toBeNull();
     });
 
-    test('stops answering the frame and drops a pending consent prompt on a second load', async () => {
-        render(withProviders(
-            <ArtifactFrame
-                fileId='abcdefghijklmnopqrstuvwxyz'
-                fileName='nav.html'
-                displayMode='inline'
-                initiallyEngaged={true}
-            />,
-        ));
-        await flushToken();
-        const frame = iframe()!;
-        const win = frame.contentWindow!;
+    test.each([
+        {name: 'the artifact frame loads a second document', reload: 'inner'},
+        {name: 'the wrapper document is replaced', reload: 'wrapper'},
+    ])('stops answering the frame and drops a pending consent prompt when $name', async ({reload}) => {
+        const {frame, inner, win, send} = await renderReadyFrame({initiallyEngaged: true});
         const posted = jest.spyOn(win, 'postMessage');
-        const send = (data: unknown) => act(() => {
-            window.dispatchEvent(new MessageEvent('message', {data: {...(data as object), token: TOKEN}, origin: 'null', source: win}));
-        });
-
-        fireEvent.load(frame);
-        send({mmArtifact: 1, type: 'ready'});
         send({mmArtifact: 1, type: 'request', id: 'r1', method: 'getCurrentUser'});
         expect(screen.getByTestId('html-artifact-consent-deny')).toBeTruthy();
 
-        fireEvent.load(frame);
+        fireEvent.load(reload === 'inner' ? inner : frame);
         expect(screen.queryByTestId('html-artifact-consent-deny')).toBeNull();
+        expect(stopped()?.getAttribute('data-stop-reason')).toBe('navigation');
 
         // The replacement document gets no answers, even to a fresh ready/request.
         posted.mockClear();
@@ -211,7 +329,7 @@ describe('ArtifactFrame heartbeat watchdog', () => {
         advance(500);
         expect(unresponsive()?.textContent).toContain('stopped responding');
         expect(window.getComputedStyle(frame).visibility).toBe('hidden');
-        expect(frameIframe()).toBe(frame);
+        expect(wrapperIframe()).toBe(frame);
 
         send(heartbeat);
         expect(unresponsive()).toBeNull();
@@ -227,7 +345,7 @@ describe('ArtifactFrame heartbeat watchdog', () => {
 
         const posted = jest.spyOn(win, 'postMessage');
         advance(HEARTBEAT_STOP_MS + 500);
-        expect(frameIframe()).toBeNull();
+        expect(wrapperIframe()).toBeNull();
         expect(stopped()?.getAttribute('data-stop-reason')).toBe('unresponsive');
         expect(stopped()?.textContent).toContain('stopped responding and was unloaded');
         expect(screen.queryByTestId('html-artifact-consent')).toBeNull();
@@ -238,9 +356,9 @@ describe('ArtifactFrame heartbeat watchdog', () => {
         expect(posted).not.toHaveBeenCalled();
 
         fireEvent.click(screen.getByRole('button', {name: 'Reload'}));
-        await flushToken();
-        expect(frameIframe()).not.toBeNull();
-        expect(frameIframe()).not.toBe(frame);
+        await flushLoad();
+        expect(wrapperIframe()).not.toBeNull();
+        expect(wrapperIframe()).not.toBe(frame);
         expect(stopped()).toBeNull();
     });
 
@@ -249,39 +367,32 @@ describe('ArtifactFrame heartbeat watchdog', () => {
         advance(HEARTBEAT_STOP_MS * 3);
         expect(unresponsive()).toBeNull();
         expect(stopped()).toBeNull();
-        expect(frameIframe()).not.toBeNull();
+        expect(wrapperIframe()).not.toBeNull();
     });
 
     // The bridge's first heartbeat goes out before a parser-blocking
     // location.replace() swaps the document: that frame never gets ready,
     // so the ready timeout unloads it and offers a retry.
     test('unloads a frame that never got ready when the ready timeout fires, and retry remounts it', async () => {
-        render(withProviders(
-            <ArtifactFrame
-                fileId='abcdefghijklmnopqrstuvwxyz'
-                fileName='replaced.html'
-                displayMode='inline'
-            />,
-        ));
-        await flushToken();
-        const frame = frameIframe()!;
-        act(() => {
-            window.dispatchEvent(new MessageEvent('message', {data: {...heartbeat, token: TOKEN}, origin: 'null', source: frame.contentWindow}));
-        });
-        fireEvent.load(frame);
+        renderFrame('replaced.html');
+        await flushLoad();
+        const frame = wrapperIframe()!;
+        const inner = innerIframe(frame)!;
+        postFrom(inner.contentWindow, {...heartbeat, token: TOKEN});
+        fireEvent.load(inner);
         advance(HEARTBEAT_STOP_MS + 500);
         expect(stopped()).toBeNull();
-        expect(frameIframe()).toBe(frame);
+        expect(wrapperIframe()).toBe(frame);
         expect(window.getComputedStyle(frame).visibility).toBe('hidden');
         advance(10000);
-        expect(frameIframe()).toBeNull();
+        expect(wrapperIframe()).toBeNull();
         expect(screen.getByRole('alert').textContent).toContain('could not be loaded');
         expect(stopped()).toBeNull();
 
         fireEvent.click(screen.getByRole('button', {name: 'Retry'}));
-        await flushToken();
-        expect(frameIframe()).not.toBeNull();
-        expect(frameIframe()).not.toBe(frame);
+        await flushLoad();
+        expect(wrapperIframe()).not.toBeNull();
+        expect(wrapperIframe()).not.toBe(frame);
     });
 
     test('a late check with a stale heartbeat hides the frame but does not unload it', async () => {
@@ -296,7 +407,7 @@ describe('ArtifactFrame heartbeat watchdog', () => {
             expect(unresponsive()).not.toBeNull();
             expect(window.getComputedStyle(frame).visibility).toBe('hidden');
             expect(stopped()).toBeNull();
-            expect(frameIframe()).toBe(frame);
+            expect(wrapperIframe()).toBe(frame);
 
             t += HEARTBEAT_STOP_MS / 2;
             advance(250);
@@ -335,10 +446,10 @@ describe('ArtifactFrame heartbeat watchdog', () => {
         const {send} = await renderReadyFrame();
         send(heartbeat);
         advance(HEARTBEAT_STOP_MS + 500);
-        expect(frameIframe()).toBeNull();
+        expect(wrapperIframe()).toBeNull();
         send(heartbeat);
         advance(HEARTBEAT_STOP_MS);
-        expect(frameIframe()).toBeNull();
+        expect(wrapperIframe()).toBeNull();
         expect(mockGetToken).toHaveBeenCalledTimes(1);
     });
 });
@@ -353,12 +464,13 @@ describe('ArtifactFrame focus guard', () => {
         composer.remove();
     });
 
-    test('covers an artifact the viewer has not engaged; only a trusted click engages it', async () => {
-        const {frame} = await renderReadyFrame();
+    test('covers an artifact the viewer has not engaged; only a trusted click engages it and focuses the artifact', async () => {
+        const {frame, inner} = await renderReadyFrame();
         expect(interact()).not.toBeNull();
         expect(interact()!.tagName).toBe('BUTTON');
         expect(interact()!.getAttribute('aria-label')).toBe('Interact with this artifact');
         expect(frame.getAttribute('tabindex')).toBe('-1');
+        expect(inner.getAttribute('tabindex')).toBe('-1');
         expect(frame.hasAttribute('inert')).toBe(false);
 
         fireEvent.click(interact()!);
@@ -367,7 +479,9 @@ describe('ArtifactFrame focus guard', () => {
         trustedClick(interact()!);
         expect(interact()).toBeNull();
         expect(frame.hasAttribute('tabindex')).toBe(false);
+        expect(inner.hasAttribute('tabindex')).toBe(false);
         expect(document.activeElement).toBe(frame);
+        expect(frame.contentDocument!.activeElement).toBe(inner);
         advance(1000);
         expect(stopped()).toBeNull();
     });
@@ -384,26 +498,28 @@ describe('ArtifactFrame focus guard', () => {
             composer.focus();
         }
 
-        act(() => frame.focus());
+        focusArtifact(frame);
         advance(300);
-        expect(frameIframe()).toBeNull();
+        expect(wrapperIframe()).toBeNull();
         expect(stopped()?.getAttribute('data-stop-reason')).toBe('focus');
         expect(stopped()?.textContent).toContain('tried to take keyboard focus');
         expect(document.activeElement).toBe(composer);
     });
 
     test('an engaged artifact may hold focus until the viewer focuses the page again', async () => {
-        const {frame} = await renderReadyFrame({initiallyEngaged: true});
+        const {frame, inner} = await renderReadyFrame({initiallyEngaged: true});
         expect(interact()).toBeNull();
-        act(() => frame.focus());
+        expect(inner.hasAttribute('tabindex')).toBe(false);
+        focusArtifact(frame);
         advance(1000);
         expect(stopped()).toBeNull();
 
         act(() => composer.focus());
         expect(interact()).not.toBeNull();
         expect(frame.getAttribute('tabindex')).toBe('-1');
+        expect(inner.getAttribute('tabindex')).toBe('-1');
 
-        act(() => frame.focus());
+        focusArtifact(frame);
         advance(300);
         expect(stopped()?.getAttribute('data-stop-reason')).toBe('focus');
         expect(document.activeElement).toBe(composer);
@@ -412,18 +528,19 @@ describe('ArtifactFrame focus guard', () => {
     test('a viewer reload starts over as initially engaged', async () => {
         const {frame} = await renderReadyFrame({initiallyEngaged: true});
         act(() => composer.focus());
-        act(() => frame.focus());
+        focusArtifact(frame);
         advance(300);
         expect(stopped()).not.toBeNull();
 
         fireEvent.click(screen.getByRole('button', {name: 'Reload'}));
-        await flushToken();
-        expect(frameIframe()!.hasAttribute('tabindex')).toBe(false);
+        await flushLoad();
+        expect(wrapperIframe()!.hasAttribute('tabindex')).toBe(false);
+        expect(innerIframe()!.hasAttribute('tabindex')).toBe(false);
     });
 
     test('a click on page content that takes no focus ends engagement without stopping the artifact', async () => {
         const {frame} = await renderReadyFrame({initiallyEngaged: true});
-        act(() => frame.focus());
+        focusArtifact(frame);
         expect(document.activeElement).toBe(frame);
 
         act(() => {
@@ -434,7 +551,7 @@ describe('ArtifactFrame focus guard', () => {
         advance(1000);
         expect(stopped()).toBeNull();
 
-        act(() => frame.focus());
+        focusArtifact(frame);
         advance(300);
         expect(stopped()?.getAttribute('data-stop-reason')).toBe('focus');
     });
@@ -471,29 +588,36 @@ describe('ArtifactFrame focus guard', () => {
     };
 
     test('answering the consent prompt hands focus back to the engaged artifact without tripping the guard', async () => {
-        const {frame, send} = await renderReadyFrame({initiallyEngaged: true});
-        act(() => frame.focus());
+        const {frame, inner, send} = await renderReadyFrame({initiallyEngaged: true});
+        focusArtifact(frame);
         send({mmArtifact: 1, type: 'request', id: 'r1', method: 'getCurrentUser'});
         expect(document.activeElement).toBe(screen.getByTestId('html-artifact-consent-deny'));
 
         // The viewer goes back to the message box before answering.
         act(() => composer.focus());
+
+        // Browsers leave keystrokes in the wrapper document when only the
+        // wrapper gets focus back, so the artifact's frame must be focused again.
+        const innerFocus = jest.spyOn(inner, 'focus');
         answerPrompt();
         expect(document.activeElement).toBe(frame);
+        expect(frame.contentDocument!.activeElement).toBe(inner);
+        expect(innerFocus).toHaveBeenCalled();
         advance(1000);
         expect(stopped()).toBeNull();
-        expect(frameIframe()).toBe(frame);
+        expect(wrapperIframe()).toBe(frame);
     });
 
     test('an artifact that takes focus and opens a prompt at once gets no prompt and is stopped', async () => {
-        const {frame} = await renderReadyFrame();
+        const {frame, inner} = await renderReadyFrame();
         act(() => composer.focus());
         act(() => {
             frame.focus();
+            inner.focus();
             window.dispatchEvent(new MessageEvent('message', {
                 data: {mmArtifact: 1, type: 'request', id: 'r1', method: 'getCurrentUser', token: TOKEN},
                 origin: 'null',
-                source: frame.contentWindow,
+                source: inner.contentWindow,
             }));
         });
         expect(screen.queryByTestId('html-artifact-consent')).toBeNull();
@@ -516,133 +640,60 @@ describe('ArtifactFrame focus guard', () => {
 });
 
 describe('ArtifactFrame bridge token', () => {
-    const iframe = () => screen.queryByTitle(/Interactive artifact/) as HTMLIFrameElement | null;
-
-    function renderFrame() {
-        return render(withProviders(
-            <ArtifactFrame
-                fileId='abcdefghijklmnopqrstuvwxyz'
-                fileName='tok.html'
-                displayMode='inline'
-            />,
-        ));
-    }
-
     test('shows loading and no frame until the token arrives', async () => {
         let resolve: (t: {token: string; tooLarge: boolean}) => void = () => {}; // eslint-disable-line no-empty-function
         mockGetToken.mockReturnValue(new Promise((r) => {
             resolve = r;
         }));
-        renderFrame();
-        expect(iframe()).toBeNull();
+        renderFrame('tok.html');
+        expect(wrapperIframe()).toBeNull();
         expect(screen.getByLabelText('Loading artifact')).toBeTruthy();
         await act(async () => {
             resolve({token: TOKEN, tooLarge: false});
         });
-        expect(iframe()).not.toBeNull();
+        await flushLoad();
+        expect(wrapperIframe()).not.toBeNull();
+        expect(innerIframe()).not.toBeNull();
     });
 
     test('shows a download prompt instead of loading a too-large artifact', async () => {
         mockGetToken.mockResolvedValueOnce({token: TOKEN, tooLarge: true});
-        renderFrame();
-        await flushToken();
-        expect(iframe()).toBeNull();
+        renderFrame('tok.html');
+        await flushLoad();
+        expect(wrapperIframe()).toBeNull();
         expect(screen.queryByLabelText('Loading artifact')).toBeNull();
         expect(screen.getByRole('alert').textContent).toContain('too large to preview');
         expect(screen.getByRole('button', {name: 'Download'})).toBeTruthy();
     });
 
-    test('loads the frame with the nonce its token was issued for', async () => {
-        renderFrame();
-        await flushToken();
-        expect(mockGetToken).toHaveBeenCalledTimes(1);
-        const [fileId, nonce] = mockGetToken.mock.calls[0];
-        expect(fileId).toBe('abcdefghijklmnopqrstuvwxyz');
-        expect(nonce).toMatch(/^[A-Za-z0-9_-]{22}$/);
-        expect(iframe()!.getAttribute('src')).toBe(`/plugins/mattermost-ai/artifacts/abcdefghijklmnopqrstuvwxyz?n=${nonce}`);
-    });
-
-    test('each host load uses a new nonce and only that load\'s token', async () => {
-        mockGetToken.
-            mockResolvedValueOnce({token: 'first-token', tooLarge: false}).
-            mockResolvedValueOnce({token: 'second-token', tooLarge: false});
-        renderFrame();
-        await flushToken();
-        const first = iframe()!;
-        fireEvent.load(first);
-        fireEvent.load(first);
-        fireEvent.click(screen.getByRole('button', {name: 'Reload'}));
-        await flushToken();
-        expect(mockGetToken).toHaveBeenCalledTimes(2);
-        const [firstNonce, secondNonce] = mockGetToken.mock.calls.map(([, nonce]) => nonce);
-        expect(secondNonce).not.toBe(firstNonce);
-
-        const frame = iframe()!;
-        expect(frame.getAttribute('src')).toBe(`/plugins/mattermost-ai/artifacts/abcdefghijklmnopqrstuvwxyz?n=${secondNonce}`);
-        fireEvent.load(frame);
-        const posted = jest.spyOn(frame.contentWindow!, 'postMessage');
-        const send = (token: string) => act(() => {
-            window.dispatchEvent(new MessageEvent('message', {data: {mmArtifact: 1, type: 'ready', token}, origin: 'null', source: frame.contentWindow}));
-        });
-        send('first-token');
-        expect(posted).not.toHaveBeenCalled();
-        send('second-token');
-        expect(posted).toHaveBeenCalledTimes(1);
-    });
-
     test('shows the error state on token failure and retries with a new nonce', async () => {
         mockGetToken.mockRejectedValueOnce(new Error('nope'));
-        renderFrame();
-        await flushToken();
-        expect(iframe()).toBeNull();
+        renderFrame('tok.html');
+        await flushLoad();
+        expect(wrapperIframe()).toBeNull();
         expect(screen.getByRole('alert').textContent).toContain('could not be loaded');
         fireEvent.click(screen.getByRole('button', {name: 'Retry'}));
-        await flushToken();
-        expect(iframe()).not.toBeNull();
+        await flushLoad();
+        expect(wrapperIframe()).not.toBeNull();
         expect(mockGetToken).toHaveBeenCalledTimes(2);
         expect(mockGetToken.mock.calls[1][1]).not.toBe(mockGetToken.mock.calls[0][1]);
     });
 
     test('answers only messages carrying the token', async () => {
-        renderFrame();
-        await flushToken();
-        const frame = iframe()!;
-        fireEvent.load(frame);
-        const posted = jest.spyOn(frame.contentWindow!, 'postMessage');
-        const send = (data: unknown) => act(() => {
-            window.dispatchEvent(new MessageEvent('message', {data, origin: 'null', source: frame.contentWindow}));
-        });
-        send({mmArtifact: 1, type: 'ready'});
-        send({mmArtifact: 1, type: 'ready', token: 'guess'});
+        renderFrame('tok.html');
+        await flushLoad();
+        const inner = innerIframe()!;
+        fireEvent.load(inner);
+        const posted = jest.spyOn(inner.contentWindow!, 'postMessage');
+        postFrom(inner.contentWindow, {mmArtifact: 1, type: 'ready'});
+        postFrom(inner.contentWindow, {mmArtifact: 1, type: 'ready', token: 'guess'});
         expect(posted).not.toHaveBeenCalled();
-        send({mmArtifact: 1, type: 'ready', token: TOKEN});
+        postFrom(inner.contentWindow, {mmArtifact: 1, type: 'ready', token: TOKEN});
         expect(posted).toHaveBeenCalledTimes(1);
     });
 });
 
 describe('ArtifactConsentPrompt focus handling', () => {
-    function renderPrompt() {
-        const onAllow = jest.fn();
-        const onDeny = jest.fn();
-        render(withProviders(
-            <ArtifactConsentPrompt
-                fileName='dash.html'
-                onAllow={onAllow}
-                onDeny={onDeny}
-            />,
-        ));
-        return {
-            onAllow,
-            onDeny,
-            allow: screen.getByTestId('html-artifact-consent-allow'),
-            deny: screen.getByTestId('html-artifact-consent-deny'),
-        };
-    }
-
-    const arm = () => act(() => {
-        jest.advanceTimersByTime(CONSENT_ARM_DELAY_MS);
-    });
-
     test('restores the previously focused element when it goes away', () => {
         const outside = document.createElement('button');
         document.body.appendChild(outside);
@@ -681,16 +732,32 @@ describe('ArtifactConsentPrompt focus handling', () => {
     });
 
     test('shows a heading and focuses Deny', () => {
-        const {deny} = renderPrompt();
+        render(withProviders(
+            <ArtifactConsentPrompt
+                fileName='dash.html'
+                onAllow={jest.fn()}
+                onDeny={jest.fn()}
+            />,
+        ));
         expect(screen.getByRole('alertdialog', {name: 'Allow access to your profile?'})).toBeTruthy();
-        expect(document.activeElement).toBe(deny);
+        expect(document.activeElement).toBe(screen.getByTestId('html-artifact-consent-deny'));
     });
 
     test('buttons read as disabled until the delay passes', () => {
-        const {allow, deny} = renderPrompt();
+        render(withProviders(
+            <ArtifactConsentPrompt
+                fileName='dash.html'
+                onAllow={jest.fn()}
+                onDeny={jest.fn()}
+            />,
+        ));
+        const allow = screen.getByTestId('html-artifact-consent-allow');
+        const deny = screen.getByTestId('html-artifact-consent-deny');
         expect(allow.getAttribute('aria-disabled')).toBe('true');
         expect(deny.getAttribute('aria-disabled')).toBe('true');
-        arm();
+        act(() => {
+            jest.advanceTimersByTime(CONSENT_ARM_DELAY_MS);
+        });
         expect(allow.getAttribute('aria-disabled')).toBe('false');
         expect(deny.getAttribute('aria-disabled')).toBe('false');
     });
@@ -713,18 +780,16 @@ describe('HTMLArtifactFullscreen focus sentinels', () => {
     ])('$name', async ({sentinel, ready, expected}) => {
         render(withProviders(
             <HTMLArtifactFullscreen
-                fileId='abcdefghijklmnopqrstuvwxyz'
+                fileId={FILE_ID}
                 fileName='dash.html'
                 onClose={jest.fn()}
             />,
         ));
-        await flushToken();
-        const frame = screen.getByTitle(/Interactive artifact/) as HTMLIFrameElement;
+        await flushLoad();
+        const inner = innerIframe()!;
         expect(document.activeElement).toBe(screen.getByRole('button', {name: 'Close'}));
         if (ready) {
-            act(() => {
-                window.dispatchEvent(new MessageEvent('message', {data: {mmArtifact: 1, type: 'ready', token: TOKEN}, origin: 'null', source: frame.contentWindow}));
-            });
+            postFrom(inner.contentWindow, {mmArtifact: 1, type: 'ready', token: TOKEN});
         }
         act(() => {
             screen.getByTestId(sentinel).focus();
@@ -737,16 +802,15 @@ describe('HTMLArtifactFullscreen focus sentinels', () => {
     test('an artifact that takes focus from the viewer\'s header controls is stopped', async () => {
         render(withProviders(
             <HTMLArtifactFullscreen
-                fileId='abcdefghijklmnopqrstuvwxyz'
+                fileId={FILE_ID}
                 fileName='dash.html'
                 onClose={jest.fn()}
             />,
         ));
-        await flushToken();
-        const frame = screen.getByTitle(/Interactive artifact/) as HTMLIFrameElement;
+        await flushLoad();
         const close = screen.getByRole('button', {name: 'Close'});
         expect(document.activeElement).toBe(close);
-        act(() => frame.focus());
+        focusArtifact(wrapperIframe()!);
         advance(300);
         expect(stopped()?.getAttribute('data-stop-reason')).toBe('focus');
         expect(document.activeElement).toBe(close);
@@ -755,12 +819,12 @@ describe('HTMLArtifactFullscreen focus sentinels', () => {
     test('skips controls without a layout box', async () => {
         render(withProviders(
             <HTMLArtifactFullscreen
-                fileId='abcdefghijklmnopqrstuvwxyz'
+                fileId={FILE_ID}
                 fileName='dash.html'
                 onClose={jest.fn()}
             />,
         ));
-        await flushToken();
+        await flushLoad();
         const download = screen.getByRole('button', {name: 'Download'});
         rects.mockImplementation(function rectsFor(this: HTMLElement) {
             return (this === download ? [] : [{}]) as unknown as DOMRectList;
@@ -780,20 +844,20 @@ describe('artifact safety notice', () => {
     ])('$name always shows the notice outside the frame area', async ({fileName, view, area}) => {
         render(withProviders(view === 'fullscreen' ? (
             <HTMLArtifactFullscreen
-                fileId='abcdefghijklmnopqrstuvwxyz'
+                fileId={FILE_ID}
                 fileName={fileName}
                 onClose={jest.fn()}
             />
         ) : (
             <HTMLArtifactCard
-                fileId='abcdefghijklmnopqrstuvwxyz'
+                fileId={FILE_ID}
                 fileName={fileName}
             />
         )));
         if (view === 'card') {
             trustedClick(screen.getByTestId('html-artifact-run'));
         }
-        await flushToken();
+        await flushLoad();
         const notice = screen.getByRole('note');
         expect(notice.getAttribute('aria-label')).toMatch(/AI-generated.*Never enter passwords/);
         expect(notice.textContent).toContain('Don\'t enter passwords');
@@ -802,7 +866,6 @@ describe('artifact safety notice', () => {
 });
 
 describe('HTMLArtifactCard run gate', () => {
-    const FILE_ID = 'abcdefghijklmnopqrstuvwxyz';
     const placeholder = () => screen.queryByTestId('html-artifact-run-placeholder');
 
     function renderCard(fileId = FILE_ID) {
@@ -816,21 +879,21 @@ describe('HTMLArtifactCard run gate', () => {
 
     test('shows Run and no frame until a trusted click on Run, then loads the artifact not engaged', async () => {
         renderCard();
-        await flushToken();
+        await flushLoad();
         expect(placeholder()?.textContent).toContain('runs code only when you choose');
-        expect(frameIframe()).toBeNull();
+        expect(wrapperIframe()).toBeNull();
         expect(screen.queryByTestId('html-artifact-frame')).toBeNull();
         expect(screen.queryByTestId('html-artifact-reload')).toBeNull();
         expect(mockGetToken).not.toHaveBeenCalled();
 
         fireEvent.click(screen.getByTestId('html-artifact-run'));
-        await flushToken();
-        expect(frameIframe()).toBeNull();
+        await flushLoad();
+        expect(wrapperIframe()).toBeNull();
 
         trustedClick(screen.getByTestId('html-artifact-run'));
-        await flushToken();
+        await flushLoad();
         expect(placeholder()).toBeNull();
-        expect(frameIframe()).not.toBeNull();
+        expect(wrapperIframe()).not.toBeNull();
         expect(screen.getByTestId('html-artifact-frame').getAttribute('data-engaged')).toBe('false');
         expect(screen.getByTestId('html-artifact-reload')).toBeTruthy();
     });
@@ -838,13 +901,11 @@ describe('HTMLArtifactCard run gate', () => {
     test('Run loads the artifact covered: clicking Run does not give it keyboard focus', async () => {
         renderCard();
         trustedClick(screen.getByTestId('html-artifact-run'));
-        await flushToken();
-        const frame = frameIframe()!;
-        act(() => {
-            window.dispatchEvent(new MessageEvent('message', {data: {mmArtifact: 1, type: 'ready', token: TOKEN}, origin: 'null', source: frame.contentWindow}));
-        });
+        await flushLoad();
+        const frame = wrapperIframe()!;
+        postFrom(innerIframe(frame)!.contentWindow, {mmArtifact: 1, type: 'ready', token: TOKEN});
         expect(screen.getByTestId('html-artifact-interact')).toBeTruthy();
-        act(() => frame.focus());
+        focusArtifact(frame);
         advance(300);
         expect(stopped()?.getAttribute('data-stop-reason')).toBe('focus');
     });
@@ -852,33 +913,34 @@ describe('HTMLArtifactCard run gate', () => {
     test('Run is remembered per viewer and file for the page session', async () => {
         const first = renderCard();
         trustedClick(screen.getByTestId('html-artifact-run'));
-        await flushToken();
+        await flushLoad();
         first.unmount();
 
         const again = renderCard();
-        await flushToken();
+        await flushLoad();
         expect(placeholder()).toBeNull();
-        expect(frameIframe()).not.toBeNull();
+        expect(wrapperIframe()).not.toBeNull();
 
         // Not clicked in this view: it mounts covered.
         expect(screen.getByTestId('html-artifact-frame').getAttribute('data-engaged')).toBe('false');
         again.unmount();
 
         renderCard('zyxwvutsrqponmlkjihgfedcba');
-        await flushToken();
+        await flushLoad();
         expect(placeholder()).not.toBeNull();
     });
 
     test('the inline card and the fullscreen viewer each load with their own nonce', async () => {
         renderCard();
         trustedClick(screen.getByTestId('html-artifact-run'));
-        await flushToken();
+        await flushLoad();
         trustedClick(screen.getByTestId('html-artifact-open-fullscreen'));
-        await flushToken();
+        await flushLoad();
         expect(mockGetToken).toHaveBeenCalledTimes(2);
         const [cardNonce, fullscreenNonce] = mockGetToken.mock.calls.map(([, nonce]) => nonce);
         expect(fullscreenNonce).not.toBe(cardNonce);
-        expect(screen.getAllByTitle(/Interactive artifact/).map((f) => f.getAttribute('src'))).toEqual([
+        const srcs = screen.getAllByTestId('html-artifact-wrapper').map((w) => innerIframe(w as HTMLIFrameElement)!.getAttribute('src'));
+        expect(srcs).toEqual([
             `/plugins/mattermost-ai/artifacts/${FILE_ID}?n=${cardNonce}`,
             `/plugins/mattermost-ai/artifacts/${FILE_ID}?n=${fullscreenNonce}`,
         ]);
@@ -887,7 +949,7 @@ describe('HTMLArtifactCard run gate', () => {
     test('opening fullscreen from the placeholder runs the artifact there, covered', async () => {
         renderCard();
         trustedClick(screen.getByTestId('html-artifact-open-fullscreen'));
-        await flushToken();
+        await flushLoad();
         const viewer = screen.getByTestId('html-artifact-fullscreen');
         const frames = screen.getAllByTestId('html-artifact-frame');
         const fullscreenFrame = frames.find((f) => viewer.contains(f))!;
