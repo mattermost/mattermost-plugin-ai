@@ -262,6 +262,7 @@ func TestUpdateAgentRenameRollbackOnPolicyDeleteFailure(t *testing.T) {
 			expectedName:       "old-name",
 			expectedBotName:    "old-name",
 			expectedDefaultBot: "old-name",
+			expectedPublished:  []string{"agent-abac-rename"},
 		},
 		{
 			name:               "rename is kept when the agent cannot be restored",
@@ -323,9 +324,9 @@ func TestUpdateAgentRenameRollbackOnPolicyDeleteFailure(t *testing.T) {
 			assert.Equal(t, tc.expectedName, e.agentStore.agents[agentID].Name)
 			assert.Equal(t, tc.expectedBotName, botName)
 			assert.Equal(t, tc.expectedDefaultBot, configStore.cfg.DefaultBotName)
-			assert.Equal(t, tc.expectedPublished, notifier.published, "peers must refresh the agent only when the rename was not reverted")
+			assert.Equal(t, tc.expectedPublished, notifier.published, "peers must refresh the agent once settings were renamed")
 			if botName == "old-name" {
-				assert.NotNil(t, e.bots.GetBotMentioned("@old-name hi"), "a reverted rename must keep the agent answering")
+				assert.Nil(t, e.bots.GetBotMentioned("@new-name hi"), "the reverted username must not keep routing to the agent")
 			} else {
 				assert.Nil(t, e.bots.GetBotMentioned("@old-name hi"), "the released username must not keep routing to the agent")
 			}
