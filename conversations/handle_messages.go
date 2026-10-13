@@ -407,7 +407,8 @@ func (c *Conversations) handleMentionViaConversation(
 		return fmt.Errorf("tool runner failed: %w", runErr)
 	}
 
-	stream := decorateStreamWithWebSearchAnnotations(result.Stream, llmContext)
+	stream := c.decorateStreamWithMCPConnectFallback(bot, result.Stream, responsePost, convResult.Conversation.ID, llmContext)
+	stream = decorateStreamWithWebSearchAnnotations(stream, llmContext)
 	stream = c.decorateStreamWithCreatedFiles(ctx, bot, stream, responsePost, nil, llmContext, llmContext)
 
 	if streamErr := c.streamToExistingPost(ctx, stream, responsePost, postingUser, channel, false); streamErr != nil {
@@ -513,7 +514,8 @@ func (c *Conversations) streamDMConversation(
 		return fmt.Errorf("unable to process DM request: %w", err)
 	}
 
-	stream := c.decorateStreamWithCreatedFiles(ctx, bot, dmStream.Stream, responsePost, nil, llmContext, llmContext)
+	stream := c.decorateStreamWithMCPConnectFallback(bot, dmStream.Stream, responsePost, convResult.ConversationID, llmContext)
+	stream = c.decorateStreamWithCreatedFiles(ctx, bot, stream, responsePost, nil, llmContext, llmContext)
 
 	if streamErr := c.streamToExistingPost(ctx, stream, responsePost, postingUser, channel, false); streamErr != nil {
 		return fmt.Errorf("unable to stream response: %w", streamErr)

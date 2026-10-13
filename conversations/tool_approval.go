@@ -714,7 +714,8 @@ func (c *Conversations) streamToolFollowUp(
 		return fmt.Errorf("tool runner failed on tool follow-up: %w", err)
 	}
 
-	stream := decorateStreamWithWebSearchAnnotations(runResult.Stream, approvalContext)
+	stream := c.decorateStreamWithMCPConnectFallback(bot, runResult.Stream, post, conv.ID, llmContext)
+	stream = decorateStreamWithWebSearchAnnotations(stream, approvalContext)
 
 	// Recover files created in earlier requests of this run (e.g. an
 	// approved CreateFile whose share decision arrives in a later request,
