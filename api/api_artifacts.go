@@ -14,7 +14,9 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -68,11 +70,26 @@ func artifactBridgeScript(token string) string {
 }
 
 // artifactBridgeToken derives the token that authenticates bridge messages
-// for one viewer and one artifact file.
-func artifactBridgeToken(secret []byte, userID, fileID string) string {
+// for one viewer, one artifact file and one host load of its frame (nonce).
+func artifactBridgeToken(secret []byte, userID, fileID, nonce string) string {
 	mac := hmac.New(sha256.New, secret)
-	mac.Write([]byte("html-artifact-bridge:v1|" + userID + "|" + fileID))
+	mac.Write([]byte("html-artifact-bridge:v2|" + userID + "|" + fileID + "|" + nonce))
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+// artifactNonceRe matches the host's per-load nonce: 16 random bytes,
+// base64url without padding.
+var artifactNonceRe = regexp.MustCompile(`^[A-Za-z0-9_-]{22}$`)
+
+// artifactNonce returns the request's nonce, which must be the only query
+// parameter. On failure it writes a 400 and returns ok=false.
+func artifactNonce(c *gin.Context) (string, bool) {
+	query, err := url.ParseQuery(c.Request.URL.RawQuery)
+	if err != nil || len(query) != 1 || len(query["n"]) != 1 || !artifactNonceRe.MatchString(query["n"][0]) {
+		c.String(http.StatusBadRequest, "invalid request")
+		return "", false
+	}
+	return query["n"][0], true
 }
 
 // artifactSecret returns the plugin-wide bridge token secret, creating it on
@@ -270,16 +287,16 @@ func (a *API) authorizeArtifact(c *gin.Context) (client mmapi.Client, info *mode
 	return client, info, true
 }
 
-// viewerArtifactToken returns the bridge token for the requesting viewer and
-// fileID, logging and writing a 500 on failure.
-func (a *API) viewerArtifactToken(c *gin.Context, fileID string) (string, bool) {
+// viewerArtifactToken returns the bridge token for the requesting viewer,
+// fileID and nonce, logging and writing a 500 on failure.
+func (a *API) viewerArtifactToken(c *gin.Context, fileID, nonce string) (string, bool) {
 	secret, err := a.artifactSecret()
 	if err != nil {
 		a.logArtifactError("Failed to load artifact bridge secret", err, fileID)
 		c.String(http.StatusInternalServerError, "failed to prepare artifact")
 		return "", false
 	}
-	return artifactBridgeToken(secret, c.GetHeader("Mattermost-User-Id"), fileID), true
+	return artifactBridgeToken(secret, c.GetHeader("Mattermost-User-Id"), fileID, nonce), true
 }
 
 // handleGetArtifactToken returns the token the viewer's host page uses to
@@ -292,7 +309,11 @@ func (a *API) handleGetArtifactToken(c *gin.Context) {
 	if !ok {
 		return
 	}
-	token, ok := a.viewerArtifactToken(c, c.Param("fileid"))
+	nonce, ok := artifactNonce(c)
+	if !ok {
+		return
+	}
+	token, ok := a.viewerArtifactToken(c, c.Param("fileid"), nonce)
 	if !ok {
 		return
 	}
@@ -308,14 +329,21 @@ func (a *API) handleGetArtifact(c *gin.Context) {
 	}
 	fileID := c.Param("fileid")
 
-	// Only render inside the host's iframe, where the safety notice and
+	// Only render inside the host's frame, where the safety notice and
 	// navigation guard exist. A top-level visit (e.g. the frame URL opened in
 	// a new tab) would let attacker-authored UI fill a tab on this origin.
-	if !strings.EqualFold(c.GetHeader("Sec-Fetch-Dest"), "iframe") {
+	// The host's wrapper frame is same-origin, while the artifact navigating
+	// its own frame (opaque initiator) is cross-site.
+	if !strings.EqualFold(c.GetHeader("Sec-Fetch-Dest"), "iframe") || !strings.EqualFold(c.GetHeader("Sec-Fetch-Site"), "same-origin") {
 		h := c.Writer.Header()
 		h.Set("Content-Security-Policy", artifactInterstitialCSP)
 		h.Set("Referrer-Policy", "no-referrer")
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(artifactInterstitialHTML))
+		return
+	}
+
+	nonce, ok := artifactNonce(c)
+	if !ok {
 		return
 	}
 
@@ -325,7 +353,7 @@ func (a *API) handleGetArtifact(c *gin.Context) {
 		return
 	}
 
-	token, ok := a.viewerArtifactToken(c, fileID)
+	token, ok := a.viewerArtifactToken(c, fileID, nonce)
 	if !ok {
 		return
 	}

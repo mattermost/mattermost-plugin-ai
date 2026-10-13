@@ -4,6 +4,9 @@
 package api
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -22,6 +25,9 @@ import (
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
 )
+
+// testArtifactNonce is a well-formed host nonce (22 base64url characters).
+const testArtifactNonce = "AAECAwQFBgcICQoLDA0ODw"
 
 func TestHandleGetArtifact(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
@@ -196,7 +202,7 @@ func TestHandleGetArtifact(t *testing.T) {
 	}
 
 	secret := []byte(strings.Repeat("k", artifactSecretSize))
-	wantToken := artifactBridgeToken(secret, testUserID, fileID)
+	wantToken := artifactBridgeToken(secret, testUserID, fileID, testArtifactNonce)
 
 	for _, route := range []string{"artifact", "token"} {
 		for _, tt := range tests {
@@ -224,9 +230,10 @@ func TestHandleGetArtifact(t *testing.T) {
 				}
 				e.api.mmClient = m
 
-				req := httptest.NewRequest(http.MethodGet, path, nil)
+				req := httptest.NewRequest(http.MethodGet, path+"?n="+testArtifactNonce, nil)
 				req.Header.Set("Mattermost-User-Id", testUserID)
 				req.Header.Set("Sec-Fetch-Dest", "iframe")
+				req.Header.Set("Sec-Fetch-Site", "same-origin")
 				rec := httptest.NewRecorder()
 				e.api.ServeHTTP(&plugin.Context{SessionId: sessionID}, rec, req)
 
@@ -272,18 +279,26 @@ func TestHandleGetArtifactTopLevel(t *testing.T) {
 	channelID := model.NewId()
 	const htmlDoc = "<html><body><script>run()</script></body></html>"
 	secret := []byte(strings.Repeat("k", artifactSecretSize))
-	wantToken := artifactBridgeToken(secret, testUserID, fileID)
+	wantToken := artifactBridgeToken(secret, testUserID, fileID, testArtifactNonce)
 
 	tests := []struct {
 		name      string
 		dest      string
+		site      string
+		query     string
 		wantServe bool
 	}{
-		{name: "missing header shows interstitial"},
-		{name: "document shows interstitial", dest: "document"},
-		{name: "empty shows interstitial", dest: "empty"},
-		{name: "iframe serves artifact", dest: "iframe", wantServe: true},
-		{name: "iframe is case-insensitive", dest: "IFrame", wantServe: true},
+		{name: "missing headers show interstitial", query: "n=" + testArtifactNonce},
+		{name: "document shows interstitial", dest: "document", site: "same-origin", query: "n=" + testArtifactNonce},
+		{name: "empty shows interstitial", dest: "empty", site: "same-origin", query: "n=" + testArtifactNonce},
+		{name: "iframe without site shows interstitial", dest: "iframe", query: "n=" + testArtifactNonce},
+		{name: "cross-site iframe shows interstitial", dest: "iframe", site: "cross-site", query: "n=" + testArtifactNonce},
+		{name: "same-site iframe shows interstitial", dest: "iframe", site: "same-site", query: "n=" + testArtifactNonce},
+		{name: "user-initiated iframe shows interstitial", dest: "iframe", site: "none", query: "n=" + testArtifactNonce},
+		{name: "top-level visit without nonce shows interstitial", dest: "document", site: "none"},
+		{name: "cross-site iframe with malformed nonce shows interstitial", dest: "iframe", site: "cross-site", query: "n=x&n=y"},
+		{name: "same-origin iframe serves artifact", dest: "iframe", site: "same-origin", query: "n=" + testArtifactNonce, wantServe: true},
+		{name: "headers are case-insensitive", dest: "IFrame", site: "Same-Origin", query: "n=" + testArtifactNonce, wantServe: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -304,10 +319,13 @@ func TestHandleGetArtifactTopLevel(t *testing.T) {
 			}
 			e.api.mmClient = m
 
-			req := httptest.NewRequest(http.MethodGet, "/artifacts/"+fileID, nil)
+			req := httptest.NewRequest(http.MethodGet, "/artifacts/"+fileID+"?"+tt.query, nil)
 			req.Header.Set("Mattermost-User-Id", testUserID)
 			if tt.dest != "" {
 				req.Header.Set("Sec-Fetch-Dest", tt.dest)
+			}
+			if tt.site != "" {
+				req.Header.Set("Sec-Fetch-Site", tt.site)
 			}
 			rec := httptest.NewRecorder()
 			e.api.ServeHTTP(&plugin.Context{SessionId: sessionID}, rec, req)
@@ -327,6 +345,104 @@ func TestHandleGetArtifactTopLevel(t *testing.T) {
 			assert.NotContains(t, rec.Body.String(), wantToken)
 			assert.NotContains(t, strings.ToLower(rec.Body.String()), "<script")
 		})
+	}
+}
+
+func TestHandleGetArtifactNonceValidation(t *testing.T) {
+	gin.SetMode(gin.ReleaseMode)
+	gin.DefaultWriter = io.Discard
+
+	sessionID := model.NewId()
+	fileID := model.NewId()
+	postID := model.NewId()
+	channelID := model.NewId()
+	const htmlDoc = "<html><body><script>run()</script></body></html>"
+	secret := []byte(strings.Repeat("k", artifactSecretSize))
+	otherNonce := "zyxwvutsrqponmlkjihg-_"
+
+	tests := []struct {
+		name  string
+		query string
+		// unauthorized makes the viewer unable to read the channel.
+		unauthorized bool
+		wantStatus   int
+		// wantNonce is the nonce the served token must be bound to.
+		wantNonce string
+	}{
+		{name: "valid nonce", query: "n=" + testArtifactNonce, wantStatus: http.StatusOK, wantNonce: testArtifactNonce},
+		{name: "token is bound to the given nonce", query: "n=" + otherNonce, wantStatus: http.StatusOK, wantNonce: otherNonce},
+		{name: "missing query", query: "", wantStatus: http.StatusBadRequest},
+		{name: "empty nonce", query: "n=", wantStatus: http.StatusBadRequest},
+		{name: "key without value", query: "n", wantStatus: http.StatusBadRequest},
+		{name: "nonce too short", query: "n=" + testArtifactNonce[1:], wantStatus: http.StatusBadRequest},
+		{name: "nonce too long", query: "n=" + testArtifactNonce + "A", wantStatus: http.StatusBadRequest},
+		{name: "padded nonce", query: "n=" + testArtifactNonce[2:] + "%3D%3D", wantStatus: http.StatusBadRequest},
+		{name: "non-base64url character", query: "n=" + testArtifactNonce[1:] + ".", wantStatus: http.StatusBadRequest},
+		{name: "standard base64 character", query: "n=" + testArtifactNonce[1:] + "%2B", wantStatus: http.StatusBadRequest},
+		{name: "repeated nonce", query: "n=" + testArtifactNonce + "&n=" + testArtifactNonce, wantStatus: http.StatusBadRequest},
+		{name: "extra parameter", query: "n=" + testArtifactNonce + "&x=1", wantStatus: http.StatusBadRequest},
+		{name: "wrong parameter name", query: "nonce=" + testArtifactNonce, wantStatus: http.StatusBadRequest},
+		{name: "unparsable query", query: "n=" + testArtifactNonce + ";x=1", wantStatus: http.StatusBadRequest},
+		{name: "unauthorized viewer with invalid query gets 404", query: "n=x&n=y", unauthorized: true, wantStatus: http.StatusNotFound},
+		{name: "unauthorized viewer with valid nonce gets 404", query: "n=" + testArtifactNonce, unauthorized: true, wantStatus: http.StatusNotFound},
+	}
+
+	for _, route := range []string{"artifact", "token"} {
+		for _, tt := range tests {
+			t.Run(route+"/"+tt.name, func(t *testing.T) {
+				e := SetupTestEnvironment(t)
+				defer e.Cleanup(t)
+				e.setupTestBot(llm.BotConfig{Name: "test-bot", DisplayName: "Test Bot"})
+				e.config.enableHTMLArtifacts = true
+				e.api.artifactSecretCache = secret
+
+				m := mocks.NewMockClient(t)
+				m.EXPECT().HasPermissionToFileAction(sessionID, fileID, model.AccessControlPolicyActionDownloadFileAttachment).Return(true).Maybe()
+				m.EXPECT().GetFileInfo(fileID).Return(&model.FileInfo{Id: fileID, PostId: postID, ChannelId: channelID, Name: "a.html", Extension: "html", Size: int64(len(htmlDoc))}, nil)
+				m.EXPECT().GetPost(postID).Return(&model.Post{Id: postID, UserId: testBotUserID, ChannelId: channelID, FileIds: model.StringArray{fileID}}, nil)
+				m.EXPECT().HasPermissionToChannel(testUserID, channelID, model.PermissionReadChannel).Return(!tt.unauthorized)
+				m.EXPECT().GetConfig().Return(&model.Config{}).Maybe()
+				m.EXPECT().GetFile(fileID).Return(io.NopCloser(strings.NewReader(htmlDoc)), nil).Maybe()
+				e.api.mmClient = m
+
+				path := "/artifacts/" + fileID
+				if route == "token" {
+					path += "/token"
+				}
+				if tt.query != "" {
+					path += "?" + tt.query
+				}
+				req := httptest.NewRequest(http.MethodGet, path, nil)
+				req.Header.Set("Mattermost-User-Id", testUserID)
+				req.Header.Set("Sec-Fetch-Dest", "iframe")
+				req.Header.Set("Sec-Fetch-Site", "same-origin")
+				rec := httptest.NewRecorder()
+				e.api.ServeHTTP(&plugin.Context{SessionId: sessionID}, rec, req)
+
+				require.Equal(t, tt.wantStatus, rec.Code)
+				switch tt.wantStatus {
+				case http.StatusBadRequest:
+					assert.Equal(t, "invalid request", rec.Body.String())
+					assert.True(t, strings.HasPrefix(rec.Header().Get("Content-Type"), "text/plain"))
+					return
+				case http.StatusNotFound:
+					assert.Equal(t, "not found", rec.Body.String())
+					return
+				}
+
+				wantToken := artifactBridgeToken(secret, testUserID, fileID, tt.wantNonce)
+				if route == "token" {
+					var got struct {
+						Token string `json:"token"`
+					}
+					require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+					assert.Equal(t, wantToken, got.Token)
+					return
+				}
+				assert.Contains(t, rec.Body.String(), "const TOKEN = \""+wantToken+"\";")
+				assert.Contains(t, rec.Body.String(), "run()")
+			})
+		}
 	}
 }
 
@@ -424,24 +540,28 @@ func TestArtifactBridgeToken(t *testing.T) {
 	secret := []byte(strings.Repeat("s", artifactSecretSize))
 	user1, user2 := model.NewId(), model.NewId()
 	file1, file2 := model.NewId(), model.NewId()
-	base := artifactBridgeToken(secret, user1, file1)
+	nonce1, nonce2 := testArtifactNonce, "zyxwvutsrqponmlkjihg-_"
+	base := artifactBridgeToken(secret, user1, file1, nonce1)
 
 	tests := []struct {
 		name     string
 		secret   []byte
 		userID   string
 		fileID   string
+		nonce    string
 		wantSame bool
 	}{
-		{name: "same user and file is deterministic", secret: secret, userID: user1, fileID: file1, wantSame: true},
-		{name: "different user", secret: secret, userID: user2, fileID: file1},
-		{name: "different file", secret: secret, userID: user1, fileID: file2},
-		{name: "different secret", secret: []byte(strings.Repeat("t", artifactSecretSize)), userID: user1, fileID: file1},
-		{name: "separator cannot be shifted between fields", secret: secret, userID: user1 + "|" + file1[:1], fileID: file1[1:]},
+		{name: "same user, file and nonce is deterministic", secret: secret, userID: user1, fileID: file1, nonce: nonce1, wantSame: true},
+		{name: "different user", secret: secret, userID: user2, fileID: file1, nonce: nonce1},
+		{name: "different file", secret: secret, userID: user1, fileID: file2, nonce: nonce1},
+		{name: "different nonce", secret: secret, userID: user1, fileID: file1, nonce: nonce2},
+		{name: "different secret", secret: []byte(strings.Repeat("t", artifactSecretSize)), userID: user1, fileID: file1, nonce: nonce1},
+		{name: "separator cannot be shifted between user and file", secret: secret, userID: user1 + "|" + file1[:1], fileID: file1[1:], nonce: nonce1},
+		{name: "separator cannot be shifted between file and nonce", secret: secret, userID: user1, fileID: file1 + "|" + nonce1[:1], nonce: nonce1[1:]},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := artifactBridgeToken(tt.secret, tt.userID, tt.fileID)
+			got := artifactBridgeToken(tt.secret, tt.userID, tt.fileID, tt.nonce)
 			assert.Regexp(t, `^[A-Za-z0-9_-]{43}$`, got)
 			if tt.wantSame {
 				assert.Equal(t, base, got)
@@ -450,6 +570,12 @@ func TestArtifactBridgeToken(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("v1 tokens are not valid v2 tokens", func(t *testing.T) {
+		mac := hmac.New(sha256.New, secret)
+		mac.Write([]byte("html-artifact-bridge:v1|" + user1 + "|" + file1))
+		assert.NotEqual(t, base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), base)
+	})
 }
 
 func TestArtifactBridgeScriptEscaping(t *testing.T) {
