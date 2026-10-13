@@ -1,46 +1,30 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import {getArtifactToken} from '@/client';
+import {newArtifactNonce} from './artifact_token';
 
-import {fetchArtifactToken, resetArtifactTokenCache} from './artifact_token';
-
-jest.mock('@/client', () => ({
-    getArtifactToken: jest.fn(),
-}));
-
-const info = (token: string) => ({token, tooLarge: false});
-
-const mockGetToken = getArtifactToken as jest.MockedFunction<typeof getArtifactToken>;
-
-beforeEach(() => {
-    resetArtifactTokenCache();
-    mockGetToken.mockReset();
-});
-
-describe('fetchArtifactToken', () => {
-    test('shares one fetch per user and file', async () => {
-        mockGetToken.mockResolvedValue(info('t1'));
-        const [a, b] = await Promise.all([fetchArtifactToken('f1', 'u1'), fetchArtifactToken('f1', 'u1')]);
-        expect(a).toEqual(info('t1'));
-        expect(b).toEqual(info('t1'));
-        expect(mockGetToken).toHaveBeenCalledTimes(1);
+describe('newArtifactNonce', () => {
+    test('is 22 base64url characters and differs on every call', () => {
+        const nonces = Array.from({length: 200}, () => newArtifactNonce());
+        for (const nonce of nonces) {
+            expect(nonce).toMatch(/^[A-Za-z0-9_-]{22}$/);
+        }
+        expect(new Set(nonces).size).toBe(nonces.length);
     });
 
     test.each([
-        {name: 'different user, same file', second: {fileId: 'f1', userId: 'u2'}},
-        {name: 'same user, different file', second: {fileId: 'f2', userId: 'u1'}},
-    ])('$name fetches its own token', async ({second}) => {
-        mockGetToken.mockResolvedValueOnce(info('first')).mockResolvedValueOnce(info('second'));
-        expect(await fetchArtifactToken('f1', 'u1')).toEqual(info('first'));
-        expect(await fetchArtifactToken(second.fileId, second.userId)).toEqual(info('second'));
-        expect(mockGetToken).toHaveBeenCalledTimes(2);
-    });
-
-    test('a failed fetch is retried on the next call', async () => {
-        mockGetToken.mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce(info('t2'));
-        await expect(fetchArtifactToken('f1', 'u1')).rejects.toThrow('boom');
-        expect(await fetchArtifactToken('f1', 'u1')).toEqual(info('t2'));
-        expect(mockGetToken).toHaveBeenCalledTimes(2);
+        {name: 'all zero bytes', fill: 0x00, expected: 'AAAAAAAAAAAAAAAAAAAAAA'},
+        {name: 'all 0xff bytes use the URL-safe alphabet', fill: 0xff, expected: '_____________________w'},
+        {name: '0xfb bytes map 62 to "-"', fill: 0xfb, expected: '-_v7-_v7-_v7-_v7-_v7-w'},
+    ])('encodes $name', ({fill, expected}) => {
+        const spy = jest.spyOn(crypto, 'getRandomValues').mockImplementation(<T extends ArrayBufferView | null>(array: T): T => {
+            (array as unknown as Uint8Array).fill(fill);
+            return array;
+        });
+        try {
+            expect(newArtifactNonce()).toBe(expected);
+        } finally {
+            spy.mockRestore();
+        }
     });
 });

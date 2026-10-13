@@ -13,10 +13,9 @@ import ArtifactConsentPrompt, {CONSENT_ARM_DELAY_MS} from './artifact_consent_pr
 import ArtifactFrame, {HEARTBEAT_HIDE_MS, HEARTBEAT_STOP_MS} from './artifact_frame';
 import HTMLArtifactCard, {resetArtifactRunDecisions} from './html_artifact_card';
 import HTMLArtifactFullscreen from './html_artifact_fullscreen';
-import {resetArtifactTokenCache} from './artifact_token';
 
 jest.mock('@/client', () => ({
-    artifactURL: (fileId: string) => `/plugins/mattermost-ai/artifacts/${fileId}`,
+    artifactURL: (fileId: string, nonce: string) => `/plugins/mattermost-ai/artifacts/${fileId}?n=${nonce}`,
     fileDownloadURL: (fileId: string) => `/api/v4/files/${fileId}?download=1`,
     getArtifactToken: jest.fn(),
 }));
@@ -59,7 +58,6 @@ function withProviders(children: React.ReactNode) {
 beforeEach(() => {
     jest.useFakeTimers();
     resetConsentStore();
-    resetArtifactTokenCache();
     resetArtifactRunDecisions();
     mockGetToken.mockReset();
     mockGetToken.mockResolvedValue({token: TOKEN, tooLarge: false});
@@ -554,7 +552,45 @@ describe('ArtifactFrame bridge token', () => {
         expect(screen.getByRole('button', {name: 'Download'})).toBeTruthy();
     });
 
-    test('shows the error state on token failure and retries', async () => {
+    test('loads the frame with the nonce its token was issued for', async () => {
+        renderFrame();
+        await flushToken();
+        expect(mockGetToken).toHaveBeenCalledTimes(1);
+        const [fileId, nonce] = mockGetToken.mock.calls[0];
+        expect(fileId).toBe('abcdefghijklmnopqrstuvwxyz');
+        expect(nonce).toMatch(/^[A-Za-z0-9_-]{22}$/);
+        expect(iframe()!.getAttribute('src')).toBe(`/plugins/mattermost-ai/artifacts/abcdefghijklmnopqrstuvwxyz?n=${nonce}`);
+    });
+
+    test('each host load uses a new nonce and only that load\'s token', async () => {
+        mockGetToken.
+            mockResolvedValueOnce({token: 'first-token', tooLarge: false}).
+            mockResolvedValueOnce({token: 'second-token', tooLarge: false});
+        renderFrame();
+        await flushToken();
+        const first = iframe()!;
+        fireEvent.load(first);
+        fireEvent.load(first);
+        fireEvent.click(screen.getByRole('button', {name: 'Reload'}));
+        await flushToken();
+        expect(mockGetToken).toHaveBeenCalledTimes(2);
+        const [firstNonce, secondNonce] = mockGetToken.mock.calls.map(([, nonce]) => nonce);
+        expect(secondNonce).not.toBe(firstNonce);
+
+        const frame = iframe()!;
+        expect(frame.getAttribute('src')).toBe(`/plugins/mattermost-ai/artifacts/abcdefghijklmnopqrstuvwxyz?n=${secondNonce}`);
+        fireEvent.load(frame);
+        const posted = jest.spyOn(frame.contentWindow!, 'postMessage');
+        const send = (token: string) => act(() => {
+            window.dispatchEvent(new MessageEvent('message', {data: {mmArtifact: 1, type: 'ready', token}, origin: 'null', source: frame.contentWindow}));
+        });
+        send('first-token');
+        expect(posted).not.toHaveBeenCalled();
+        send('second-token');
+        expect(posted).toHaveBeenCalledTimes(1);
+    });
+
+    test('shows the error state on token failure and retries with a new nonce', async () => {
         mockGetToken.mockRejectedValueOnce(new Error('nope'));
         renderFrame();
         await flushToken();
@@ -564,6 +600,7 @@ describe('ArtifactFrame bridge token', () => {
         await flushToken();
         expect(iframe()).not.toBeNull();
         expect(mockGetToken).toHaveBeenCalledTimes(2);
+        expect(mockGetToken.mock.calls[1][1]).not.toBe(mockGetToken.mock.calls[0][1]);
     });
 
     test('answers only messages carrying the token', async () => {
@@ -830,6 +867,21 @@ describe('HTMLArtifactCard run gate', () => {
         renderCard('zyxwvutsrqponmlkjihgfedcba');
         await flushToken();
         expect(placeholder()).not.toBeNull();
+    });
+
+    test('the inline card and the fullscreen viewer each load with their own nonce', async () => {
+        renderCard();
+        trustedClick(screen.getByTestId('html-artifact-run'));
+        await flushToken();
+        trustedClick(screen.getByTestId('html-artifact-open-fullscreen'));
+        await flushToken();
+        expect(mockGetToken).toHaveBeenCalledTimes(2);
+        const [cardNonce, fullscreenNonce] = mockGetToken.mock.calls.map(([, nonce]) => nonce);
+        expect(fullscreenNonce).not.toBe(cardNonce);
+        expect(screen.getAllByTitle(/Interactive artifact/).map((f) => f.getAttribute('src'))).toEqual([
+            `/plugins/mattermost-ai/artifacts/${FILE_ID}?n=${cardNonce}`,
+            `/plugins/mattermost-ai/artifacts/${FILE_ID}?n=${fullscreenNonce}`,
+        ]);
     });
 
     test('opening fullscreen from the placeholder runs the artifact there, covered', async () => {

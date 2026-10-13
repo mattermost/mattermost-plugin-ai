@@ -12,7 +12,7 @@ import {Icon} from '@mattermost/compass-ui/components/icon';
 import {Spinner} from '@mattermost/compass-ui/components/spinner';
 import {AlertCircleOutlineIcon, DownloadOutlineIcon, RefreshIcon} from '@mattermost/compass-icons/components';
 
-import {artifactURL} from '@/client';
+import {artifactURL, getArtifactToken} from '@/client';
 
 import {
     ArtifactBroker,
@@ -24,7 +24,7 @@ import {
     toArtifactUser,
 } from './artifact_broker';
 import ArtifactConsentPrompt from './artifact_consent_prompt';
-import {fetchArtifactToken} from './artifact_token';
+import {newArtifactNonce} from './artifact_token';
 import {downloadArtifact} from './download';
 
 export const MIN_INLINE_HEIGHT = 120;
@@ -46,6 +46,14 @@ export function clampInlineHeight(height: number): number {
 
 export interface ArtifactFrameHandle {
     reload: () => void;
+}
+
+// One host load of the frame. The server serves the artifact and accepts the
+// bridge token only for this nonce.
+interface FrameLoad {
+    fileId: string;
+    nonce: string;
+    token: string;
 }
 
 interface Props {
@@ -85,8 +93,8 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
     const containerRef = useRef<HTMLDivElement>(null);
     const iframeRef = useRef<HTMLIFrameElement>(null);
 
-    // Bumping loadKey remounts the iframe (with a fresh broker), which is the
-    // only host-initiated load.
+    // Bumping loadKey starts a new host load: a new nonce and token, a fresh
+    // broker and a remounted frame. It is the only host-initiated load.
     const [loadKey, setLoadKey] = useState(0);
     const loadCountRef = useRef(0);
     const [status, setStatus] = useState<Status>('loading');
@@ -119,7 +127,7 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
     const preferences = useSelector<GlobalState, unknown>((state) => state.entities.preferences?.myPreferences);
     const currentUserId = useSelector<GlobalState, string>((state) => state.entities.users.currentUserId);
     const currentUser = useSelector<GlobalState, any>((state) => state.entities.users.profiles[state.entities.users.currentUserId]);
-    const [token, setToken] = useState<string | null>(null);
+    const [load, setLoad] = useState<FrameLoad | null>(null);
     const [tokenFailed, setTokenFailed] = useState(false);
 
     // The server would refuse to serve the artifact: it exceeds the render
@@ -157,10 +165,10 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
     const stopReasonRef = useRef(stopReason);
     stopReasonRef.current = stopReason;
 
-    // The frame is only rendered once the viewer's bridge token is known.
+    // The frame is only rendered once this load's bridge token is known.
     useEffect(() => {
         let cancelled = false;
-        setToken(null);
+        setLoad(null);
         setTokenFailed(false);
         setTooLarge(false);
         setStatus('loading');
@@ -168,14 +176,15 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
             setTokenFailed(true);
             return undefined; // eslint-disable-line no-undefined
         }
-        fetchArtifactToken(fileId, currentUserId).then((info) => {
+        const nonce = newArtifactNonce();
+        getArtifactToken(fileId, nonce).then((info) => {
             if (cancelled) {
                 return;
             }
             if (info.tooLarge) {
                 setTooLarge(true);
             } else {
-                setToken(info.token);
+                setLoad({fileId, nonce, token: info.token});
             }
         }, () => {
             if (!cancelled) {
@@ -187,10 +196,11 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
         };
     }, [fileId, currentUserId, loadKey]);
 
-    const broker = useMemo(() => (token ? new ArtifactBroker({
-        fileId,
+    // Every host load has its own FrameLoad, so a disposed broker is never reused.
+    const broker = useMemo(() => (load ? new ArtifactBroker({
+        fileId: load.fileId,
         viewerId: currentUserId,
-        token,
+        token: load.token,
         getTargetWindow: () => iframeRef.current?.contentWindow,
         getContext: () => contextRef.current,
         getCurrentUser: () => userRef.current,
@@ -210,11 +220,7 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
         },
         onResize: (h) => setHeight(clampInlineHeight(h)),
         onEscape: () => onEscapeRef.current?.(),
-    }) : null),
-
-    // loadKey: every host load gets its own broker, so a disposed one is never reused.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [fileId, currentUserId, token, loadKey]);
+    }) : null), [load, currentUserId]);
     const brokerRef = useRef(broker);
     brokerRef.current = broker;
 
@@ -448,6 +454,7 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
         setUnresponsive(false);
         setEngaged(initiallyEngagedRef.current);
         setHeight(DEFAULT_INLINE_HEIGHT);
+        setLoad(null);
         setLoadKey((k) => k + 1);
     }, [setEngaged]);
 
@@ -484,7 +491,7 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
 
     const shownStatus: Status = tokenFailed ? 'error' : status;
     const showStatus = !stopReason && !tooLarge;
-    const visible = showStatus && Boolean(token) && shownStatus === 'ready' && !unresponsive;
+    const visible = showStatus && Boolean(load) && shownStatus === 'ready' && !unresponsive;
 
     const title = intl.formatMessage({defaultMessage: 'Interactive artifact: {fileName}'}, {fileName});
 
@@ -497,11 +504,11 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
             data-testid='html-artifact-frame'
             data-engaged={engaged}
         >
-            {!stopReason && !loadFailed && token && (
+            {!stopReason && !loadFailed && load && (
                 <Frame
-                    key={loadKey}
+                    key={load.nonce}
                     ref={iframeRef}
-                    src={artifactURL(fileId)}
+                    src={artifactURL(load.fileId, load.nonce)}
                     sandbox='allow-scripts'
                     referrerPolicy='no-referrer'
                     title={title}
