@@ -91,28 +91,53 @@ func connectMCPServerToolDescription(servers []llm.UnconnectedMCPServer) string 
 }
 
 // resolveConnectMCPServerAccepted computes the tool result for an accepted
-// connect call from the catalog rebuilt after the user's click, so the result
-// reflects whether the connection actually completed.
-func resolveConnectMCPServerAccepted(input json.RawMessage, llmContext *llm.Context) (string, error) {
+// connect call from the catalog rebuilt after the user's click. The server
+// counts as connected only when its tools are actually available there;
+// merely dropping off the unconnected list (e.g. an admin disabled it) is not
+// enough.
+func resolveConnectMCPServerAccepted(input json.RawMessage, llmContext *llm.Context, serverOrigin MCPServerOriginLookup) (UserInteractionResult, error) {
 	args, err := parseConnectMCPServerArgs(input)
 	if err != nil {
-		return "", err
+		return UserInteractionResult{}, err
 	}
 	if llmContext == nil {
-		return "", errors.New("connect result requires the rebuilt tool context")
+		return UserInteractionResult{}, errors.New("connect result requires the rebuilt tool context")
 	}
 
 	if _, stillUnconnected := llmContext.UnconnectedMCPServerByName(args.Server); stillUnconnected {
-		return fmt.Sprintf("%s is still not connected: the user did not finish connecting it. "+
-			"Do not perform actions that need %s. Tell the user they can connect %s and ask again.",
-			args.Server, args.Server, args.Server), nil
+		return UserInteractionResult{
+			Content: fmt.Sprintf("%s is still not connected: the user did not finish connecting it. "+
+				"Do not perform actions that need %s. Tell the user they can connect %s and ask again.",
+				args.Server, args.Server, args.Server),
+			IsError: true,
+		}, nil
 	}
 
-	result := fmt.Sprintf("User connected %s. Its tools are now available.", args.Server)
-	if llmContext.ToolCatalog.MCPDynamicToolLoading && llmContext.IsToolCallable("search_tools") {
-		result += " Use search_tools to find them and load_tool to load one before calling it."
+	if !connectedServerToolsAvailable(llmContext, args.Server, serverOrigin) {
+		return UserInteractionResult{
+			Content: fmt.Sprintf("%s is not available: none of its tools can be used in this conversation. "+
+				"Do not perform actions that need %s. Tell the user %s is unavailable here.",
+				args.Server, args.Server, args.Server),
+			IsError: true,
+		}, nil
 	}
-	return result, nil
+
+	content := fmt.Sprintf("User connected %s. Its tools are now available.", args.Server)
+	if llmContext.ToolCatalog.MCPDynamicToolLoading && llmContext.IsToolCallable("search_tools") {
+		content += " Use search_tools to find them and load_tool to load one before calling it."
+	}
+	return UserInteractionResult{Content: content}, nil
+}
+
+func connectedServerToolsAvailable(llmContext *llm.Context, serverName string, serverOrigin MCPServerOriginLookup) bool {
+	if serverOrigin == nil || llmContext.Tools == nil {
+		return false
+	}
+	origin, ok := serverOrigin(serverName)
+	if !ok {
+		return false
+	}
+	return llmContext.Tools.HasMCPToolsFromOrigin(origin)
 }
 
 // connectMCPServerSkippedResult is the tool result for a skipped connect call.

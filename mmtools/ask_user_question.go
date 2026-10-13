@@ -78,20 +78,34 @@ func NewAskUserQuestionTool() llm.Tool {
 	}
 }
 
+// UserInteractionResult is the tool result recorded for an accepted
+// interaction tool call. IsError marks an accepted call whose outcome failed,
+// such as a connect the user did not complete.
+type UserInteractionResult struct {
+	Content string
+	IsError bool
+}
+
+// MCPServerOriginLookup resolves a configured MCP server name to its tool
+// origin.
+type MCPServerOriginLookup func(serverName string) (origin string, ok bool)
+
 // ResolveUserInteractionAnswer turns a user's acceptance of a pending
-// interaction tool call into the tool result content. kind is the block's
+// interaction tool call into the tool result. kind is the block's
 // UserInteraction value, input the tool_use block's original arguments, and
 // answer the structured selection (predefined labels plus optional free-form
 // text). Connect calls carry no answer; their result is derived from
-// llmContext, the tool context rebuilt after the user's click.
-func ResolveUserInteractionAnswer(kind string, input json.RawMessage, answer UserInteractionAnswer, llmContext *llm.Context) (string, error) {
+// llmContext, the tool context rebuilt after the user's click, using
+// serverOrigin to find the connected server's tools.
+func ResolveUserInteractionAnswer(kind string, input json.RawMessage, answer UserInteractionAnswer, llmContext *llm.Context, serverOrigin MCPServerOriginLookup) (UserInteractionResult, error) {
 	switch kind {
 	case llm.UserInteractionSelect:
-		return resolveAskUserQuestionAnswer(input, answer)
+		content, err := resolveAskUserQuestionAnswer(input, answer)
+		return UserInteractionResult{Content: content}, err
 	case llm.UserInteractionConnect:
-		return resolveConnectMCPServerAccepted(input, llmContext)
+		return resolveConnectMCPServerAccepted(input, llmContext, serverOrigin)
 	default:
-		return "", fmt.Errorf("unknown user interaction kind %q", kind)
+		return UserInteractionResult{}, fmt.Errorf("unknown user interaction kind %q", kind)
 	}
 }
 

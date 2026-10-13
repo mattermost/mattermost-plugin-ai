@@ -57,6 +57,16 @@ func (p *connectFlowMCPToolProvider) GetToolsWithSelection(_ context.Context, _ 
 	return tools, &mcp.Errors{ToolAuthErrors: authErrors}
 }
 
+// connectFlowConfig configures the Jira server whose origin the connect
+// result looks for in the rebuilt catalog.
+type connectFlowConfig struct {
+	channelFollowUpTestConfig
+}
+
+func (c *connectFlowConfig) MCP() mcp.Config {
+	return mcp.Config{Servers: []mcp.ServerConfig{{Name: "Jira", BaseURL: "https://jira.example.com", Enabled: true}}}
+}
+
 func newConnectFlowBuilder(t *testing.T, provider *connectFlowMCPToolProvider) *llmcontext.Builder {
 	t.Helper()
 	mockAPI := &plugintest.API{}
@@ -102,6 +112,15 @@ func seedPendingConnectTurn(t *testing.T, convStore *loadedStateFlowStore, convI
 	}))
 }
 
+type connectFlowCatalog int
+
+// Catalog states the rebuilt tool context can be in after the click.
+const (
+	connectFlowStillUnconnected connectFlowCatalog = iota
+	connectFlowConnected
+	connectFlowUnavailable
+)
+
 // TestHandleToolCallConnectMCPServer covers the Connect card round-trip: an
 // accept carries no answer and its result reflects the catalog rebuilt after
 // the click, a skip records a decline, and only the requester may decide.
@@ -114,7 +133,7 @@ func TestHandleToolCallConnectMCPServer(t *testing.T) {
 		channel              *model.Channel
 		userID               string
 		acceptedIDs          []string
-		stillUnconnected     bool
+		catalog              connectFlowCatalog
 		wantErr              error
 		wantStatus           string
 		wantResult           string
@@ -128,40 +147,52 @@ func TestHandleToolCallConnectMCPServer(t *testing.T) {
 			channel:            dmChannel,
 			userID:             "user-id",
 			acceptedIDs:        []string{"connect-1"},
+			catalog:            connectFlowConnected,
 			wantStatus:         conversation.StatusSuccess,
 			wantResult:         "User connected Jira. Its tools are now available. Use search_tools to find them and load_tool to load one before calling it.",
 			wantFollowUpTool:   mcp.SearchToolsName,
 			wantFollowUpNoTool: mmtools.ConnectMCPServerToolName,
 		},
 		{
-			name:                 "accepted but still not connected in channel streams immediately",
+			name:                 "accepted but still not connected records an error and streams immediately",
 			channel:              openChannel,
 			userID:               "user-id",
 			acceptedIDs:          []string{"connect-1"},
-			stillUnconnected:     true,
-			wantStatus:           conversation.StatusSuccess,
+			catalog:              connectFlowStillUnconnected,
+			wantStatus:           conversation.StatusError,
 			wantResult:           "Jira is still not connected: the user did not finish connecting it. Do not perform actions that need Jira. Tell the user they can connect Jira and ask again.",
+			wantResultErr:        true,
 			wantFollowUpTool:     mmtools.ConnectMCPServerToolName,
 			wantFollowUpListsSrv: true,
+		},
+		{
+			name:          "accepted but the server's tools are not available records an error",
+			channel:       dmChannel,
+			userID:        "user-id",
+			acceptedIDs:   []string{"connect-1"},
+			catalog:       connectFlowUnavailable,
+			wantStatus:    conversation.StatusError,
+			wantResult:    "Jira is not available: none of its tools can be used in this conversation. Do not perform actions that need Jira. Tell the user Jira is unavailable here.",
+			wantResultErr: true,
 		},
 		{
 			name:                 "skipped records a decline and continues",
 			channel:              openChannel,
 			userID:               "user-id",
 			acceptedIDs:          []string{},
-			stillUnconnected:     true,
+			catalog:              connectFlowStillUnconnected,
 			wantStatus:           conversation.StatusRejected,
 			wantResult:           "User declined to connect Jira",
 			wantResultErr:        true,
 			wantFollowUpListsSrv: true,
 		},
 		{
-			name:             "another channel member cannot accept",
-			channel:          openChannel,
-			userID:           "other-user",
-			acceptedIDs:      []string{"connect-1"},
-			stillUnconnected: true,
-			wantErr:          ErrNotRequester,
+			name:        "another channel member cannot accept",
+			channel:     openChannel,
+			userID:      "other-user",
+			acceptedIDs: []string{"connect-1"},
+			catalog:     connectFlowStillUnconnected,
+			wantErr:     ErrNotRequester,
 		},
 		{
 			name:        "another channel member cannot skip",
@@ -179,10 +210,15 @@ func TestHandleToolCallConnectMCPServer(t *testing.T) {
 			seedPendingConnectTurn(t, convStore, conv.ID, approvalPostID)
 
 			provider := &connectFlowMCPToolProvider{}
-			if tc.stillUnconnected {
-				provider.authErrors = []llm.ToolAuthError{jiraAuthError()}
-			} else {
+			switch tc.catalog {
+			case connectFlowConnected:
 				provider.tools = []llm.Tool{loadedStateTool()}
+			case connectFlowStillUnconnected:
+				provider.authErrors = []llm.ToolAuthError{jiraAuthError()}
+			case connectFlowUnavailable:
+				provider.tools = []llm.Tool{channelFollowUpTestMCPTool("github__create_pr", "https://github.example.com", "open a PR")}
+			default:
+				t.Fatalf("unhandled catalog %d", tc.catalog)
 			}
 
 			mockAPI := &plugintest.API{}
@@ -205,6 +241,7 @@ func TestHandleToolCallConnectMCPServer(t *testing.T) {
 				bots:             botsService,
 				convService:      conversation.NewService(convStore, nil, nil, nil),
 				streamingService: streamingService,
+				configProvider:   &connectFlowConfig{},
 			}
 
 			approvalPost := &model.Post{Id: approvalPostID, UserId: "bot-id"}

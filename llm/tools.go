@@ -538,6 +538,23 @@ func (s *ToolStore) GetTool(name string) *Tool {
 	return nil
 }
 
+// HasMCPToolsFromOrigin reports whether any MCP tool from origin is available
+// in this store, either loaded or in the dynamic-loading catalog.
+func (s *ToolStore) HasMCPToolsFromOrigin(origin string) bool {
+	origin = NormalizeMCPServerOrigin(origin)
+	if s == nil || origin == "" {
+		return false
+	}
+	for _, tools := range []map[string]Tool{s.tools, s.unloadedMCPTools} {
+		for _, tool := range tools {
+			if tool.ServerOrigin != "" && NormalizeMCPServerOrigin(tool.ServerOrigin) == origin {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (s *ToolStore) SetUnloadedMCPTools(tools []Tool) {
 	if s == nil {
 		return

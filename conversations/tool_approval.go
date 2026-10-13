@@ -243,7 +243,7 @@ func (c *Conversations) HandleToolCall(ctx context.Context, userID string, post 
 	// Validate answers for accepted interaction blocks before mutating any
 	// state, so a malformed or missing answer leaves the question pending and
 	// answerable instead of burning it as an error result.
-	interactionResults, err := resolveInteractionAnswers(pendingBlocks, acceptedToolIDs, toolAnswers, llmContext)
+	interactionResults, err := resolveInteractionAnswers(pendingBlocks, acceptedToolIDs, toolAnswers, llmContext, c.mcpServerOrigin)
 	if err != nil {
 		return err
 	}
@@ -271,13 +271,19 @@ func (c *Conversations) HandleToolCall(ctx context.Context, userID string, post 
 		case slices.Contains(acceptedToolIDs, block.ID) && block.UserInteraction != "":
 			acceptedToolNames = append(acceptedToolNames, block.Name)
 			// Shared so the channel-visible follow-up may reference the answer.
+			// An accepted connect the user did not complete is an error so
+			// the card shows it as not connected.
+			result := interactionResults[block.ID]
 			block.Status = conversation.StatusSuccess
+			if result.IsError {
+				block.Status = conversation.StatusError
+			}
 			block.Shared = new(true)
 			toolResults = append(toolResults, toolrunner.ToolResult{
 				ToolCallID: block.ID,
 				Name:       block.Name,
-				Result:     interactionResults[block.ID],
-				IsError:    false,
+				Result:     result.Content,
+				IsError:    result.IsError,
 			})
 		case slices.Contains(acceptedToolIDs, block.ID):
 			acceptedToolNames = append(acceptedToolNames, block.Name)
@@ -454,14 +460,28 @@ func (c *Conversations) HandleToolCall(ctx context.Context, userID string, post 
 	return c.streamToolFollowUp(ctx, bot, user, channel, post, conv, isDM, userRejected, llmContext)
 }
 
+// mcpServerOrigin resolves a configured remote MCP server name to the origin
+// its tools carry.
+func (c *Conversations) mcpServerOrigin(serverName string) (string, bool) {
+	if c.configProvider == nil {
+		return "", false
+	}
+	for _, server := range c.configProvider.MCP().Servers {
+		if server.Name == serverName && server.BaseURL != "" {
+			return server.BaseURL, true
+		}
+	}
+	return "", false
+}
+
 // resolveInteractionAnswers validates the user's answers for every accepted
 // pending user-interaction block and returns the tool result content keyed by
 // block ID. Any invalid or missing answer fails the whole request with
 // ErrInvalidToolAnswer before any state is mutated. Connect blocks take no
 // answer; their result reflects whether llmContext, rebuilt after the click,
 // still lists the server as unconnected.
-func resolveInteractionAnswers(blocks []conversation.ContentBlock, acceptedToolIDs []string, toolAnswers map[string]mmtools.UserInteractionAnswer, llmContext *llm.Context) (map[string]string, error) {
-	results := make(map[string]string)
+func resolveInteractionAnswers(blocks []conversation.ContentBlock, acceptedToolIDs []string, toolAnswers map[string]mmtools.UserInteractionAnswer, llmContext *llm.Context, serverOrigin mmtools.MCPServerOriginLookup) (map[string]mmtools.UserInteractionResult, error) {
+	results := make(map[string]mmtools.UserInteractionResult)
 	for _, b := range blocks {
 		if b.Type != conversation.BlockTypeToolUse || b.UserInteraction == "" {
 			continue
@@ -472,7 +492,7 @@ func resolveInteractionAnswers(blocks []conversation.ContentBlock, acceptedToolI
 		if !slices.Contains(acceptedToolIDs, b.ID) {
 			continue
 		}
-		result, err := mmtools.ResolveUserInteractionAnswer(b.UserInteraction, b.Input, toolAnswers[b.ID], llmContext)
+		result, err := mmtools.ResolveUserInteractionAnswer(b.UserInteraction, b.Input, toolAnswers[b.ID], llmContext, serverOrigin)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %s", ErrInvalidToolAnswer, err.Error())
 		}

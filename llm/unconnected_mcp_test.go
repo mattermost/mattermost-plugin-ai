@@ -162,3 +162,36 @@ func TestReportMCPServerNeedsReconnect(t *testing.T) {
 	_, listed := nilContext.UnconnectedMCPServerByName("Jira")
 	assert.False(t, listed)
 }
+
+func TestToolStoreHasMCPToolsFromOrigin(t *testing.T) {
+	resolver := func(context.Context, *Context, ToolArgumentGetter) (string, error) { return "", nil }
+	jira := Tool{Name: "jira__create_issue", ServerOrigin: "https://jira.example.com", Resolver: resolver}
+	builtin := Tool{Name: "ConnectMCPServer", Resolver: resolver}
+
+	tests := []struct {
+		name     string
+		tools    []Tool
+		unloaded []Tool
+		origin   string
+		want     bool
+	}{
+		{name: "visible tool matches", tools: []Tool{jira}, origin: "https://jira.example.com", want: true},
+		{name: "unloaded dynamic tool matches", tools: []Tool{builtin}, unloaded: []Tool{jira}, origin: "https://jira.example.com", want: true},
+		{name: "origin is normalized", tools: []Tool{jira}, origin: " https://jira.example.com/ ", want: true},
+		{name: "other origin", tools: []Tool{jira}, origin: "https://github.example.com"},
+		{name: "built-ins never match", tools: []Tool{builtin}, origin: "https://jira.example.com"},
+		{name: "empty origin", tools: []Tool{jira, builtin}, origin: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := NewToolStore()
+			store.AddTools(tt.tools)
+			store.SetUnloadedMCPTools(tt.unloaded)
+			assert.Equal(t, tt.want, store.HasMCPToolsFromOrigin(tt.origin))
+		})
+	}
+
+	var nilStore *ToolStore
+	assert.False(t, nilStore.HasMCPToolsFromOrigin("https://jira.example.com"))
+}
