@@ -35,7 +35,7 @@ const ArtifactConsentPrompt = ({fileName, onAllow, onDeny}: Props) => {
     const enteredRef = useRef(new Set<string>());
 
     // Allow only: whether it received focus after the prompt armed. Together
-    // with keyDownRef this keeps an artifact from training a Tab then
+    // with allowKeyDownRef this keeps an artifact from training a Tab then
     // Space/Enter habit and timing the prompt so that it lands on Allow. A
     // lured Deny is harmless, so it only waits for arming.
     const allowFocusedRef = useRef(false);
