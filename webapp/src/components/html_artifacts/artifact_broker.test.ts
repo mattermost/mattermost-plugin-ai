@@ -35,7 +35,7 @@ function makeTarget() {
 
 const TOKEN = 'bridge-token-1';
 
-function setup(opts: {consent?: () => Promise<boolean>; fileId?: string; currentUser?: ArtifactUser | null; canPrompt?: () => boolean} = {}) {
+function setup(opts: {consent?: () => Promise<boolean>; fileId?: string; viewerId?: string; currentUser?: ArtifactUser | null; canPrompt?: () => boolean} = {}) {
     const target = makeTarget();
     const requestConsent = jest.fn(opts.consent ?? (() => Promise.resolve(true)));
     const onReady = jest.fn();
@@ -45,6 +45,7 @@ function setup(opts: {consent?: () => Promise<boolean>; fileId?: string; current
     const dismissConsent = jest.fn();
     const broker = new ArtifactBroker({
         fileId: opts.fileId ?? 'file1',
+        viewerId: opts.viewerId ?? 'u1',
         token: TOKEN,
         getTargetWindow: () => target,
         getContext: () => context,
@@ -225,7 +226,7 @@ describe('ArtifactBroker getCurrentUser', () => {
         expect(response).toEqual({mmArtifact: 1, type: 'response', id: 'r1', result: user});
         expect(JSON.stringify(response)).not.toContain('alice@example.com');
         expect(JSON.stringify(response)).not.toContain('system_admin');
-        expect(getConsentDecision('file1')).toBe('allow');
+        expect(getConsentDecision('u1', 'file1')).toBe('allow');
 
         send({...request, id: 'r2'});
         expect(requestConsent).toHaveBeenCalledTimes(1);
@@ -292,11 +293,24 @@ describe('ArtifactBroker getCurrentUser', () => {
         expect(fullscreen.target.postMessage).toHaveBeenCalledWith(expect.objectContaining({result: user}), '*');
     });
 
+    test('decisions are not shared between viewers of the same file', async () => {
+        const alice = setup({fileId: 'shared', viewerId: 'alice'});
+        alice.send(request);
+        await flush();
+
+        const bob = setup({fileId: 'shared', viewerId: 'bob', consent: () => Promise.resolve(false)});
+        bob.send(request);
+        expect(bob.requestConsent).toHaveBeenCalledTimes(1);
+        await flush();
+        expect(getConsentDecision('alice', 'shared')).toBe('allow');
+        expect(getConsentDecision('bob', 'shared')).toBe('deny');
+    });
+
     test('a dismissed prompt records no decision and denies the request', async () => {
         const {send, target} = setup({consent: () => Promise.reject(new Error('unmounted'))});
         send(request);
         await flush();
-        expect(getConsentDecision('file1')).toBeUndefined();
+        expect(getConsentDecision('u1', 'file1')).toBeUndefined();
         expect(target.postMessage).toHaveBeenCalledWith(expect.objectContaining({
             error: expect.objectContaining({code: 'permission_denied'}),
         }), '*');
@@ -308,8 +322,18 @@ describe('ArtifactBroker getCurrentUser', () => {
         expect(requestConsent).not.toHaveBeenCalled();
         expect(isConsentPromptPending()).toBe(false);
         expect(target.postMessage).toHaveBeenCalledWith(expect.objectContaining({
-            error: expect.objectContaining({code: 'busy'}),
+            error: expect.objectContaining({code: 'busy', message: expect.stringContaining('interact with the artifact')}),
         }), '*');
+    });
+
+    test('a frame that cannot show a prompt still answers from a cached decision', async () => {
+        const allowed = setup({fileId: 'cached'});
+        allowed.send(request);
+        await flush();
+
+        const covered = setup({fileId: 'cached', canPrompt: () => false});
+        covered.send(request);
+        expect(covered.target.postMessage).toHaveBeenCalledWith(expect.objectContaining({result: user}), '*');
     });
 
     test('cancelling a pending prompt denies without a decision and frees the prompt for another frame', async () => {
@@ -327,7 +351,7 @@ describe('ArtifactBroker getCurrentUser', () => {
         cancelPendingConsent('file1');
         await flush();
         expect(inline.dismissConsent).toHaveBeenCalledTimes(1);
-        expect(getConsentDecision('file1')).toBeUndefined();
+        expect(getConsentDecision('u1', 'file1')).toBeUndefined();
         expect(isConsentPromptPending()).toBe(false);
         expect(inline.target.postMessage).toHaveBeenCalledWith(expect.objectContaining({
             id: 'r1',

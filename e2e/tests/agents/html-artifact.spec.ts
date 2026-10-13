@@ -342,9 +342,11 @@ test.describe('HTML artifacts', () => {
         await expect(viewer.getByText('Interactive')).toBeVisible();
         await expect(viewer.getByTestId('html-artifact-notice')).toContainText("Don't enter passwords");
 
-        // Opening fullscreen was the viewer's click: the artifact is interactive right away.
-        await expect(viewer.getByTestId('html-artifact-frame')).toHaveAttribute('data-engaged', 'true');
-        await expect(viewer.getByTestId('html-artifact-interact')).toHaveCount(0);
+        // Opening fullscreen does not hand the artifact keyboard focus: the
+        // viewer covers it until they click it.
+        await expect(viewer.getByTestId('html-artifact-frame')).toHaveAttribute('data-engaged', 'false');
+        await expect(viewer.getByTestId('html-artifact-interact')).toBeVisible();
+        await engageArtifact(viewer);
 
         // The display mode reaches the artifact: fullscreen-only content shows.
         await expect(fullFrame.getByTestId('fullscreen-details')).toBeVisible({timeout: 15000});
@@ -418,10 +420,12 @@ test.describe('HTML artifacts', () => {
         const frame = iframe.contentFrame();
         await expect(frame.getByTestId('impostor-sent')).toHaveText('sent', {timeout: 30000});
 
-        // The host never accepts a ready, so it ends in the load error state.
-        await expect(botPost.getByTestId('html-artifact-card').getByText('This artifact could not be loaded.')).toBeVisible({timeout: 30000});
-        await expect(page.getByTestId('html-artifact-consent')).toHaveCount(0);
         await expect(frame.getByTestId('impostor-received')).toHaveText('');
+
+        // The host never accepts a ready: it unloads the frame and shows the load error.
+        await expect(botPost.getByTestId('html-artifact-card').getByText('This artifact could not be loaded.')).toBeVisible({timeout: 30000});
+        await expect(artifactIframes(botPost)).toHaveCount(0);
+        await expect(page.getByTestId('html-artifact-consent')).toHaveCount(0);
     });
 
     test('artifact code cannot read the bridge token or intercept its messages', async ({page}) => {
@@ -572,8 +576,9 @@ test.describe('HTML artifacts', () => {
             await expect(viewerFrame.getByRole('heading', {name: 'Sprint 42 dashboard'})).toBeVisible({timeout: 30000});
             await expect(placeholder).toHaveCount(0);
 
-            // Clicking Run was the viewer engaging with this artifact.
-            await expect(viewerCard.getByTestId('html-artifact-frame')).toHaveAttribute('data-engaged', 'true');
+            // Clicking Run authorises loading, not keyboard focus.
+            await expect(viewerCard.getByTestId('html-artifact-frame')).toHaveAttribute('data-engaged', 'false');
+            await engageArtifact(viewerCard);
             await viewerFrame.getByRole('button', {name: /Kudos/}).click();
             await expect(viewerFrame.locator('#kudos-count')).toHaveText('1');
         } finally {

@@ -91,6 +91,19 @@ describe('ArtifactConsentPrompt pointer-entry gate', () => {
         expect(onAllow).not.toHaveBeenCalled();
     });
 
+    test.each(['allow', 'deny'] as const)('%s: a press that began before arming does not count after leaving and re-entering', (button) => {
+        const prompt = renderPrompt();
+        const el = prompt[button];
+        fireEvent.pointerEnter(el);
+        fireEvent.pointerDown(el);
+        arm();
+        fireEvent.pointerLeave(el);
+        fireEvent.pointerEnter(el);
+        fireEvent.click(el, {detail: 1});
+        expect(prompt.onAllow).not.toHaveBeenCalled();
+        expect(prompt.onDeny).not.toHaveBeenCalled();
+    });
+
     test('Enter on the default-focused Deny works once armed', () => {
         const {deny, onDeny} = renderPrompt();
         expect(document.activeElement).toBe(deny);

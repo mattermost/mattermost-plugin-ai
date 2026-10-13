@@ -143,11 +143,6 @@ const HTMLArtifactFullscreen = ({fileId, fileName, onClose}: Props) => {
                     fileName={fileName}
                     displayMode='fullscreen'
                     onEscape={onClose}
-
-                    // Opened by the viewer's click; the viewer's own
-                    // controls (e.g. Close, focused on open) keep it engaged.
-                    initiallyEngaged={true}
-                    focusScopeRef={rootRef}
                 />
             </Body>
             <FocusSentinel

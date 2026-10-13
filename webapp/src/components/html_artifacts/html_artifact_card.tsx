@@ -51,9 +51,6 @@ const HTMLArtifactCard = ({fileId, fileName, autoRun}: Props) => {
     const runKey = `${currentUserId}:${fileId}`;
     const [run, setRun] = useState(() => autoRun || runDecisions.has(runKey));
 
-    // Whether the inline frame mounts engaged: only right after a click on Run.
-    const [engageOnRun, setEngageOnRun] = useState(false);
-
     // The requester is only known once the conversation loads.
     useEffect(() => {
         if (autoRun) {
@@ -61,9 +58,8 @@ const HTMLArtifactCard = ({fileId, fileName, autoRun}: Props) => {
         }
     }, [autoRun]);
 
-    const startRun = (engage: boolean) => {
+    const startRun = () => {
         runDecisions.add(runKey);
-        setEngageOnRun(engage);
         setRun(true);
     };
 
@@ -71,7 +67,7 @@ const HTMLArtifactCard = ({fileId, fileName, autoRun}: Props) => {
         if (!e.nativeEvent.isTrusted) {
             return;
         }
-        startRun(true);
+        startRun();
     };
 
     const openFullscreen = (e: React.MouseEvent) => {
@@ -79,7 +75,7 @@ const HTMLArtifactCard = ({fileId, fileName, autoRun}: Props) => {
             if (!e.nativeEvent.isTrusted) {
                 return;
             }
-            startRun(false);
+            startRun();
         }
         setFullscreen(true);
     };
@@ -143,7 +139,6 @@ const HTMLArtifactCard = ({fileId, fileName, autoRun}: Props) => {
                     fileName={fileName}
                     displayMode='inline'
                     obscured={fullscreen}
-                    initiallyEngaged={engageOnRun}
                 />
             ) : (
                 <RunPlaceholder data-testid='html-artifact-run-placeholder'>

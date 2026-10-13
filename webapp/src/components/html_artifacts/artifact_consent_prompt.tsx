@@ -25,7 +25,8 @@ const ArtifactConsentPrompt = ({fileName, onAllow, onDeny}: Props) => {
     const dialogRef = useRef<HTMLDivElement>(null);
     const [armed, setArmed] = useState(false);
 
-    // Buttons that received a pointerdown after the prompt mounted.
+    // Buttons that received a pointerdown after the prompt armed, while the
+    // pointer was already on them.
     const pressedRef = useRef(new Set<string>());
 
     // Buttons the pointer entered after the prompt armed. A click at a spot
@@ -72,7 +73,9 @@ const ArtifactConsentPrompt = ({fileName, onAllow, onDeny}: Props) => {
     };
 
     const onPointerDown = (key: string) => () => {
-        pressedRef.current.add(key);
+        if (armed && enteredRef.current.has(key)) {
+            pressedRef.current.add(key);
+        }
     };
 
     return (

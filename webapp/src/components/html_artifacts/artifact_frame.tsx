@@ -58,13 +58,10 @@ interface Props {
     // viewer): it must not show a consent prompt the viewer cannot see.
     obscured?: boolean;
 
-    // The viewer mounted this frame with an explicit click (Run, fullscreen),
-    // so the artifact may take keyboard focus without clicking it first.
+    // Start as if the viewer had already clicked the artifact, so it may take
+    // keyboard focus right away. Production callers leave this off: neither
+    // Run nor opening fullscreen counts as clicking the artifact itself.
     initiallyEngaged?: boolean;
-
-    // Focus moving within this element does not count as leaving the
-    // artifact (e.g. the fullscreen viewer's own controls).
-    focusScopeRef?: React.RefObject<HTMLElement | null>;
 }
 
 type Status = 'loading' | 'ready' | 'error';
@@ -83,7 +80,6 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
     onEscape,
     obscured = false,
     initiallyEngaged = false,
-    focusScopeRef,
 }, ref) => {
     const intl = useIntl();
     const containerRef = useRef<HTMLDivElement>(null);
@@ -97,6 +93,7 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
     const [height, setHeight] = useState(DEFAULT_INLINE_HEIGHT);
     const [stopReason, setStopReason] = useState<StopReason | null>(null);
     const [unresponsive, setUnresponsive] = useState(false);
+    const [loadFailed, setLoadFailed] = useState(false);
     const [pendingConsent, setPendingConsent] = useState<PendingConsent | null>(null);
 
     // Engaged: the viewer chose to interact with the artifact, so it may hold
@@ -157,8 +154,6 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
     obscuredRef.current = obscured;
     const initiallyEngagedRef = useRef(initiallyEngaged);
     initiallyEngagedRef.current = initiallyEngaged;
-    const focusScopeRefRef = useRef(focusScopeRef);
-    focusScopeRefRef.current = focusScopeRef;
     const stopReasonRef = useRef(stopReason);
     stopReasonRef.current = stopReason;
 
@@ -194,6 +189,7 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
 
     const broker = useMemo(() => (token ? new ArtifactBroker({
         fileId,
+        viewerId: currentUserId,
         token,
         getTargetWindow: () => iframeRef.current?.contentWindow,
         getContext: () => contextRef.current,
@@ -203,7 +199,7 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
             setPendingConsent({resolve, reject});
         }),
         dismissConsent: () => setPendingConsent(null),
-        canPrompt: () => !obscuredRef.current,
+        canPrompt: () => !obscuredRef.current && engagedRef.current,
         onReady: () => setStatus('ready'),
         onHeartbeat: () => {
             lastHeartbeatRef.current = performance.now();
@@ -218,7 +214,7 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
 
     // loadKey: every host load gets its own broker, so a disposed one is never reused.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [fileId, token, loadKey]);
+    [fileId, currentUserId, token, loadKey]);
     const brokerRef = useRef(broker);
     brokerRef.current = broker;
 
@@ -240,6 +236,16 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
         broker?.sendContext();
     }, [broker, context]);
 
+    // A frame that never became ready may hold a foreign document with its
+    // own network access: unload it rather than leave it hidden.
+    const failLoad = useCallback(() => {
+        brokerRef.current?.dispose();
+        pendingConsentRef.current?.reject();
+        setPendingConsent(null);
+        setLoadFailed(true);
+        setStatus('error');
+    }, []);
+
     // Each host load: reset state and arm the ready timeout.
     useEffect(() => {
         if (!broker) {
@@ -250,11 +256,11 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
         setStatus('loading');
         const timer = window.setTimeout(() => {
             if (!broker.isReady()) {
-                setStatus('error');
+                failLoad();
             }
         }, READY_TIMEOUT_MS);
         return () => window.clearTimeout(timer);
-    }, [broker]);
+    }, [broker, failLoad]);
 
     // Whatever is in the frame now is not the artifact we served, or the
     // artifact is acting against the viewer. Stop answering it at once and
@@ -296,10 +302,12 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
 
         // Hidden tabs throttle timers in the frame and here alike, so a
         // lapse means nothing until the page is visible again, and the
-        // viewer coming back gets a fresh grace period. The same goes for a
-        // check that itself ran very late (the page was stalled).
+        // viewer coming back gets a fresh grace period. A check that itself
+        // ran very late (the page was stalled) only defers the unload: a
+        // document that stalls the page on purpose must not stay visible.
         let paused = document.visibilityState === 'hidden';
         let lastCheck = performance.now();
+        let stopBase = 0;
         const grace = () => {
             if (lastHeartbeatRef.current !== null) {
                 lastHeartbeatRef.current = performance.now();
@@ -322,8 +330,7 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
                 return;
             }
             if (late) {
-                grace();
-                return;
+                stopBase = now;
             }
 
             // Until ready the frame is hidden anyway, and the ready timeout
@@ -333,7 +340,7 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
                 return;
             }
             const lapse = now - last;
-            if (lapse > HEARTBEAT_STOP_MS) {
+            if (now - Math.max(last, stopBase) > HEARTBEAT_STOP_MS) {
                 releaseFocus();
                 stopFrame('unresponsive');
             } else if (lapse > HEARTBEAT_HIDE_MS && !unresponsiveRef.current) {
@@ -359,10 +366,7 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
     // take keystrokes meant for the page (e.g. the message box), so an
     // artifact holding focus the viewer did not give it is stopped.
     useEffect(() => {
-        const isInside = (node: unknown): boolean => node instanceof Node && (
-            Boolean(containerRef.current?.contains(node)) ||
-            Boolean(focusScopeRefRef.current?.current?.contains(node))
-        );
+        const isInside = (node: unknown): boolean => node instanceof Node && Boolean(containerRef.current?.contains(node));
 
         if (document.activeElement instanceof HTMLElement && document.activeElement !== document.body && !isInside(document.activeElement)) {
             lastHostFocusRef.current = document.activeElement;
@@ -390,6 +394,17 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
             }
         };
 
+        // Clicking page content that takes no focus leaves focus on the
+        // artifact. Release it before disengaging, or the guard below would
+        // take the artifact for one holding focus unasked.
+        const onPointerDown = (e: PointerEvent) => {
+            if (!engagedRef.current || isInside(e.target)) {
+                return;
+            }
+            releaseFocus();
+            setEngaged(false);
+        };
+
         const check = () => {
             const iframe = iframeRef.current;
             if (!iframe || engagedRef.current || stopReasonRef.current || document.activeElement !== iframe) {
@@ -412,11 +427,13 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
         const timer = window.setInterval(check, FOCUS_CHECK_MS);
 
         document.addEventListener('focusin', onFocusIn, true);
+        document.addEventListener('pointerdown', onPointerDown, true);
         document.addEventListener('visibilitychange', check);
         window.addEventListener('focus', onWindowFocus);
         window.addEventListener('blur', onWindowBlur);
         return () => {
             document.removeEventListener('focusin', onFocusIn, true);
+            document.removeEventListener('pointerdown', onPointerDown, true);
             document.removeEventListener('visibilitychange', check);
             window.removeEventListener('focus', onWindowFocus);
             window.removeEventListener('blur', onWindowBlur);
@@ -427,6 +444,7 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
 
     const reload = useCallback(() => {
         setStopReason(null);
+        setLoadFailed(false);
         setUnresponsive(false);
         setEngaged(initiallyEngagedRef.current);
         setHeight(DEFAULT_INLINE_HEIGHT);
@@ -444,7 +462,7 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
         }
     }, [stopFrame]);
 
-    const handleError = useCallback(() => setStatus('error'), []);
+    const handleError = failLoad;
 
     const engage = useCallback((e: React.MouseEvent) => {
         if (!e.nativeEvent.isTrusted) {
@@ -479,7 +497,7 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
             data-testid='html-artifact-frame'
             data-engaged={engaged}
         >
-            {!stopReason && token && (
+            {!stopReason && !loadFailed && token && (
                 <Frame
                     key={loadKey}
                     ref={iframeRef}
