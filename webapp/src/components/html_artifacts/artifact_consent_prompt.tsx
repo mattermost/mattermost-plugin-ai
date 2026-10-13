@@ -34,15 +34,16 @@ const ArtifactConsentPrompt = ({fileName, onAllow, onDeny}: Props) => {
     // to click repeatedly) never counts.
     const enteredRef = useRef(new Set<string>());
 
-    // Buttons that received focus after the prompt armed. Together with
-    // keyDownRef this keeps an artifact from training a Tab then Space/Enter
-    // habit and timing the prompt so that it lands on Allow.
-    const focusedRef = useRef(new Set<string>());
+    // Allow only: whether it received focus after the prompt armed. Together
+    // with keyDownRef this keeps an artifact from training a Tab then
+    // Space/Enter habit and timing the prompt so that it lands on Allow. A
+    // lured Deny is harmless, so it only waits for arming.
+    const allowFocusedRef = useRef(false);
 
-    // Buttons where an Enter/Space key press started after the prompt armed.
-    // Enter activates on keydown and Space on keyup, so the keydown is what
-    // shows the press began after arming.
-    const keyDownRef = useRef(new Set<string>());
+    // Allow only: whether an Enter/Space key press started on it after the
+    // prompt armed. Enter activates on keydown and Space on keyup, so the
+    // keydown is what shows the press began after arming.
+    const allowKeyDownRef = useRef(false);
 
     // Focus the safe choice so a stray Enter never grants access.
     // Focus returns to where it was once the prompt goes away, unless it
@@ -69,13 +70,15 @@ const ArtifactConsentPrompt = ({fileName, onAllow, onDeny}: Props) => {
 
         // detail > 0 means a pointer click; it only counts when the pointer
         // entered this button after the prompt armed and the press started on
-        // it. Keyboard activation (detail 0) needs focus to have arrived on
-        // this button and the key press to have started, both after arming.
-        let counts = focusedRef.current.has(key) && keyDownRef.current.has(key);
+        // it. Keyboard activation (detail 0) of Allow needs focus to have
+        // arrived and the key press to have started, both after arming.
+        let counts = key === 'deny' || (allowFocusedRef.current && allowKeyDownRef.current);
         if (e.detail > 0) {
             counts = pressedRef.current.has(key) && enteredRef.current.has(key);
         }
-        keyDownRef.current.delete(key);
+        if (key === 'allow') {
+            allowKeyDownRef.current = false;
+        }
         if (!counts) {
             return;
         }
@@ -94,21 +97,21 @@ const ArtifactConsentPrompt = ({fileName, onAllow, onDeny}: Props) => {
         }
     };
 
-    const onFocus = (key: string) => () => {
+    const onAllowFocus = () => {
         if (armed) {
-            focusedRef.current.add(key);
+            allowFocusedRef.current = true;
         }
     };
 
-    const onBlur = (key: string) => () => {
-        focusedRef.current.delete(key);
-        keyDownRef.current.delete(key);
+    const onAllowBlur = () => {
+        allowFocusedRef.current = false;
+        allowKeyDownRef.current = false;
     };
 
     // A held key repeats keydown, so repeats say nothing about when it began.
-    const onKeyDown = (key: string) => (e: React.KeyboardEvent) => {
+    const onAllowKeyDown = (e: React.KeyboardEvent) => {
         if (armed && !e.repeat && (e.key === 'Enter' || e.key === ' ')) {
-            keyDownRef.current.add(key);
+            allowKeyDownRef.current = true;
         }
     };
 
@@ -149,9 +152,6 @@ const ArtifactConsentPrompt = ({fileName, onAllow, onDeny}: Props) => {
                         aria-disabled={!armed}
                         onPointerEnter={onPointerEnter('deny')}
                         onPointerDown={onPointerDown('deny')}
-                        onFocus={onFocus('deny')}
-                        onBlur={onBlur('deny')}
-                        onKeyDown={onKeyDown('deny')}
                         onClick={guarded('deny', onDeny)}
                         data-testid='html-artifact-consent-deny'
                     >
@@ -163,9 +163,9 @@ const ArtifactConsentPrompt = ({fileName, onAllow, onDeny}: Props) => {
                         aria-disabled={!armed}
                         onPointerEnter={onPointerEnter('allow')}
                         onPointerDown={onPointerDown('allow')}
-                        onFocus={onFocus('allow')}
-                        onBlur={onBlur('allow')}
-                        onKeyDown={onKeyDown('allow')}
+                        onFocus={onAllowFocus}
+                        onBlur={onAllowBlur}
+                        onKeyDown={onAllowKeyDown}
                         onClick={guarded('allow', onAllow)}
                         data-testid='html-artifact-consent-allow'
                     >
