@@ -718,6 +718,15 @@ func (a *API) handleUpdateAgent(c *gin.Context) {
 		if !ok {
 			return
 		}
+		// From here a failure can leave the bot account, the stored agent, and
+		// the registries disagreeing on the name (a rollback or the revert can
+		// fail too), with the previous username already released. Bring all of
+		// them to the stored agent before the error is returned.
+		defer func() {
+			if c.IsAborted() {
+				_ = a.refreshBotsAndNotify(cfg.ID)
+			}
+		}()
 		if renamed {
 			revertRename = func() {
 				if _, err := a.pluginAPI.Bot.Patch(cfg.BotUserID, &model.BotPatch{Username: &prev.Name}); err != nil {

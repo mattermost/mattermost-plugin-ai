@@ -11,6 +11,7 @@ import (
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/accesscontrol"
 	"github.com/mattermost/mattermost-plugin-agents/v2/audit"
+	"github.com/mattermost/mattermost-plugin-agents/v2/bots"
 	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise"
 	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise/enterprisetest"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
@@ -300,6 +301,11 @@ func TestUpdateAgentRenameRollbackOnPolicyDeleteFailure(t *testing.T) {
 				UserAccessLevel: llm.UserAccessLevelAttributeBased,
 			}
 			e.agentStore.agents[agentID] = stored
+			e.bots.SetBotsForTesting([]*bots.Bot{
+				bots.NewBot(*stored, llm.ServiceConfig{}, &model.Bot{UserId: "bot-1", Username: "old-name"}, nil),
+			})
+			notifier := &recordingAgentNotifier{}
+			e.api.clusterAgentNotifier = notifier
 
 			e.mockAPI.On("DeleteAccessControlPolicy", testUserID, accesscontrol.ResourceTypeAgent, agentID).
 				Return(model.NewAppError("DeleteAccessControlPolicy", "app.access_control.delete_failed", nil, "backend policy storage unreachable", http.StatusInternalServerError)).Once()
@@ -315,6 +321,10 @@ func TestUpdateAgentRenameRollbackOnPolicyDeleteFailure(t *testing.T) {
 			assert.Equal(t, tc.expectedName, e.agentStore.agents[agentID].Name)
 			assert.Equal(t, tc.expectedBotName, botName)
 			assert.Equal(t, tc.expectedDefaultBot, configStore.cfg.DefaultBotName)
+			assert.Equal(t, []string{agentID}, notifier.published, "peers must refresh the agent after a failed rename")
+			if botName != "old-name" {
+				assert.Nil(t, e.bots.GetBotMentioned("@old-name hi"), "the released username must not keep routing to the agent")
+			}
 		})
 	}
 }
