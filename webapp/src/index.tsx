@@ -342,7 +342,7 @@ export default class Plugin {
                         searchTerms,
                         '',
                         '',
-                        activeBot?.username,
+                        activeBot?.id,
                     );
                     doSelectPost(result.postid, result.channelid, store.dispatch);
                     if (rhs) {
