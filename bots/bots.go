@@ -1021,11 +1021,13 @@ func (b *MMBots) GetBotByUsername(botUsername string) *Bot {
 	return b.GetBotByID(user.Id)
 }
 
-// GetBotByUsernameOrFirst retrieves the bot associated with the given bot username or the first bot if not found
+// GetBotByUsernameOrFirst retrieves the bot with the given username, or the
+// first bot when no username is given. A named bot that is not available
+// returns nil: serving another agent instead would run the request with that
+// agent's model, instructions, tools, and identity.
 func (b *MMBots) GetBotByUsernameOrFirst(botUsername string) *Bot {
-	bot := b.GetBotByUsername(botUsername)
-	if bot != nil {
-		return bot
+	if botUsername != "" {
+		return b.GetBotByUsername(botUsername)
 	}
 
 	b.botsLock.RLock()

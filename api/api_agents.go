@@ -362,8 +362,9 @@ func (a *API) renameAgentBot(c *gin.Context, botUserID, username string) (rename
 }
 
 // renameAgentConfigReferences points DefaultBotName and TranscriptGenerator at
-// newName when they referenced the renamed agent. It reports whether the config
-// changed and whether DefaultBotName was among the changes.
+// newName when they referenced oldName, or clears them when newName is empty.
+// It reports whether the config changed and whether DefaultBotName was among
+// the changes.
 func (a *API) renameAgentConfigReferences(oldName, newName string) (updated, defaultRenamed bool, err error) {
 	if a.configStore == nil {
 		return false, false, nil
@@ -815,6 +816,12 @@ func (a *API) handleDeleteAgent(c *gin.Context) {
 	if err := a.agentStore.DeleteAgent(agentID); err != nil {
 		abortAgentRequest(c, http.StatusInternalServerError, fmt.Errorf("failed to delete agent: %w", err))
 		return
+	}
+
+	// A default naming a missing agent fails requests instead of falling back
+	// to the first agent, so the deleted agent must not stay the default.
+	if _, _, err := a.renameAgentConfigReferences(cfg.Name, ""); err != nil {
+		a.pluginAPI.Log.Error("Failed to clear settings that referenced the deleted agent", "agent_id", cfg.ID, "error", err.Error())
 	}
 
 	// Best-effort policy cleanup: agent deletion must not fail on it. A stale

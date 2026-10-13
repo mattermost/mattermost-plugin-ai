@@ -1013,6 +1013,52 @@ func TestDeleteAgentDeactivatesBot(t *testing.T) {
 	assert.NotZero(t, agent.DeleteAt)
 }
 
+func TestDeleteAgentClearsSettingsThatReferencedIt(t *testing.T) {
+	tests := []struct {
+		name               string
+		defaultBotName     string
+		transcriptBotName  string
+		expectDefault      string
+		expectTranscriptBy string
+	}{
+		{
+			name:              "deleted agent was the default and the transcript generator",
+			defaultBotName:    "doomed",
+			transcriptBotName: "doomed",
+		},
+		{
+			name:               "settings name other agents",
+			defaultBotName:     "keeper",
+			transcriptBotName:  "keeper",
+			expectDefault:      "keeper",
+			expectTranscriptBy: "keeper",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			e := setupAgentTestEnvironment(t)
+			defer e.Cleanup(t)
+
+			mockLicensed(e.mockAPI)
+			e.mockAPI.On("UpdateBotActive", "bot-1", false).Return(&model.Bot{}, nil).Maybe()
+			store := e.api.configStore.(*mockConfigStore)
+			store.cfg.DefaultBotName = tc.defaultBotName
+			store.cfg.TranscriptGenerator = tc.transcriptBotName
+			e.agentStore.agents["agent-1"] = &llm.BotConfig{
+				ID: "agent-1", CreatorID: testUserID, BotUserID: "bot-1",
+				DisplayName: "Doomed", Name: "doomed", ServiceID: "svc-1",
+			}
+
+			recorder := doRequest(e.api, http.MethodDelete, "/agents/agent-1", nil, testUserID)
+			require.Equal(t, http.StatusOK, recorder.Result().StatusCode)
+
+			assert.Equal(t, tc.expectDefault, store.cfg.DefaultBotName)
+			assert.Equal(t, tc.expectTranscriptBy, store.cfg.TranscriptGenerator)
+		})
+	}
+}
+
 func TestListServicesNoSecrets(t *testing.T) {
 	e := setupAgentTestEnvironment(t)
 	defer e.Cleanup(t)
