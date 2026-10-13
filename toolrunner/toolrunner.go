@@ -27,6 +27,7 @@ type ToolRunner struct {
 	llm             llm.LanguageModel
 	maxRounds       int
 	toolErrorResult func(*llm.Context, error) string
+	onPending       func(*llm.Context, []llm.ToolCall)
 }
 
 // Option configures a ToolRunner at construction time.
@@ -52,6 +53,15 @@ func WithToolErrorResult(f func(*llm.Context, error) string) Option {
 		if f != nil {
 			r.toolErrorResult = f
 		}
+	}
+}
+
+// WithPendingToolCalls sets a callback for the batch the runner stops on
+// because some call needs the user's decision. It runs once per such batch on
+// the runner goroutine, before the batch is streamed to the caller.
+func WithPendingToolCalls(f func(*llm.Context, []llm.ToolCall)) Option {
+	return func(r *ToolRunner) {
+		r.onPending = f
 	}
 }
 
@@ -285,6 +295,9 @@ func (r *ToolRunner) runLoop(
 		if !allApproved {
 			for i := range toolCalls {
 				toolCalls[i].WouldAutoExecute = approved[i]
+			}
+			if r.onPending != nil {
+				r.onPending(request.Context, toolCalls)
 			}
 			r.deliverToolTurns(result, onToolTurns)
 			output <- llm.TextStreamEvent{Type: llm.EventTypeToolCalls, Value: toolCalls}

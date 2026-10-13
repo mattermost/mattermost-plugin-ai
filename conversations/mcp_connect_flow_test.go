@@ -96,7 +96,7 @@ func seedPendingConnectTurn(t *testing.T, convStore *loadedStateFlowStore, convI
 	content, err := json.Marshal([]conversation.ContentBlock{{
 		Type:            conversation.BlockTypeToolUse,
 		ID:              "connect-1",
-		Name:            mmtools.ConnectMCPServerToolName,
+		Name:            llm.ConnectMCPServerToolName,
 		Input:           json.RawMessage(`{"server":"Jira"}`),
 		Status:          conversation.StatusPending,
 		UserInteraction: llm.UserInteractionConnect,
@@ -152,7 +152,7 @@ func TestHandleToolCallConnectMCPServer(t *testing.T) {
 			wantStatus:         conversation.StatusSuccess,
 			wantResult:         "User connected Jira. Its tools are now available. Use search_tools to find them and load_tool to load one before calling it.",
 			wantFollowUpTool:   mcp.SearchToolsName,
-			wantFollowUpNoTool: mmtools.ConnectMCPServerToolName,
+			wantFollowUpNoTool: llm.ConnectMCPServerToolName,
 		},
 		{
 			name:                 "accepted but still not connected records an error and streams immediately",
@@ -163,7 +163,7 @@ func TestHandleToolCallConnectMCPServer(t *testing.T) {
 			wantStatus:           conversation.StatusError,
 			wantResult:           "Jira is still not connected: the user did not finish connecting it. Do not perform actions that need Jira. Tell the user they can connect Jira and ask again.",
 			wantResultErr:        true,
-			wantFollowUpTool:     mmtools.ConnectMCPServerToolName,
+			wantFollowUpTool:     llm.ConnectMCPServerToolName,
 			wantFollowUpListsSrv: true,
 		},
 		{
@@ -348,114 +348,142 @@ func TestToolLoopOffersReconnectWhenAuthorizationLapses(t *testing.T) {
 	assert.True(t, listed)
 }
 
-type capturedEphemeral struct {
-	userID string
-	post   *model.Post
+// pendingBatchLLM answers each completion request with the next scripted
+// tool-call batch, then with plain text.
+type pendingBatchLLM struct {
+	mu      sync.Mutex
+	batches [][]llm.ToolCall
 }
 
-func connectToolCall(id, server string, status llm.ToolCallStatus) llm.ToolCall {
+func (l *pendingBatchLLM) ChatCompletion(context.Context, llm.CompletionRequest, ...llm.LanguageModelOption) (*llm.TextStreamResult, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.batches) == 0 {
+		return dynamicWorkflowStream(llm.TextStreamEvent{Type: llm.EventTypeText, Value: "done"}), nil
+	}
+	batch := l.batches[0]
+	l.batches = l.batches[1:]
+	return dynamicWorkflowStream(llm.TextStreamEvent{Type: llm.EventTypeToolCalls, Value: batch}), nil
+}
+
+func (l *pendingBatchLLM) ChatCompletionNoStream(ctx context.Context, request llm.CompletionRequest, opts ...llm.LanguageModelOption) (string, error) {
+	result, err := l.ChatCompletion(ctx, request, opts...)
+	if err != nil {
+		return "", err
+	}
+	return result.ReadAll()
+}
+
+func (l *pendingBatchLLM) CountTokens(context.Context, llm.CompletionRequest, ...llm.LanguageModelOption) (int, error) {
+	return 0, llm.ErrUnsupportedTokenCount
+}
+func (l *pendingBatchLLM) InputTokenLimit() int  { return 100000 }
+func (l *pendingBatchLLM) OutputTokenLimit() int { return 8192 }
+
+func connectToolCall(id, server string) llm.ToolCall {
 	return llm.ToolCall{
 		ID:        id,
-		Name:      mmtools.ConnectMCPServerToolName,
+		Name:      llm.ConnectMCPServerToolName,
 		Arguments: json.RawMessage(`{"server":"` + server + `"}`),
-		Status:    status,
 	}
 }
 
-// TestMCPConnectFallbackEphemeral pins the plain-link fallback: the
-// requester gets one ephemeral link per server per conversation, built from
-// the server-side start URL, and only for pending connect calls.
+type mcpConnectFallbackRun struct {
+	convID string
+	batch  []llm.ToolCall
+}
+
+// TestMCPConnectFallbackEphemeral pins the plain-link fallback: when the tool
+// loop stops on a pending ConnectMCPServer call, the requester gets one
+// ephemeral link per server per conversation, threaded where the
+// conversation lives and built from the server-side start URL.
 func TestMCPConnectFallbackEphemeral(t *testing.T) {
 	githubURL := "https://mm.example.com/plugins/mattermost-ai/mcp/oauth/GitHub%20(Prod)/start"
 	servers := []llm.UnconnectedMCPServer{
 		{Name: "Jira", AuthURL: connectFlowJiraAuthURL},
 		{Name: "GitHub (Prod)", AuthURL: githubURL},
-		{Name: "No_URL*"},
 	}
+	jiraLink := "To continue, connect **Jira**: [Connect Jira](" + connectFlowJiraAuthURL + ")"
 
 	cases := []struct {
-		name       string
-		priorTurns []conversation.ContentBlock
-		events     [][]llm.ToolCall
-		wantLinks  []string
+		name      string
+		runs      []mcpConnectFallbackRun
+		kvFails   bool
+		wantLinks []string
 	}{
 		{
 			name:      "pending connect sends one link",
-			events:    [][]llm.ToolCall{{connectToolCall("c1", "Jira", llm.ToolCallStatusPending)}},
-			wantLinks: []string{"To continue, connect **Jira**: [Connect Jira](" + connectFlowJiraAuthURL + ")"},
+			runs:      []mcpConnectFallbackRun{{convID: "conv-a", batch: []llm.ToolCall{connectToolCall("c1", "Jira")}}},
+			wantLinks: []string{jiraLink},
 		},
 		{
-			name: "same server twice in one stream is linked once",
-			events: [][]llm.ToolCall{
-				{connectToolCall("c1", "Jira", llm.ToolCallStatusPending), connectToolCall("c2", "Jira", llm.ToolCallStatusPending)},
-				{connectToolCall("c3", "Jira", llm.ToolCallStatusPending)},
+			name:      "same server twice in one batch is linked once",
+			runs:      []mcpConnectFallbackRun{{convID: "conv-a", batch: []llm.ToolCall{connectToolCall("c1", "Jira"), connectToolCall("c2", "Jira")}}},
+			wantLinks: []string{jiraLink},
+		},
+		{
+			name: "server already linked earlier in the conversation is not linked again",
+			runs: []mcpConnectFallbackRun{
+				{convID: "conv-a", batch: []llm.ToolCall{connectToolCall("c1", "Jira")}},
+				{convID: "conv-a", batch: []llm.ToolCall{connectToolCall("c2", "Jira")}},
 			},
-			wantLinks: []string{"To continue, connect **Jira**: [Connect Jira](" + connectFlowJiraAuthURL + ")"},
+			wantLinks: []string{jiraLink},
 		},
 		{
-			name: "server already requested earlier in the conversation is not linked again",
-			priorTurns: []conversation.ContentBlock{{
-				Type: conversation.BlockTypeToolUse, ID: "earlier", Name: mmtools.ConnectMCPServerToolName,
-				Input: json.RawMessage(`{"server":"Jira"}`), Status: conversation.StatusRejected, UserInteraction: llm.UserInteractionConnect,
-			}},
-			events: [][]llm.ToolCall{{connectToolCall("c1", "Jira", llm.ToolCallStatusPending)}},
-		},
-		{
-			name: "current call already persisted still gets its link",
-			priorTurns: []conversation.ContentBlock{{
-				Type: conversation.BlockTypeToolUse, ID: "c1", Name: mmtools.ConnectMCPServerToolName,
-				Input: json.RawMessage(`{"server":"Jira"}`), Status: conversation.StatusPending, UserInteraction: llm.UserInteractionConnect,
-			}},
-			events:    [][]llm.ToolCall{{connectToolCall("c1", "Jira", llm.ToolCallStatusPending)}},
-			wantLinks: []string{"To continue, connect **Jira**: [Connect Jira](" + connectFlowJiraAuthURL + ")"},
-		},
-		{
-			name: "a different server requested earlier does not suppress this one",
-			priorTurns: []conversation.ContentBlock{{
-				Type: conversation.BlockTypeToolUse, ID: "earlier", Name: mmtools.ConnectMCPServerToolName,
-				Input: json.RawMessage(`{"server":"GitHub (Prod)"}`), Status: conversation.StatusSuccess, UserInteraction: llm.UserInteractionConnect,
-			}},
-			events:    [][]llm.ToolCall{{connectToolCall("c1", "Jira", llm.ToolCallStatusPending)}},
-			wantLinks: []string{"To continue, connect **Jira**: [Connect Jira](" + connectFlowJiraAuthURL + ")"},
+			name: "each conversation gets its own link",
+			runs: []mcpConnectFallbackRun{
+				{convID: "conv-a", batch: []llm.ToolCall{connectToolCall("c1", "Jira")}},
+				{convID: "conv-b", batch: []llm.ToolCall{connectToolCall("c2", "Jira")}},
+			},
+			wantLinks: []string{jiraLink, jiraLink},
 		},
 		{
 			name:      "server names are markdown-escaped and URLs cannot close the link",
-			events:    [][]llm.ToolCall{{connectToolCall("c1", "GitHub (Prod)", llm.ToolCallStatusPending)}},
+			runs:      []mcpConnectFallbackRun{{convID: "conv-a", batch: []llm.ToolCall{connectToolCall("c1", "GitHub (Prod)")}}},
 			wantLinks: []string{"To continue, connect **GitHub (Prod)**: [Connect GitHub (Prod)](https://mm.example.com/plugins/mattermost-ai/mcp/oauth/GitHub%20%28Prod%29/start)"},
 		},
 		{
-			name:   "resolved or rejected calls are not linked",
-			events: [][]llm.ToolCall{{connectToolCall("c1", "Jira", llm.ToolCallStatusRejected), connectToolCall("c2", "Jira", llm.ToolCallStatusSuccess)}},
+			name: "other pending tools are ignored",
+			runs: []mcpConnectFallbackRun{{convID: "conv-a", batch: []llm.ToolCall{
+				{ID: "t1", Name: "jira__get_issue", ServerOrigin: "https://jira.example.com", Arguments: json.RawMessage(`{"server":"Jira"}`)},
+			}}},
 		},
 		{
-			name:   "unlisted server is not linked",
-			events: [][]llm.ToolCall{{connectToolCall("c1", "Confluence", llm.ToolCallStatusPending)}},
-		},
-		{
-			name:   "server without a start URL is not linked",
-			events: [][]llm.ToolCall{{connectToolCall("c1", "No_URL*", llm.ToolCallStatusPending)}},
-		},
-		{
-			name:   "other pending tools are ignored",
-			events: [][]llm.ToolCall{{{ID: "t1", Name: "jira__get_issue", Arguments: json.RawMessage(`{"server":"Jira"}`), Status: llm.ToolCallStatusPending}}},
+			name:    "no link when the once-per-conversation claim cannot be recorded",
+			runs:    []mcpConnectFallbackRun{{convID: "conv-a", batch: []llm.ToolCall{connectToolCall("c1", "Jira")}}},
+			kvFails: true,
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			convStore, conv := loadedStateConversationStore()
-			if tc.priorTurns != nil {
-				content, err := json.Marshal(tc.priorTurns)
-				require.NoError(t, err)
-				require.NoError(t, convStore.CreateTurn(&store.Turn{
-					ID: "prior-turn", ConversationID: conv.ID, Role: "assistant", Content: content, Sequence: 1,
+			convStore := newLoadedStateFlowStore()
+			for _, id := range []string{"conv-a", "conv-b"} {
+				require.NoError(t, convStore.CreateConversation(&store.Conversation{
+					ID: id, UserID: "user-id", BotID: "bot-id", ChannelID: new("channel-" + id), RootPostID: new("root-" + id),
+					SystemPrompt: "system", Operation: "conversation",
 				}))
 			}
 
 			var mu sync.Mutex
+			kv := map[string]bool{}
 			var sent []capturedEphemeral
 			mmClient := mocks.NewMockClient(t)
-			mmClient.On("GetConfig").Maybe().Return(&model.Config{})
+			mmClient.On("LogWarn", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Maybe().Return()
+			kvCall := mmClient.On("KVCompareAndSet", mock.Anything, nil, true).Maybe()
+			if tc.kvFails {
+				kvCall.Return(false, errors.New("kv unavailable"))
+			} else {
+				kvCall.Return(func(key string, _, _ any) bool {
+					mu.Lock()
+					defer mu.Unlock()
+					if kv[key] {
+						return false
+					}
+					kv[key] = true
+					return true
+				}, nil)
+			}
 			mmClient.On("SendEphemeralPost", mock.Anything, mock.Anything).Maybe().Run(func(args mock.Arguments) {
 				mu.Lock()
 				defer mu.Unlock()
@@ -468,34 +496,29 @@ func TestMCPConnectFallbackEphemeral(t *testing.T) {
 				i18n:        i18n.Init(),
 			}
 
-			llmContext := &llm.Context{
-				RequestingUser: &model.User{Id: "user-id", Locale: "en"},
-				ToolCatalog:    llm.ToolCatalogContext{UnconnectedMCPServers: servers},
+			for _, run := range tc.runs {
+				tools := llm.NewToolStore()
+				tools.AddTools([]llm.Tool{mmtools.NewConnectMCPServerTool(servers), loadedStateTool()})
+				llmContext := &llm.Context{
+					RequestingUser: &model.User{Id: "user-id", Locale: "en"},
+					Tools:          tools,
+					ToolCatalog:    llm.ToolCatalogContext{UnconnectedMCPServers: servers},
+				}
+				result, err := c.ProcessDMRequest(context.Background(), run.convID, &pendingBatchLLM{batches: [][]llm.ToolCall{run.batch}}, llmContext, 0)
+				require.NoError(t, err)
+				_, err = result.Stream.ReadAll()
+				require.NoError(t, err)
 			}
-			source := make(chan llm.TextStreamEvent, len(tc.events)+1)
-			for _, calls := range tc.events {
-				source <- llm.TextStreamEvent{Type: llm.EventTypeToolCalls, Value: calls}
-			}
-			source <- llm.TextStreamEvent{Type: llm.EventTypeEnd}
-			close(source)
-
-			responsePost := &model.Post{Id: "response-id", ChannelId: "channel-id", RootId: "root-id"}
-			decorated := c.decorateStreamWithMCPConnectFallback(loadedStateBot(&loadedStateLLM{}), &llm.TextStreamResult{Stream: source}, responsePost, conv.ID, llmContext)
-
-			forwarded := 0
-			for range decorated.Stream {
-				forwarded++
-			}
-			assert.Equal(t, len(tc.events)+1, forwarded, "every event must pass through unchanged")
 
 			mu.Lock()
 			defer mu.Unlock()
 			links := make([]string, 0, len(sent))
-			for _, s := range sent {
+			for i, s := range sent {
+				convID := tc.runs[min(i, len(tc.runs)-1)].convID
 				assert.Equal(t, "user-id", s.userID, "only the requester receives the link")
 				assert.Equal(t, "bot-id", s.post.UserId)
-				assert.Equal(t, "channel-id", s.post.ChannelId)
-				assert.Equal(t, "root-id", s.post.RootId)
+				assert.Equal(t, "channel-"+convID, s.post.ChannelId)
+				assert.Equal(t, "root-"+convID, s.post.RootId)
 				links = append(links, s.post.Message)
 			}
 			assert.Equal(t, nilIfEmptyStrings(tc.wantLinks), nilIfEmptyStrings(links))
@@ -503,41 +526,9 @@ func TestMCPConnectFallbackEphemeral(t *testing.T) {
 	}
 }
 
-func TestMCPConnectFallbackSkipsFlowsWithoutUnconnectedServers(t *testing.T) {
-	c := &Conversations{mmClient: mocks.NewMockClient(t)}
-	stream := &llm.TextStreamResult{Stream: make(chan llm.TextStreamEvent)}
-	bot := loadedStateBot(&loadedStateLLM{})
-	post := &model.Post{Id: "response-id"}
-
-	cases := []struct {
-		name       string
-		llmContext *llm.Context
-	}{
-		{name: "nil context"},
-		{name: "no requesting user", llmContext: &llm.Context{ToolCatalog: llm.ToolCatalogContext{UnconnectedMCPServers: []llm.UnconnectedMCPServer{{Name: "Jira"}}}}},
-		{name: "nothing unconnected and no reconnect hook", llmContext: &llm.Context{RequestingUser: &model.User{Id: "user-id"}}},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Same(t, stream, c.decorateStreamWithMCPConnectFallback(bot, stream, post, "conv-id", tc.llmContext))
-		})
-	}
-}
-
-func TestMCPConnectFallbackTopLevelPostThreadsUnderResponse(t *testing.T) {
-	var sent *model.Post
-	mmClient := mocks.NewMockClient(t)
-	mmClient.On("SendEphemeralPost", "user-id", mock.Anything).Once().Run(func(args mock.Arguments) {
-		sent = args.Get(1).(*model.Post)
-	}).Return()
-
-	c := &Conversations{mmClient: mmClient}
-	c.sendMCPConnectFallback(loadedStateBot(&loadedStateLLM{}), &model.Post{Id: "response-id", ChannelId: "dm"}, &model.User{Id: "user-id"},
-		llm.UnconnectedMCPServer{Name: "Jira_Cloud", AuthURL: connectFlowJiraAuthURL})
-
-	require.NotNil(t, sent)
-	assert.Equal(t, "response-id", sent.RootId)
-	assert.Equal(t, `To continue, connect **Jira\_Cloud**: [Connect Jira\_Cloud](`+connectFlowJiraAuthURL+")", sent.Message)
+type capturedEphemeral struct {
+	userID string
+	post   *model.Post
 }
 
 func nilIfEmptyStrings(s []string) []string {

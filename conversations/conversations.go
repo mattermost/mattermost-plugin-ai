@@ -286,7 +286,13 @@ func (c *Conversations) runToolLoop(
 	writeFailArgs ...any,
 ) (*toolrunner.ToolRunResult, error) {
 	opts = c.withProviderWebSearchLicense(opts)
-	runner := toolrunner.New(lm, toolrunner.WithMaxRounds(maxRounds), toolrunner.WithToolErrorResult(llmcontext.MCPToolErrorResult))
+	runner := toolrunner.New(lm,
+		toolrunner.WithMaxRounds(maxRounds),
+		toolrunner.WithToolErrorResult(llmcontext.MCPToolErrorResult),
+		toolrunner.WithPendingToolCalls(func(llmContext *llm.Context, pending []llm.ToolCall) {
+			c.sendMCPConnectFallbacks(convID, llmContext, pending)
+		}),
+	)
 	return runner.Run(ctx, req, shouldExecute, func(turns []toolrunner.ToolTurn) {
 		if writeErr := c.convService.WriteToolTurns(convID, turns, sharedForTurns(turns)); writeErr != nil {
 			c.mmClient.LogError(writeFailMsg, append([]any{"error", writeErr}, writeFailArgs...)...)

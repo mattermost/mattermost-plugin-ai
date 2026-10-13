@@ -4,11 +4,11 @@
 package conversations
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 
-	"github.com/mattermost/mattermost-plugin-agents/v2/bots"
-	"github.com/mattermost/mattermost-plugin-agents/v2/conversation"
 	"github.com/mattermost/mattermost-plugin-agents/v2/i18n"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmtools"
@@ -16,133 +16,95 @@ import (
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
-const mcpConnectFallbackDefaultMessage = "To continue, connect **%s**: [Connect %s](%s)"
-
-var mcpConnectFallbackURLEscaper = strings.NewReplacer("(", "%28", ")", "%29", " ", "%20")
-
-var mcpConnectFallbackMarkdownEscaper = strings.NewReplacer(
-	`\`, `\\`, "*", `\*`, "_", `\_`, "`", "\\`", "[", `\[`, "]", `\]`, "~", `\~`,
+const (
+	mcpConnectFallbackDefaultMessage = "To continue, connect **%s**: [Connect %s](%s)"
+	mcpConnectFallbackKVPrefix       = "mcp_connect_link_"
 )
 
-// decorateStreamWithMCPConnectFallback sends the requester an ephemeral link
-// to connect an MCP server when the model's ConnectMCPServer call goes
-// pending, for clients (e.g. mobile) that cannot render the Connect card. The
-// link is built from the server-side AuthURL, never from model output. Each
-// server is linked at most once per conversation.
-func (c *Conversations) decorateStreamWithMCPConnectFallback(bot *bots.Bot, stream *llm.TextStreamResult, post *model.Post, convID string, llmContext *llm.Context) *llm.TextStreamResult {
-	if stream == nil || bot == nil || post == nil || llmContext == nil || llmContext.RequestingUser == nil {
-		return stream
-	}
-	if len(llmContext.ToolCatalog.UnconnectedMCPServers) == 0 && llmContext.ToolCatalog.UnconnectedMCPServerScope == nil {
-		return stream
+// The fallback message is the only markdown link this package builds, and the
+// codebase has no shared helper for one. The name is escaped so it renders as
+// literal text, and the URL so it cannot close the link target early.
+var (
+	mcpConnectFallbackURLEscaper      = strings.NewReplacer("(", "%28", ")", "%29", " ", "%20")
+	mcpConnectFallbackMarkdownEscaper = strings.NewReplacer(
+		`\`, `\\`, "*", `\*`, "_", `\_`, "`", "\\`", "[", `\[`, "]", `\]`, "~", `\~`,
+	)
+)
+
+// sendMCPConnectFallbacks sends the requester an ephemeral link to connect
+// each MCP server a pending ConnectMCPServer call names, for clients (e.g.
+// mobile) that cannot render the Connect card. Ephemeral posts reach every
+// client the requester has open, so web users see the link next to the card;
+// that duplication is accepted rather than guessing which client is in use.
+// The link is built from the server-side AuthURL, never from model output, and
+// each server is linked at most once per conversation.
+func (c *Conversations) sendMCPConnectFallbacks(convID string, llmContext *llm.Context, pending []llm.ToolCall) {
+	if llmContext == nil || c.convService == nil || c.mmClient == nil {
+		return
 	}
 
-	output := make(chan llm.TextStreamEvent)
-	go func() {
-		defer close(output)
-		linked := map[string]bool{}
-		for event := range stream.Stream {
-			if event.Type == llm.EventTypeToolCalls {
-				if toolCalls, ok := event.Value.([]llm.ToolCall); ok {
-					c.sendMCPConnectFallbacks(bot, post, convID, llmContext, toolCalls, linked)
-				}
-			}
-			output <- event
-		}
-	}()
-	return &llm.TextStreamResult{Stream: output}
-}
-
-func (c *Conversations) sendMCPConnectFallbacks(bot *bots.Bot, post *model.Post, convID string, llmContext *llm.Context, toolCalls []llm.ToolCall, linked map[string]bool) {
-	var earlier map[string]bool
-	for _, tc := range toolCalls {
-		if tc.Name != mmtools.ConnectMCPServerToolName || tc.Status != llm.ToolCallStatusPending {
+	var conv *store.Conversation
+	for _, tc := range pending {
+		if tc.Name != llm.ConnectMCPServerToolName {
 			continue
 		}
 		name, ok := mmtools.ConnectMCPServerName(tc.Arguments)
-		if !ok || linked[name] {
+		if !ok {
 			continue
 		}
 		server, listed := llmContext.UnconnectedMCPServerByName(name)
 		if !listed || server.AuthURL == "" {
 			continue
 		}
-		if earlier == nil {
-			earlier = c.earlierMCPConnectRequests(convID, toolCalls)
+		if conv == nil {
+			loaded, err := c.convService.GetConversation(convID)
+			if err != nil || loaded.ChannelID == nil {
+				c.mmClient.LogWarn("Failed to load conversation for MCP connect link", "conversation_id", convID)
+				return
+			}
+			conv = loaded
 		}
-		linked[name] = true
-		if earlier[name] {
+		if !c.claimMCPConnectFallback(convID, name) {
 			continue
 		}
-		c.sendMCPConnectFallback(bot, post, llmContext.RequestingUser, server)
+		c.sendMCPConnectFallback(conv, llmContext.RequestingUser, server)
 	}
 }
 
-// earlierMCPConnectRequests returns the servers already requested through
-// ConnectMCPServer in persisted turns of the conversation, excluding the
-// calls in the current batch so a batch persisted before this check still
-// gets its link.
-func (c *Conversations) earlierMCPConnectRequests(convID string, current []llm.ToolCall) map[string]bool {
-	requested := map[string]bool{}
-	if c.convService == nil || convID == "" {
-		return requested
-	}
-	turns, err := c.convService.GetTurns(convID)
+// claimMCPConnectFallback atomically records that the server's link was sent
+// for the conversation. It reports false when it already was, or when the
+// claim cannot be recorded, so the link is never sent twice.
+func (c *Conversations) claimMCPConnectFallback(convID, serverName string) bool {
+	sum := sha256.Sum256([]byte(convID + "\x00" + serverName))
+	key := mcpConnectFallbackKVPrefix + hex.EncodeToString(sum[:16])
+	claimed, err := c.mmClient.KVCompareAndSet(key, nil, true)
 	if err != nil {
-		c.mmClient.LogWarn("Failed to load turns for MCP connect fallback", "error", err.Error(), "conversation_id", convID)
-		return requested
+		c.mmClient.LogWarn("Failed to record MCP connect link", "conversation_id", convID, "error", err.Error())
+		return false
 	}
-	return mcpConnectRequestsInTurns(turns, current)
+	return claimed
 }
 
-func mcpConnectRequestsInTurns(turns []store.Turn, current []llm.ToolCall) map[string]bool {
-	currentIDs := make(map[string]bool, len(current))
-	for _, tc := range current {
-		currentIDs[tc.ID] = true
-	}
-	requested := map[string]bool{}
-	for _, turn := range turns {
-		if turn.Role != "assistant" {
-			continue
-		}
-		blocks, err := conversation.UnmarshalBlocks(turn.Content)
-		if err != nil {
-			continue
-		}
-		for _, block := range blocks {
-			if block.Type != conversation.BlockTypeToolUse || block.Name != mmtools.ConnectMCPServerToolName || currentIDs[block.ID] {
-				continue
-			}
-			if name, ok := mmtools.ConnectMCPServerName(block.Input); ok {
-				requested[name] = true
-			}
-		}
-	}
-	return requested
-}
-
-func (c *Conversations) sendMCPConnectFallback(bot *bots.Bot, post *model.Post, requester *model.User, server llm.UnconnectedMCPServer) {
-	mmBot := bot.GetMMBot()
-	if mmBot == nil {
-		return
-	}
-	rootID := post.RootId
-	if rootID == "" {
-		rootID = post.Id
-	}
-
+func (c *Conversations) sendMCPConnectFallback(conv *store.Conversation, requester *model.User, server llm.UnconnectedMCPServer) {
 	name := mcpConnectFallbackMarkdownEscaper.Replace(server.Name)
 	authURL := mcpConnectFallbackURLEscaper.Replace(server.AuthURL)
 	message := fmt.Sprintf(mcpConnectFallbackDefaultMessage, name, name, authURL)
 	if c.i18n != nil {
-		T := i18n.LocalizerFunc(c.i18n, c.fallbackLocale(requester.Locale))
+		locale := ""
+		if requester != nil {
+			locale = requester.Locale
+		}
+		T := i18n.LocalizerFunc(c.i18n, c.fallbackLocale(locale))
 		message = T("agents.mcp_connect_fallback", mcpConnectFallbackDefaultMessage, name, name, authURL)
 	}
 
-	c.mmClient.SendEphemeralPost(requester.Id, &model.Post{
-		UserId:    mmBot.UserId,
-		ChannelId: post.ChannelId,
-		RootId:    rootID,
+	post := &model.Post{
+		UserId:    conv.BotID,
+		ChannelId: *conv.ChannelID,
 		Message:   message,
-	})
+	}
+	if conv.RootPostID != nil {
+		post.RootId = *conv.RootPostID
+	}
+	c.mmClient.SendEphemeralPost(conv.UserID, post)
 }

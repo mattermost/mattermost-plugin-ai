@@ -327,6 +327,5 @@ func (c *Conversations) regenerateViaConversation(
 		return nil, fmt.Errorf("tool runner failed on regen: %w", runErr)
 	}
 
-	stream := c.decorateStreamWithMCPConnectFallback(bot, runResult.Stream, post, conv.ID, llmContext)
-	return c.decorateStreamWithCreatedFiles(ctx, bot, stream, post, nil, llmContext, llmContext), nil
+	return c.decorateStreamWithCreatedFiles(ctx, bot, runResult.Stream, post, nil, llmContext, llmContext), nil
 }

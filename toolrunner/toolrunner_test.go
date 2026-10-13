@@ -767,6 +767,60 @@ func TestToolRunner_WithToolErrorResult(t *testing.T) {
 	assert.Equal(t, ToolResult{ToolCallID: "tc2", Name: "ok_tool", Result: "fine"}, results[1])
 }
 
+func TestToolRunner_WithPendingToolCalls(t *testing.T) {
+	tests := []struct {
+		name        string
+		approve     func(llm.ToolCall) bool
+		wantPending [][]llm.ToolCall
+	}{
+		{
+			name:    "batch that needs a decision is reported once",
+			approve: neverExecute,
+			wantPending: [][]llm.ToolCall{{
+				{ID: "tc1", Name: "pending_tool", Arguments: json.RawMessage(`{}`)},
+			}},
+		},
+		{
+			name:    "auto-executed batch is not reported",
+			approve: alwaysExecute,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inner := &testLLM{
+				responses: []testResponse{
+					{events: []llm.TextStreamEvent{
+						{Type: llm.EventTypeToolCalls, Value: []llm.ToolCall{
+							{ID: "tc1", Name: "pending_tool", Arguments: json.RawMessage(`{}`)},
+						}},
+						{Type: llm.EventTypeEnd},
+					}},
+					{events: []llm.TextStreamEvent{
+						{Type: llm.EventTypeText, Value: "done"},
+						{Type: llm.EventTypeEnd},
+					}},
+				},
+			}
+			llmContext := &llm.Context{Tools: newTestToolStore(testToolDef{name: "pending_tool", result: "ok"})}
+			var pending [][]llm.ToolCall
+			runner := New(inner, WithPendingToolCalls(func(c *llm.Context, calls []llm.ToolCall) {
+				assert.Same(t, llmContext, c)
+				pending = append(pending, calls)
+			}))
+
+			result, err := runner.Run(context.Background(), llm.CompletionRequest{
+				Posts:   []llm.Post{{Role: llm.PostRoleUser, Message: "go"}},
+				Context: llmContext,
+			}, tt.approve, nil)
+			require.NoError(t, err)
+			_, _ = result.Stream.ReadAll()
+
+			assert.Equal(t, tt.wantPending, pending)
+		})
+	}
+}
+
 func TestToolRunner_LLMError(t *testing.T) {
 	// ChatCompletion returns an error directly on the first call.
 	inner := &testLLM{
