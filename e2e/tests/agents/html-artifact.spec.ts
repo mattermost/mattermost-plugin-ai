@@ -5,9 +5,11 @@
 // `enableHTMLArtifacts` is on, the bot post renders it as a sandboxed,
 // interactive artifact (inline card + fullscreen viewer). Artifact JS reaches
 // user data only through the consent-gated window.mattermost broker and has no
-// network access. Only the requester's view runs an artifact by itself, and an
-// inline artifact takes clicks and keyboard focus only once the viewer
-// activates it.
+// network access. No viewer's page runs an artifact by itself, the
+// requester's included: each viewer clicks Run (or opens it fullscreen). The
+// host frames the sandboxed artifact inside a srcdoc wrapper whose CSP blocks
+// any navigation of the artifact's frame away from the artifact, and an inline
+// artifact takes clicks and keyboard focus only once the viewer activates it.
 
 import fs from 'fs';
 import path from 'path';
@@ -21,34 +23,31 @@ import {MattermostPage} from 'helpers/mm';
 import {AIPlugin} from 'helpers/ai-plugin';
 import {RunToolConfigAIMockContainer, setupRegularTestUser} from 'helpers/tool-config-container';
 import {
-    FOCUS_THIEF_EXFIL,
+    ARTIFACT_CONTENT_URL,
+    ARTIFACT_TOKEN_URL,
+    EXFIL_HOST,
+    EXFIL_URL,
+    ExternalServer,
     FOCUS_THIEF_FILE_NAME,
     FOCUS_THIEF_HTML,
-    HUNG_NAVIGATION_FILE_NAME,
-    HungServer,
     ONYX_THEME,
     SECOND_VIEWER_PASSWORD,
     SECOND_VIEWER_USERNAME,
     SPRINT_DASHBOARD_FILE_NAME,
     SPRINT_DASHBOARD_HTML,
-    SELF_NAVIGATING_FILE_NAME,
-    SELF_NAVIGATING_HTML,
-    SELF_NAVIGATION_IMPOSTOR_HTML,
-    SELF_NAVIGATION_TARGET,
-    REPLACEMENT_IMPOSTOR_HTML,
-    REPLACEMENT_TARGET,
-    REPLACING_FILE_NAME,
-    REPLACING_HTML,
+    SelfNavigationKind,
     TOKEN_PROBE_FILE_NAME,
     TOKEN_PROBE_HTML,
+    artifactContentIframe,
     artifactFrame,
-    artifactIframes,
+    artifactWrappers,
     engageArtifact,
-    hungNavigationHTML,
+    runArtifact,
+    selfNavigationHTML,
     setHTMLArtifactsEnabled,
     setUserTheme,
     setupSecondViewer,
-    startHungServer,
+    startExternalServer,
 } from 'helpers/html-artifact';
 
 const username = 'regularuser';
@@ -73,18 +72,26 @@ async function scrollToTop(el: Locator): Promise<void> {
     await el.evaluate((node) => node.scrollIntoView({block: 'start'}));
 }
 
-/** Opens the DM with the bot in the center channel and returns the latest artifact card there. */
-async function openArtifactInBotDM(page: Page, mattermost: MattermostContainer): Promise<{botPost: Locator; card: Locator; iframe: Locator}> {
-    await page.goto(`${mattermost.url()}/test/messages/@${botName}`);
-    const rhsClose = page.getByTestId('mattermost-ai-rhs').getByRole('button', {name: /close/i});
-    if (await rhsClose.first().isVisible().catch(() => false)) {
-        await rhsClose.first().click();
-    }
+/**
+ * Opens the DM with the bot in the center channel, without reloading the
+ * page, closes the Agents RHS, and returns the latest artifact card there.
+ * The viewer ran it in the RHS earlier in this page session, so it runs here
+ * without asking again.
+ */
+async function openArtifactInBotDM(page: Page): Promise<{botPost: Locator; card: Locator; iframe: Locator}> {
+    await page.evaluate((url) => {
+        (window as unknown as {WebappUtils: {browserHistory: {push: (u: string) => void}}}).WebappUtils.browserHistory.push(url);
+    }, `/test/messages/@${botName}`);
+    await expect(page).toHaveURL(new RegExp(`/test/messages/@${botName}$`));
+    await new AIPlugin(page).closeRHS();
+    await expect(page.getByTestId('mattermost-ai-rhs')).toBeHidden();
+
     const botPost = page.locator('#postListContent [data-testid="llm-bot-post"]').last();
     const card = botPost.getByTestId('html-artifact-card');
     await expect(card).toBeVisible({timeout: 60000});
-    const iframe = artifactIframes(card).first();
-    await expect(iframe.contentFrame().getByRole('heading', {name: 'Sprint 42 dashboard'})).toBeVisible({timeout: 30000});
+    await expect(card.getByTestId('html-artifact-run-placeholder')).toHaveCount(0);
+    const iframe = artifactWrappers(card).first();
+    await expect(artifactFrame(iframe).getByRole('heading', {name: 'Sprint 42 dashboard'})).toBeVisible({timeout: 30000});
     await scrollToTop(botPost);
     return {botPost, card, iframe};
 }
@@ -151,36 +158,7 @@ async function expectHeaderLayout(card: Locator): Promise<boolean> {
     return !inline;
 }
 
-/** Sends `prompt` to the bot in the Agents RHS and returns the inline artifact iframe in the reply. */
-async function askForArtifact(page: Page, mattermost: MattermostContainer, aimock: AIMockContainer, prompt: string): Promise<{botPost: Locator; iframe: Locator}> {
-    await aimock.setFixtures(mergeFixtureFiles(
-        {fixtures: [buildTitleFixture('Sprint dashboard')]},
-        buildCreateFileSequence({
-            userPrompt: prompt,
-            fileName: SPRINT_DASHBOARD_FILE_NAME,
-            fileContent: SPRINT_DASHBOARD_HTML,
-            finalText: 'Here is your sprint dashboard.',
-            toolCallId: `call_html_artifact_${Date.now()}`,
-        }),
-    ));
-
-    const mmPage = new MattermostPage(page);
-    const aiPlugin = new AIPlugin(page);
-    await mmPage.login(mattermost.url(), username, password);
-    await aiPlugin.openRHS();
-    await aiPlugin.sendMessage(prompt);
-
-    const rhs = page.getByTestId('mattermost-ai-rhs');
-    const botPost = rhs.locator('[data-testid="llm-bot-post"]').last();
-    await expect(botPost).toBeVisible({timeout: 90000});
-    await expect(botPost.getByText('Here is your sprint dashboard.')).toBeVisible({timeout: 120000});
-
-    const iframe = artifactIframes(botPost).first();
-    await expect(iframe).toBeVisible({timeout: 60000});
-    return {botPost, iframe};
-}
-
-/** Has the bot post `html` as `fileName` in the RHS and returns the bot post. */
+/** Has the bot post `html` as `fileName` in the RHS and returns the bot post, not yet run. */
 async function postArtifact(page: Page, mattermost: MattermostContainer, aimock: AIMockContainer, fileName: string, html: string, finalText: string): Promise<Locator> {
     const prompt = `${fileName} ${Date.now()}`;
     await aimock.setFixtures(mergeFixtureFiles(
@@ -198,8 +176,19 @@ async function postArtifact(page: Page, mattermost: MattermostContainer, aimock:
     await aiPlugin.openRHS();
     await aiPlugin.sendMessage(prompt);
     const botPost = page.getByTestId('mattermost-ai-rhs').locator('[data-testid="llm-bot-post"]').last();
+    await expect(botPost).toBeVisible({timeout: 90000});
     await expect(botPost.getByText(finalText)).toBeVisible({timeout: 120000});
+    await expect(botPost.getByTestId('html-artifact-run-placeholder')).toBeVisible({timeout: 60000});
     return botPost;
+}
+
+/** Has the bot post the sprint dashboard in the RHS, runs it, and returns the inline artifact's wrapper frame. */
+async function askForArtifact(page: Page, mattermost: MattermostContainer, aimock: AIMockContainer, prompt: string): Promise<{botPost: Locator; iframe: Locator}> {
+    const botPost = await postArtifact(page, mattermost, aimock, SPRINT_DASHBOARD_FILE_NAME, SPRINT_DASHBOARD_HTML, `Here is your sprint dashboard (${prompt}).`);
+    await runArtifact(botPost);
+    const iframe = artifactWrappers(botPost).first();
+    await expect(iframe).toBeVisible({timeout: 60000});
+    return {botPost, iframe};
 }
 
 test.describe('HTML artifacts', () => {
@@ -209,7 +198,7 @@ test.describe('HTML artifacts', () => {
 
     let mattermost: MattermostContainer;
     let aimock: AIMockContainer;
-    let hungServer: HungServer;
+    let externalServer: ExternalServer;
 
     test.beforeAll(async () => {
         test.setTimeout(240000);
@@ -238,11 +227,11 @@ test.describe('HTML artifacts', () => {
         aimock = await RunAIMockSidecar(mattermost.network, {
             fixtures: {fixtures: [buildTitleFixture('HTML artifact bootstrap')]},
         });
-        hungServer = await startHungServer(mattermost.url());
+        externalServer = await startExternalServer(mattermost.url());
     });
 
     test.afterAll(async () => {
-        await hungServer?.close();
+        await externalServer?.close();
         await aimock?.stop();
         await mattermost?.stop();
     });
@@ -267,24 +256,35 @@ test.describe('HTML artifacts', () => {
         const nameFits = await fileName.evaluate((el) => el.scrollWidth <= el.clientWidth);
         expect(nameFits).toBe(true);
 
-        // Sandbox: scripts only, never same-origin.
-        const sandbox = await iframe.getAttribute('sandbox');
-        expect(sandbox?.split(/\s+/).sort()).toEqual(['allow-scripts']);
+        // The host's frame is an unsandboxed wrapper whose CSP lets its child
+        // frame load only the artifact; the artifact's own frame has scripts
+        // only, never same-origin.
+        await expect(iframe).toHaveAttribute('title', `Interactive artifact: ${SPRINT_DASHBOARD_FILE_NAME}`);
+        expect(await iframe.getAttribute('sandbox')).toBeNull();
+        const content = artifactContentIframe(iframe);
+        await expect(content).toHaveAttribute('src', ARTIFACT_CONTENT_URL);
+        expect((await content.getAttribute('sandbox'))?.split(/\s+/).sort()).toEqual(['allow-scripts']);
+        const [, fileId] = ARTIFACT_CONTENT_URL.exec((await content.getAttribute('src'))!)!;
+        await expect(iframe.contentFrame().locator('meta[http-equiv="Content-Security-Policy"]')).toHaveAttribute(
+            'content',
+            `default-src 'none'; style-src 'unsafe-inline'; frame-src ${new URL(mattermost.url()).origin}/plugins/mattermost-ai/artifacts/${fileId}`,
+        );
 
         // Content renders and is interactive.
-        const rhsFrame = iframe.contentFrame();
+        const rhsFrame = artifactFrame(iframe);
         await expect(rhsFrame.getByRole('heading', {name: 'Sprint 42 dashboard'})).toBeVisible({timeout: 30000});
         await expect(rhsFrame.getByTestId('stat-completed')).toHaveText('34');
         expect(await expectHeaderLayout(rhsCard)).toBe(true);
         await scrollToTop(rhsCard);
         await shot(page, '01-inline-card-rhs');
 
-        // The same conversation is a DM with the bot; the card renders in the center channel too.
-        const center = await openArtifactInBotDM(page, mattermost);
-        const frame = center.iframe.contentFrame();
+        // The same conversation is a DM with the bot; the card renders in the
+        // center channel too, already running since it ran in the RHS.
+        const center = await openArtifactInBotDM(page);
+        const frame = artifactFrame(center.iframe);
 
-        // The requester's artifact runs by itself, but takes clicks (and
-        // keyboard focus) only once the viewer activates it.
+        // A running artifact takes clicks (and keyboard focus) only once the
+        // viewer activates it.
         await expect(center.card.getByTestId('html-artifact-interact')).toBeVisible();
         await expect(center.iframe).toHaveAttribute('tabindex', '-1');
         await engageArtifact(center.card);
@@ -331,13 +331,14 @@ test.describe('HTML artifacts', () => {
         await expect(greeting).toHaveText(new RegExp(`^Hello, (${firstName} ${lastName}|${firstName}|${username})!$`), {timeout: 15000});
         await shot(page, '03-greeting-after-allow');
 
-        // Fullscreen viewer: separate iframe instance.
+        // Fullscreen viewer: separate frame instance, same structure.
         await center.card.getByRole('button', {name: /fullscreen/i}).click();
         const viewer = page.getByTestId('html-artifact-fullscreen');
         await expect(viewer).toBeVisible({timeout: 15000});
-        const fullIframe = artifactIframes(viewer).first();
-        expect((await fullIframe.getAttribute('sandbox'))?.split(/\s+/)).toEqual(['allow-scripts']);
-        const fullFrame = fullIframe.contentFrame();
+        const fullIframe = artifactWrappers(viewer).first();
+        expect(await fullIframe.getAttribute('sandbox')).toBeNull();
+        expect((await artifactContentIframe(fullIframe).getAttribute('sandbox'))?.split(/\s+/)).toEqual(['allow-scripts']);
+        const fullFrame = artifactFrame(fullIframe);
         await expect(fullFrame.getByRole('heading', {name: 'Sprint 42 dashboard'})).toBeVisible({timeout: 30000});
         await expect(viewer.getByText('Interactive')).toBeVisible();
         await expect(viewer.getByTestId('html-artifact-notice')).toContainText("Don't enter passwords");
@@ -346,11 +347,17 @@ test.describe('HTML artifacts', () => {
         // viewer covers it until they click it.
         await expect(viewer.getByTestId('html-artifact-frame')).toHaveAttribute('data-engaged', 'false');
         await expect(viewer.getByTestId('html-artifact-interact')).toBeVisible();
+        await expect(fullIframe).toHaveAttribute('tabindex', '-1');
         await engageArtifact(viewer);
+
+        // Focus inside the artifact shows up on this page as the wrapper
+        // frame, which is now the viewer's tab stop.
+        await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute('data-testid'))).toBe('html-artifact-wrapper');
+        expect(await fullIframe.getAttribute('tabindex')).toBeNull();
 
         // The display mode reaches the artifact: fullscreen-only content shows.
         await expect(fullFrame.getByTestId('fullscreen-details')).toBeVisible({timeout: 15000});
-        await expect(center.iframe.contentFrame().getByTestId('fullscreen-details')).toBeHidden();
+        await expect(frame.getByTestId('fullscreen-details')).toBeHidden();
         await fullFrame.getByRole('tab', {name: 'Team'}).click();
         await expect(fullFrame.getByText('Consent broker')).toBeVisible();
 
@@ -372,81 +379,106 @@ test.describe('HTML artifacts', () => {
     test('artifact has no network access to the Mattermost API', async ({page}) => {
         test.setTimeout(300000);
         const {iframe} = await askForArtifact(page, mattermost, aimock, `dashboard network probe ${Date.now()}`);
-        const netResult = iframe.contentFrame().getByTestId('net-result');
+        const netResult = artifactFrame(iframe).getByTestId('net-result');
         // The probe is visually hidden; its text content is still asserted.
         await expect(netResult).toContainText('network: blocked', {timeout: 30000});
         await expect(netResult).not.toContainText('LEAKED');
     });
 
-    // Self-navigation of a sandboxed frame cannot be blocked (CSP and the
-    // Navigation API do not cover opaque-origin frames), so the request does
-    // go out. What the host guarantees: it does not remount (which would
-    // re-run the navigation), and the replacement page gets no broker access.
-    test('self-navigating artifact is unloaded and its replacement gets no access', async ({page}) => {
-        test.setTimeout(300000);
-        await page.context().route(`${SELF_NAVIGATION_TARGET}**`, (route) => {
-            return route.fulfill({contentType: 'text/html', body: SELF_NAVIGATION_IMPOSTOR_HTML});
-        });
-        let artifactRequests = 0;
-        page.on('request', (req) => {
-            if (req.url().includes('/plugins/mattermost-ai/artifacts/') && !req.url().endsWith('/token')) {
-                artifactRequests++;
+    // A sandboxed frame may navigate itself, carrying data away in the URL.
+    // The wrapper's frame-src blocks every such navigation before a request
+    // goes out. Chromium then commits an error page into the frame (a second
+    // load) and Firefox fires an error on it; either way the host stops the
+    // artifact. A navigation before the artifact's first load leaves a frame
+    // that never got ready, which the host unloads as a failed load.
+    const selfNavigationCases: Array<{kind: SelfNavigationKind; target: 'exfil host' | 'external server'; outcome: 'stopped' | 'load error'}> = [
+        {kind: 'location.href', target: 'exfil host', outcome: 'stopped'},
+        {kind: 'meta refresh', target: 'exfil host', outcome: 'stopped'},
+        {kind: 'location.replace before load', target: 'exfil host', outcome: 'load error'},
+        {kind: 'link click', target: 'external server', outcome: 'stopped'},
+    ];
+    for (const {kind, target, outcome} of selfNavigationCases) {
+        test(`self-navigation by ${kind} sends no request to the ${target}`, async ({page}) => {
+            test.setTimeout(300000);
+            const context = page.context();
+            const exfilRoutes: string[] = [];
+            await context.route((url) => url.hostname === EXFIL_HOST, (route) => {
+                exfilRoutes.push(route.request().url());
+                return route.fulfill({contentType: 'text/html', body: '<p>exfiltrated</p>'});
+            });
+            const outbound: string[] = [];
+            let contentLoads = 0;
+            context.on('request', (req) => {
+                const url = req.url();
+                if (url.startsWith(`https://${EXFIL_HOST}`) || url.startsWith(externalServer.url)) {
+                    outbound.push(url);
+                }
+                if (ARTIFACT_CONTENT_URL.test(url)) {
+                    contentLoads++;
+                }
+            });
+            const serverRequestsBefore = externalServer.requests.length;
+            const destination = target === 'exfil host' ? EXFIL_URL : `${externalServer.url}?d=secret`;
+            const slug = kind.replace(/[^a-z]+/g, '-');
+
+            const botPost = await postArtifact(page, mattermost, aimock, `navigator-${slug}.html`, selfNavigationHTML(kind, destination), `Here is the ${kind} navigator.`);
+            await runArtifact(botPost);
+
+            const card = botPost.getByTestId('html-artifact-card');
+            const stopped = card.getByTestId('html-artifact-navigation-stopped');
+            if (outcome === 'stopped') {
+                await expect(stopped).toBeVisible({timeout: 30000});
+                await expect(stopped).toHaveAttribute('data-stop-reason', 'navigation');
+                await expect(stopped).toContainText('tried to navigate away');
+            } else {
+                await expect(card.getByText('This artifact could not be loaded.')).toBeVisible({timeout: 30000});
+                await expect(stopped).toHaveCount(0);
             }
+            await expect(artifactWrappers(card)).toHaveCount(0);
+
+            // The host does not remount the frame (which would run the navigation again).
+            await page.waitForTimeout(2000);
+            expect(outbound).toEqual([]);
+            expect(exfilRoutes).toEqual([]);
+            expect(externalServer.requests.length).toBe(serverRequestsBefore);
+            expect(contentLoads).toBe(1);
+            await expect(page.getByTestId('html-artifact-consent')).toHaveCount(0);
         });
-        const navigated = page.waitForRequest((req) => req.url().startsWith(SELF_NAVIGATION_TARGET), {timeout: 180000});
-
-        const botPost = await postArtifact(page, mattermost, aimock, SELF_NAVIGATING_FILE_NAME, SELF_NAVIGATING_HTML, 'Here is the navigator.');
-        await navigated;
-
-        const stopped = botPost.getByTestId('html-artifact-navigation-stopped');
-        await expect(stopped).toBeVisible({timeout: 30000});
-        await expect(artifactIframes(botPost)).toHaveCount(0);
-        expect(artifactRequests).toBe(1);
-        await expect(page.getByTestId('html-artifact-consent')).toHaveCount(0);
-        await expect(stopped).toBeVisible();
-    });
-
-    // A parser-blocking location.replace() swaps the artifact for another
-    // page before the first load event, so the frame-load guard cannot tell.
-    // The replacement does not know the bridge token, so it gets nothing.
-    test('a document that replaces the artifact before load gets no broker access', async ({page}) => {
-        test.setTimeout(300000);
-        await page.context().route(`${REPLACEMENT_TARGET}**`, (route) => {
-            return route.fulfill({contentType: 'text/html', body: REPLACEMENT_IMPOSTOR_HTML});
-        });
-        const botPost = await postArtifact(page, mattermost, aimock, REPLACING_FILE_NAME, REPLACING_HTML, 'Here is the replacer.');
-
-        const iframe = artifactIframes(botPost).first();
-        const frame = iframe.contentFrame();
-        await expect(frame.getByTestId('impostor-sent')).toHaveText('sent', {timeout: 30000});
-
-        await expect(frame.getByTestId('impostor-received')).toHaveText('');
-
-        // The host never accepts a ready: it unloads the frame and shows the load error.
-        await expect(botPost.getByTestId('html-artifact-card').getByText('This artifact could not be loaded.')).toBeVisible({timeout: 30000});
-        await expect(artifactIframes(botPost)).toHaveCount(0);
-        await expect(page.getByTestId('html-artifact-consent')).toHaveCount(0);
-    });
+    }
 
     test('artifact code cannot read the bridge token or intercept its messages', async ({page}) => {
         test.setTimeout(300000);
         const botPost = await postArtifact(page, mattermost, aimock, TOKEN_PROBE_FILE_NAME, TOKEN_PROBE_HTML, 'Here is the probe.');
-        const iframe = artifactIframes(botPost).first();
-        const frame = iframe.contentFrame();
+        const contentResponse = page.waitForResponse((r) => ARTIFACT_CONTENT_URL.test(r.url()), {timeout: 60000});
+        await runArtifact(botPost);
+        const iframe = artifactWrappers(botPost).first();
+        const frame = artifactFrame(iframe);
+
+        // The served artifact denies itself connections and powerful features.
+        const headers = await (await contentResponse).allHeaders();
+        expect(headers['connection-allowlist']).toBe('()');
+        expect(headers['permissions-policy']).toContain('camera=()');
+        expect(headers['content-security-policy']).toContain("default-src 'none'");
 
         // The host still talks to the genuine bridge: the frame becomes ready (visible).
         await expect(frame.getByRole('heading', {name: 'Token probe'})).toBeVisible({timeout: 30000});
         await expect(frame.getByTestId('probe-recorded')).not.toHaveText('', {timeout: 15000});
 
-        const src = await iframe.getAttribute('src');
-        const fileId = src!.split('/artifacts/')[1].split(/[/?]/)[0];
-        const res = await page.request.get(`${mattermost.url()}/plugins/mattermost-ai/artifacts/${fileId}/token`, {
-            headers: {'X-Requested-With': 'XMLHttpRequest'},
-        });
+        // The token is bound to this viewer, file and frame load (nonce), so
+        // asking for it with the frame's nonce returns the frame's token.
+        const [, fileId, nonce] = ARTIFACT_CONTENT_URL.exec((await artifactContentIframe(iframe).getAttribute('src'))!)!;
+        const tokenURL = `${mattermost.url()}/plugins/mattermost-ai/artifacts/${fileId}/token`;
+        const res = await page.request.get(`${tokenURL}?n=${nonce}`, {headers: {'X-Requested-With': 'XMLHttpRequest'}});
         expect(res.ok()).toBe(true);
         const {token} = await res.json();
         expect(typeof token).toBe('string');
         expect(token.length).toBeGreaterThan(20);
+
+        // Both routes require exactly one well-formed nonce.
+        for (const query of ['', '?n=short', `?n=${nonce}&n=${nonce}`, `?n=${nonce}&x=1`]) {
+            const tokenRes = await page.request.get(`${tokenURL}${query}`, {headers: {'X-Requested-With': 'XMLHttpRequest'}});
+            expect(tokenRes.status(), `token${query}`).toBe(400);
+        }
 
         // The shadowed window.parent only ever saw the artifact's own message.
         const recorded = await frame.getByTestId('probe-recorded').textContent();
@@ -457,9 +489,10 @@ test.describe('HTML artifacts', () => {
         expect(dom).toContain('Token probe');
         expect(dom).not.toContain(token);
 
-        // Opening the artifact URL top-level (outside the host's frame) shows a
-        // static interstitial, never the artifact itself.
-        await page.goto(`${mattermost.url()}/plugins/mattermost-ai/artifacts/${fileId}`);
+        // Opening the artifact URL top-level (outside the host's frame), even
+        // with the frame's own nonce, shows a static interstitial, never the
+        // artifact itself.
+        await page.goto(`${mattermost.url()}/plugins/mattermost-ai/artifacts/${fileId}?n=${nonce}`);
         await expect(page.getByText('This AI-generated artifact can only be viewed inside Mattermost.')).toBeVisible();
         await expect(page.getByText('Token probe')).toHaveCount(0);
         expect(await page.content()).not.toContain(token);
@@ -471,17 +504,18 @@ test.describe('HTML artifacts', () => {
     test('an artifact that grabs keyboard focus is stopped and the message box keeps what is typed', async ({page}) => {
         test.setTimeout(300000);
         let exfiltrations = 0;
-        await page.context().route(`${FOCUS_THIEF_EXFIL}**`, (route) => {
+        await page.context().route((url) => url.hostname === EXFIL_HOST, (route) => {
             exfiltrations++;
             return route.fulfill({contentType: 'text/plain', body: ''});
         });
 
         const botPost = await postArtifact(page, mattermost, aimock, FOCUS_THIEF_FILE_NAME, FOCUS_THIEF_HTML, 'Here is the quarterly dashboard.');
+        await runArtifact(botPost);
         const stopped = botPost.getByTestId('html-artifact-navigation-stopped');
         await expect(stopped).toBeVisible({timeout: 60000});
         await expect(stopped).toHaveAttribute('data-stop-reason', 'focus');
         await expect(stopped).toContainText('tried to take keyboard focus');
-        await expect(artifactIframes(botPost)).toHaveCount(0);
+        await expect(artifactWrappers(botPost)).toHaveCount(0);
         expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe('IFRAME');
 
         const composer = new MattermostPage(page).postTextbox;
@@ -495,29 +529,10 @@ test.describe('HTML artifacts', () => {
         expect(exfiltrations).toBe(0);
     });
 
-    // A navigation whose response never finishes fires no second load event,
-    // so the load guard cannot see it; the bridge's heartbeat stops, though.
-    test('an artifact that navigates to a page that never finishes loading is hidden, then unloaded', async ({page}) => {
-        test.setTimeout(300000);
-        const botPost = await postArtifact(page, mattermost, aimock, HUNG_NAVIGATION_FILE_NAME, hungNavigationHTML(hungServer.url), 'Here is the report.');
-        const iframe = artifactIframes(botPost).first();
-        await expect(artifactFrame(iframe).getByRole('heading', {name: 'Loading report'})).toBeVisible({timeout: 60000});
-        await hungServer.requested;
-
-        await expect(botPost.getByTestId('html-artifact-unresponsive')).toBeVisible({timeout: 10000});
-        await expect(iframe).toBeHidden();
-
-        const stopped = botPost.getByTestId('html-artifact-navigation-stopped');
-        await expect(stopped).toBeVisible({timeout: 20000});
-        await expect(stopped).toHaveAttribute('data-stop-reason', 'unresponsive');
-        await expect(artifactIframes(botPost)).toHaveCount(0);
-        await expect.poll(() => page.frames().some((f) => f.url().startsWith(hungServer.url)), {timeout: 10000}).toBe(false);
-    });
-
     // Loading an artifact runs agent-written code for whoever sees the post
-    // (view tracking, prompt-injected exfiltration). Only the requester's view
-    // runs it by itself.
-    test('other viewers see Run and no frame until they click it; the requester\'s view runs by itself', async ({page, browser}) => {
+    // (view tracking, prompt-injected exfiltration), so no viewer's page runs
+    // it by itself, not even the requester's.
+    test('every viewer, the requester included, sees Run and no frame until they run it', async ({page, browser}) => {
         test.setTimeout(300000);
         const prompt = `shared dashboard ${Date.now()}`;
         const finalText = `Here is the shared dashboard ${Date.now()}.`;
@@ -534,6 +549,12 @@ test.describe('HTML artifacts', () => {
 
         // The requester asks in a channel the other viewer can read.
         const channelURL = `${mattermost.url()}/test/channels/off-topic`;
+        const requesterArtifactRequests: string[] = [];
+        page.on('request', (req) => {
+            if (req.url().includes('/plugins/mattermost-ai/artifacts/')) {
+                requesterArtifactRequests.push(req.url());
+            }
+        });
         const requester = new MattermostPage(page);
         await requester.login(mattermost.url(), username, password);
         await page.goto(channelURL);
@@ -542,8 +563,29 @@ test.describe('HTML artifacts', () => {
         const requesterPost = page.locator('#postListContent [data-testid="llm-bot-post"]').filter({hasText: finalText});
         await expect(requesterPost).toBeVisible({timeout: 120000});
         const requesterCard = requesterPost.getByTestId('html-artifact-card');
-        await expect(artifactFrame(artifactIframes(requesterCard).first()).getByRole('heading', {name: 'Sprint 42 dashboard'})).toBeVisible({timeout: 60000});
-        await expect(requesterCard.getByTestId('html-artifact-run-placeholder')).toHaveCount(0);
+        const requesterPlaceholder = requesterCard.getByTestId('html-artifact-run-placeholder');
+        await expect(requesterPlaceholder).toBeVisible({timeout: 60000});
+        await expect(requesterPlaceholder).toContainText('runs code only when you choose');
+        await expect(requesterCard.getByTestId('html-artifact-reload')).toHaveCount(0);
+
+        // Still nothing a while later: the placeholder is not a loading state.
+        await page.waitForTimeout(3000);
+        await expect(requesterCard.getByTestId('html-artifact-frame')).toHaveCount(0);
+        expect(requesterArtifactRequests).toEqual([]);
+
+        await runArtifact(requesterPost);
+        await expect(artifactFrame(artifactWrappers(requesterCard).first()).getByRole('heading', {name: 'Sprint 42 dashboard'})).toBeVisible({timeout: 60000});
+
+        // One host load: a token and the document, under the same nonce.
+        const tokenLoads = requesterArtifactRequests.map((u) => ARTIFACT_TOKEN_URL.exec(u)).filter((m) => m !== null);
+        const contentLoads = requesterArtifactRequests.map((u) => ARTIFACT_CONTENT_URL.exec(u)).filter((m) => m !== null);
+        expect(tokenLoads).toHaveLength(1);
+        expect(contentLoads).toHaveLength(1);
+        expect(contentLoads[0]![1]).toBe(tokenLoads[0]![1]);
+        expect(contentLoads[0]![2]).toBe(tokenLoads[0]![2]);
+
+        // Clicking Run authorises loading, not keyboard focus.
+        await expect(requesterCard.getByTestId('html-artifact-frame')).toHaveAttribute('data-engaged', 'false');
         await expect(requesterCard.getByTestId('html-artifact-interact')).toBeVisible();
 
         const viewerContext = await browser.newContext({viewport: {width: 1440, height: 900}, permissions: ['notifications']});
@@ -566,17 +608,21 @@ test.describe('HTML artifacts', () => {
             await expect(viewerCard.getByTestId('html-artifact-notice')).toBeVisible();
             await expect(viewerCard.getByTestId('html-artifact-reload')).toHaveCount(0);
 
-            // Still nothing a while later: the placeholder is not a loading state.
             await viewerPage.waitForTimeout(3000);
-            await expect(artifactIframes(viewerCard)).toHaveCount(0);
+            await expect(viewerCard.getByTestId('html-artifact-frame')).toHaveCount(0);
             expect(artifactRequests).toBe(0);
 
-            await viewerCard.getByTestId('html-artifact-run').click();
-            const viewerFrame = artifactFrame(artifactIframes(viewerCard).first());
+            // Opening fullscreen also runs it, inline as well.
+            await viewerCard.getByTestId('html-artifact-open-fullscreen').click();
+            const viewer = viewerPage.getByTestId('html-artifact-fullscreen');
+            await expect(viewer).toBeVisible({timeout: 15000});
+            await expect(artifactFrame(artifactWrappers(viewer).first()).getByRole('heading', {name: 'Sprint 42 dashboard'})).toBeVisible({timeout: 30000});
+            await viewer.getByTestId('html-artifact-fullscreen-close').click();
+            await expect(viewer).not.toBeVisible();
+
+            const viewerFrame = artifactFrame(artifactWrappers(viewerCard).first());
             await expect(viewerFrame.getByRole('heading', {name: 'Sprint 42 dashboard'})).toBeVisible({timeout: 30000});
             await expect(placeholder).toHaveCount(0);
-
-            // Clicking Run authorises loading, not keyboard focus.
             await expect(viewerCard.getByTestId('html-artifact-frame')).toHaveAttribute('data-engaged', 'false');
             await engageArtifact(viewerCard);
             await viewerFrame.getByRole('button', {name: /Kudos/}).click();
@@ -591,8 +637,8 @@ test.describe('HTML artifacts', () => {
         await setUserTheme(mattermost, username, password, ONYX_THEME);
         try {
             await askForArtifact(page, mattermost, aimock, `dark dashboard ${Date.now()}`);
-            const {iframe} = await openArtifactInBotDM(page, mattermost);
-            const frame = iframe.contentFrame();
+            const {card, iframe} = await openArtifactInBotDM(page);
+            const frame = artifactFrame(iframe);
             await expect(frame.getByRole('heading', {name: 'Sprint 42 dashboard'})).toBeVisible({timeout: 30000});
             // Theme variables reach the artifact via the context message.
             await expect.poll(async () => frame.locator('html').evaluate(
@@ -600,10 +646,10 @@ test.describe('HTML artifacts', () => {
             ), {timeout: 15000}).toBe(ONYX_THEME.centerChannelBg);
             await shot(page, '05-inline-card-dark');
 
-            await page.getByTestId('html-artifact-open-fullscreen').last().click();
+            await card.getByTestId('html-artifact-open-fullscreen').click();
             const viewer = page.getByTestId('html-artifact-fullscreen');
             await expect(viewer).toBeVisible({timeout: 15000});
-            const fullFrame = artifactIframes(viewer).first().contentFrame();
+            const fullFrame = artifactFrame(artifactWrappers(viewer).first());
             await expect(fullFrame.getByTestId('fullscreen-details')).toBeVisible({timeout: 30000});
             await shot(page, '06-fullscreen-dark');
             await viewer.getByTestId('html-artifact-fullscreen-close').click();
