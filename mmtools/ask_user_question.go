@@ -52,13 +52,6 @@ type AskUserQuestionResult struct {
 	Custom   string   `json:"custom,omitempty"`
 }
 
-// UserInteractionAnswer is a user's answer to a pending user-interaction tool
-// call: the predefined option labels picked, plus optional free-form text.
-type UserInteractionAnswer struct {
-	Selected []string `json:"selected"`
-	Custom   string   `json:"custom,omitempty"`
-}
-
 // NewAskUserQuestionTool returns the built-in question tool. The resolver is
 // an error backstop: the call is answered through the tool-approval flow
 // (Conversations.HandleToolCall), never executed server-side.
@@ -75,48 +68,6 @@ func NewAskUserQuestionTool() llm.Tool {
 		Resolver: func(_ context.Context, _ *llm.Context, _ llm.ToolArgumentGetter) (string, error) {
 			return "", errors.New("AskUserQuestion must be answered by the user and cannot be executed directly")
 		},
-	}
-}
-
-// UserInteractionResult is the tool result recorded for an accepted
-// interaction tool call. IsError marks an accepted call whose outcome failed,
-// such as a connect the user did not complete.
-type UserInteractionResult struct {
-	Content string
-	IsError bool
-}
-
-// MCPServerOriginLookup resolves a configured MCP server name to its tool
-// origin.
-type MCPServerOriginLookup func(serverName string) (origin string, ok bool)
-
-// ResolveUserInteractionAnswer turns a user's acceptance of a pending
-// interaction tool call into the tool result. kind is the block's
-// UserInteraction value, input the tool_use block's original arguments, and
-// answer the structured selection (predefined labels plus optional free-form
-// text). Connect calls carry no answer; their result is derived from
-// llmContext, the tool context rebuilt after the user's click, using
-// serverOrigin to find the connected server's tools.
-func ResolveUserInteractionAnswer(kind string, input json.RawMessage, answer UserInteractionAnswer, llmContext *llm.Context, serverOrigin MCPServerOriginLookup) (UserInteractionResult, error) {
-	switch kind {
-	case llm.UserInteractionSelect:
-		content, err := resolveAskUserQuestionAnswer(input, answer)
-		return UserInteractionResult{Content: content}, err
-	case llm.UserInteractionConnect:
-		return resolveConnectMCPServerAccepted(input, llmContext, serverOrigin)
-	default:
-		return UserInteractionResult{}, fmt.Errorf("unknown user interaction kind %q", kind)
-	}
-}
-
-// UserInteractionSkippedResult is the tool result recorded when the user
-// skips a pending interaction tool call instead of accepting it.
-func UserInteractionSkippedResult(kind string, input json.RawMessage) string {
-	switch kind {
-	case llm.UserInteractionConnect:
-		return connectMCPServerSkippedResult(input)
-	default:
-		return "User skipped the question"
 	}
 }
 

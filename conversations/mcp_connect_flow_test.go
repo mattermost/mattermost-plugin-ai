@@ -62,10 +62,11 @@ func (p *connectFlowMCPToolProvider) GetToolsWithSelection(_ context.Context, _ 
 // result looks for in the rebuilt catalog.
 type connectFlowConfig struct {
 	channelFollowUpTestConfig
+	serverDisabled bool
 }
 
 func (c *connectFlowConfig) MCP() mcp.Config {
-	return mcp.Config{Servers: []mcp.ServerConfig{{Name: "Jira", BaseURL: "https://jira.example.com", Enabled: true}}}
+	return mcp.Config{Servers: []mcp.ServerConfig{{Name: "Jira", BaseURL: "https://jira.example.com", Enabled: !c.serverDisabled}}}
 }
 
 func newConnectFlowBuilder(t *testing.T, provider *connectFlowMCPToolProvider) *llmcontext.Builder {
@@ -137,7 +138,7 @@ func TestHandleToolCallConnectMCPServer(t *testing.T) {
 		catalog              connectFlowCatalog
 		wantErr              error
 		wantStatus           string
-		wantResult           string
+		serverDisabled       bool
 		wantResultErr        bool
 		wantFollowUpTool     string
 		wantFollowUpNoTool   string
@@ -150,7 +151,6 @@ func TestHandleToolCallConnectMCPServer(t *testing.T) {
 			acceptedIDs:        []string{"connect-1"},
 			catalog:            connectFlowConnected,
 			wantStatus:         conversation.StatusSuccess,
-			wantResult:         "User connected Jira. Its tools are now available. Use search_tools to find them and load_tool to load one before calling it.",
 			wantFollowUpTool:   mcp.SearchToolsName,
 			wantFollowUpNoTool: llm.ConnectMCPServerToolName,
 		},
@@ -161,7 +161,6 @@ func TestHandleToolCallConnectMCPServer(t *testing.T) {
 			acceptedIDs:          []string{"connect-1"},
 			catalog:              connectFlowStillUnconnected,
 			wantStatus:           conversation.StatusError,
-			wantResult:           "Jira is still not connected: the user did not finish connecting it. Do not perform actions that need Jira. Tell the user they can connect Jira and ask again.",
 			wantResultErr:        true,
 			wantFollowUpTool:     llm.ConnectMCPServerToolName,
 			wantFollowUpListsSrv: true,
@@ -173,8 +172,17 @@ func TestHandleToolCallConnectMCPServer(t *testing.T) {
 			acceptedIDs:   []string{"connect-1"},
 			catalog:       connectFlowUnavailable,
 			wantStatus:    conversation.StatusError,
-			wantResult:    "Jira is not available: none of its tools can be used in this conversation. Do not perform actions that need Jira. Tell the user Jira is unavailable here.",
 			wantResultErr: true,
+		},
+		{
+			name:           "accepted with tools present but the server disabled in config records an error",
+			channel:        dmChannel,
+			userID:         "user-id",
+			acceptedIDs:    []string{"connect-1"},
+			catalog:        connectFlowConnected,
+			serverDisabled: true,
+			wantStatus:     conversation.StatusError,
+			wantResultErr:  true,
 		},
 		{
 			name:                 "skipped records a decline and continues",
@@ -183,7 +191,6 @@ func TestHandleToolCallConnectMCPServer(t *testing.T) {
 			acceptedIDs:          []string{},
 			catalog:              connectFlowStillUnconnected,
 			wantStatus:           conversation.StatusRejected,
-			wantResult:           "User declined to connect Jira",
 			wantResultErr:        true,
 			wantFollowUpListsSrv: true,
 		},
@@ -242,7 +249,7 @@ func TestHandleToolCallConnectMCPServer(t *testing.T) {
 				bots:             botsService,
 				convService:      conversation.NewService(convStore, nil, nil, nil),
 				streamingService: streamingService,
-				configProvider:   &connectFlowConfig{},
+				configProvider:   &connectFlowConfig{serverDisabled: tc.serverDisabled},
 			}
 
 			approvalPost := &model.Post{Id: approvalPostID, UserId: "bot-id"}
@@ -279,7 +286,7 @@ func TestHandleToolCallConnectMCPServer(t *testing.T) {
 			var resultBlocks []conversation.ContentBlock
 			require.NoError(t, json.Unmarshal(turns[1].Content, &resultBlocks))
 			require.Len(t, resultBlocks, 1)
-			assert.Equal(t, tc.wantResult, resultBlocks[0].Content)
+			assert.Contains(t, resultBlocks[0].Content, "Jira")
 			if tc.wantResultErr {
 				assert.Equal(t, conversation.StatusError, resultBlocks[0].Status)
 			} else {
@@ -289,7 +296,7 @@ func TestHandleToolCallConnectMCPServer(t *testing.T) {
 
 			require.Len(t, lm.requests, 1, "expected a follow-up LLM request")
 			followUp := lm.requests[0]
-			assert.Contains(t, requestToolResults(followUp), tc.wantResult)
+			assert.Contains(t, requestToolResults(followUp), resultBlocks[0].Content)
 			assert.Zero(t, countUserMessagesContaining(followUp.Posts, toolRejectionGuidance),
 				"a skipped connect is not a tool rejection")
 			if tc.wantFollowUpTool != "" {

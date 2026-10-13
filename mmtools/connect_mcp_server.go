@@ -11,10 +11,8 @@ import (
 	"strings"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
+	"github.com/mattermost/mattermost-plugin-agents/v2/mcp"
 )
-
-// ConnectMCPServerToolName is the runtime name of the built-in connect tool.
-const ConnectMCPServerToolName = llm.ConnectMCPServerToolName
 
 const connectMCPServerDescription = "Ask the requesting user to connect (sign in to) an MCP server they have not connected yet, so its tools become available. " +
 	"Call this when the user's request needs one of the servers listed below instead of saying the capability does not exist. " +
@@ -45,7 +43,7 @@ func NewConnectMCPServerTool(servers []llm.UnconnectedMCPServer) llm.Tool {
 	}
 
 	return llm.Tool{
-		Name:            ConnectMCPServerToolName,
+		Name:            llm.ConnectMCPServerToolName,
 		Description:     connectMCPServerToolDescription(servers),
 		Schema:          schema,
 		UserInteraction: llm.UserInteractionConnect,
@@ -83,14 +81,15 @@ func connectMCPServerToolDescription(servers []llm.UnconnectedMCPServer) string 
 
 // resolveConnectMCPServerAccepted computes the tool result for an accepted
 // connect call from the catalog rebuilt after the user's click. The server
-// counts as connected only when its tools are actually available there;
-// merely dropping off the unconnected list (e.g. an admin disabled it) is not
-// enough.
-func resolveConnectMCPServerAccepted(input json.RawMessage, llmContext *llm.Context, serverOrigin MCPServerOriginLookup) (UserInteractionResult, error) {
+// counts as connected only when tools from env.ConnectServerOrigin are
+// actually available there; merely dropping off the unconnected list (e.g. an
+// admin disabled it) is not enough.
+func resolveConnectMCPServerAccepted(input json.RawMessage, env UserInteractionEnv) (UserInteractionResult, error) {
 	args, err := parseConnectMCPServerArgs(input)
 	if err != nil {
 		return UserInteractionResult{}, err
 	}
+	llmContext := env.Context
 	if llmContext == nil {
 		return UserInteractionResult{}, errors.New("connect result requires the rebuilt tool context")
 	}
@@ -104,7 +103,7 @@ func resolveConnectMCPServerAccepted(input json.RawMessage, llmContext *llm.Cont
 		}, nil
 	}
 
-	if !connectedServerToolsAvailable(llmContext, args.Server, serverOrigin) {
+	if env.ConnectServerOrigin == "" || llmContext.Tools == nil || !llmContext.Tools.HasMCPToolsFromOrigin(env.ConnectServerOrigin) {
 		return UserInteractionResult{
 			Content: fmt.Sprintf("%s is not available: none of its tools can be used in this conversation. "+
 				"Do not perform actions that need %s. Tell the user %s is unavailable here.",
@@ -114,21 +113,10 @@ func resolveConnectMCPServerAccepted(input json.RawMessage, llmContext *llm.Cont
 	}
 
 	content := fmt.Sprintf("User connected %s. Its tools are now available.", args.Server)
-	if llmContext.ToolCatalog.MCPDynamicToolLoading && llmContext.IsToolCallable("search_tools") {
-		content += " Use search_tools to find them and load_tool to load one before calling it."
+	if llmContext.ToolCatalog.MCPDynamicToolLoading && llmContext.IsToolCallable(mcp.SearchToolsName) {
+		content += fmt.Sprintf(" Use %s to find them and %s to load one before calling it.", mcp.SearchToolsName, mcp.LoadToolName)
 	}
 	return UserInteractionResult{Content: content}, nil
-}
-
-func connectedServerToolsAvailable(llmContext *llm.Context, serverName string, serverOrigin MCPServerOriginLookup) bool {
-	if serverOrigin == nil || llmContext.Tools == nil {
-		return false
-	}
-	origin, ok := serverOrigin(serverName)
-	if !ok {
-		return false
-	}
-	return llmContext.Tools.HasMCPToolsFromOrigin(origin)
 }
 
 // connectMCPServerSkippedResult is the tool result for a skipped connect call.

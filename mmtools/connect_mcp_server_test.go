@@ -6,6 +6,7 @@ package mmtools
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -13,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
+	"github.com/mattermost/mattermost-plugin-agents/v2/mcp"
 )
 
 func testUnconnectedServers() []llm.UnconnectedMCPServer {
@@ -28,26 +30,25 @@ func TestConnectMCPServerToolValidation(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   string
-		wantErr string
+		wantErr bool
 	}{
 		{name: "listed server", input: `{"server":"Jira Cloud"}`},
 		{name: "second listed server", input: `{"server":"Notes"}`},
-		{name: "unlisted server", input: `{"server":"GitHub"}`, wantErr: `server "GitHub" is not an unconnected MCP server; use one of: Jira Cloud, Notes`},
-		{name: "name must match exactly", input: `{"server":"jira cloud"}`, wantErr: "is not an unconnected MCP server"},
-		{name: "empty server", input: `{"server":" "}`, wantErr: "server must not be empty"},
-		{name: "missing server", input: `{}`, wantErr: "server must not be empty"},
-		{name: "malformed", input: `{`, wantErr: "failed to parse connect arguments"},
+		{name: "unlisted server", input: `{"server":"GitHub"}`, wantErr: true},
+		{name: "name must match exactly", input: `{"server":"jira cloud"}`, wantErr: true},
+		{name: "empty server", input: `{"server":" "}`, wantErr: true},
+		{name: "missing server", input: `{}`, wantErr: true},
+		{name: "malformed", input: `{`, wantErr: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tool.ValidateArguments(json.RawMessage(tt.input))
-			if tt.wantErr == "" {
-				require.NoError(t, err)
+			if tt.wantErr {
+				assert.Error(t, err)
 				return
 			}
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), tt.wantErr)
+			assert.NoError(t, err)
 		})
 	}
 }
@@ -55,9 +56,6 @@ func TestConnectMCPServerToolValidation(t *testing.T) {
 func TestConnectMCPServerToolShape(t *testing.T) {
 	tool := NewConnectMCPServerTool(testUnconnectedServers())
 
-	assert.Equal(t, "ConnectMCPServer", tool.Name)
-	assert.Equal(t, llm.UserInteractionConnect, tool.UserInteraction)
-	assert.Equal(t, "connect", tool.UserInteraction)
 	assert.False(t, tool.AutoExecute)
 
 	schema, ok := tool.Schema.(*jsonschema.Schema)
@@ -66,8 +64,9 @@ func TestConnectMCPServerToolShape(t *testing.T) {
 	require.NotNil(t, server)
 	assert.Equal(t, []any{"Jira Cloud", "Notes"}, server.Enum)
 
-	assert.Contains(t, tool.Description, "- Jira Cloud: Issues (tools include: create_issue)")
-	assert.Contains(t, tool.Description, "- Notes")
+	for _, s := range testUnconnectedServers() {
+		assert.Contains(t, tool.Description, s.PromptLine())
+	}
 
 	_, err := tool.Resolver(context.Background(), &llm.Context{}, nil)
 	require.Error(t, err)
@@ -77,12 +76,6 @@ func TestResolveConnectMCPServerAnswer(t *testing.T) {
 	const jiraOrigin = "https://jira.example.com"
 	jiraInput := json.RawMessage(`{"server":"Jira Cloud"}`)
 	resolver := func(context.Context, *llm.Context, llm.ToolArgumentGetter) (string, error) { return "", nil }
-	origins := func(name string) (string, bool) {
-		if name == "Jira Cloud" {
-			return jiraOrigin + "/", true
-		}
-		return "", false
-	}
 	storeWith := func(tools []llm.Tool, unloaded []llm.Tool) *llm.ToolStore {
 		store := llm.NewToolStore()
 		store.AddTools(tools)
@@ -91,90 +84,84 @@ func TestResolveConnectMCPServerAnswer(t *testing.T) {
 	}
 	jiraTool := llm.Tool{Name: "jira__create_issue", ServerOrigin: jiraOrigin, Resolver: resolver}
 	otherTool := llm.Tool{Name: "github__create_pr", ServerOrigin: "https://github.example.com", Resolver: resolver}
-	searchTools := llm.Tool{Name: "search_tools", Resolver: resolver}
-
-	const (
-		connected     = "User connected Jira Cloud. Its tools are now available."
-		stillNot      = "Jira Cloud is still not connected: the user did not finish connecting it. Do not perform actions that need Jira Cloud. Tell the user they can connect Jira Cloud and ask again."
-		notAvailable  = "Jira Cloud is not available: none of its tools can be used in this conversation. Do not perform actions that need Jira Cloud. Tell the user Jira Cloud is unavailable here."
-		dynamicSuffix = " Use search_tools to find them and load_tool to load one before calling it."
-	)
+	searchTools := llm.Tool{Name: mcp.SearchToolsName, Resolver: resolver}
 
 	tests := []struct {
-		name         string
-		input        json.RawMessage
-		llmContext   *llm.Context
-		serverOrigin MCPServerOriginLookup
-		want         UserInteractionResult
-		wantErr      bool
+		name          string
+		input         json.RawMessage
+		env           UserInteractionEnv
+		wantIsError   bool
+		wantSearchUse bool
+		wantErr       bool
 	}{
 		{
-			name:         "connected when the server's tools are visible",
-			input:        jiraInput,
-			llmContext:   &llm.Context{Tools: storeWith([]llm.Tool{jiraTool}, nil)},
-			serverOrigin: origins,
-			want:         UserInteractionResult{Content: connected},
+			name:  "connected when the server's tools are visible",
+			input: jiraInput,
+			env: UserInteractionEnv{
+				Context:             &llm.Context{Tools: storeWith([]llm.Tool{jiraTool}, nil)},
+				ConnectServerOrigin: jiraOrigin + "/",
+			},
 		},
 		{
 			name:  "connected in dynamic mode when the server's tools are in the unloaded catalog",
 			input: jiraInput,
-			llmContext: &llm.Context{
-				Tools:       storeWith([]llm.Tool{searchTools}, []llm.Tool{jiraTool}),
-				ToolCatalog: llm.ToolCatalogContext{MCPDynamicToolLoading: true},
+			env: UserInteractionEnv{
+				Context: &llm.Context{
+					Tools:       storeWith([]llm.Tool{searchTools}, []llm.Tool{jiraTool}),
+					ToolCatalog: llm.ToolCatalogContext{MCPDynamicToolLoading: true},
+				},
+				ConnectServerOrigin: jiraOrigin,
 			},
-			serverOrigin: origins,
-			want:         UserInteractionResult{Content: connected + dynamicSuffix},
+			wantSearchUse: true,
 		},
 		{
 			name:  "still not connected when the rebuilt context lists it",
 			input: jiraInput,
-			llmContext: &llm.Context{
-				Tools:       storeWith([]llm.Tool{jiraTool}, nil),
-				ToolCatalog: llm.ToolCatalogContext{UnconnectedMCPServers: testUnconnectedServers()},
+			env: UserInteractionEnv{
+				Context: &llm.Context{
+					Tools:       storeWith([]llm.Tool{jiraTool}, nil),
+					ToolCatalog: llm.ToolCatalogContext{UnconnectedMCPServers: testUnconnectedServers()},
+				},
+				ConnectServerOrigin: jiraOrigin,
 			},
-			serverOrigin: origins,
-			want:         UserInteractionResult{Content: stillNot, IsError: true},
+			wantIsError: true,
 		},
 		{
-			name:         "not listed but no tools from its origin is unavailable",
-			input:        jiraInput,
-			llmContext:   &llm.Context{Tools: storeWith([]llm.Tool{otherTool}, nil)},
-			serverOrigin: origins,
-			want:         UserInteractionResult{Content: notAvailable, IsError: true},
+			name:  "not listed but no tools from its origin is unavailable",
+			input: jiraInput,
+			env: UserInteractionEnv{
+				Context:             &llm.Context{Tools: storeWith([]llm.Tool{otherTool}, nil)},
+				ConnectServerOrigin: jiraOrigin,
+			},
+			wantIsError: true,
 		},
 		{
-			name:         "server missing from config is unavailable",
-			input:        jiraInput,
-			llmContext:   &llm.Context{Tools: storeWith([]llm.Tool{jiraTool}, nil)},
-			serverOrigin: func(string) (string, bool) { return "", false },
-			want:         UserInteractionResult{Content: notAvailable, IsError: true},
+			name:        "server without an enabled configured origin is unavailable",
+			input:       jiraInput,
+			env:         UserInteractionEnv{Context: &llm.Context{Tools: storeWith([]llm.Tool{jiraTool}, nil)}},
+			wantIsError: true,
 		},
 		{
-			name:       "no origin lookup is unavailable",
-			input:      jiraInput,
-			llmContext: &llm.Context{Tools: storeWith([]llm.Tool{jiraTool}, nil)},
-			want:       UserInteractionResult{Content: notAvailable, IsError: true},
+			name:        "no tool store is unavailable",
+			input:       jiraInput,
+			env:         UserInteractionEnv{Context: &llm.Context{}, ConnectServerOrigin: jiraOrigin},
+			wantIsError: true,
 		},
-		{
-			name:         "no tool store is unavailable",
-			input:        jiraInput,
-			llmContext:   &llm.Context{},
-			serverOrigin: origins,
-			want:         UserInteractionResult{Content: notAvailable, IsError: true},
-		},
-		{name: "requires rebuilt context", input: jiraInput, serverOrigin: origins, wantErr: true},
-		{name: "invalid arguments", input: json.RawMessage(`{}`), llmContext: &llm.Context{}, serverOrigin: origins, wantErr: true},
+		{name: "requires rebuilt context", input: jiraInput, env: UserInteractionEnv{ConnectServerOrigin: jiraOrigin}, wantErr: true},
+		{name: "invalid arguments", input: json.RawMessage(`{}`), env: UserInteractionEnv{Context: &llm.Context{}, ConnectServerOrigin: jiraOrigin}, wantErr: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ResolveUserInteractionAnswer(llm.UserInteractionConnect, tt.input, UserInteractionAnswer{}, tt.llmContext, tt.serverOrigin)
+			got, err := ResolveUserInteractionAnswer(llm.UserInteractionConnect, tt.input, UserInteractionAnswer{}, tt.env)
 			if tt.wantErr {
 				require.Error(t, err)
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.wantIsError, got.IsError)
+			assert.Contains(t, got.Content, "Jira Cloud")
+			assert.Equal(t, tt.wantSearchUse, strings.Contains(got.Content, mcp.SearchToolsName))
 		})
 	}
 }

@@ -145,7 +145,7 @@ func TestUnconnectedMCPServerByName(t *testing.T) {
 func TestToolStoreHasMCPToolsFromOrigin(t *testing.T) {
 	resolver := func(context.Context, *Context, ToolArgumentGetter) (string, error) { return "", nil }
 	jira := Tool{Name: "jira__create_issue", ServerOrigin: "https://jira.example.com", Resolver: resolver}
-	builtin := Tool{Name: "ConnectMCPServer", Resolver: resolver}
+	builtin := Tool{Name: ConnectMCPServerToolName, Resolver: resolver}
 
 	tests := []struct {
 		name     string

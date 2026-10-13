@@ -54,8 +54,8 @@ func TestStandardPersonalityWithoutLocaleWhitespaceGating(t *testing.T) {
 		{name: "tools_without_websearch", tools: buildToolStore("ReadPost")},
 		{name: "tools_with_websearch", tools: buildToolStore("WebSearch")},
 		{name: "tools_with_dynamic_mcp_meta_tools", tools: buildToolStore("search_tools", "load_tool"), mcpDynamicToolLoading: true},
-		{name: "tools_with_unconnected_mcp_servers", tools: buildToolStore("ReadPost", "ConnectMCPServer"), unconnected: testUnconnectedMCPServers()},
-		{name: "tools_with_dynamic_unconnected_mcp_servers", tools: buildToolStore("search_tools", "load_tool", "ConnectMCPServer"), mcpDynamicToolLoading: true, unconnected: testUnconnectedMCPServers()},
+		{name: "tools_with_unconnected_mcp_servers", tools: buildToolStore("ReadPost", llm.ConnectMCPServerToolName), unconnected: testUnconnectedMCPServers()},
+		{name: "tools_with_dynamic_unconnected_mcp_servers", tools: buildToolStore("search_tools", "load_tool", llm.ConnectMCPServerToolName), mcpDynamicToolLoading: true, unconnected: testUnconnectedMCPServers()},
 	}
 	channelModes := []struct {
 		name    string
@@ -350,7 +350,7 @@ func TestStandardPersonalitySandboxFileGuidance(t *testing.T) {
 func TestStandardPersonalityUnconnectedMCPServers(t *testing.T) {
 	const guidance = "integration listed in the ConnectMCPServer tool"
 	connectTool := llm.Tool{
-		Name:            "ConnectMCPServer",
+		Name:            llm.ConnectMCPServerToolName,
 		Description:     "Connect",
 		UserInteraction: llm.UserInteractionConnect,
 		Resolver: func(_ context.Context, _ *llm.Context, _ llm.ToolArgumentGetter) (string, error) {
@@ -375,7 +375,7 @@ func TestStandardPersonalityUnconnectedMCPServers(t *testing.T) {
 		{
 			name:     "omitted when ConnectMCPServer is disabled in this context",
 			tools:    storeWith(llm.NewToolStore(), connectTool),
-			disabled: []llm.ToolInfo{{Name: "ConnectMCPServer", Description: "Connect"}},
+			disabled: []llm.ToolInfo{{Name: llm.ConnectMCPServerToolName, Description: "Connect"}},
 		},
 	}
 
