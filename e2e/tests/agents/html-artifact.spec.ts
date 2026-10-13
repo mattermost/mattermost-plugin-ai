@@ -5,7 +5,9 @@
 // `enableHTMLArtifacts` is on, the bot post renders it as a sandboxed,
 // interactive artifact (inline card + fullscreen viewer). Artifact JS reaches
 // user data only through the consent-gated window.mattermost broker and has no
-// network access.
+// network access. Only the requester's view runs an artifact by itself, and an
+// inline artifact takes clicks and keyboard focus only once the viewer
+// activates it.
 
 import fs from 'fs';
 import path from 'path';
@@ -19,7 +21,14 @@ import {MattermostPage} from 'helpers/mm';
 import {AIPlugin} from 'helpers/ai-plugin';
 import {RunToolConfigAIMockContainer, setupRegularTestUser} from 'helpers/tool-config-container';
 import {
+    FOCUS_THIEF_EXFIL,
+    FOCUS_THIEF_FILE_NAME,
+    FOCUS_THIEF_HTML,
+    HUNG_NAVIGATION_FILE_NAME,
+    HungServer,
     ONYX_THEME,
+    SECOND_VIEWER_PASSWORD,
+    SECOND_VIEWER_USERNAME,
     SPRINT_DASHBOARD_FILE_NAME,
     SPRINT_DASHBOARD_HTML,
     SELF_NAVIGATING_FILE_NAME,
@@ -32,9 +41,14 @@ import {
     REPLACING_HTML,
     TOKEN_PROBE_FILE_NAME,
     TOKEN_PROBE_HTML,
+    artifactFrame,
     artifactIframes,
+    engageArtifact,
+    hungNavigationHTML,
     setHTMLArtifactsEnabled,
     setUserTheme,
+    setupSecondViewer,
+    startHungServer,
 } from 'helpers/html-artifact';
 
 const username = 'regularuser';
@@ -195,6 +209,7 @@ test.describe('HTML artifacts', () => {
 
     let mattermost: MattermostContainer;
     let aimock: AIMockContainer;
+    let hungServer: HungServer;
 
     test.beforeAll(async () => {
         test.setTimeout(240000);
@@ -219,12 +234,15 @@ test.describe('HTML artifacts', () => {
         // Show bot replies inline in the DM (center channel) rather than only in threads.
         const me = await client.getMe();
         await client.savePreferences(me.id, [{user_id: me.id, category: 'display_settings', name: 'collapsed_reply_threads', value: 'off'}]);
+        await setupSecondViewer(mattermost);
         aimock = await RunAIMockSidecar(mattermost.network, {
             fixtures: {fixtures: [buildTitleFixture('HTML artifact bootstrap')]},
         });
+        hungServer = await startHungServer(mattermost.url());
     });
 
     test.afterAll(async () => {
+        await hungServer?.close();
         await aimock?.stop();
         await mattermost?.stop();
     });
@@ -264,6 +282,13 @@ test.describe('HTML artifacts', () => {
         // The same conversation is a DM with the bot; the card renders in the center channel too.
         const center = await openArtifactInBotDM(page, mattermost);
         const frame = center.iframe.contentFrame();
+
+        // The requester's artifact runs by itself, but takes clicks (and
+        // keyboard focus) only once the viewer activates it.
+        await expect(center.card.getByTestId('html-artifact-interact')).toBeVisible();
+        await expect(center.iframe).toHaveAttribute('tabindex', '-1');
+        await engageArtifact(center.card);
+        await expect(center.card.getByTestId('html-artifact-interact')).toHaveCount(0);
         await frame.getByRole('button', {name: /Kudos/}).click();
         await expect(frame.locator('#kudos-count')).toHaveText('1');
         await expect(center.card.getByTestId('html-artifact-notice')).toContainText("Don't enter passwords");
@@ -290,6 +315,7 @@ test.describe('HTML artifacts', () => {
         await scrollToTop(center.botPost);
 
         // getCurrentUser → host-side consent prompt (not a browser dialog).
+        await engageArtifact(center.card);
         await frame.getByRole('button', {name: 'Say hello'}).click();
         const consent = center.card.getByTestId('html-artifact-consent');
         await expect(consent).toBeVisible({timeout: 15000});
@@ -315,6 +341,10 @@ test.describe('HTML artifacts', () => {
         await expect(fullFrame.getByRole('heading', {name: 'Sprint 42 dashboard'})).toBeVisible({timeout: 30000});
         await expect(viewer.getByText('Interactive')).toBeVisible();
         await expect(viewer.getByTestId('html-artifact-notice')).toContainText("Don't enter passwords");
+
+        // Opening fullscreen was the viewer's click: the artifact is interactive right away.
+        await expect(viewer.getByTestId('html-artifact-frame')).toHaveAttribute('data-engaged', 'true');
+        await expect(viewer.getByTestId('html-artifact-interact')).toHaveCount(0);
 
         // The display mode reaches the artifact: fullscreen-only content shows.
         await expect(fullFrame.getByTestId('fullscreen-details')).toBeVisible({timeout: 15000});
@@ -429,6 +459,126 @@ test.describe('HTML artifacts', () => {
         await expect(page.getByText('This AI-generated artifact can only be viewed inside Mattermost.')).toBeVisible();
         await expect(page.getByText('Token probe')).toHaveCount(0);
         expect(await page.content()).not.toContain(token);
+    });
+
+    // A sandboxed frame can still call focus() on itself, and keystrokes then
+    // go into the artifact. One that takes focus the viewer did not give it
+    // is unloaded at once, and focus goes back to the page.
+    test('an artifact that grabs keyboard focus is stopped and the message box keeps what is typed', async ({page}) => {
+        test.setTimeout(300000);
+        let exfiltrations = 0;
+        await page.context().route(`${FOCUS_THIEF_EXFIL}**`, (route) => {
+            exfiltrations++;
+            return route.fulfill({contentType: 'text/plain', body: ''});
+        });
+
+        const botPost = await postArtifact(page, mattermost, aimock, FOCUS_THIEF_FILE_NAME, FOCUS_THIEF_HTML, 'Here is the quarterly dashboard.');
+        const stopped = botPost.getByTestId('html-artifact-navigation-stopped');
+        await expect(stopped).toBeVisible({timeout: 60000});
+        await expect(stopped).toHaveAttribute('data-stop-reason', 'focus');
+        await expect(stopped).toContainText('tried to take keyboard focus');
+        await expect(artifactIframes(botPost)).toHaveCount(0);
+        expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe('IFRAME');
+
+        const composer = new MattermostPage(page).postTextbox;
+        const typed = 'the merger with Acme closes Friday';
+        await composer.click();
+        await page.keyboard.type(typed, {delay: 40});
+        await expect(composer).toHaveValue(typed);
+        await page.waitForTimeout(1000);
+        await expect(composer).toHaveValue(typed);
+        await expect(stopped).toBeVisible();
+        expect(exfiltrations).toBe(0);
+    });
+
+    // A navigation whose response never finishes fires no second load event,
+    // so the load guard cannot see it; the bridge's heartbeat stops, though.
+    test('an artifact that navigates to a page that never finishes loading is hidden, then unloaded', async ({page}) => {
+        test.setTimeout(300000);
+        const botPost = await postArtifact(page, mattermost, aimock, HUNG_NAVIGATION_FILE_NAME, hungNavigationHTML(hungServer.url), 'Here is the report.');
+        const iframe = artifactIframes(botPost).first();
+        await expect(artifactFrame(iframe).getByRole('heading', {name: 'Loading report'})).toBeVisible({timeout: 60000});
+        await hungServer.requested;
+
+        await expect(botPost.getByTestId('html-artifact-unresponsive')).toBeVisible({timeout: 10000});
+        await expect(iframe).toBeHidden();
+
+        const stopped = botPost.getByTestId('html-artifact-navigation-stopped');
+        await expect(stopped).toBeVisible({timeout: 20000});
+        await expect(stopped).toHaveAttribute('data-stop-reason', 'unresponsive');
+        await expect(artifactIframes(botPost)).toHaveCount(0);
+        await expect.poll(() => page.frames().some((f) => f.url().startsWith(hungServer.url)), {timeout: 10000}).toBe(false);
+    });
+
+    // Loading an artifact runs agent-written code for whoever sees the post
+    // (view tracking, prompt-injected exfiltration). Only the requester's view
+    // runs it by itself.
+    test('other viewers see Run and no frame until they click it; the requester\'s view runs by itself', async ({page, browser}) => {
+        test.setTimeout(300000);
+        const prompt = `shared dashboard ${Date.now()}`;
+        const finalText = `Here is the shared dashboard ${Date.now()}.`;
+        await aimock.setFixtures(mergeFixtureFiles(
+            {fixtures: [buildTitleFixture('Shared dashboard')]},
+            buildCreateFileSequence({
+                userPrompt: prompt,
+                fileName: SPRINT_DASHBOARD_FILE_NAME,
+                fileContent: SPRINT_DASHBOARD_HTML,
+                finalText,
+                toolCallId: `call_html_artifact_${Date.now()}`,
+            }),
+        ));
+
+        // The requester asks in a channel the other viewer can read.
+        const channelURL = `${mattermost.url()}/test/channels/off-topic`;
+        const requester = new MattermostPage(page);
+        await requester.login(mattermost.url(), username, password);
+        await page.goto(channelURL);
+        await requester.mentionBot(botName, prompt);
+
+        const requesterPost = page.locator('#postListContent [data-testid="llm-bot-post"]').filter({hasText: finalText});
+        await expect(requesterPost).toBeVisible({timeout: 120000});
+        const requesterCard = requesterPost.getByTestId('html-artifact-card');
+        await expect(artifactFrame(artifactIframes(requesterCard).first()).getByRole('heading', {name: 'Sprint 42 dashboard'})).toBeVisible({timeout: 60000});
+        await expect(requesterCard.getByTestId('html-artifact-run-placeholder')).toHaveCount(0);
+        await expect(requesterCard.getByTestId('html-artifact-interact')).toBeVisible();
+
+        const viewerContext = await browser.newContext({viewport: {width: 1440, height: 900}, permissions: ['notifications']});
+        try {
+            const viewerPage = await viewerContext.newPage();
+            let artifactRequests = 0;
+            viewerPage.on('request', (req) => {
+                if (req.url().includes('/plugins/mattermost-ai/artifacts/')) {
+                    artifactRequests++;
+                }
+            });
+            await new MattermostPage(viewerPage).login(mattermost.url(), SECOND_VIEWER_USERNAME, SECOND_VIEWER_PASSWORD);
+            await viewerPage.goto(channelURL);
+
+            const viewerCard = viewerPage.locator('#postListContent [data-testid="llm-bot-post"]').filter({hasText: finalText}).getByTestId('html-artifact-card');
+            const placeholder = viewerCard.getByTestId('html-artifact-run-placeholder');
+            await expect(placeholder).toBeVisible({timeout: 60000});
+            await expect(placeholder).toContainText('runs code only when you choose');
+            await expect(viewerCard.getByTestId('html-artifact-file-name')).toHaveText(SPRINT_DASHBOARD_FILE_NAME);
+            await expect(viewerCard.getByTestId('html-artifact-notice')).toBeVisible();
+            await expect(viewerCard.getByTestId('html-artifact-reload')).toHaveCount(0);
+
+            // Still nothing a while later: the placeholder is not a loading state.
+            await viewerPage.waitForTimeout(3000);
+            await expect(artifactIframes(viewerCard)).toHaveCount(0);
+            expect(artifactRequests).toBe(0);
+
+            await viewerCard.getByTestId('html-artifact-run').click();
+            const viewerFrame = artifactFrame(artifactIframes(viewerCard).first());
+            await expect(viewerFrame.getByRole('heading', {name: 'Sprint 42 dashboard'})).toBeVisible({timeout: 30000});
+            await expect(placeholder).toHaveCount(0);
+
+            // Clicking Run was the viewer engaging with this artifact.
+            await expect(viewerCard.getByTestId('html-artifact-frame')).toHaveAttribute('data-engaged', 'true');
+            await viewerFrame.getByRole('button', {name: /Kudos/}).click();
+            await expect(viewerFrame.locator('#kudos-count')).toHaveText('1');
+        } finally {
+            await viewerContext.close();
+        }
     });
 
     test('inline card in a dark theme', async ({page}) => {
