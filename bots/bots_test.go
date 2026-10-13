@@ -1120,12 +1120,17 @@ func TestGetBotByUsernameFindsRenamedBotAccount(t *testing.T) {
 }
 
 // stubAgentStore returns a fixed slice. Tests can swap the slice between
-// EnsureBots calls to mimic a config save changing the DB-backed agent.
+// EnsureBots calls to mimic a config save changing the DB-backed agent, and
+// set listErr to make ListAgents fail.
 type stubAgentStore struct {
-	agents []llm.BotConfig
+	agents  []llm.BotConfig
+	listErr error
 }
 
 func (s *stubAgentStore) ListAgents() ([]*llm.BotConfig, error) {
+	if s.listErr != nil {
+		return nil, s.listErr
+	}
 	out := make([]*llm.BotConfig, len(s.agents))
 	for i := range s.agents {
 		cfg := s.agents[i]

@@ -400,9 +400,10 @@ func (a *API) renameAgentConfigReferences(oldName, newName string) (updated, def
 }
 
 // refreshBotsAndNotify reloads bots on this node, notifies the cluster, and broadcasts so clients refresh bot lists.
+// renamedAgentID, when set, tells peers to refresh that agent individually before their full reload.
 // It returns the error from EnsureBots when a.bots is non-nil, or nil when a.bots is nil; cluster and websocket
 // steps always run regardless.
-func (a *API) refreshBotsAndNotify() error {
+func (a *API) refreshBotsAndNotify(renamedAgentID string) error {
 	var ensureErr error
 	if a.bots != nil {
 		a.bots.ForceRefreshOnNextEnsure()
@@ -412,7 +413,7 @@ func (a *API) refreshBotsAndNotify() error {
 		}
 	}
 	if a.clusterAgentNotifier != nil {
-		if err := a.clusterAgentNotifier.PublishAgentUpdate(); err != nil {
+		if err := a.clusterAgentNotifier.PublishAgentUpdate(renamedAgentID); err != nil {
 			a.pluginAPI.Log.Error("Failed to publish agent update cluster event", "error", err.Error())
 		}
 	}
@@ -514,7 +515,7 @@ func (a *API) handleCreateAgent(c *gin.Context) {
 	audit.AddParam(auditRec(c), audit.KeyAgentID, agent.ID)
 	audit.AddParam(auditRec(c), "bot_user_id", mmBot.UserId)
 
-	_ = a.refreshBotsAndNotify()
+	_ = a.refreshBotsAndNotify("")
 	c.JSON(http.StatusCreated, agent)
 }
 
@@ -772,7 +773,19 @@ func (a *API) handleUpdateAgent(c *gin.Context) {
 		audit.AddParam(auditRec(c), "default_agent_renamed", true)
 	}
 
-	ensureErr := a.refreshBotsAndNotify()
+	// The full refresh below can fail and keep the whole previous registry,
+	// which would leave the agent answering to a name it no longer holds.
+	renamedAgentID := ""
+	if usernameChanged {
+		renamedAgentID = cfg.ID
+		if a.bots != nil {
+			if err := a.bots.RefreshAgent(cfg.ID); err != nil {
+				a.pluginAPI.Log.Error("Failed to refresh renamed agent", "agent_id", cfg.ID, "error", err.Error())
+			}
+		}
+	}
+
+	ensureErr := a.refreshBotsAndNotify(renamedAgentID)
 
 	// EnsureBots patches display name on success; when it did not run (no bot registry) or failed, sync explicitly.
 	if displayNameChanged && (ensureErr != nil || a.bots == nil) {
@@ -812,7 +825,7 @@ func (a *API) handleDeleteAgent(c *gin.Context) {
 		a.pluginAPI.Log.Error("Failed to delete access policy for deleted agent", "agent_id", cfg.ID, "error", err.Error())
 	}
 
-	ensureErr := a.refreshBotsAndNotify()
+	ensureErr := a.refreshBotsAndNotify("")
 
 	// EnsureBots deactivates removed bots on success; when it did not run or failed, deactivate explicitly.
 	if ensureErr != nil || a.bots == nil {

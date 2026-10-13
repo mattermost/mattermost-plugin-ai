@@ -136,8 +136,10 @@ type ChannelAutoReplyStore interface {
 }
 
 // ClusterAgentNotifier broadcasts agent update events to other cluster nodes.
+// agentID names a renamed agent that peers refresh individually first; it is
+// empty when no single agent needs that.
 type ClusterAgentNotifier interface {
-	PublishAgentUpdate() error
+	PublishAgentUpdate(agentID string) error
 }
 
 // MCPOAuthClusterNotifier broadcasts MCP OAuth updates to other cluster nodes.

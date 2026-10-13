@@ -17,6 +17,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/mattermost/mattermost-plugin-agents/v2/audit"
+	"github.com/mattermost/mattermost-plugin-agents/v2/bots"
 	"github.com/mattermost/mattermost-plugin-agents/v2/config"
 	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
@@ -1435,6 +1436,72 @@ func TestUpdateAgentRename(t *testing.T) {
 			assert.Equal(t, tc.expectedBotName, botName)
 			assert.Equal(t, tc.expectedDefaultBot, configStore.cfg.DefaultBotName)
 			assert.Equal(t, tc.expectedName, configStore.cfg.TranscriptGenerator, "the transcript setting must follow the stored agent name")
+		})
+	}
+}
+
+type recordingAgentNotifier struct {
+	published []string
+}
+
+func (n *recordingAgentNotifier) PublishAgentUpdate(agentID string) error {
+	n.published = append(n.published, agentID)
+	return nil
+}
+
+func TestUpdateAgentRefreshesRenamedAgent(t *testing.T) {
+	tests := []struct {
+		name             string
+		change           map[string]any
+		expectPublished  []string
+		expectStaleEntry bool
+	}{
+		{
+			name:            "rename refreshes the agent here and on peers",
+			change:          map[string]any{"username": "new-name"},
+			expectPublished: []string{"agent-1"},
+		},
+		{
+			name:             "other changes leave the agent to the full refresh",
+			change:           map[string]any{"displayName": "Renamed"},
+			expectPublished:  []string{""},
+			expectStaleEntry: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			e := setupAgentTestEnvironment(t)
+			defer e.Cleanup(t)
+
+			mockLicensed(e.mockAPI)
+			e.mockAPI.On("GetUserByUsername", mock.Anything).
+				Return(nil, model.NewAppError("GetUserByUsername", "app.user.missing", nil, "", http.StatusNotFound)).Maybe()
+			e.mockAPI.On("PatchBot", "bot-1", mock.AnythingOfType("*model.BotPatch")).Return(&model.Bot{UserId: "bot-1"}, nil).Maybe()
+			notifier := &recordingAgentNotifier{}
+			e.api.clusterAgentNotifier = notifier
+
+			stored := &llm.BotConfig{
+				ID: "agent-1", CreatorID: testUserID, BotUserID: "bot-1",
+				DisplayName: "Agent", Name: "old-name", ServiceID: "svc-1",
+			}
+			e.agentStore.agents["agent-1"] = stored
+			// The test registry cannot rebuild agents, so a refreshed agent is
+			// dropped rather than replaced.
+			e.bots.SetBotsForTesting([]*bots.Bot{
+				bots.NewBot(*stored, llm.ServiceConfig{}, &model.Bot{UserId: "bot-1", Username: "old-name"}, nil),
+			})
+
+			body := updateAgentBodyFromStored(stored, tc.change)
+			recorder := doRequest(e.api, http.MethodPut, "/agents/agent-1", body, testUserID)
+
+			require.Equal(t, http.StatusOK, recorder.Result().StatusCode, recorder.Body.String())
+			assert.Equal(t, tc.expectPublished, notifier.published)
+			if tc.expectStaleEntry {
+				assert.NotNil(t, e.bots.GetBotMentioned("@old-name hi"))
+			} else {
+				assert.Nil(t, e.bots.GetBotMentioned("@old-name hi"), "a renamed agent must not keep answering to its old name")
+			}
 		})
 	}
 }

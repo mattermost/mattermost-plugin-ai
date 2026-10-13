@@ -5,10 +5,12 @@ package bots
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -27,6 +29,9 @@ import (
 	"github.com/mattermost/mattermost/server/public/pluginapi/cluster"
 	"github.com/maximhq/bifrost/core/schemas"
 )
+
+// botOwnerID owns the Mattermost bot accounts the plugin creates.
+const botOwnerID = "mattermost-ai"
 
 type Config interface {
 	GetBots() []llm.BotConfig
@@ -62,8 +67,15 @@ type MMBots struct {
 	metrics                llm.MetricsObserver
 
 	tokenSinksMu sync.Mutex
-	botsLock     sync.RWMutex
-	bots         []*Bot
+	// ensureMu serializes registry rebuilds on this node, so a full rebuild
+	// that read the agents before a RefreshAgent cannot swap its stale
+	// registry in afterwards. EnsureBots takes it after the cluster mutex;
+	// it must never be acquired while holding botsLock.
+	ensureMu sync.Mutex
+	botsLock sync.RWMutex
+	// bots is replaced, never mutated in place: readers keep using a slice
+	// and its *Bot values after releasing botsLock.
+	bots []*Bot
 
 	// serviceLLMMu guards the service LLM registry below. It is never held
 	// while a model is being built.
@@ -447,6 +459,8 @@ func (b *MMBots) EnsureBots() error {
 	}
 	mtx.Lock()
 	defer mtx.Unlock()
+	b.ensureMu.Lock()
+	defer b.ensureMu.Unlock()
 
 	// Re-check after acquiring lock - another node may have already handled this
 	currentBotCfgs, activeDBBots, currentServiceCfgs, unchanged, err := b.snapshotForEnsure()
@@ -458,7 +472,7 @@ func (b *MMBots) EnsureBots() error {
 		return nil
 	}
 
-	previousMMBots, err := b.pluginAPI.Bot.List(0, 1000, pluginapi.BotOwner("mattermost-ai"), pluginapi.BotIncludeDeleted())
+	previousMMBots, err := b.pluginAPI.Bot.List(0, 1000, pluginapi.BotOwner(botOwnerID), pluginapi.BotIncludeDeleted())
 	if err != nil {
 		return fmt.Errorf("failed to list bots: %w", err)
 	}
@@ -470,21 +484,8 @@ func (b *MMBots) EnsureBots() error {
 	// its copy. Agents share the provider client built from these.
 	servicesByID := make(map[string]llm.ServiceConfig)
 	for _, botCfg := range botCfgs {
-		if !botCfg.IsValid() {
-			b.pluginAPI.Log.Error("Configured bot is not valid", "bot_name", botCfg.Name, "bot_display_name", botCfg.DisplayName)
-			continue
-		}
-
-		// Get service by ID
-		service, ok := b.config.GetServiceByID(botCfg.ServiceID)
+		bot, service, ok := b.newUnsyncedBot(botCfg)
 		if !ok {
-			b.pluginAPI.Log.Error("Bot references non-existent service", "bot_name", botCfg.Name, "service_id", botCfg.ServiceID)
-			continue
-		}
-
-		// Validate service configuration
-		if !llm.IsValidService(service) {
-			b.pluginAPI.Log.Error("Bot references invalid service", "bot_name", botCfg.Name, "service_id", botCfg.ServiceID, "service_type", service.Type)
 			continue
 		}
 
@@ -494,12 +495,6 @@ func (b *MMBots) EnsureBots() error {
 		}
 		servicesByID[service.ID] = service
 
-		// Use bot's model if specified, otherwise fall back to service's default model
-		if botCfg.Model != "" {
-			service.DefaultModel = botCfg.Model
-		}
-
-		bot := &Bot{cfg: botCfg, service: service}
 		bots = append(bots, bot)
 		aiBotsByUsername[botCfg.Name] = bot
 	}
@@ -532,54 +527,11 @@ func (b *MMBots) EnsureBots() error {
 	ensuredBots := make([]*Bot, 0, len(bots))
 	accountSyncFailed := false
 	for _, bot := range bots {
-		description := poweredByDescription(bot.service.Type, bot.service.DefaultModel)
-		if prevBot, ok := matchedMMBots[bot]; ok {
-			patch := &model.BotPatch{
-				DisplayName: &bot.cfg.DisplayName,
-				Description: &description,
-			}
-			if prevBot.Username != bot.cfg.Name {
-				patch.Username = &bot.cfg.Name
-			}
-			var patchErr error
-			bot.mmBot, patchErr = b.pluginAPI.Bot.Patch(prevBot.UserId, patch)
-			if patchErr != nil {
-				b.pluginAPI.Log.Error("Failed to patch bot", "bot_name", bot.cfg.Name, "error", patchErr.Error())
+		if err := b.syncBot(bot, matchedMMBots[bot], servicesByID[bot.service.ID]); err != nil {
+			if errors.Is(err, errBotAccountSync) {
 				accountSyncFailed = true
 				continue
 			}
-			if _, activeErr := b.pluginAPI.Bot.UpdateActive(prevBot.UserId, true); activeErr != nil {
-				b.pluginAPI.Log.Error("Failed to update bot active", "bot_name", bot.cfg.Name, "error", activeErr.Error())
-				accountSyncFailed = true
-				continue
-			}
-		} else {
-			bot.mmBot = &model.Bot{
-				Username:    bot.cfg.Name,
-				DisplayName: bot.cfg.DisplayName,
-				Description: description,
-			}
-			if createErr := b.pluginAPI.Bot.Create(bot.mmBot); createErr != nil {
-				b.pluginAPI.Log.Error("Failed to ensure bot", "bot_name", bot.cfg.Name, "error", createErr.Error())
-				accountSyncFailed = true
-				continue
-			}
-		}
-
-		b.ensureDefaultProfileImage(bot)
-
-		// Fallback chains are available at Enterprise Advanced.
-		var fallbackServices []llm.ServiceConfig
-		if b.licenseChecker.Allows(enterprise.CapModelFallback) {
-			var ferr error
-			fallbackServices, ferr = llm.ResolveFallbackChain(bot.service.ID, b.config.GetServiceByID)
-			if ferr != nil {
-				return fmt.Errorf("failed to resolve fallback chain for bot %s: %w", bot.cfg.Name, ferr)
-			}
-		}
-
-		bot.llm, bot.providerServices, err = b.getLLM(servicesByID[bot.service.ID], bot.cfg, fallbackServices)
-		if err != nil {
 			return err
 		}
 		ensuredBots = append(ensuredBots, bot)
@@ -610,6 +562,180 @@ func (b *MMBots) EnsureBots() error {
 	b.botsLock.Unlock()
 
 	return nil
+}
+
+// newUnsyncedBot validates botCfg and returns its bot, with the agent's model
+// override folded into the bot's service copy, plus the service as configured.
+// ok is false, after logging why, when the bot cannot be served.
+func (b *MMBots) newUnsyncedBot(botCfg llm.BotConfig) (*Bot, llm.ServiceConfig, bool) {
+	if !botCfg.IsValid() {
+		b.pluginAPI.Log.Error("Configured bot is not valid", "bot_name", botCfg.Name, "bot_display_name", botCfg.DisplayName)
+		return nil, llm.ServiceConfig{}, false
+	}
+
+	configured, ok := b.config.GetServiceByID(botCfg.ServiceID)
+	if !ok {
+		b.pluginAPI.Log.Error("Bot references non-existent service", "bot_name", botCfg.Name, "service_id", botCfg.ServiceID)
+		return nil, llm.ServiceConfig{}, false
+	}
+
+	if !llm.IsValidService(configured) {
+		b.pluginAPI.Log.Error("Bot references invalid service", "bot_name", botCfg.Name, "service_id", botCfg.ServiceID, "service_type", configured.Type)
+		return nil, llm.ServiceConfig{}, false
+	}
+
+	service := configured
+	if botCfg.Model != "" {
+		service.DefaultModel = botCfg.Model
+	}
+	return &Bot{cfg: botCfg, service: service}, configured, true
+}
+
+// errBotAccountSync marks a syncBot failure to bring the bot's Mattermost
+// account in line with its config, as opposed to a failure to build its LLM.
+var errBotAccountSync = errors.New("bot account sync failed")
+
+// syncBot updates existing, the bot's Mattermost account, to match its config,
+// including the username when the agent was renamed, or creates an account
+// when existing is nil. It then builds the bot's LLM from configuredService,
+// the bot's service as configured. bot must not be in the registry yet.
+func (b *MMBots) syncBot(bot *Bot, existing *model.Bot, configuredService llm.ServiceConfig) error {
+	description := poweredByDescription(bot.service.Type, bot.service.DefaultModel)
+	if existing != nil {
+		patch := &model.BotPatch{
+			DisplayName: &bot.cfg.DisplayName,
+			Description: &description,
+		}
+		if existing.Username != bot.cfg.Name {
+			patch.Username = &bot.cfg.Name
+		}
+		var patchErr error
+		bot.mmBot, patchErr = b.pluginAPI.Bot.Patch(existing.UserId, patch)
+		if patchErr != nil {
+			b.pluginAPI.Log.Error("Failed to patch bot", "bot_name", bot.cfg.Name, "error", patchErr.Error())
+			return fmt.Errorf("%w: %s: %w", errBotAccountSync, bot.cfg.Name, patchErr)
+		}
+		if _, activeErr := b.pluginAPI.Bot.UpdateActive(existing.UserId, true); activeErr != nil {
+			b.pluginAPI.Log.Error("Failed to update bot active", "bot_name", bot.cfg.Name, "error", activeErr.Error())
+			return fmt.Errorf("%w: %s: %w", errBotAccountSync, bot.cfg.Name, activeErr)
+		}
+	} else {
+		bot.mmBot = &model.Bot{
+			Username:    bot.cfg.Name,
+			DisplayName: bot.cfg.DisplayName,
+			Description: description,
+		}
+		if createErr := b.pluginAPI.Bot.Create(bot.mmBot); createErr != nil {
+			b.pluginAPI.Log.Error("Failed to ensure bot", "bot_name", bot.cfg.Name, "error", createErr.Error())
+			return fmt.Errorf("%w: %s: %w", errBotAccountSync, bot.cfg.Name, createErr)
+		}
+	}
+
+	b.ensureDefaultProfileImage(bot)
+
+	// Fallback chains are available at Enterprise Advanced.
+	var fallbackServices []llm.ServiceConfig
+	if b.licenseChecker.Allows(enterprise.CapModelFallback) {
+		var err error
+		fallbackServices, err = llm.ResolveFallbackChain(bot.service.ID, b.config.GetServiceByID)
+		if err != nil {
+			return fmt.Errorf("failed to resolve fallback chain for bot %s: %w", bot.cfg.Name, err)
+		}
+	}
+
+	var err error
+	bot.llm, bot.providerServices, err = b.getLLM(configuredService, bot.cfg, fallbackServices)
+	return err
+}
+
+// RefreshAgent rebuilds the registry entry of one DB-backed agent from the
+// store and swaps in just that entry. When the agent cannot be rebuilt, or is
+// no longer active, its entry is removed instead, so the registry never keeps
+// serving an identity the agent no longer has. It never creates bot accounts
+// (EnsureBots does, under the cluster mutex), and it leaves the next
+// EnsureBots to reconcile every other bot.
+func (b *MMBots) RefreshAgent(agentID string) error {
+	if agentID == "" {
+		return errors.New("refresh agent: empty agent ID")
+	}
+
+	b.ensureMu.Lock()
+	defer b.ensureMu.Unlock()
+
+	bot, err := b.rebuildAgentBot(agentID)
+	b.replaceAgentBot(agentID, bot)
+	return err
+}
+
+// rebuildAgentBot returns agentID's freshly synced bot, or nil when the agent
+// is not an active DB-backed agent.
+func (b *MMBots) rebuildAgentBot(agentID string) (*Bot, error) {
+	if b.config == nil {
+		return nil, fmt.Errorf("refresh agent %s: bots are not configured", agentID)
+	}
+
+	botCfgs, activeDBBots, _, err := b.snapshotBotsAndServices()
+	if err != nil {
+		return nil, fmt.Errorf("refresh agent %s: %w", agentID, err)
+	}
+	idx := slices.IndexFunc(botCfgs, func(cfg llm.BotConfig) bool {
+		if cfg.ID != agentID || cfg.BotUserID == "" {
+			return false
+		}
+		_, isDB := activeDBBots.userIDs[cfg.BotUserID]
+		return isDB
+	})
+	if idx < 0 {
+		return nil, nil
+	}
+	botCfg := botCfgs[idx]
+
+	bot, configuredService, ok := b.newUnsyncedBot(botCfg)
+	if !ok {
+		return nil, fmt.Errorf("refresh agent %s: agent cannot be served with its current configuration", agentID)
+	}
+	if b.findBot(func(other *Bot) bool {
+		return other.cfg.ID != agentID && other.cfg.Name == botCfg.Name
+	}) != nil {
+		return nil, fmt.Errorf("refresh agent %s: duplicate bot name: %s", agentID, botCfg.Name)
+	}
+
+	account, err := b.pluginAPI.Bot.Get(botCfg.BotUserID, true)
+	if err != nil {
+		return nil, fmt.Errorf("refresh agent %s: failed to get bot account: %w", agentID, err)
+	}
+	if account.OwnerId != botOwnerID {
+		return nil, fmt.Errorf("refresh agent %s: bot account is not owned by this plugin", agentID)
+	}
+
+	if err := b.syncBot(bot, account, configuredService); err != nil {
+		return nil, fmt.Errorf("refresh agent %s: %w", agentID, err)
+	}
+	return bot, nil
+}
+
+// replaceAgentBot swaps in a new registry where agentID's entry is bot, or is
+// absent when bot is nil.
+func (b *MMBots) replaceAgentBot(agentID string, bot *Bot) {
+	b.botsLock.Lock()
+	defer b.botsLock.Unlock()
+
+	next := make([]*Bot, 0, len(b.bots)+1)
+	for _, existing := range b.bots {
+		if existing.cfg.ID != agentID {
+			next = append(next, existing)
+			continue
+		}
+		if bot != nil {
+			next = append(next, bot)
+			bot = nil
+		}
+	}
+	if bot != nil {
+		next = append(next, bot)
+	}
+	b.bots = next
+	b.forceRefresh = true
 }
 
 func (b *MMBots) ensureDefaultProfileImage(bot *Bot) {
