@@ -32,6 +32,7 @@ export type ArtifactErrorCode = 'permission_denied' | 'unknown_method' | 'busy' 
 
 export type ArtifactInboundMessage =
     {mmArtifact: 1; type: 'ready'} |
+    {mmArtifact: 1; type: 'heartbeat'} |
     {mmArtifact: 1; type: 'escape'} |
     {mmArtifact: 1; type: 'resize'; height: number} |
     {mmArtifact: 1; type: 'request'; id: string; method: string; params?: Record<string, unknown>};
@@ -55,6 +56,8 @@ export function parseArtifactMessage(data: unknown): ArtifactInboundMessage | nu
     switch (data.type) {
     case 'ready':
         return {mmArtifact: 1, type: 'ready'};
+    case 'heartbeat':
+        return {mmArtifact: 1, type: 'heartbeat'};
     case 'escape':
         return {mmArtifact: 1, type: 'escape'};
     case 'resize':
@@ -238,6 +241,10 @@ export interface ArtifactBrokerOptions {
     // (e.g. the inline card is covered by the fullscreen viewer).
     canPrompt?: () => boolean;
     onReady?: () => void;
+
+    // The genuine bridge's periodic liveness signal (sent from before the
+    // artifact's own code runs); it stops when the document is replaced.
+    onHeartbeat?: () => void;
     onResize?: (height: number) => void;
 
     // Escape pressed inside the artifact (focus there never reaches the host).
@@ -297,6 +304,9 @@ export class ArtifactBroker {
             this.ready = true;
             this.opts.onReady?.();
             this.sendContext();
+            break;
+        case 'heartbeat':
+            this.opts.onHeartbeat?.();
             break;
         case 'resize':
             this.opts.onResize?.(msg.height);

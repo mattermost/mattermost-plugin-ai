@@ -28,13 +28,35 @@
     const ErrorCtor = Error;
     const setTimeoutFn = setTimeout;
     const clearTimeoutFn = clearTimeout;
+    const setIntervalFn = setInterval;
+    const requestAnimationFrameFn = requestAnimationFrame;
+    const ResizeObserverCtor = window.ResizeObserver;
+    const getComputedStyleFn = getComputedStyle;
+    const ceilFn = Math.ceil;
+    const maxFn = Math.max;
+    const parseFloatFn = parseFloat;
+    const CustomEventCtor = CustomEvent;
+    const dispatchEventFn = window.dispatchEvent.bind(window);
 
     if (document.currentScript) {
         document.currentScript.remove();
     }
 
+    // Best-effort defense in depth: CSP cannot block WebRTC in Chromium, so a
+    // peer connection could reach the network (e.g. STUN to reveal the
+    // viewer's IP). A fresh realm with intact constructors would need a child
+    // frame, which the artifact CSP (frame-src 'none') already blocks.
+    ['RTCPeerConnection', 'webkitRTCPeerConnection', 'mozRTCPeerConnection', 'RTCDataChannel'].forEach(function (name) {
+        try {
+            Object.defineProperty(window, name, {value: undefined, writable: false, configurable: false});
+        } catch (e) {
+            // Already non-configurable: nothing more this script can do.
+        }
+    });
+
     var PROTOCOL = 1;
     var REQUEST_TIMEOUT_MS = 120000;
+    var HEARTBEAT_INTERVAL_MS = 500;
 
     var currentContext = null;
     var subscribers = [];
@@ -73,7 +95,7 @@
         }
         currentContext = context;
         applyContext(context);
-        window.dispatchEvent(new CustomEvent('mattermost:context', {detail: context}));
+        dispatchEventFn(new CustomEventCtor('mattermost:context', {detail: context}));
         subscribers.slice().forEach(function (cb) {
             try {
                 cb(context);
@@ -161,10 +183,10 @@
         var height = root.getBoundingClientRect().height;
         var body = document.body;
         if (body) {
-            var margin = parseFloat(getComputedStyle(body).marginBottom) || 0;
-            height = Math.max(height, body.getBoundingClientRect().bottom + margin + window.scrollY);
+            var margin = parseFloatFn(getComputedStyleFn(body).marginBottom) || 0;
+            height = maxFn(height, body.getBoundingClientRect().bottom + margin + window.scrollY);
         }
-        return Math.ceil(height);
+        return ceilFn(height);
     }
 
     // Report content height (debounced to one message per frame, only on change).
@@ -179,22 +201,36 @@
     function scheduleResize() {
         if (!resizeScheduled) {
             resizeScheduled = true;
-            requestAnimationFrame(reportSize);
+            requestAnimationFrameFn(reportSize);
         }
     }
 
     // Keyboard focus inside the frame never reaches the host page, so let the
     // host close the fullscreen viewer on an Escape the artifact didn't handle.
+    // Only a real key press counts, never one synthesized by artifact code.
     window.addEventListener('keydown', function (event) {
+        if (!event.isTrusted) {
+            return;
+        }
         if (event.key === 'Escape' && !event.defaultPrevented) {
             parentWin.postMessage({mmArtifact: PROTOCOL, type: 'escape', token: TOKEN}, '*');
         }
     });
 
+    // Liveness signal for the host. Whatever replaces this document in the
+    // frame (e.g. a navigation whose response never finishes loading, so the
+    // host never sees a second load event) cannot send it, so the host hides
+    // and then unloads a frame whose heartbeat stops.
+    function heartbeat() {
+        parentWin.postMessage({mmArtifact: PROTOCOL, type: 'heartbeat', token: TOKEN}, '*');
+    }
+    heartbeat();
+    setIntervalFn(heartbeat, HEARTBEAT_INTERVAL_MS);
+
     function onReady() {
         parentWin.postMessage({mmArtifact: PROTOCOL, type: 'ready', token: TOKEN}, '*');
-        if (typeof ResizeObserver === 'function') {
-            var observer = new ResizeObserver(scheduleResize);
+        if (typeof ResizeObserverCtor === 'function') {
+            var observer = new ResizeObserverCtor(scheduleResize);
             observer.observe(document.documentElement);
             if (document.body) {
                 observer.observe(document.body);

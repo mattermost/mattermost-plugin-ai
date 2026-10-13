@@ -39,6 +39,7 @@ function setup(opts: {consent?: () => Promise<boolean>; fileId?: string; current
     const target = makeTarget();
     const requestConsent = jest.fn(opts.consent ?? (() => Promise.resolve(true)));
     const onReady = jest.fn();
+    const onHeartbeat = jest.fn();
     const onResize = jest.fn();
     const onEscape = jest.fn();
     const dismissConsent = jest.fn();
@@ -52,6 +53,7 @@ function setup(opts: {consent?: () => Promise<boolean>; fileId?: string; current
         dismissConsent,
         canPrompt: opts.canPrompt,
         onReady,
+        onHeartbeat,
         onResize,
         onEscape,
     });
@@ -61,7 +63,7 @@ function setup(opts: {consent?: () => Promise<boolean>; fileId?: string; current
         const payload = withToken && typeof data === 'object' && data !== null ? {token: TOKEN, ...data} : data;
         return broker.handleMessage({data: payload, source: target, origin: 'null', ...overrides} as unknown as MessageEvent);
     };
-    return {broker, target, requestConsent, dismissConsent, onReady, onResize, onEscape, send};
+    return {broker, target, requestConsent, dismissConsent, onReady, onHeartbeat, onResize, onEscape, send};
 }
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -91,16 +93,27 @@ describe('ArtifactBroker message validation', () => {
     ];
 
     test.each(cases)('rejects $name', ({data, overrides}) => {
-        const {send, target, onReady, onResize, requestConsent} = setup();
+        const {send, target, onReady, onHeartbeat, onResize, requestConsent} = setup();
         expect(send(data, overrides)).toBe(false);
         expect(target.postMessage).not.toHaveBeenCalled();
         expect(onReady).not.toHaveBeenCalled();
+        expect(onHeartbeat).not.toHaveBeenCalled();
         expect(onResize).not.toHaveBeenCalled();
         expect(requestConsent).not.toHaveBeenCalled();
     });
 
+    test.each([
+        {name: 'wrong source', overrides: {source: makeTarget()}},
+        {name: 'wrong origin', overrides: {origin: 'https://evil.example'}},
+    ])('rejects a heartbeat from the $name', ({overrides}) => {
+        const {send, onHeartbeat} = setup();
+        expect(send({mmArtifact: 1, type: 'heartbeat'}, overrides)).toBe(false);
+        expect(onHeartbeat).not.toHaveBeenCalled();
+    });
+
     const messages: Array<{type: string; data: Record<string, unknown>}> = [
         {type: 'ready', data: {mmArtifact: 1, type: 'ready'}},
+        {type: 'heartbeat', data: {mmArtifact: 1, type: 'heartbeat'}},
         {type: 'resize', data: {mmArtifact: 1, type: 'resize', height: 200}},
         {type: 'escape', data: {mmArtifact: 1, type: 'escape'}},
         {type: 'request', data: {mmArtifact: 1, type: 'request', id: 'r1', method: 'getCurrentUser'}},
@@ -116,11 +129,12 @@ describe('ArtifactBroker message validation', () => {
     const tokenCases = messages.flatMap((m) => badTokens.map((b) => ({...b, type: m.type, data: m.data})));
 
     test.each(tokenCases)('ignores $type with $name', ({data, token}) => {
-        const {send, target, onReady, onResize, onEscape, requestConsent} = setup();
+        const {send, target, onReady, onHeartbeat, onResize, onEscape, requestConsent} = setup();
         const payload = typeof token === 'undefined' ? data : {...data, token};
         expect(send(payload, {}, false)).toBe(false);
         expect(target.postMessage).not.toHaveBeenCalled();
         expect(onReady).not.toHaveBeenCalled();
+        expect(onHeartbeat).not.toHaveBeenCalled();
         expect(onResize).not.toHaveBeenCalled();
         expect(onEscape).not.toHaveBeenCalled();
         expect(requestConsent).not.toHaveBeenCalled();
@@ -131,15 +145,20 @@ describe('ArtifactBroker message validation', () => {
         expect(send({...data, token: TOKEN}, {}, false)).toBe(true);
     });
 
-    test('parseArtifactMessage drops unknown fields', () => {
-        expect(parseArtifactMessage({mmArtifact: 1, type: 'ready', extra: 'x'})).toEqual({mmArtifact: 1, type: 'ready'});
+    test.each([
+        {type: 'ready', data: {mmArtifact: 1, type: 'ready', extra: 'x'}},
+        {type: 'heartbeat', data: {mmArtifact: 1, type: 'heartbeat', token: TOKEN, extra: 'x'}},
+    ])('parseArtifactMessage drops unknown fields of $type', ({type, data}) => {
+        expect(parseArtifactMessage(data)).toEqual({mmArtifact: 1, type});
     });
 
     test('ignores messages after dispose', () => {
-        const {broker, send, target} = setup();
+        const {broker, send, target, onHeartbeat} = setup();
         broker.dispose();
         expect(send({mmArtifact: 1, type: 'ready'})).toBe(false);
+        expect(send({mmArtifact: 1, type: 'heartbeat'})).toBe(false);
         expect(target.postMessage).not.toHaveBeenCalled();
+        expect(onHeartbeat).not.toHaveBeenCalled();
     });
 });
 
@@ -158,6 +177,15 @@ describe('ArtifactBroker lifecycle', () => {
         send({mmArtifact: 1, type: 'ready'});
         broker.sendContext();
         expect(target.postMessage).toHaveBeenCalledTimes(2);
+    });
+
+    test('heartbeat is reported to the host and answered with nothing', () => {
+        const {send, target, onHeartbeat, onReady} = setup();
+        expect(send({mmArtifact: 1, type: 'heartbeat'})).toBe(true);
+        expect(send({mmArtifact: 1, type: 'heartbeat'})).toBe(true);
+        expect(onHeartbeat).toHaveBeenCalledTimes(2);
+        expect(onReady).not.toHaveBeenCalled();
+        expect(target.postMessage).not.toHaveBeenCalled();
     });
 
     test('resize reports the height', () => {
