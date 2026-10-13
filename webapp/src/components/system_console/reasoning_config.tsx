@@ -5,7 +5,7 @@ import React from 'react';
 import styled from 'styled-components';
 import {useIntl} from 'react-intl';
 
-import {ItemLabel, HelpText, FormRow, FieldControlRow, InlineCheckbox, SelectField} from './item';
+import {CompactItemLabel, HelpText, FormRow, CompactFieldControlRow, InlineCheckbox, SelectField} from './item';
 import {LLMBotConfig} from './bot';
 import {LLMService} from './service';
 
@@ -43,6 +43,7 @@ export const anthropicThinkingAlwaysOn = (model: string): boolean => {
 type EffortSelectProps = {
     value: string
     levels: string[]
+    ariaLabel: string
     onChange: (effort: string) => void
 }
 
@@ -61,17 +62,10 @@ const EffortSelect = (props: EffortSelectProps) => {
         <SelectField
             maxWidth='200px'
             value={props.value}
-            onChange={(e) => props.onChange(e.target.value)}
-        >
-            {props.levels.map((level) => (
-                <option
-                    key={level}
-                    value={level}
-                >
-                    {labels[level]}
-                </option>
-            ))}
-        </SelectField>
+            options={props.levels.map((level) => ({value: level, label: labels[level]}))}
+            ariaLabel={props.ariaLabel}
+            onChange={props.onChange}
+        />
     );
 };
 
@@ -125,20 +119,20 @@ const ReasoningConfigItem = (props: ReasoningConfigItemProps) => {
 
     return (
         <FormRow>
-            <ItemLabel>
+            <CompactItemLabel>
                 <Horizontal>
                     {headerLabel}
                 </Horizontal>
-            </ItemLabel>
+            </CompactItemLabel>
             <ReasoningContainer>
-                <FieldControlRow>
+                <CompactFieldControlRow>
                     <InlineCheckbox
                         testId='reasoning-enable'
                         label={intl.formatMessage({defaultMessage: 'Enable'})}
                         checked={reasoningEnabled}
                         onChange={(checked) => props.onChange({...props.bot, reasoningEnabled: checked})}
                     />
-                </FieldControlRow>
+                </CompactFieldControlRow>
                 {!reasoningEnabled && thinkingAlwaysOn && (
                     <HelpText>
                         {intl.formatMessage({
@@ -157,6 +151,7 @@ const ReasoningConfigItem = (props: ReasoningConfigItemProps) => {
                                 <EffortSelect
                                     value={anthropicEffortValue(props.bot.reasoningEffort)}
                                     levels={anthropicEffortLevels}
+                                    ariaLabel={intl.formatMessage({defaultMessage: 'Thinking Effort'})}
                                     onChange={handleEffortChange}
                                 />
                                 <HelpText>
@@ -194,6 +189,7 @@ const ReasoningConfigItem = (props: ReasoningConfigItemProps) => {
                                     <EffortSelect
                                         value={reasoningEffort}
                                         levels={standardEffortLevels}
+                                        ariaLabel={intl.formatMessage({defaultMessage: 'Reasoning Effort'})}
                                         onChange={handleEffortChange}
                                     />
                                     <HelpText>
@@ -213,6 +209,7 @@ const ReasoningConfigItem = (props: ReasoningConfigItemProps) => {
                                 <EffortSelect
                                     value={reasoningEffort}
                                     levels={standardEffortLevels}
+                                    ariaLabel={intl.formatMessage({defaultMessage: 'Reasoning Effort'})}
                                     onChange={handleEffortChange}
                                 />
                                 <HelpText>
@@ -233,19 +230,19 @@ const Horizontal = styled.div`
     display: flex;
     flex-direction: row;
     align-items: center;
-    gap: 8px;
+    gap: var(--spacing-xs);
 `;
 
 const ReasoningContainer = styled.div`
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: var(--spacing-m);
 `;
 
 const ConfigField = styled.div`
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--spacing-xs);
 `;
 
 const FieldLabel = styled.label`

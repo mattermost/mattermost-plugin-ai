@@ -76,29 +76,33 @@ function renderItem(bot: Partial<LLMBotConfig>, service: Partial<LLMService> = {
     );
 }
 
-const optionValues = (select: HTMLSelectElement) => Array.from(select.options).map((o) => o.value);
+async function openOptions(name: string): Promise<string[]> {
+    fireEvent.click(screen.getByRole('combobox', {name}));
+    const options = await screen.findAllByRole('option');
+    return options.map((option) => option.textContent ?? '');
+}
 
 describe('ReasoningConfigItem Anthropic effort', () => {
     it.each([
-        {name: 'unset effort uses the model default', reasoningEffort: '', expected: ''},
-        {name: 'stored effort is shown', reasoningEffort: 'medium', expected: 'medium'},
-        {name: 'stored max is shown', reasoningEffort: 'max', expected: 'max'},
-        {name: 'minimal is shown as low', reasoningEffort: 'minimal', expected: 'low'},
-        {name: 'unknown effort is shown as the model default', reasoningEffort: 'none', expected: ''},
-    ])('$name', ({reasoningEffort, expected}) => {
+        {name: 'unset effort uses the model default', reasoningEffort: '', expected: 'Model default'},
+        {name: 'stored effort is shown', reasoningEffort: 'medium', expected: 'Medium'},
+        {name: 'stored max is shown', reasoningEffort: 'max', expected: 'Max'},
+        {name: 'minimal is shown as low', reasoningEffort: 'minimal', expected: 'Low'},
+        {name: 'unknown effort is shown as the model default', reasoningEffort: 'none', expected: 'Model default'},
+    ])('$name', async ({reasoningEffort, expected}) => {
         renderItem({reasoningEffort});
 
-        const select = screen.getByRole('combobox') as HTMLSelectElement;
-        expect(select.value).toBe(expected);
-        expect(optionValues(select)).toEqual(['', 'low', 'medium', 'high', 'xhigh', 'max']);
+        expect(screen.getByRole('combobox', {name: 'Thinking Effort'}).textContent).toContain(expected);
         expect(screen.queryByRole('spinbutton')).toBeNull();
+        expect(await openOptions('Thinking Effort')).toEqual(['Model default', 'Low', 'Medium', 'High', 'Extra high', 'Max']);
     });
 
-    it('saves the selected effort', () => {
+    it('saves the selected effort', async () => {
         const onChange = jest.fn();
         renderItem({reasoningEffort: ''}, {}, onChange);
 
-        fireEvent.change(screen.getByRole('combobox'), {target: {value: 'xhigh'}});
+        await openOptions('Thinking Effort');
+        fireEvent.pointerUp(screen.getByRole('option', {name: 'Extra high'}));
 
         expect(onChange).toHaveBeenCalledWith(expect.objectContaining({reasoningEffort: 'xhigh'}));
     });
@@ -133,13 +137,12 @@ describe('defaultReasoningEffort', () => {
 });
 
 describe('ReasoningConfigItem Gemini', () => {
-    it('keeps the optional thinking budget alongside effort', () => {
+    it('keeps the optional thinking budget alongside effort', async () => {
         renderItem({reasoningEffort: 'low'}, {type: 'gemini', defaultModel: 'gemini-2.5-pro'});
 
         expect(screen.getByRole('spinbutton')).toBeTruthy();
-        const select = screen.getByRole('combobox') as HTMLSelectElement;
-        expect(select.value).toBe('low');
-        expect(optionValues(select)).toEqual(['minimal', 'low', 'medium', 'high']);
+        expect(screen.getByRole('combobox', {name: 'Reasoning Effort'}).textContent).toContain('Low');
+        expect(await openOptions('Reasoning Effort')).toEqual(['Minimal', 'Low', 'Medium', 'High']);
     });
 });
 
