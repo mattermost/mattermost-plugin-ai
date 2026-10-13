@@ -98,6 +98,21 @@ type ToolCatalogContext struct {
 	// but has not connected. Only populated for interactive, per-user
 	// catalogs; ConnectMCPServer is cataloged exactly when it is non-empty.
 	UnconnectedMCPServers []UnconnectedMCPServer
+
+	// UnconnectedMCPServerScope is set when this context may offer
+	// ConnectMCPServer at all (interactive requester, per-user catalog). It
+	// records the agent allowlist so a server whose authorization lapses
+	// mid-turn is held to the same eligibility as one found at catalog build.
+	UnconnectedMCPServerScope *UnconnectedMCPServerScope
+}
+
+// UnconnectedMCPServerScope is the agent-level MCP eligibility an unconnected
+// server must satisfy before it is advertised.
+type UnconnectedMCPServerScope struct {
+	// AllMCPTools is true when the agent picks up every MCP tool
+	// automatically; EnabledMCPTools is ignored then.
+	AllMCPTools     bool
+	EnabledMCPTools []EnabledMCPTool
 }
 
 // CreatedFile identifies a file created by a tool during this turn for
@@ -129,11 +144,6 @@ type ToolRuntimeContext struct {
 	// this turn. 0 means unset (full MaxPostAttachments budget); -1 means the
 	// response post has no room left. Set via SetResponseAttachmentBudget.
 	ResponseAttachmentBudget int
-
-	// MCPServerNeedsReconnect, when non-nil, adds a server whose
-	// authorization lapsed mid-turn to ToolCatalog.UnconnectedMCPServers and
-	// refreshes ConnectMCPServer. Use Context.ReportMCPServerNeedsReconnect.
-	MCPServerNeedsReconnect func(UnconnectedMCPServer)
 }
 
 type MCPDynamicToolTelemetry interface {

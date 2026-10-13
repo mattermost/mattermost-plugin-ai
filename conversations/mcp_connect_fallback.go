@@ -33,7 +33,7 @@ func (c *Conversations) decorateStreamWithMCPConnectFallback(bot *bots.Bot, stre
 	if stream == nil || bot == nil || post == nil || llmContext == nil || llmContext.RequestingUser == nil {
 		return stream
 	}
-	if len(llmContext.ToolCatalog.UnconnectedMCPServers) == 0 && llmContext.ToolRuntime.MCPServerNeedsReconnect == nil {
+	if len(llmContext.ToolCatalog.UnconnectedMCPServers) == 0 && llmContext.ToolCatalog.UnconnectedMCPServerScope == nil {
 		return stream
 	}
 

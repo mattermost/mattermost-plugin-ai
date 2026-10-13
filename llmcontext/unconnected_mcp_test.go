@@ -5,6 +5,7 @@ package llmcontext
 
 import (
 	stdcontext "context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -183,10 +184,12 @@ func TestBuilderAdvertisesUnconnectedMCPServers(t *testing.T) {
 }
 
 func TestUnconnectedMCPServersFiltering(t *testing.T) {
+	allTools := &llm.UnconnectedMCPServerScope{AllMCPTools: true}
+	bare := []llm.ToolAuthError{{ServerName: "Bare", ServerOrigin: "https://bare.example.com", AuthURL: "https://mm/bare/start"}}
+
 	tests := []struct {
 		name          string
 		authErrors    []llm.ToolAuthError
-		botConfig     llm.BotConfig
 		catalog       llm.ToolCatalogContext
 		wantServers   []string
 		wantToolNames map[string][]string
@@ -194,39 +197,59 @@ func TestUnconnectedMCPServersFiltering(t *testing.T) {
 		{
 			name:          "auto-enable keeps all servers and admin tool names",
 			authErrors:    unconnectedTestAuthErrors(),
-			botConfig:     llm.BotConfig{AutoEnableNewMCPTools: true},
+			catalog:       llm.ToolCatalogContext{UnconnectedMCPServerScope: allTools},
 			wantServers:   []string{"Jira", "GitHub"},
 			wantToolNames: map[string][]string{"Jira": {"create_issue", "search_issues"}, "GitHub": {"create_pr"}},
 		},
 		{
+			name:       "context that cannot offer ConnectMCPServer advertises nothing",
+			authErrors: unconnectedTestAuthErrors(),
+		},
+		{
 			name:       "allowlist narrows advertised tool names",
 			authErrors: unconnectedTestAuthErrors(),
-			botConfig: llm.BotConfig{EnabledMCPTools: []llm.EnabledMCPTool{
+			catalog: llm.ToolCatalogContext{UnconnectedMCPServerScope: &llm.UnconnectedMCPServerScope{EnabledMCPTools: []llm.EnabledMCPTool{
 				{ServerOrigin: unconnectedJiraOrigin, ToolName: "search_issues"},
-			}},
+			}}},
 			wantServers:   []string{"Jira"},
 			wantToolNames: map[string][]string{"Jira": {"search_issues"}},
 		},
 		{
+			name:       "allowlist that excludes every configured tool drops the server",
+			authErrors: unconnectedTestAuthErrors(),
+			catalog: llm.ToolCatalogContext{UnconnectedMCPServerScope: &llm.UnconnectedMCPServerScope{EnabledMCPTools: []llm.EnabledMCPTool{
+				{ServerOrigin: unconnectedJiraOrigin, ToolName: "delete_project"},
+			}}},
+		},
+		{
+			name:       "allowlisted server without configured tools is advertised",
+			authErrors: bare,
+			catalog: llm.ToolCatalogContext{UnconnectedMCPServerScope: &llm.UnconnectedMCPServerScope{EnabledMCPTools: []llm.EnabledMCPTool{
+				{ServerOrigin: "https://bare.example.com/", ToolName: llm.MCPServerToolWildcard},
+			}}},
+			wantServers: []string{"Bare"},
+		},
+		{
 			name:        "disabled origins are normalized before matching",
 			authErrors:  unconnectedTestAuthErrors(),
-			botConfig:   llm.BotConfig{AutoEnableNewMCPTools: true},
-			catalog:     llm.ToolCatalogContext{DisabledMCPServerOrigins: []string{" " + unconnectedJiraOrigin + "/ "}},
+			catalog:     llm.ToolCatalogContext{UnconnectedMCPServerScope: allTools, DisabledMCPServerOrigins: []string{" " + unconnectedJiraOrigin + "/ "}},
 			wantServers: []string{"GitHub"},
 		},
 		{
-			name:       "context tool filter drops servers without admin tool names",
-			authErrors: []llm.ToolAuthError{{ServerName: "Bare", ServerOrigin: "https://bare.example.com", AuthURL: "https://mm/bare/start"}},
-			botConfig:  llm.BotConfig{AutoEnableNewMCPTools: true},
-			catalog:    llm.ToolCatalogContext{KeepMCPTool: func(llm.Tool) bool { return true }},
+			name:       "context tool filter that rejects every configured tool drops the server",
+			authErrors: unconnectedTestAuthErrors(),
+			catalog:    llm.ToolCatalogContext{UnconnectedMCPServerScope: allTools, KeepMCPTool: func(llm.Tool) bool { return false }},
 		},
 		{
-			name:       "no context filter keeps servers without admin tool names",
-			authErrors: []llm.ToolAuthError{{ServerName: "Bare", ServerOrigin: "https://bare.example.com", AuthURL: "https://mm/bare/start"}},
-			botConfig:  llm.BotConfig{AutoEnableNewMCPTools: true},
-			wantServers: []string{
-				"Bare",
-			},
+			name:       "context tool filter drops servers without admin tool names",
+			authErrors: bare,
+			catalog:    llm.ToolCatalogContext{UnconnectedMCPServerScope: allTools, KeepMCPTool: func(llm.Tool) bool { return true }},
+		},
+		{
+			name:        "no context filter keeps servers without admin tool names",
+			authErrors:  bare,
+			catalog:     llm.ToolCatalogContext{UnconnectedMCPServerScope: allTools},
+			wantServers: []string{"Bare"},
 		},
 		{
 			name: "duplicate origins and servers without a start URL are skipped",
@@ -234,14 +257,14 @@ func TestUnconnectedMCPServersFiltering(t *testing.T) {
 				llm.ToolAuthError{ServerName: "Jira again", ServerOrigin: unconnectedJiraOrigin, AuthURL: "https://mm/x"},
 				llm.ToolAuthError{ServerName: "NoURL", ServerOrigin: "https://nourl.example.com"},
 			),
-			botConfig:   llm.BotConfig{AutoEnableNewMCPTools: true},
+			catalog:     llm.ToolCatalogContext{UnconnectedMCPServerScope: allTools},
 			wantServers: []string{"Jira"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := unconnectedMCPServers(tt.authErrors, tt.botConfig, tt.catalog)
+			got := unconnectedMCPServers(tt.authErrors, tt.catalog)
 			if len(tt.wantServers) == 0 {
 				assert.Empty(t, got)
 				return
@@ -256,79 +279,120 @@ func TestUnconnectedMCPServersFiltering(t *testing.T) {
 	}
 }
 
-// An MCP grant that lapses mid-turn adds the server to the turn's list and
-// catalogs ConnectMCPServer so the model can ask the user to reconnect.
-func TestBuilderReconnectHookAddsServerMidTurn(t *testing.T) {
-	expired := llm.UnconnectedMCPServer{
-		Name:    "Confluence",
-		Origin:  "https://confluence.example.com",
-		AuthURL: "https://mm.example.com/plugins/mattermost-ai/mcp/oauth/Confluence/start",
-	}
+// An MCP grant that lapses mid-turn is admitted through the same policy as at
+// catalog build; when eligible, ConnectMCPServer is offered for it for the
+// rest of the turn.
+func TestMCPToolErrorResultOffersReconnectMidTurn(t *testing.T) {
+	const confluenceOrigin = "https://confluence.example.com"
+	expired := &mcp.ReconnectNeededError{Auth: llm.ToolAuthError{
+		ServerName:   "Confluence",
+		ServerOrigin: confluenceOrigin,
+		AuthURL:      "https://mm.example.com/plugins/mattermost-ai/mcp/oauth/Confluence/start",
+		Error:        errors.New("401 unauthorized"),
+		ToolNames:    []string{"search"},
+	}}
+	autoEnable := llm.BotConfig{ID: "bot-id", Name: "matty", DisplayName: "Matty", AutoEnableNewMCPTools: true}
 
 	tests := []struct {
-		name         string
-		authErrors   []llm.ToolAuthError
-		interactive  bool
-		wantCallable bool
-		wantServers  []string
+		name        string
+		err         error
+		authErrors  []llm.ToolAuthError
+		botConfig   llm.BotConfig
+		opts        func(b *Builder) []llm.ContextOption
+		wantServers []string
 	}{
 		{
-			name:         "adds connect tool when nothing was unconnected",
-			interactive:  true,
-			wantCallable: true,
-			wantServers:  []string{"Confluence"},
+			name:        "offers the server when nothing was unconnected",
+			err:         expired,
+			botConfig:   autoEnable,
+			opts:        func(b *Builder) []llm.ContextOption { return []llm.ContextOption{b.WithLLMContextInteractive()} },
+			wantServers: []string{"Confluence"},
 		},
 		{
-			name:         "extends an existing list",
-			authErrors:   unconnectedTestAuthErrors()[:1],
-			interactive:  true,
-			wantCallable: true,
-			wantServers:  []string{"Jira", "Confluence"},
+			name:        "extends an existing list",
+			err:         expired,
+			authErrors:  unconnectedTestAuthErrors()[:1],
+			botConfig:   autoEnable,
+			opts:        func(b *Builder) []llm.ContextOption { return []llm.ContextOption{b.WithLLMContextInteractive()} },
+			wantServers: []string{"Jira", "Confluence"},
 		},
 		{
-			name: "non-interactive turn has no hook",
+			name:      "non-interactive turn never offers it",
+			err:       expired,
+			botConfig: autoEnable,
+			opts:      func(*Builder) []llm.ContextOption { return nil },
+		},
+		{
+			name:      "channel tool filter that rejects every configured tool",
+			err:       expired,
+			botConfig: autoEnable,
+			opts: func(b *Builder) []llm.ContextOption {
+				return []llm.ContextOption{
+					b.WithLLMContextInteractive(),
+					b.WithLLMContextMCPToolFilter(func(llm.Tool) bool { return false }),
+				}
+			},
+		},
+		{
+			name: "agent allowlist that excludes the server",
+			err:  expired,
+			botConfig: llm.BotConfig{
+				ID: "bot-id", Name: "matty", DisplayName: "Matty",
+				EnabledMCPTools: []llm.EnabledMCPTool{{ServerOrigin: unconnectedJiraOrigin, ToolName: llm.MCPServerToolWildcard}},
+			},
+			opts: func(b *Builder) []llm.ContextOption { return []llm.ContextOption{b.WithLLMContextInteractive()} },
+		},
+		{
+			name:      "user-disabled origin",
+			err:       expired,
+			botConfig: autoEnable,
+			opts: func(b *Builder) []llm.ContextOption {
+				return []llm.ContextOption{
+					b.WithLLMContextInteractive(),
+					b.WithLLMContextDisabledMCPServers([]string{confluenceOrigin}),
+				}
+			},
+		},
+		{
+			name:      "ordinary tool failure",
+			err:       errors.New("tool exploded"),
+			botConfig: autoEnable,
+			opts:      func(b *Builder) []llm.ContextOption { return []llm.ContextOption{b.WithLLMContextInteractive()} },
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			provider := &staticMCPToolProvider{
-				tools: []llm.Tool{testMCPTool("confluence__search", expired.Origin, "search pages")},
+				tools: []llm.Tool{testMCPTool("confluence__search", confluenceOrigin, "search pages")},
 			}
 			if tt.authErrors != nil {
 				provider.errors = &mcp.Errors{ToolAuthErrors: tt.authErrors}
 			}
 			builder := newTestBuilder(t, &emptyToolProvider{}, provider)
-			bot := newTestBotWithConfig(llm.BotConfig{ID: "bot-id", Name: "matty", DisplayName: "Matty", AutoEnableNewMCPTools: true})
+			c := buildToolsContext(builder, newTestBotWithConfig(tt.botConfig), tt.opts(builder)...)
+			before := unconnectedNames(c.ToolCatalog.UnconnectedMCPServers)
 
-			var opts []llm.ContextOption
-			if tt.interactive {
-				opts = append(opts, builder.WithLLMContextInteractive())
-			}
-			c := buildToolsContext(builder, bot, opts...)
+			result := MCPToolErrorResult(c, tt.err)
 
-			assert.Equal(t, tt.wantCallable, c.ReportMCPServerNeedsReconnect(expired))
-			assert.Equal(t, tt.wantServers, nilIfEmpty(unconnectedNames(c.ToolCatalog.UnconnectedMCPServers)))
-			if !tt.wantCallable {
-				assert.Nil(t, c.Tools.GetTool(llm.ConnectMCPServerToolName))
+			if tt.wantServers == nil {
+				assert.Equal(t, tt.err.Error(), result)
+				assert.Equal(t, before, unconnectedNames(c.ToolCatalog.UnconnectedMCPServers))
+				assert.NotContains(t, unconnectedNames(c.ToolCatalog.UnconnectedMCPServers), "Confluence")
 				return
 			}
 
+			assert.Contains(t, result, "Confluence")
+			assert.Contains(t, result, llm.ConnectMCPServerToolName)
+			assert.Equal(t, tt.wantServers, unconnectedNames(c.ToolCatalog.UnconnectedMCPServers))
+			require.True(t, c.IsToolCallable(llm.ConnectMCPServerToolName))
 			connect := c.Tools.GetTool(llm.ConnectMCPServerToolName)
-			require.NotNil(t, connect)
 			assert.Contains(t, connect.Description, "- Confluence")
 			require.NoError(t, connect.ValidateArguments([]byte(`{"server":"Confluence"}`)))
 
-			// Reporting the same server again is idempotent.
-			require.True(t, c.ReportMCPServerNeedsReconnect(expired))
+			// A second failure from the same server does not list it twice.
+			assert.Equal(t, result, MCPToolErrorResult(c, tt.err))
 			assert.Equal(t, tt.wantServers, unconnectedNames(c.ToolCatalog.UnconnectedMCPServers))
 		})
 	}
-}
-
-func nilIfEmpty(s []string) []string {
-	if len(s) == 0 {
-		return nil
-	}
-	return s
 }

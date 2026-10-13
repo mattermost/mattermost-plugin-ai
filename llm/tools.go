@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -375,7 +376,6 @@ type ToolAuthError struct {
 type ToolStore struct {
 	tools            map[string]Tool
 	unloadedMCPTools map[string]Tool
-	authErrors       []ToolAuthError
 }
 
 // ToolLookup describes how a tool call name resolved in a ToolStore.
@@ -399,8 +399,7 @@ func NewJSONSchemaFromStruct[T any]() *jsonschema.Schema {
 
 func NewToolStore() *ToolStore {
 	return &ToolStore{
-		tools:      make(map[string]Tool),
-		authErrors: []ToolAuthError{},
+		tools: make(map[string]Tool),
 	}
 }
 
@@ -830,6 +829,19 @@ func FilterMCPToolsByEnabledAllowlist(tools []Tool, allowlist []EnabledMCPTool) 
 	return FilterMCPToolsByAllowlist(tools, mcpToolAllowlist(tools, allowlist))
 }
 
+// EnabledMCPToolsAllow is the single-tool form of
+// FilterMCPToolsByEnabledAllowlist: it reports whether allowlist enables the
+// MCP tool toolName (runtime or bare name) served from origin.
+func EnabledMCPToolsAllow(allowlist []EnabledMCPTool, origin, toolName string) bool {
+	origin = NormalizeMCPServerOrigin(origin)
+	return slices.ContainsFunc(allowlist, func(enabled EnabledMCPTool) bool {
+		if NormalizeMCPServerOrigin(enabled.ServerOrigin) != origin {
+			return false
+		}
+		return enabled.ToolName == MCPServerToolWildcard || MCPToolNameMatches(toolName, enabled.ToolName)
+	})
+}
+
 // RetainOnlyMCPTools filters the tool store to only retain MCP tools whose
 // (ServerOrigin, Name) pair appears in the allowlist. Built-in tools (those
 // with empty ServerOrigin) are never removed by this method.
@@ -867,14 +879,4 @@ func (s *ToolStore) GetToolsInfo() []ToolInfo {
 		})
 	}
 	return result
-}
-
-// AddAuthError adds an authentication error to the tool store
-func (s *ToolStore) AddAuthError(authError ToolAuthError) {
-	s.authErrors = append(s.authErrors, authError)
-}
-
-// GetAuthErrors returns all authentication errors collected during tool creation
-func (s *ToolStore) GetAuthErrors() []ToolAuthError {
-	return s.authErrors
 }

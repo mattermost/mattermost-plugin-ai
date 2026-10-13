@@ -15,6 +15,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/conversation"
 	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
+	"github.com/mattermost/mattermost-plugin-agents/v2/llmcontext"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mcp"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mcpserver/auth"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmapi"
@@ -293,7 +294,7 @@ func (c *Conversations) HandleToolCall(ctx context.Context, userID string, post 
 				toolResults = append(toolResults, toolrunner.ToolResult{
 					ToolCallID: block.ID,
 					Name:       block.Name,
-					Result:     resolveErr.Error(),
+					Result:     llmcontext.MCPToolErrorResult(llmContext, resolveErr),
 					IsError:    true,
 				})
 			} else {
@@ -335,7 +336,7 @@ func (c *Conversations) HandleToolCall(ctx context.Context, userID string, post 
 				toolResults = append(toolResults, toolrunner.ToolResult{
 					ToolCallID: block.ID,
 					Name:       block.Name,
-					Result:     resolveErr.Error(),
+					Result:     llmcontext.MCPToolErrorResult(llmContext, resolveErr),
 					IsError:    true,
 				})
 			} else {

@@ -125,14 +125,3 @@ func (c *Context) UnconnectedMCPServerByName(name string) (UnconnectedMCPServer,
 	}
 	return UnconnectedMCPServer{}, false
 }
-
-// ReportMCPServerNeedsReconnect records that an MCP server lost its
-// authorization mid-turn so the rest of the turn can offer ConnectMCPServer
-// for it. It reports whether ConnectMCPServer is callable afterwards.
-func (c *Context) ReportMCPServerNeedsReconnect(server UnconnectedMCPServer) bool {
-	if c == nil || c.ToolRuntime.MCPServerNeedsReconnect == nil {
-		return false
-	}
-	c.ToolRuntime.MCPServerNeedsReconnect(server)
-	return c.IsToolCallable(ConnectMCPServerToolName)
-}

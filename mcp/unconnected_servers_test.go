@@ -166,144 +166,71 @@ func TestOAuthNeededConnectFailureCarriesAdminMetadataOnly(t *testing.T) {
 	assert.NotEmpty(t, authErr.AuthURL)
 }
 
-func TestRememberOAuthNeededForToolCallDetachesSession(t *testing.T) {
+// A tool call that fails because the user's authorization lapsed reports the
+// server as needing a reconnect and stops offering its tools; any other
+// failure, and every service-account failure, leaves the session alone.
+func TestToolCallErrorReportsLapsedAuthorization(t *testing.T) {
 	const origin = "https://jira.example.com"
-	const authURL = "https://mattermost.example.com/plugins/mattermost-ai/mcp/oauth/Jira/start"
+	const startURL = "https://mattermost.example.com/plugins/mattermost-ai/mcp/oauth/Jira/start"
+	const issuedURL = "https://auth.example.com/authorize?state=1"
 
 	tests := []struct {
-		name         string
-		err          error
-		withOAuth    bool
-		wantAuthURL  string
-		wantDetached bool
+		name           string
+		err            error
+		serviceAccount bool
+		noStartURL     bool
+		wantAuthURL    string
 	}{
-		{
-			name:         "oauth needed detaches and returns start URL",
-			err:          &OAuthNeededError{authURL: authURL},
-			withOAuth:    true,
-			wantAuthURL:  authURL,
-			wantDetached: true,
-		},
-		{
-			name:         "wrapped oauth needed error",
-			err:          errors.Join(errors.New("call failed"), &OAuthNeededError{authURL: authURL}),
-			withOAuth:    true,
-			wantAuthURL:  authURL,
-			wantDetached: true,
-		},
-		{
-			name:         "oauth needed without URL falls back to start route",
-			err:          &OAuthNeededError{},
-			withOAuth:    true,
-			wantAuthURL:  "https://mattermost.example.com/plugins/mattermost-ai/mcp/oauth/Jira/start",
-			wantDetached: true,
-		},
-		{
-			name:      "ordinary failure keeps the session",
-			err:       errors.New("tool exploded"),
-			withOAuth: true,
-		},
-		{
-			name: "service account bags have no oauth manager",
-			err:  &OAuthNeededError{authURL: authURL},
-		},
+		{name: "oauth needed", err: &OAuthNeededError{authURL: issuedURL}, wantAuthURL: issuedURL},
+		{name: "wrapped oauth needed", err: errors.Join(errors.New("call failed"), &OAuthNeededError{authURL: issuedURL}), wantAuthURL: issuedURL},
+		{name: "oauth needed without URL falls back to start route", err: &OAuthNeededError{}, wantAuthURL: startURL},
+		{name: "oauth needed with no way to start it keeps the session", err: &OAuthNeededError{}, noStartURL: true},
+		{name: "ordinary failure", err: errors.New("tool exploded")},
+		{name: "service account never needs per-user oauth", err: &OAuthNeededError{authURL: issuedURL}, serviceAccount: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var oauthManager *OAuthManager
-			if tt.withOAuth {
-				oauthManager, _ = newStatefulKVManager(t, nil, http.DefaultClient)
-				oauthManager.callbackURL = "https://mattermost.example.com/plugins/mattermost-ai/oauth/callback"
+			oauthManager, _ := newStatefulKVManager(t, nil, http.DefaultClient)
+			oauthManager.callbackURL = "https://mattermost.example.com/plugins/mattermost-ai/oauth/callback"
+			if tt.noStartURL {
+				oauthManager.callbackURL = ""
 			}
 			uc := NewUserClients("alice", newTestLogService(), oauthManager, nil, nil)
 			client := testClientWithTools("Jira", origin, "create_issue")
+			client.serviceAccount = tt.serviceAccount
+			client.config.Description = "Jira issues"
+			client.config.ToolConfigs = []ToolConfig{{Name: "create_issue", Enabled: true}}
 			uc.clients["Jira"] = client
 
-			got := uc.rememberOAuthNeededForToolCall(client, tt.err)
-			assert.Equal(t, tt.wantAuthURL, got)
+			err := uc.toolCallError(client, tt.err)
+			require.ErrorIs(t, err, tt.err)
 
-			_, stillCached := uc.clients["Jira"]
-			assert.Equal(t, !tt.wantDetached, stillCached)
+			offered := collectToolsFromSnapshots("alice", newTestLogService(), uc.snapshotClients())
+			state, loadErr := oauthManager.LoadAuthNeededState("alice", "Jira")
+			require.NoError(t, loadErr)
 
-			if tt.wantAuthURL != "" {
-				state, err := oauthManager.LoadAuthNeededState("alice", "Jira")
-				require.NoError(t, err)
-				require.NotNil(t, state)
-				assert.Equal(t, tt.wantAuthURL, state.AuthURL)
-			}
-		})
-	}
-}
-
-func TestReconnectNeededToolError(t *testing.T) {
-	const authURL = "https://mm/jira/start"
-	client := testClientWithTools("Jira", "https://jira.example.com", "create_issue")
-	client.config.Description = "Jira issues"
-	client.config.ToolConfigs = []ToolConfig{{Name: "create_issue", Enabled: true}}
-	cause := &OAuthNeededError{authURL: authURL}
-
-	tests := []struct {
-		name         string
-		llmContext   func() *llm.Context
-		wantContains []string
-		wantReported bool
-	}{
-		{
-			name: "interactive turn points the model at ConnectMCPServer",
-			llmContext: func() *llm.Context {
-				c := &llm.Context{Tools: llm.NewToolStore()}
-				c.ToolRuntime.MCPServerNeedsReconnect = func(server llm.UnconnectedMCPServer) {
-					c.ToolCatalog.UnconnectedMCPServers = append(c.ToolCatalog.UnconnectedMCPServers, server)
-					c.Tools.AddTools(connectCallableStore().GetTools())
-				}
-				return c
-			},
-			wantContains: []string{
-				`MCP server "Jira" needs the user to reconnect`,
-				`Call ConnectMCPServer with {"server":"Jira"}`,
-				"Do not claim the action was performed",
-			},
-			wantReported: true,
-		},
-		{
-			name:       "non-interactive turn asks the user to reconnect",
-			llmContext: func() *llm.Context { return &llm.Context{} },
-			wantContains: []string{
-				`MCP server "Jira" needs the user to reconnect`,
-				"Ask the user to reconnect Jira and then try again.",
-			},
-		},
-		{
-			name:       "nil context",
-			llmContext: func() *llm.Context { return nil },
-			wantContains: []string{
-				"Ask the user to reconnect Jira",
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			llmContext := tt.llmContext()
-			err := reconnectNeededToolError(llmContext, client, authURL, cause)
-			require.Error(t, err)
-			require.ErrorIs(t, err, cause)
-			for _, want := range tt.wantContains {
-				assert.Contains(t, err.Error(), want)
+			needed, isReconnect := errors.AsType[*ReconnectNeededError](err)
+			if tt.wantAuthURL == "" {
+				assert.False(t, isReconnect)
+				assert.Len(t, offered, 1)
+				assert.Nil(t, state)
+				return
 			}
 
-			server, reported := llmContext.UnconnectedMCPServerByName("Jira")
-			require.Equal(t, tt.wantReported, reported)
-			if reported {
-				assert.Equal(t, llm.UnconnectedMCPServer{
-					Name:        "Jira",
-					Origin:      llm.NormalizeMCPServerOrigin("https://jira.example.com"),
-					Description: "Jira issues",
-					AuthURL:     authURL,
-					ToolNames:   []string{"create_issue"},
-				}, server)
-			}
+			require.True(t, isReconnect)
+			assert.Equal(t, llm.ToolAuthError{
+				ServerName:        "Jira",
+				ServerOrigin:      origin,
+				AuthURL:           tt.wantAuthURL,
+				Error:             tt.err,
+				ServerDescription: "Jira issues",
+				ToolNames:         []string{"create_issue"},
+			}, needed.Auth)
+			assert.Empty(t, offered)
+			require.NotNil(t, state)
+			assert.Equal(t, tt.wantAuthURL, state.AuthURL)
+			assert.Contains(t, needed.ConnectGuidance(), "Jira")
 		})
 	}
 }

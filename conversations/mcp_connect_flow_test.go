@@ -6,6 +6,7 @@ package conversations
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"sync"
 	"testing"
@@ -301,6 +302,50 @@ func TestHandleToolCallConnectMCPServer(t *testing.T) {
 			assert.Equal(t, tc.wantFollowUpListsSrv, listed)
 		})
 	}
+}
+
+// An MCP tool whose authorization lapses mid-turn makes the tool loop offer
+// ConnectMCPServer for its server before the next completion request.
+func TestToolLoopOffersReconnectWhenAuthorizationLapses(t *testing.T) {
+	const origin = "https://jira.example.com"
+	convStore, conv := loadedStateConversationStore()
+	authErr := jiraAuthError()
+	authErr.Error = errors.New("401 unauthorized")
+	jiraTool := channelFollowUpTestMCPTool("jira__get_issue", origin, "fetch Jira issue details")
+	jiraTool.Resolver = func(context.Context, *llm.Context, llm.ToolArgumentGetter) (string, error) {
+		return "", &mcp.ReconnectNeededError{Auth: authErr}
+	}
+
+	builder := newChannelFollowUpTestBuilder(t, []llm.Tool{jiraTool}, &channelFollowUpTestConfig{})
+	lm := &dynamicWorkflowLLM{}
+	bot := loadedStateBot(lm)
+	llmContext := builder.BuildLLMContextUserRequest(
+		bot,
+		&model.User{Id: "user-id", Username: "user", Locale: "en"},
+		&model.Channel{Id: "dm-channel", Type: model.ChannelTypeDirect, Name: "bot-id__user-id"},
+		builder.WithLLMContextInteractive(),
+		builder.WithLLMContextTools(context.Background(), bot),
+	)
+	require.False(t, llmContext.IsToolCallable(llm.ConnectMCPServerToolName))
+	c := &Conversations{
+		convService:       conversation.NewService(convStore, nil, nil, nil),
+		toolPolicyChecker: mapPolicyChecker{origin: {"get_issue": {policy: mcp.ToolPolicyAutoRunInDM, enabled: true}}},
+	}
+
+	streamResult, err := c.ProcessDMRequest(context.Background(), conv.ID, lm, llmContext, 0)
+	require.NoError(t, err)
+	_, err = streamResult.Stream.ReadAll()
+	require.NoError(t, err)
+
+	require.Len(t, lm.requests, 4)
+	results := requestToolResults(lm.requests[3])
+	require.NotEmpty(t, results)
+	lapsed := results[len(results)-1]
+	assert.Contains(t, lapsed, "Jira")
+	assert.Contains(t, lapsed, llm.ConnectMCPServerToolName)
+	assert.True(t, llmContext.IsToolCallable(llm.ConnectMCPServerToolName))
+	_, listed := llmContext.UnconnectedMCPServerByName("Jira")
+	assert.True(t, listed)
 }
 
 type capturedEphemeral struct {
