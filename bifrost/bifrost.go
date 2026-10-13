@@ -79,6 +79,10 @@ type LLM struct {
 	// alternative providers when the primary fails.
 	fallbacks []fallbackHop
 
+	// baseProviders maps each Bifrost registration name (including custom
+	// fallback slots such as "anthropic::svc2") to its base provider type.
+	baseProviders map[schemas.ModelProvider]schemas.ModelProvider
+
 	// providerFileDownloadRoutes are registered Bifrost routes that can serve
 	// captured files. Fallbacks of the same provider type have distinct routes.
 	providerFileDownloadRoutes map[schemas.ModelProvider]bool
@@ -179,6 +183,7 @@ func New(cfg Config) (*LLM, error) {
 	// slot, otherwise it silently inherits the earlier service's base URL and
 	// key at fallback time.
 	usedNames := map[schemas.ModelProvider]bool{primaryEntry.registeredName(): true}
+	baseProviders := map[schemas.ModelProvider]schemas.ModelProvider{primaryEntry.registeredName(): cfg.Provider}
 
 	// Redact the primary and every fallback key from error/log surfaces, even
 	// key formats the generic redaction patterns don't recognize.
@@ -220,6 +225,7 @@ func New(cfg Config) (*LLM, error) {
 
 		account.addProvider(entry)
 		usedNames[name] = true
+		baseProviders[name] = fb.Provider
 		if supportsProviderFileDownloadProvider(fb.Provider) {
 			providerFileDownloadRoutes[name] = true
 		}
@@ -257,6 +263,7 @@ func New(cfg Config) (*LLM, error) {
 		thinkingBudget:             cfg.ThinkingBudget,
 		useResponsesAPI:            cfg.UseResponsesAPI,
 		fallbacks:                  fallbacks,
+		baseProviders:              baseProviders,
 		providerFileDownloadRoutes: providerFileDownloadRoutes,
 	}, nil
 }

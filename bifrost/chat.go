@@ -21,6 +21,7 @@ func (b *LLM) streamChat(ctx context.Context, request llm.CompletionRequest, cfg
 	)
 	bifrostCtx, cancel := schemas.NewBifrostContextWithTimeout(ctx, b.streamingTimeout*10)
 	defer cancel()
+	b.withHopReasoning(bifrostCtx, cfg)
 
 	// Convert to Bifrost request
 	bifrostReq := b.convertToBifrostRequest(request, cfg)
@@ -169,10 +170,16 @@ func (b *LLM) streamChat(ctx context.Context, request llm.CompletionRequest, cfg
 	}
 }
 
-// buildChatReasoning creates the ChatReasoning configuration for the request,
-// or nil when no reasoning block should be sent.
+// buildChatReasoning creates the ChatReasoning configuration for the primary
+// provider, or nil when no reasoning block should be sent.
 func (b *LLM) buildChatReasoning(cfg llm.LanguageModelConfig) *schemas.ChatReasoning {
-	params, ok := b.providerReasoning(cfg)
+	return b.chatReasoningFor(b.provider, cfg)
+}
+
+// chatReasoningFor creates the ChatReasoning configuration for provider and
+// cfg.Model, or nil when no reasoning block should be sent.
+func (b *LLM) chatReasoningFor(provider schemas.ModelProvider, cfg llm.LanguageModelConfig) *schemas.ChatReasoning {
+	params, ok := b.providerReasoning(provider, cfg)
 	if !ok {
 		return nil
 	}

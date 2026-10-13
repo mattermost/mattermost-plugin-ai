@@ -29,14 +29,15 @@ type reasoningParams struct {
 }
 
 // providerReasoning resolves the reasoning block shared by the chat and
-// Responses paths. ok=false means the reasoning block must be omitted; other
-// providers reject reasoning parameters on these paths. Gemini/Vertex get an
-// explicit budget or effort fallback (Bifrost maps reasoning.max_tokens to
+// Responses paths for provider and cfg.Model, which differ per fallback hop.
+// ok=false means the reasoning block must be omitted; other providers reject
+// reasoning parameters on these paths. Gemini/Vertex get an explicit budget or
+// effort fallback (Bifrost maps reasoning.max_tokens to
 // thinkingConfig.thinkingBudget and reasoning.effort to
 // thinkingConfig.thinkingLevel on 3.0+). OpenAI/Azure reasoning is
-// Responses-API-only and handled directly by buildResponsesReasoning.
-func (b *LLM) providerReasoning(cfg llm.LanguageModelConfig) (reasoningParams, bool) {
-	switch b.provider {
+// Responses-API-only and handled directly by responsesReasoningFor.
+func (b *LLM) providerReasoning(provider schemas.ModelProvider, cfg llm.LanguageModelConfig) (reasoningParams, bool) {
+	switch provider {
 	case schemas.Anthropic:
 		if b.thinkingOff(cfg) {
 			return anthropicThinkingOff(cfg.Model)
@@ -49,9 +50,22 @@ func (b *LLM) providerReasoning(cfg llm.LanguageModelConfig) (reasoningParams, b
 		if b.thinkingBudget > 0 {
 			return reasoningParams{maxTokens: new(b.thinkingBudget)}, true
 		}
-		return reasoningParams{effort: new(cmp.Or(b.reasoningEffort, "medium"))}, true
+		return reasoningParams{effort: new(standardEffort(b.reasoningEffort))}, true
 	default:
 		return reasoningParams{}, false
+	}
+}
+
+// standardEffort maps the configured effort onto the levels OpenAI and Gemini
+// accept. An Anthropic agent's levels reach those providers on fallback hops.
+func standardEffort(effort string) string {
+	switch effort {
+	case "":
+		return "medium"
+	case "xhigh", "max":
+		return "high"
+	default:
+		return effort
 	}
 }
 
