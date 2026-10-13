@@ -1397,8 +1397,9 @@ func TestUpdateAgentRename(t *testing.T) {
 			e.mockAPI.On("LogError", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 
 			configStore := &mockConfigStore{cfg: &config.Config{
-				DefaultBotName: tc.defaultBotName,
-				Services:       []llm.ServiceConfig{{ID: "svc-1", Name: "Test Service", Type: "openai"}},
+				DefaultBotName:      tc.defaultBotName,
+				TranscriptGenerator: "old-name",
+				Services:            []llm.ServiceConfig{{ID: "svc-1", Name: "Test Service", Type: "openai"}},
 			}}
 			e.api.configStore = configStore
 
@@ -1433,6 +1434,7 @@ func TestUpdateAgentRename(t *testing.T) {
 			assert.Equal(t, "bot-1", e.agentStore.agents["agent-1"].BotUserID, "the agent must keep its bot account")
 			assert.Equal(t, tc.expectedBotName, botName)
 			assert.Equal(t, tc.expectedDefaultBot, configStore.cfg.DefaultBotName)
+			assert.Equal(t, tc.expectedName, configStore.cfg.TranscriptGenerator, "the transcript setting must follow the stored agent name")
 		})
 	}
 }
