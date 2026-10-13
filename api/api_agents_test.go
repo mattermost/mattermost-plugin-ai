@@ -1594,6 +1594,11 @@ func TestUpdateAgentRefreshesRenamedAgent(t *testing.T) {
 			e.mockAPI.On("GetUserByUsername", mock.Anything).
 				Return(nil, model.NewAppError("GetUserByUsername", "app.user.missing", nil, "", http.StatusNotFound)).Maybe()
 			e.mockAPI.On("PatchBot", "bot-1", mock.AnythingOfType("*model.BotPatch")).Return(&model.Bot{UserId: "bot-1"}, nil).Maybe()
+			liveName := "old-name"
+			if username, ok := tc.change["username"].(string); ok {
+				liveName = username
+			}
+			e.mockAPI.On("GetUser", "bot-1").Return(&model.User{Id: "bot-1", Username: liveName, IsBot: true}, nil).Maybe()
 			notifier := &recordingAgentNotifier{}
 			e.api.clusterAgentNotifier = notifier
 

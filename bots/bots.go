@@ -658,9 +658,10 @@ func (b *MMBots) syncBot(bot *Bot, existing *model.Bot, configuredService llm.Se
 }
 
 // RefreshAgent rebuilds the registry entry of one DB-backed agent from the
-// store and swaps in just that entry. When the agent cannot be rebuilt, or is
-// no longer active, its entry is removed instead, so the registry never keeps
-// serving an identity the agent no longer has. It never creates bot accounts
+// store and swaps in just that entry, so the change is served without waiting
+// for a full rebuild. When the agent cannot be rebuilt, or is no longer
+// active, its entry is removed instead. Name-based lookups do not depend on it
+// having run: they check the live account. It never creates bot accounts
 // (EnsureBots does, under the cluster mutex), and it leaves every other bot
 // untouched.
 //
@@ -1001,24 +1002,54 @@ func (b *MMBots) getTranscriberBot() *Bot {
 	return b.GetBotByUsername(b.config.GetTranscriptGenerator())
 }
 
-// GetBotByUsername retrieves the bot associated with the given bot username.
-// A name the registry does not know is resolved through the Mattermost bot
-// account that holds it, so an agent stays reachable under its new name while
-// the registry still lists it under the old one after a rename.
-func (b *MMBots) GetBotByUsername(botUsername string) *Bot {
-	if bot := b.findBot(func(bot *Bot) bool {
-		return bot.cfg.Name == botUsername
-	}); bot != nil {
-		return bot
+// accountHoldsUsername reports whether bot's Mattermost account currently
+// holds username. The registry's cached names can lag a rename, which releases
+// the old username at once, so name-based lookups must not trust them alone.
+// The account is read by its user ID, which the server caches and invalidates
+// cluster-wide on every bot patch; a by-username read is uncached and can
+// return the name's previous holder during replica lag.
+func (b *MMBots) accountHoldsUsername(bot *Bot, username string) bool {
+	if b.pluginAPI == nil || bot == nil || bot.mmBot == nil || username == "" {
+		return false
 	}
-	if botUsername == "" || b.pluginAPI == nil {
+	user, err := b.pluginAPI.User.Get(bot.mmBot.UserId)
+	if err != nil {
+		b.pluginAPI.Log.Warn("Failed to get bot account to verify its username", "bot_user_id", bot.mmBot.UserId, "error", err.Error())
+		return false
+	}
+	return strings.EqualFold(user.Username, username)
+}
+
+// GetBotByUsername retrieves the bot whose Mattermost account currently holds
+// the given username. A name the registry does not know is resolved through
+// the bot account that holds it, so an agent stays reachable under its new
+// name while the registry still lists it under the old one after a rename.
+func (b *MMBots) GetBotByUsername(botUsername string) *Bot {
+	if botUsername == "" {
+		return nil
+	}
+	for _, bot := range b.GetAllBots() {
+		if bot.mmBot == nil {
+			continue
+		}
+		if !strings.EqualFold(bot.mmBot.Username, botUsername) && !strings.EqualFold(bot.cfg.Name, botUsername) {
+			continue
+		}
+		if b.accountHoldsUsername(bot, botUsername) {
+			return bot
+		}
+	}
+	if b.pluginAPI == nil {
 		return nil
 	}
 	user, err := b.pluginAPI.User.GetByUsername(botUsername)
 	if err != nil || !user.IsBot {
 		return nil
 	}
-	return b.GetBotByID(user.Id)
+	if bot := b.GetBotByID(user.Id); b.accountHoldsUsername(bot, botUsername) {
+		return bot
+	}
+	return nil
 }
 
 // GetBotByUsernameOrFirst retrieves the bot with the given username, or the
@@ -1069,11 +1100,18 @@ func (b *MMBots) IsAnyBot(userID string) bool {
 	return b.GetBotByID(userID) != nil
 }
 
-// GetBotMentioned returns the bot mentioned in the text, if any.
+// GetBotMentioned returns the bot mentioned in the text, if any. A bot is
+// mentioned only under a username its Mattermost account currently holds.
 func (b *MMBots) GetBotMentioned(text string) *Bot {
-	return b.findBot(func(bot *Bot) bool {
-		return userIsMentionedMarkdown(text, bot.mmBot.Username)
-	})
+	for _, bot := range b.GetAllBots() {
+		if bot.mmBot == nil {
+			continue
+		}
+		if userIsMentionedMarkdown(text, bot.mmBot.Username) && b.accountHoldsUsername(bot, bot.mmBot.Username) {
+			return bot
+		}
+	}
+	return nil
 }
 
 // GetAllBots returns all bots

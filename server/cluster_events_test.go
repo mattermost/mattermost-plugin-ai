@@ -564,8 +564,9 @@ func TestPublishAgentUpdatePayload(t *testing.T) {
 // TestOnPluginClusterEventAgentUpdateRefreshesRenamedAgent delivers an agent
 // update to a peer whose registry still lists a renamed agent under its old
 // name and whose full bot reload fails. Only the agent ID in the payload lets
-// the peer stop answering to the old name, and the peer reloads every bot only
-// when refreshing that agent cannot finish applying the change.
+// the peer serve the agent under its new name, and the peer reloads every bot
+// only when refreshing that agent cannot finish applying the change. The old
+// name, which the bot account released, is refused either way.
 func TestOnPluginClusterEventAgentUpdateRefreshesRenamedAgent(t *testing.T) {
 	renamed := llm.BotConfig{ID: "a1", BotUserID: "bot-1", Name: "new-name", DisplayName: "Agent", ServiceID: "svc1"}
 	other := llm.BotConfig{ID: "a2", BotUserID: "bot-2", Name: "other", DisplayName: "Other", ServiceID: "svc1"}
@@ -631,7 +632,9 @@ func TestOnPluginClusterEventAgentUpdateRefreshesRenamedAgent(t *testing.T) {
 			mockAPI.On("GetBot", "bot-1", true).Return(&model.Bot{UserId: "bot-1", Username: "new-name", OwnerId: "mattermost-ai"}, nil).Maybe()
 			mockAPI.On("PatchBot", "bot-1", mock.AnythingOfType("*model.BotPatch")).Return(&model.Bot{UserId: "bot-1", Username: "new-name"}, nil).Maybe()
 			mockAPI.On("UpdateBotActive", "bot-1", true).Return(&model.Bot{}, nil).Maybe()
-			mockAPI.On("GetUser", "bot-1").Return(&model.User{LastPictureUpdate: 1}, nil).Maybe()
+			mockAPI.On("GetUser", "bot-1").Return(&model.User{Id: "bot-1", Username: "new-name", IsBot: true, LastPictureUpdate: 1}, nil).Maybe()
+			mockAPI.On("GetUserByUsername", "old-name").
+				Return(nil, model.NewAppError("GetUserByUsername", "app.user.missing_account.const", nil, "", http.StatusNotFound))
 			mockAPI.On("KVSetWithOptions", mock.AnythingOfType("string"), mock.AnythingOfType("[]uint8"), mock.AnythingOfType("model.PluginKVSetOptions")).Return(true, nil).Maybe()
 			mockAPI.On("KVDelete", mock.AnythingOfType("string")).Return(nil).Maybe()
 			mockAPI.On("GetBots", mock.AnythingOfType("*model.BotGetOptions")).
@@ -671,18 +674,20 @@ func TestOnPluginClusterEventAgentUpdateRefreshesRenamedAgent(t *testing.T) {
 			}
 			mockAPI.AssertNumberOfCalls(t, "GetBots", fullRefreshes)
 
-			oldMention := mmBots.GetBotMentioned("@old-name hi")
+			require.Nil(t, mmBots.GetBotMentioned("@old-name hi"), "the peer must not answer to the name the agent's account released")
+			require.Nil(t, mmBots.GetBotByUsername("old-name"), "the peer must not select the agent by the name its account released")
+			registered := mmBots.GetBotByID("bot-1")
 			newMention := mmBots.GetBotMentioned("@new-name hi")
 			switch test.expectServedAs {
 			case "new-name":
-				require.Nil(t, oldMention, "the peer must stop answering to the agent's old name")
 				require.NotNil(t, newMention)
 				require.Equal(t, "a1", newMention.GetConfig().ID)
 			case "old-name":
-				require.NotNil(t, oldMention, "without an agent ID the peer keeps its previous registry when the full reload fails")
+				require.NotNil(t, registered)
+				require.Equal(t, "old-name", registered.GetMMBot().Username, "without an agent ID the peer keeps its previous registry when the full reload fails")
 				require.Nil(t, newMention)
 			default:
-				require.Nil(t, oldMention)
+				require.Nil(t, registered)
 				require.Nil(t, newMention)
 			}
 		})

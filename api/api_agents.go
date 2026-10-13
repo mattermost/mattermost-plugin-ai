@@ -713,6 +713,7 @@ func (a *API) handleUpdateAgent(c *gin.Context) {
 	// before anything is persisted. It keeps its user ID, so DMs, channel
 	// memberships, and history stay with the agent.
 	revertRename := func() {}
+	renameReverted := false
 	if usernameChanged {
 		renamed, ok := a.renameAgentBot(c, cfg.BotUserID, cfg.Name)
 		if !ok {
@@ -721,9 +722,10 @@ func (a *API) handleUpdateAgent(c *gin.Context) {
 		// From here a failure can leave the bot account, the stored agent, and
 		// the registries disagreeing on the name (a rollback or the revert can
 		// fail too), with the previous username already released. Bring all of
-		// them to the stored agent before the error is returned.
+		// them to the stored agent before the error is returned, unless the
+		// rename was fully reverted and they already agree.
 		defer func() {
-			if c.IsAborted() {
+			if c.IsAborted() && !renameReverted {
 				_ = a.refreshBotsAndNotify(cfg.ID)
 			}
 		}()
@@ -731,7 +733,9 @@ func (a *API) handleUpdateAgent(c *gin.Context) {
 			revertRename = func() {
 				if _, err := a.pluginAPI.Bot.Patch(cfg.BotUserID, &model.BotPatch{Username: &prev.Name}); err != nil {
 					a.pluginAPI.Log.Error("Failed to revert bot username after agent update failure", "agent_id", cfg.ID, "error", err.Error())
+					return
 				}
+				renameReverted = true
 			}
 		}
 	}
@@ -766,6 +770,8 @@ func (a *API) handleUpdateAgent(c *gin.Context) {
 					a.pluginAPI.Log.Error("Failed to revert default agent name after agent update failure", "agent_id", cfg.ID, "error", err.Error())
 				}
 				revertBotRename()
+				// The config update already rebuilt the registries under the new name.
+				renameReverted = false
 			}
 		}
 	}

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -27,9 +28,15 @@ import (
 type botAccounts struct {
 	mu       sync.Mutex
 	byUserID map[string]*model.Bot
+	// humans are non-bot users keyed by user ID.
+	humans   map[string]*model.User
 	getErr   *model.AppError
 	patchErr *model.AppError
 	listErr  *model.AppError
+	userErr  *model.AppError
+	// replicaLag maps usernames that a by-username read still resolves to
+	// their previous holder's user ID.
+	replicaLag map[string]string
 	// listGate, when set, makes the next bot list signal listEntered and then
 	// wait for listGate to close.
 	listGate    chan struct{}
@@ -83,15 +90,61 @@ func (a *botAccounts) patch(userID string, patch *model.BotPatch) (*model.Bot, *
 	return account.Clone(), nil
 }
 
+func (a *botAccounts) create(bot *model.Bot) (*model.Bot, *model.AppError) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	created := bot.Clone()
+	created.UserId = model.NewId()
+	a.byUserID[created.UserId] = created
+	return created.Clone(), nil
+}
+
+// botUser returns the user of a bot account. LastPictureUpdate is set so
+// syncing the bot never uploads a default profile image.
+func botUser(account *model.Bot) *model.User {
+	return &model.User{Id: account.UserId, Username: account.Username, IsBot: true, LastPictureUpdate: 1}
+}
+
+func (a *botAccounts) user(userID string) (*model.User, *model.AppError) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.userErr != nil {
+		return nil, a.userErr
+	}
+	if account, ok := a.byUserID[userID]; ok {
+		return botUser(account), nil
+	}
+	if human, ok := a.humans[userID]; ok {
+		return human, nil
+	}
+	return nil, model.NewAppError("GetUser", "app.user.missing_account.const", nil, "", http.StatusNotFound)
+}
+
 func (a *botAccounts) userByUsername(username string) (*model.User, *model.AppError) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if userID, ok := a.replicaLag[username]; ok {
+		return &model.User{Id: userID, Username: username, IsBot: true}, nil
+	}
 	for _, account := range a.byUserID {
 		if account.Username == username {
-			return &model.User{Id: account.UserId, Username: account.Username, IsBot: true}, nil
+			return botUser(account), nil
+		}
+	}
+	for _, human := range a.humans {
+		if human.Username == username {
+			return human, nil
 		}
 	}
 	return nil, model.NewAppError("GetUserByUsername", "app.user.missing_account.const", nil, "", http.StatusNotFound)
+}
+
+// rename renames a bot account behind the registry's back, as a rename on
+// another node or one whose registry refresh failed would.
+func (a *botAccounts) rename(userID, username string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.byUserID[userID].Username = username
 }
 
 func (a *botAccounts) username(userID string) string {
@@ -129,7 +182,7 @@ func newRefreshAgentHarness(t *testing.T, store *stubAgentStore, license *model.
 	mockAPI.On("GetBot", mock.AnythingOfType("string"), true).Return(accounts.get).Maybe()
 	mockAPI.On("PatchBot", mock.AnythingOfType("string"), mock.AnythingOfType("*model.BotPatch")).Return(accounts.patch).Maybe()
 	mockAPI.On("UpdateBotActive", mock.AnythingOfType("string"), mock.AnythingOfType("bool")).Return(&model.Bot{}, nil).Maybe()
-	mockAPI.On("GetUser", mock.AnythingOfType("string")).Return(&model.User{LastPictureUpdate: 1}, nil).Maybe()
+	mockAPI.On("GetUser", mock.AnythingOfType("string")).Return(accounts.user).Maybe()
 	mockAPI.On("GetUserByUsername", mock.AnythingOfType("string")).Return(accounts.userByUsername).Maybe()
 	mockAPI.On("KVSetWithOptions", mock.AnythingOfType("string"), mock.AnythingOfType("[]uint8"), mock.AnythingOfType("model.PluginKVSetOptions")).Return(true, nil).Maybe()
 	mockAPI.On("KVDelete", mock.AnythingOfType("string")).Return(nil).Maybe()
@@ -149,6 +202,112 @@ func renameTestAgents() *stubAgentStore {
 		{ID: "a1", BotUserID: "bot-1", Name: "old-name", DisplayName: "Agent", ServiceID: "svc1"},
 		{ID: "a2", BotUserID: "bot-2", Name: "steady", DisplayName: "Steady", ServiceID: "svc1"},
 	}}
+}
+
+func userIDOf(bot *Bot) string {
+	if bot == nil {
+		return ""
+	}
+	return bot.BotUserID()
+}
+
+// TestNameLookupsRequireAccountToHoldName builds a registry that still lists
+// bot-1 as old-name and bot-2 as steady, then changes the live accounts the
+// way a rename this registry has not applied yet would.
+func TestNameLookupsRequireAccountToHoldName(t *testing.T) {
+	testCases := []struct {
+		name     string
+		setup    func(accounts *botAccounts)
+		query    string
+		wantName string
+		// wantMention is the bot user ID that a mention of query selects, or
+		// "" for none.
+		wantMention string
+	}{
+		{
+			name:        "cached name still held",
+			query:       "old-name",
+			wantName:    "bot-1",
+			wantMention: "bot-1",
+		},
+		{
+			name:  "name released and unclaimed",
+			setup: func(accounts *botAccounts) { accounts.rename("bot-1", "new-name") },
+			query: "old-name",
+		},
+		{
+			name: "name released and claimed by a human",
+			setup: func(accounts *botAccounts) {
+				accounts.rename("bot-1", "new-name")
+				accounts.humans = map[string]*model.User{"human-1": {Id: "human-1", Username: "old-name"}}
+			},
+			query: "old-name",
+		},
+		{
+			name: "name released and claimed by another agent's account",
+			setup: func(accounts *botAccounts) {
+				accounts.rename("bot-1", "new-name")
+				accounts.rename("bot-2", "old-name")
+			},
+			query:    "old-name",
+			wantName: "bot-2",
+		},
+		{
+			name: "account lookup fails",
+			setup: func(accounts *botAccounts) {
+				accounts.userErr = model.NewAppError("GetUser", "app.user.get.app_error", nil, "", http.StatusInternalServerError)
+			},
+			query: "old-name",
+		},
+		{
+			name:        "query differs in case",
+			query:       "OLD-NAME",
+			wantName:    "bot-1",
+			wantMention: "bot-1",
+		},
+		{
+			name:     "new name the registry does not know yet",
+			setup:    func(accounts *botAccounts) { accounts.rename("bot-1", "new-name") },
+			query:    "new-name",
+			wantName: "bot-1",
+		},
+		{
+			name: "by-username read lags the rename",
+			setup: func(accounts *botAccounts) {
+				accounts.rename("bot-1", "new-name")
+				accounts.replicaLag = map[string]string{"old-name": "bot-1"}
+			},
+			query: "old-name",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mmBots, accounts := newRefreshAgentHarness(t, renameTestAgents(), refreshAgentLicense())
+			require.NoError(t, mmBots.EnsureBots())
+			if tc.setup != nil {
+				tc.setup(accounts)
+			}
+
+			assertHoldsQuery := func(lookup string, bot *Bot) {
+				t.Helper()
+				if bot != nil {
+					assert.True(t, strings.EqualFold(accounts.username(bot.BotUserID()), tc.query),
+						"%s returned %s, whose account holds %q, not %q", lookup, bot.BotUserID(), accounts.username(bot.BotUserID()), tc.query)
+				}
+			}
+			byName := mmBots.GetBotByUsername(tc.query)
+			orFirst := mmBots.GetBotByUsernameOrFirst(tc.query)
+			mentioned := mmBots.GetBotMentioned("@" + tc.query + " hi")
+			assertHoldsQuery("GetBotByUsername", byName)
+			assertHoldsQuery("GetBotByUsernameOrFirst", orFirst)
+			assertHoldsQuery("GetBotMentioned", mentioned)
+
+			assert.Equal(t, tc.wantName, userIDOf(byName))
+			assert.Equal(t, tc.wantName, userIDOf(orFirst))
+			assert.Equal(t, tc.wantMention, userIDOf(mentioned))
+		})
+	}
 }
 
 func TestRefreshAgentServesRenamedAgentUnderItsNewNameOnly(t *testing.T) {

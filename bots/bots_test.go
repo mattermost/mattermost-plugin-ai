@@ -4,6 +4,7 @@
 package bots
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -1070,10 +1071,13 @@ func TestGetBotByUsernameFindsRenamedBotAccount(t *testing.T) {
 	notFound := model.NewAppError("GetUserByUsername", "app.user.missing_account.const", nil, "", http.StatusNotFound)
 
 	testCases := []struct {
-		name          string
-		username      string
-		account       *model.User
-		accountErr    *model.AppError
+		name       string
+		username   string
+		account    *model.User
+		accountErr *model.AppError
+		// renamedTo is the username bot-1's account holds now; empty means
+		// it still holds old-name.
+		renamedTo     string
 		expected      *Bot
 		expectedFirst *Bot
 	}{
@@ -1087,6 +1091,7 @@ func TestGetBotByUsernameFindsRenamedBotAccount(t *testing.T) {
 			name:          "new name already held by the agent's bot account",
 			username:      "new-name",
 			account:       &model.User{Id: "bot-1", Username: "new-name", IsBot: true},
+			renamedTo:     "new-name",
 			expected:      renamed,
 			expectedFirst: renamed,
 		},
@@ -1114,6 +1119,9 @@ func TestGetBotByUsernameFindsRenamedBotAccount(t *testing.T) {
 			if tc.account != nil || tc.accountErr != nil {
 				mockAPI.On("GetUserByUsername", tc.username).Return(tc.account, tc.accountErr)
 			}
+			liveUsername := cmp.Or(tc.renamedTo, "old-name")
+			mockAPI.On("GetUser", "bot-1").Return(&model.User{Id: "bot-1", Username: liveUsername, IsBot: true}, nil).Maybe()
+			mockAPI.On("GetUser", "bot-2").Return(&model.User{Id: "bot-2", Username: "other", IsBot: true}, nil).Maybe()
 			mmBots.SetBotsForTesting([]*Bot{other, renamed})
 
 			assert.Same(t, tc.expected, mmBots.GetBotByUsername(tc.username))
@@ -1148,13 +1156,14 @@ func (s *stubAgentStore) ListAgents() ([]*llm.BotConfig, error) {
 func newEnsureBotsHarness(t *testing.T, cfg *mockConfig, store AgentStore, license *model.License) *MMBots {
 	t.Helper()
 
+	accounts := &botAccounts{byUserID: map[string]*model.Bot{}}
 	mockAPI := &plugintest.API{}
 	client := pluginapi.NewClient(mockAPI, nil)
 	mockAPI.On("GetConfig").Return(&model.Config{}).Maybe()
 	mockAPI.On("GetLicense").Return(license).Maybe()
 	mockAPI.On("GetBots", mock.AnythingOfType("*model.BotGetOptions")).Return([]*model.Bot{}, nil).Maybe()
-	mockAPI.On("CreateBot", mock.AnythingOfType("*model.Bot")).Return(func(bot *model.Bot) *model.Bot { return bot }, nil).Maybe()
-	mockAPI.On("GetUser", mock.AnythingOfType("string")).Return(&model.User{LastPictureUpdate: 1}, nil).Maybe()
+	mockAPI.On("CreateBot", mock.AnythingOfType("*model.Bot")).Return(accounts.create).Maybe()
+	mockAPI.On("GetUser", mock.AnythingOfType("string")).Return(accounts.user).Maybe()
 	mockAPI.On("SetProfileImage", mock.AnythingOfType("string"), mock.AnythingOfType("[]uint8")).Return(nil).Maybe()
 	mockAPI.On("UpdateBotActive", mock.AnythingOfType("string"), mock.AnythingOfType("bool")).Return(&model.Bot{}, nil).Maybe()
 	mockAPI.On("PatchBot", mock.AnythingOfType("string"), mock.AnythingOfType("*model.BotPatch")).Return(&model.Bot{}, nil).Maybe()
