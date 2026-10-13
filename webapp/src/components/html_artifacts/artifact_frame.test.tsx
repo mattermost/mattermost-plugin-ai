@@ -589,6 +589,9 @@ describe('ArtifactConsentPrompt activation guard', () => {
                     arm();
                 }
                 if (c.pointerDownAfterMount) {
+                    if (c.armed) {
+                        fireEvent.pointerEnter(el);
+                    }
                     fireEvent.pointerDown(el);
                 }
                 fireEvent.click(el, {detail: c.detail});
