@@ -18,8 +18,9 @@ const clusterEventMCPOAuthUserInvalidate = "mcp_oauth_user_invalidate"
 const clusterEventStreamStop = "stream_stop"
 const clusterEventChannelAutoReplyInvalidate = "channel_autoreply_invalidate"
 
-// agentUpdateClusterPayload is sent only for a rename. Agent updates may carry
-// no data, and older nodes neither send nor read it.
+// agentUpdateClusterPayload names the one agent an agent update changed.
+// Updates that may change any agent carry no data, and older nodes neither
+// send nor read it.
 type agentUpdateClusterPayload struct {
 	AgentID string `json:"agentID"`
 }
@@ -69,8 +70,9 @@ func (p *Plugin) PublishConfigUpdate() error {
 }
 
 // PublishAgentUpdate broadcasts an agent update event to all other nodes in
-// the cluster. A non-empty agentID names a renamed agent that peers refresh
-// individually before reloading every bot.
+// the cluster. A non-empty agentID names the one agent that changed, which
+// peers refresh on its own, reloading every bot only when that refresh cannot
+// finish applying the change. An empty agentID makes peers reload every bot.
 func (p *Plugin) PublishAgentUpdate(agentID string) error {
 	if agentID == "" {
 		return p.publishClusterEvent(clusterEventAgentUpdate, nil)
@@ -124,22 +126,25 @@ func (p *Plugin) OnPluginClusterEvent(_ *plugin.Context, ev model.PluginClusterE
 		}
 
 	case clusterEventAgentUpdate:
-		// A renamed agent is refreshed on its own first, so a failing full
-		// reload cannot keep it answering to its previous name.
+		fullRefreshNeeded := true
 		if len(ev.Data) > 0 {
 			var payload agentUpdateClusterPayload
 			if err := json.Unmarshal(ev.Data, &payload); err != nil {
 				p.pluginAPI.Log.Error("Failed to unmarshal agent update cluster payload", "error", err.Error())
 			} else if payload.AgentID != "" {
-				if err := p.bots.RefreshAgent(payload.AgentID); err != nil {
-					p.pluginAPI.Log.Error("Failed to refresh renamed agent after agent update cluster event", "agent_id", payload.AgentID, "error", err.Error())
+				var err error
+				fullRefreshNeeded, err = p.bots.RefreshAgent(payload.AgentID)
+				if err != nil {
+					p.pluginAPI.Log.Error("Failed to refresh changed agent after agent update cluster event", "agent_id", payload.AgentID, "error", err.Error())
 				}
 			}
 		}
-		// Invalidate optimistic ensure snapshots and run EnsureBots so this node reloads DB-backed agents.
-		p.bots.ForceRefreshOnNextEnsure()
-		if err := p.bots.EnsureBots(); err != nil {
-			p.pluginAPI.Log.Error("Failed to re-ensure bots after agent update cluster event", "error", err.Error())
+		if fullRefreshNeeded {
+			// Invalidate optimistic ensure snapshots and run EnsureBots so this node reloads DB-backed agents.
+			p.bots.ForceRefreshOnNextEnsure()
+			if err := p.bots.EnsureBots(); err != nil {
+				p.pluginAPI.Log.Error("Failed to re-ensure bots after agent update cluster event", "error", err.Error())
+			}
 		}
 		// Clients connected to this node need the same RHS cache invalidation as on the originating node.
 		mmapi.NewClient(p.pluginAPI).PublishWebSocketEvent(api.WebsocketEventBotsInvalidate, map[string]any{}, &model.WebsocketBroadcast{})

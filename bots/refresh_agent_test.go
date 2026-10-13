@@ -6,6 +6,7 @@ package bots
 import (
 	"errors"
 	"net/http"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -28,14 +29,19 @@ type botAccounts struct {
 	byUserID map[string]*model.Bot
 	getErr   *model.AppError
 	patchErr *model.AppError
+	listErr  *model.AppError
 	// listGate, when set, makes the next bot list signal listEntered and then
 	// wait for listGate to close.
 	listGate    chan struct{}
 	listEntered chan struct{}
 }
 
-func (a *botAccounts) list(*model.BotGetOptions) []*model.Bot {
+func (a *botAccounts) list(*model.BotGetOptions) ([]*model.Bot, *model.AppError) {
 	a.mu.Lock()
+	if a.listErr != nil {
+		defer a.mu.Unlock()
+		return nil, a.listErr
+	}
 	gate, entered := a.listGate, a.listEntered
 	a.listGate, a.listEntered = nil, nil
 	out := make([]*model.Bot, 0, len(a.byUserID))
@@ -47,7 +53,7 @@ func (a *botAccounts) list(*model.BotGetOptions) []*model.Bot {
 		close(entered)
 		<-gate
 	}
-	return out
+	return out, nil
 }
 
 func (a *botAccounts) get(userID string, _ bool) (*model.Bot, *model.AppError) {
@@ -94,22 +100,32 @@ func (a *botAccounts) username(userID string) string {
 	return a.byUserID[userID].Username
 }
 
+func (a *botAccounts) displayName(userID string) string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.byUserID[userID].DisplayName
+}
+
+func refreshAgentLicense() *model.License {
+	return &model.License{SkuShortName: model.LicenseShortSkuEnterprise, Features: &model.Features{}}
+}
+
 // newRefreshAgentHarness returns an MMBots backed by store and by plugin-owned
-// bot accounts named after the store's agents. It never expects a bot account
-// to be created.
-func newRefreshAgentHarness(t *testing.T, store *stubAgentStore) (*MMBots, *botAccounts) {
+// bot accounts named after the store's agents, on a server with license. It
+// never expects a bot account to be created.
+func newRefreshAgentHarness(t *testing.T, store *stubAgentStore, license *model.License) (*MMBots, *botAccounts) {
 	t.Helper()
 
 	accounts := &botAccounts{byUserID: map[string]*model.Bot{}}
 	for _, agent := range store.agents {
-		accounts.byUserID[agent.BotUserID] = &model.Bot{UserId: agent.BotUserID, Username: agent.Name, OwnerId: botOwnerID}
+		accounts.byUserID[agent.BotUserID] = &model.Bot{UserId: agent.BotUserID, Username: agent.Name, DisplayName: agent.DisplayName, OwnerId: botOwnerID}
 	}
 
 	mockAPI := &plugintest.API{}
 	client := pluginapi.NewClient(mockAPI, nil)
 	mockAPI.On("GetConfig").Return(&model.Config{}).Maybe()
-	mockAPI.On("GetLicense").Return(&model.License{SkuShortName: model.LicenseShortSkuEnterprise, Features: &model.Features{}}).Maybe()
-	mockAPI.On("GetBots", mock.AnythingOfType("*model.BotGetOptions")).Return(accounts.list, nil).Maybe()
+	mockAPI.On("GetLicense").Return(license).Maybe()
+	mockAPI.On("GetBots", mock.AnythingOfType("*model.BotGetOptions")).Return(accounts.list).Maybe()
 	mockAPI.On("GetBot", mock.AnythingOfType("string"), true).Return(accounts.get).Maybe()
 	mockAPI.On("PatchBot", mock.AnythingOfType("string"), mock.AnythingOfType("*model.BotPatch")).Return(accounts.patch).Maybe()
 	mockAPI.On("UpdateBotActive", mock.AnythingOfType("string"), mock.AnythingOfType("bool")).Return(&model.Bot{}, nil).Maybe()
@@ -119,7 +135,10 @@ func newRefreshAgentHarness(t *testing.T, store *stubAgentStore) (*MMBots, *botA
 	mockAPI.On("KVDelete", mock.AnythingOfType("string")).Return(nil).Maybe()
 	allowBotsLogging(mockAPI)
 
-	services := []llm.ServiceConfig{{ID: "svc1", Type: llm.ServiceTypeOpenAI, APIKey: "k", DefaultModel: "gpt-4o"}}
+	services := []llm.ServiceConfig{
+		{ID: "svc1", Type: llm.ServiceTypeOpenAI, APIKey: "k", DefaultModel: "gpt-4o"},
+		{ID: "svc2", Type: llm.ServiceTypeOpenAI, APIKey: "k2", DefaultModel: "gpt-4o"},
+	}
 	mmBots := New(mockAPI, client, enterprise.NewLicenseChecker(client), &mockConfig{services: services}, store, newPassthroughAccessChecker(), &http.Client{}, nil)
 	t.Cleanup(mmBots.ShutdownServiceLLMs)
 	return mmBots, accounts
@@ -144,7 +163,7 @@ func TestRefreshAgentServesRenamedAgentUnderItsNewNameOnly(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			store := renameTestAgents()
-			mmBots, accounts := newRefreshAgentHarness(t, store)
+			mmBots, accounts := newRefreshAgentHarness(t, store, refreshAgentLicense())
 			require.NoError(t, mmBots.EnsureBots())
 			before := mmBots.GetBotMentioned("@old-name hi")
 			require.NotNil(t, before)
@@ -152,7 +171,9 @@ func TestRefreshAgentServesRenamedAgentUnderItsNewNameOnly(t *testing.T) {
 			require.NotNil(t, steady)
 
 			store.agents[0].Name = "new-name"
-			require.NoError(t, mmBots.RefreshAgent("a1"))
+			fullRefreshNeeded, err := mmBots.RefreshAgent("a1")
+			require.NoError(t, err)
+			assert.False(t, fullRefreshNeeded, "a rename of an active agent is applied by the refresh alone")
 
 			if tc.failNextEnsure {
 				store.listErr = errors.New("database unavailable")
@@ -239,7 +260,7 @@ func TestRefreshAgentRemovesAgentItCannotRebuild(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			store := renameTestAgents()
-			mmBots, accounts := newRefreshAgentHarness(t, store)
+			mmBots, accounts := newRefreshAgentHarness(t, store, refreshAgentLicense())
 			require.NoError(t, mmBots.EnsureBots())
 			require.NotNil(t, mmBots.GetBotByID("bot-1"))
 			steady := mmBots.GetBotByID("bot-2")
@@ -248,12 +269,13 @@ func TestRefreshAgentRemovesAgentItCannotRebuild(t *testing.T) {
 			store.agents[0].Name = "new-name"
 			tc.breakRefresh(store, accounts)
 
-			err := mmBots.RefreshAgent("a1")
+			fullRefreshNeeded, err := mmBots.RefreshAgent("a1")
 			if tc.expectErr {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
 			}
+			assert.True(t, fullRefreshNeeded, "a removed agent needs a full refresh to reconcile its bot account")
 
 			assert.Nil(t, mmBots.GetBotByID("bot-1"), "an agent that cannot be rebuilt must not keep its previous entry")
 			assert.Nil(t, mmBots.GetBotMentioned("@old-name hi"))
@@ -276,9 +298,254 @@ func TestRefreshAgentRemovesAgentItCannotRebuild(t *testing.T) {
 	}
 }
 
+func registryAgentIDs(mmBots *MMBots) []string {
+	ids := make([]string, 0, len(mmBots.GetAllBots()))
+	for _, bot := range mmBots.GetAllBots() {
+		ids = append(ids, bot.GetConfig().ID)
+	}
+	slices.Sort(ids)
+	return ids
+}
+
+func failingLLMBuilder(llm.ServiceConfig, []llm.ServiceConfig) (llm.LanguageModel, func(), error) {
+	return nil, nil, errors.New("provider unavailable")
+}
+
+func TestRefreshAgentReportsWhenFullRefreshIsNeeded(t *testing.T) {
+	unlicensed := (*model.License)(nil)
+
+	testCases := []struct {
+		name    string
+		license *model.License
+		// setup changes the stored agents before the first full rebuild.
+		setup func(store *stubAgentStore)
+		// edit changes the stored agents after the first full rebuild.
+		edit              func(store *stubAgentStore, mmBots *MMBots)
+		refreshed         int
+		expectErr         bool
+		expectFullRefresh bool
+		expectServed      bool
+		// expectActive lists the registry's agents after the full rebuild that
+		// follows the refresh.
+		expectActive    []string
+		expectEnsureErr bool
+	}{
+		{
+			name:         "display name edit",
+			license:      refreshAgentLicense(),
+			edit:         func(store *stubAgentStore, _ *MMBots) { store.agents[0].DisplayName = "Renamed Agent" },
+			expectServed: true,
+			expectActive: []string{"a1", "a2"},
+		},
+		{
+			name:         "model edit",
+			license:      refreshAgentLicense(),
+			edit:         func(store *stubAgentStore, _ *MMBots) { store.agents[0].Model = "gpt-4.1" },
+			expectServed: true,
+			expectActive: []string{"a1", "a2"},
+		},
+		{
+			name:         "instructions edit",
+			license:      refreshAgentLicense(),
+			edit:         func(store *stubAgentStore, _ *MMBots) { store.agents[0].CustomInstructions = "Be brief." },
+			expectServed: true,
+			expectActive: []string{"a1", "a2"},
+		},
+		{
+			name:         "switch to another available service",
+			license:      refreshAgentLicense(),
+			edit:         func(store *stubAgentStore, _ *MMBots) { store.agents[0].ServiceID = "svc2" },
+			expectServed: true,
+			expectActive: []string{"a1", "a2"},
+		},
+		{
+			name:              "edit leaves the agent without a service",
+			license:           refreshAgentLicense(),
+			edit:              func(store *stubAgentStore, _ *MMBots) { store.agents[0].ServiceID = "missing-service" },
+			expectFullRefresh: true,
+			expectActive:      []string{"a2"},
+		},
+		{
+			name:    "agent's model cannot be built",
+			license: refreshAgentLicense(),
+			edit: func(store *stubAgentStore, mmBots *MMBots) {
+				store.agents[0].ServiceID = "svc2"
+				mmBots.SetBaseLLMBuilderForTest(failingLLMBuilder)
+			},
+			expectErr:         true,
+			expectFullRefresh: true,
+			expectActive:      []string{"a2"},
+			expectEnsureErr:   true,
+		},
+		{
+			name:    "edit is applied while another agent's model cannot be built",
+			license: refreshAgentLicense(),
+			edit: func(store *stubAgentStore, mmBots *MMBots) {
+				store.agents[1].ServiceID = "svc2"
+				mmBots.SetBaseLLMBuilderForTest(failingLLMBuilder)
+				store.agents[0].DisplayName = "Renamed Agent"
+			},
+			expectServed:    true,
+			expectActive:    []string{"a1", "a2"},
+			expectEnsureErr: true,
+		},
+		{
+			name:    "registry is missing a bot whose account sync failed",
+			license: refreshAgentLicense(),
+			edit: func(store *stubAgentStore, mmBots *MMBots) {
+				mmBots.SetBotsForTesting([]*Bot{mmBots.GetBotByID("bot-1")})
+				store.agents[0].DisplayName = "Renamed Agent"
+			},
+			expectFullRefresh: true,
+			expectServed:      true,
+			expectActive:      []string{"a1", "a2"},
+		},
+		{
+			name:         "agent limit: edit to the agent holding the only slot",
+			license:      unlicensed,
+			edit:         func(store *stubAgentStore, _ *MMBots) { store.agents[0].DisplayName = "Renamed Agent" },
+			expectServed: true,
+			expectActive: []string{"a1"},
+		},
+		{
+			name:              "agent limit: earlier agent takes the slot of a later one",
+			license:           unlicensed,
+			setup:             func(store *stubAgentStore) { store.agents[0].ServiceID = "missing-service" },
+			edit:              func(store *stubAgentStore, _ *MMBots) { store.agents[0].ServiceID = "svc1" },
+			expectFullRefresh: true,
+			expectServed:      true,
+			expectActive:      []string{"a1"},
+		},
+		{
+			name:              "agent limit: agent leaving the slot lets a later one in",
+			license:           unlicensed,
+			edit:              func(store *stubAgentStore, _ *MMBots) { store.agents[0].ServiceID = "missing-service" },
+			expectFullRefresh: true,
+			expectActive:      []string{"a2"},
+		},
+		{
+			name:              "agent limit: edit to an agent over the limit",
+			license:           unlicensed,
+			edit:              func(store *stubAgentStore, _ *MMBots) { store.agents[1].DisplayName = "Renamed Steady" },
+			refreshed:         1,
+			expectFullRefresh: true,
+			expectActive:      []string{"a1"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := renameTestAgents()
+			if tc.setup != nil {
+				tc.setup(store)
+			}
+			mmBots, accounts := newRefreshAgentHarness(t, store, tc.license)
+			require.NoError(t, mmBots.EnsureBots())
+			before := mmBots.GetAllBots()
+
+			tc.edit(store, mmBots)
+			refreshed := store.agents[tc.refreshed]
+			fullRefreshNeeded, err := mmBots.RefreshAgent(refreshed.ID)
+			if tc.expectErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Equal(t, tc.expectFullRefresh, fullRefreshNeeded)
+
+			served := mmBots.GetBotByID(refreshed.BotUserID)
+			if tc.expectServed {
+				require.NotNil(t, served)
+				assert.Equal(t, refreshed, served.GetConfig(), "the refresh must serve the stored agent")
+				assert.Equal(t, refreshed.DisplayName, accounts.displayName(refreshed.BotUserID))
+			} else {
+				assert.Nil(t, served)
+			}
+			if !tc.expectFullRefresh {
+				for _, other := range before {
+					if other.GetConfig().ID != refreshed.ID {
+						assert.Same(t, other, mmBots.GetBotByID(other.BotUserID()), "other bots must be left untouched")
+					}
+				}
+			}
+
+			afterRefresh := registryAgentIDs(mmBots)
+			mmBots.ForceRefreshOnNextEnsure()
+			if tc.expectEnsureErr {
+				require.Error(t, mmBots.EnsureBots())
+			} else {
+				require.NoError(t, mmBots.EnsureBots())
+			}
+			assert.Equal(t, tc.expectActive, registryAgentIDs(mmBots))
+			if !tc.expectFullRefresh {
+				assert.Equal(t, afterRefresh, registryAgentIDs(mmBots), "a full rebuild must not change which agents a refresh left active")
+			}
+		})
+	}
+}
+
+func TestRefreshAgentRetriesFailedFullRebuild(t *testing.T) {
+	testCases := []struct {
+		name string
+		// breakEnsure makes the next full rebuild fail; fixEnsure undoes it.
+		breakEnsure func(store *stubAgentStore, accounts *botAccounts, mmBots *MMBots)
+		fixEnsure   func(store *stubAgentStore, accounts *botAccounts)
+	}{
+		{
+			name: "another agent's model cannot be built",
+			breakEnsure: func(store *stubAgentStore, _ *botAccounts, mmBots *MMBots) {
+				store.agents[1].ServiceID = "svc2"
+				mmBots.SetBaseLLMBuilderForTest(failingLLMBuilder)
+			},
+			fixEnsure: func(store *stubAgentStore, _ *botAccounts) { store.agents[1].ServiceID = "svc1" },
+		},
+		{
+			name: "bot accounts cannot be listed",
+			breakEnsure: func(_ *stubAgentStore, accounts *botAccounts, _ *MMBots) {
+				accounts.mu.Lock()
+				defer accounts.mu.Unlock()
+				accounts.listErr = model.NewAppError("GetBots", "app.bot.get_bots.app_error", nil, "", http.StatusInternalServerError)
+			},
+			fixEnsure: func(_ *stubAgentStore, accounts *botAccounts) {
+				accounts.mu.Lock()
+				defer accounts.mu.Unlock()
+				accounts.listErr = nil
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := renameTestAgents()
+			mmBots, accounts := newRefreshAgentHarness(t, store, refreshAgentLicense())
+			require.NoError(t, mmBots.EnsureBots())
+
+			tc.breakEnsure(store, accounts, mmBots)
+			mmBots.ForceRefreshOnNextEnsure()
+			require.Error(t, mmBots.EnsureBots())
+
+			store.agents[0].DisplayName = "Renamed Agent"
+			fullRefreshNeeded, err := mmBots.RefreshAgent("a1")
+			require.NoError(t, err)
+			assert.True(t, fullRefreshNeeded, "a failed full rebuild must be retried by the next edit")
+			require.NotNil(t, mmBots.GetBotByID("bot-1"))
+			assert.Equal(t, "Renamed Agent", mmBots.GetBotByID("bot-1").GetConfig().DisplayName, "the edit must be applied before the retry")
+
+			tc.fixEnsure(store, accounts)
+			mmBots.ForceRefreshOnNextEnsure()
+			require.NoError(t, mmBots.EnsureBots())
+
+			store.agents[0].DisplayName = "Renamed Again"
+			fullRefreshNeeded, err = mmBots.RefreshAgent("a1")
+			require.NoError(t, err)
+			assert.False(t, fullRefreshNeeded, "once a full rebuild succeeds, ordinary edits no longer need one")
+		})
+	}
+}
+
 func TestRefreshAgentWaitsForInFlightRebuild(t *testing.T) {
 	store := renameTestAgents()
-	mmBots, accounts := newRefreshAgentHarness(t, store)
+	mmBots, accounts := newRefreshAgentHarness(t, store, refreshAgentLicense())
 	require.NoError(t, mmBots.EnsureBots())
 
 	release := make(chan struct{})
@@ -295,7 +562,10 @@ func TestRefreshAgentWaitsForInFlightRebuild(t *testing.T) {
 	// The rebuild has read the agents under their previous names.
 	store.agents[0].Name = "new-name"
 	refreshDone := make(chan error, 1)
-	go func() { refreshDone <- mmBots.RefreshAgent("a1") }()
+	go func() {
+		_, err := mmBots.RefreshAgent("a1")
+		refreshDone <- err
+	}()
 
 	select {
 	case <-refreshDone:
@@ -315,7 +585,7 @@ func TestRefreshAgentWaitsForInFlightRebuild(t *testing.T) {
 
 func TestRefreshAgentConcurrentWithReaders(t *testing.T) {
 	store := renameTestAgents()
-	mmBots, _ := newRefreshAgentHarness(t, store)
+	mmBots, _ := newRefreshAgentHarness(t, store, refreshAgentLicense())
 	require.NoError(t, mmBots.EnsureBots())
 
 	stop := make(chan struct{})
@@ -338,7 +608,8 @@ func TestRefreshAgentConcurrentWithReaders(t *testing.T) {
 	}
 
 	for range 20 {
-		require.NoError(t, mmBots.RefreshAgent("a1"))
+		_, err := mmBots.RefreshAgent("a1")
+		require.NoError(t, err)
 		mmBots.ForceRefreshOnNextEnsure()
 		require.NoError(t, mmBots.EnsureBots())
 	}

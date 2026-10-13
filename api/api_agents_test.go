@@ -21,6 +21,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/config"
 	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
+	mmapimocks "github.com/mattermost/mattermost-plugin-agents/v2/mmapi/mocks"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/mattermost/mattermost/server/public/plugin/plugintest"
@@ -1451,21 +1452,16 @@ func (n *recordingAgentNotifier) PublishAgentUpdate(agentID string) error {
 
 func TestUpdateAgentRefreshesRenamedAgent(t *testing.T) {
 	tests := []struct {
-		name             string
-		change           map[string]any
-		expectPublished  []string
-		expectStaleEntry bool
+		name   string
+		change map[string]any
 	}{
 		{
-			name:            "rename refreshes the agent here and on peers",
-			change:          map[string]any{"username": "new-name"},
-			expectPublished: []string{"agent-1"},
+			name:   "rename refreshes the agent here and on peers",
+			change: map[string]any{"username": "new-name"},
 		},
 		{
-			name:             "other changes leave the agent to the full refresh",
-			change:           map[string]any{"displayName": "Renamed"},
-			expectPublished:  []string{""},
-			expectStaleEntry: true,
+			name:   "other changes refresh the agent here and on peers",
+			change: map[string]any{"displayName": "Renamed"},
 		},
 	}
 
@@ -1496,14 +1492,255 @@ func TestUpdateAgentRefreshesRenamedAgent(t *testing.T) {
 			recorder := doRequest(e.api, http.MethodPut, "/agents/agent-1", body, testUserID)
 
 			require.Equal(t, http.StatusOK, recorder.Result().StatusCode, recorder.Body.String())
-			assert.Equal(t, tc.expectPublished, notifier.published)
-			if tc.expectStaleEntry {
-				assert.NotNil(t, e.bots.GetBotMentioned("@old-name hi"))
-			} else {
-				assert.Nil(t, e.bots.GetBotMentioned("@old-name hi"), "a renamed agent must not keep answering to its old name")
-			}
+			assert.Equal(t, []string{"agent-1"}, notifier.published)
+			assert.Nil(t, e.bots.GetBotMentioned("@old-name hi"), "the agent's previous entry must not survive the refresh")
 		})
 	}
+}
+
+// botAccountsFake serves the plugin API's bot account calls from accounts,
+// keyed by bot user ID, and counts the bot listings only a full EnsureBots
+// makes.
+type botAccountsFake struct {
+	accounts map[string]*model.Bot
+	listErr  *model.AppError
+	// displayNameOnlyPatches counts patches that set nothing but the display
+	// name, which only the handler's explicit fallback sends.
+	displayNameOnlyPatches int
+}
+
+func (f *botAccountsFake) register(mockAPI *plugintest.API) {
+	mockAPI.On("GetBot", mock.AnythingOfType("string"), true).Return(func(userID string, _ bool) (*model.Bot, *model.AppError) {
+		account, ok := f.accounts[userID]
+		if !ok {
+			return nil, model.NewAppError("GetBot", "store.sql_bot.get.missing.app_error", nil, "", http.StatusNotFound)
+		}
+		return account.Clone(), nil
+	}).Maybe()
+	mockAPI.On("PatchBot", mock.AnythingOfType("string"), mock.AnythingOfType("*model.BotPatch")).Return(func(userID string, patch *model.BotPatch) (*model.Bot, *model.AppError) {
+		if patch.DisplayName != nil && patch.Description == nil && patch.Username == nil {
+			f.displayNameOnlyPatches++
+		}
+		account := f.accounts[userID]
+		account.Patch(patch)
+		return account.Clone(), nil
+	}).Maybe()
+	mockAPI.On("GetBots", mock.AnythingOfType("*model.BotGetOptions")).Return(func(*model.BotGetOptions) ([]*model.Bot, *model.AppError) {
+		if f.listErr != nil {
+			return nil, f.listErr
+		}
+		out := make([]*model.Bot, 0, len(f.accounts))
+		for _, account := range f.accounts {
+			out = append(out, account.Clone())
+		}
+		return out, nil
+	}).Maybe()
+	mockAPI.On("UpdateBotActive", mock.AnythingOfType("string"), mock.AnythingOfType("bool")).Return(func(userID string, active bool) (*model.Bot, *model.AppError) {
+		account := f.accounts[userID]
+		if active {
+			account.DeleteAt = 0
+		} else {
+			account.DeleteAt = 1
+		}
+		return account.Clone(), nil
+	}).Maybe()
+	mockAPI.On("GetUser", mock.AnythingOfType("string")).Return(&model.User{LastPictureUpdate: 1}, nil).Maybe()
+	mockAPI.On("KVSetWithOptions", mock.AnythingOfType("string"), mock.AnythingOfType("[]uint8"), mock.AnythingOfType("model.PluginKVSetOptions")).Return(true, nil).Maybe()
+	mockAPI.On("KVDelete", mock.AnythingOfType("string")).Return(nil).Maybe()
+}
+
+// useAgentRegistry replaces the environment's bot registry with one that
+// rebuilds the agents in e.agentStore against services, with every model a
+// FakeLLM.
+func useAgentRegistry(t *testing.T, e *TestEnvironment, services []llm.ServiceConfig) *bots.MMBots {
+	t.Helper()
+	var cfg config.Container
+	cfg.Update(&config.Config{Services: services})
+	registry := bots.New(e.mockAPI, e.client, e.api.licenseChecker, &cfg, e.agentStore, newPassthroughAccessChecker(), &http.Client{}, nil)
+	registry.SetBaseLLMBuilderForTest(func(llm.ServiceConfig, []llm.ServiceConfig) (llm.LanguageModel, func(), error) {
+		return &FakeLLM{}, func() {}, nil
+	})
+	t.Cleanup(registry.ShutdownServiceLLMs)
+	e.bots = registry
+	e.api.bots = registry
+	return registry
+}
+
+func recordBotsInvalidations(t *testing.T, e *TestEnvironment) *int {
+	t.Helper()
+	invalidations := 0
+	mmClient := mmapimocks.NewMockClient(t)
+	mmClient.On("PublishWebSocketEvent", WebsocketEventBotsInvalidate, mock.AnythingOfType("map[string]interface {}"), mock.AnythingOfType("*model.WebsocketBroadcast")).
+		Run(func(mock.Arguments) { invalidations++ }).Return()
+	e.api.mmClient = mmClient
+	return &invalidations
+}
+
+func TestUpdateAgentRefreshesOnlyTheChangedAgent(t *testing.T) {
+	services := []llm.ServiceConfig{
+		{ID: "svc-1", Name: "Test Service", Type: llm.ServiceTypeOpenAI, APIKey: "test-key"},
+		{ID: "svc-2", Name: "Unconfigured Service", Type: llm.ServiceTypeOpenAI},
+	}
+
+	tests := []struct {
+		name              string
+		change            map[string]any
+		listErr           *model.AppError
+		expectFullRefresh bool
+		expectServedAs    string
+		// expectExplicitDisplayNamePatch is the handler's fallback for when the
+		// registry could not apply the change.
+		expectExplicitDisplayNamePatch bool
+	}{
+		{
+			name:           "edit applied by the agent's own refresh",
+			change:         map[string]any{"displayName": "Renamed", "customInstructions": "Be brief.", "model": "gpt-4.1"},
+			expectServedAs: "old-name",
+		},
+		{
+			name:           "rename applied by the agent's own refresh",
+			change:         map[string]any{"username": "new-name", "displayName": "Renamed"},
+			expectServedAs: "new-name",
+		},
+		{
+			name:              "edit that leaves the agent without a usable service",
+			change:            map[string]any{"serviceID": "svc-2", "displayName": "Renamed"},
+			expectFullRefresh: true,
+		},
+		{
+			name:                           "edit whose full refresh fails",
+			change:                         map[string]any{"serviceID": "svc-2", "displayName": "Renamed"},
+			listErr:                        model.NewAppError("GetBots", "app.bot.get_bots.app_error", nil, "", http.StatusInternalServerError),
+			expectFullRefresh:              true,
+			expectExplicitDisplayNamePatch: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			e := setupAgentTestEnvironment(t)
+			defer e.Cleanup(t)
+
+			mockLicensed(e.mockAPI)
+			e.api.configStore = &mockConfigStore{cfg: &config.Config{Services: services}}
+			e.mockAPI.On("GetUserByUsername", mock.Anything).
+				Return(nil, model.NewAppError("GetUserByUsername", "app.user.missing", nil, "", http.StatusNotFound)).Maybe()
+			accounts := &botAccountsFake{accounts: map[string]*model.Bot{
+				"bot-1": {UserId: "bot-1", Username: "old-name", DisplayName: "Agent", OwnerId: "mattermost-ai"},
+			}}
+			accounts.register(e.mockAPI)
+			notifier := &recordingAgentNotifier{}
+			e.api.clusterAgentNotifier = notifier
+			invalidations := recordBotsInvalidations(t, e)
+
+			stored := &llm.BotConfig{
+				ID: "agent-1", CreatorID: testUserID, BotUserID: "bot-1",
+				DisplayName: "Agent", Name: "old-name", ServiceID: "svc-1",
+			}
+			e.agentStore.agents["agent-1"] = stored
+			registry := useAgentRegistry(t, e, services)
+			fullRefreshNeeded, err := registry.RefreshAgent("agent-1")
+			require.NoError(t, err)
+			require.False(t, fullRefreshNeeded)
+			accounts.listErr = tc.listErr
+
+			body := updateAgentBodyFromStored(stored, tc.change)
+			recorder := doRequest(e.api, http.MethodPut, "/agents/agent-1", body, testUserID)
+
+			require.Equal(t, http.StatusOK, recorder.Result().StatusCode, recorder.Body.String())
+			fullRefreshes := 0
+			if tc.expectFullRefresh {
+				fullRefreshes = 1
+			}
+			e.mockAPI.AssertNumberOfCalls(t, "GetBots", fullRefreshes)
+			assert.Equal(t, []string{"agent-1"}, notifier.published)
+			assert.Equal(t, 1, *invalidations)
+			if tc.expectServedAs != "" || tc.expectExplicitDisplayNamePatch {
+				assert.Equal(t, "Renamed", accounts.accounts["bot-1"].DisplayName)
+			}
+			if tc.expectExplicitDisplayNamePatch {
+				assert.Equal(t, 1, accounts.displayNameOnlyPatches)
+			} else {
+				assert.Zero(t, accounts.displayNameOnlyPatches, "the registry already patched the display name")
+			}
+
+			served := registry.GetBotByID("bot-1")
+			if tc.expectServedAs == "" {
+				assert.Nil(t, served)
+				return
+			}
+			require.NotNil(t, served)
+			assert.Equal(t, *e.agentStore.agents["agent-1"], served.GetConfig())
+			assert.Equal(t, tc.expectServedAs, served.GetMMBot().Username)
+		})
+	}
+}
+
+func TestCreateAgentRefreshesOnlyTheNewAgent(t *testing.T) {
+	e := setupAgentTestEnvironment(t)
+	defer e.Cleanup(t)
+
+	mockLicensed(e.mockAPI)
+	e.mockAPI.On("HasPermissionTo", testUserID, model.PermissionManageOwnAgent).Return(true)
+	accounts := &botAccountsFake{accounts: map[string]*model.Bot{}}
+	e.mockAPI.On("CreateBot", mock.AnythingOfType("*model.Bot")).Return(func(bot *model.Bot) (*model.Bot, *model.AppError) {
+		created := bot.Clone()
+		created.UserId = "bot-new"
+		created.OwnerId = "mattermost-ai"
+		accounts.accounts[created.UserId] = created
+		return created.Clone(), nil
+	})
+	accounts.register(e.mockAPI)
+	notifier := &recordingAgentNotifier{}
+	e.api.clusterAgentNotifier = notifier
+	invalidations := recordBotsInvalidations(t, e)
+	cfg := e.api.configStore.(*mockConfigStore).cfg
+	registry := useAgentRegistry(t, e, cfg.Services)
+
+	recorder := doRequest(e.api, http.MethodPost, "/agents", createAgentBody(nil), testUserID)
+
+	require.Equal(t, http.StatusCreated, recorder.Result().StatusCode, recorder.Body.String())
+	var agent llm.BotConfig
+	require.NoError(t, json.NewDecoder(recorder.Body).Decode(&agent))
+	e.mockAPI.AssertNotCalled(t, "GetBots", mock.Anything)
+	assert.Equal(t, []string{agent.ID}, notifier.published)
+	assert.Equal(t, 1, *invalidations)
+	served := registry.GetBotByID("bot-new")
+	require.NotNil(t, served)
+	assert.Equal(t, agent.ID, served.GetConfig().ID)
+	assert.Equal(t, "my-agent", served.GetMMBot().Username)
+}
+
+func TestDeleteAgentRefreshesEveryBot(t *testing.T) {
+	e := setupAgentTestEnvironment(t)
+	defer e.Cleanup(t)
+
+	mockLicensed(e.mockAPI)
+	accounts := &botAccountsFake{accounts: map[string]*model.Bot{
+		"bot-1": {UserId: "bot-1", Username: "doomed", DisplayName: "Doomed", OwnerId: "mattermost-ai"},
+	}}
+	accounts.register(e.mockAPI)
+	notifier := &recordingAgentNotifier{}
+	e.api.clusterAgentNotifier = notifier
+	invalidations := recordBotsInvalidations(t, e)
+	e.agentStore.agents["agent-1"] = &llm.BotConfig{
+		ID: "agent-1", CreatorID: testUserID, BotUserID: "bot-1",
+		DisplayName: "Doomed", Name: "doomed", ServiceID: "svc-1",
+	}
+	cfg := e.api.configStore.(*mockConfigStore).cfg
+	registry := useAgentRegistry(t, e, cfg.Services)
+	_, err := registry.RefreshAgent("agent-1")
+	require.NoError(t, err)
+	require.NotNil(t, registry.GetBotByID("bot-1"))
+
+	recorder := doRequest(e.api, http.MethodDelete, "/agents/agent-1", nil, testUserID)
+
+	require.Equal(t, http.StatusOK, recorder.Result().StatusCode, recorder.Body.String())
+	e.mockAPI.AssertNumberOfCalls(t, "GetBots", 1)
+	assert.Equal(t, []string{"agent-1"}, notifier.published)
+	assert.Equal(t, 1, *invalidations)
+	assert.Nil(t, registry.GetBotByID("bot-1"))
+	assert.NotZero(t, accounts.accounts["bot-1"].DeleteAt, "the deleted agent's bot account must be deactivated")
 }
 
 func TestUpdateAgentInvalidServiceID(t *testing.T) {

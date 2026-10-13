@@ -544,7 +544,7 @@ func TestPublishAgentUpdatePayload(t *testing.T) {
 		expectPayload bool
 	}{
 		{name: "no agent publishes no data"},
-		{name: "renamed agent publishes its ID", agentID: "agent1234567890123456789ab", expectPayload: true},
+		{name: "changed agent publishes its ID", agentID: "agent1234567890123456789ab", expectPayload: true},
 	}
 
 	for _, test := range tests {
@@ -564,25 +564,61 @@ func TestPublishAgentUpdatePayload(t *testing.T) {
 // TestOnPluginClusterEventAgentUpdateRefreshesRenamedAgent delivers an agent
 // update to a peer whose registry still lists a renamed agent under its old
 // name and whose full bot reload fails. Only the agent ID in the payload lets
-// the peer stop answering to the old name.
+// the peer stop answering to the old name, and the peer reloads every bot only
+// when refreshing that agent cannot finish applying the change.
 func TestOnPluginClusterEventAgentUpdateRefreshesRenamedAgent(t *testing.T) {
+	renamed := llm.BotConfig{ID: "a1", BotUserID: "bot-1", Name: "new-name", DisplayName: "Agent", ServiceID: "svc1"}
+	other := llm.BotConfig{ID: "a2", BotUserID: "bot-2", Name: "other", DisplayName: "Other", ServiceID: "svc1"}
+
 	tests := []struct {
-		name            string
-		event           model.PluginClusterEvent
-		expectRefreshed bool
+		name              string
+		event             model.PluginClusterEvent
+		agents            agentListStub
+		previousFullFails bool
+		expectServedAs    string
+		expectFullRefresh bool
 	}{
 		{
-			name:            "event naming the renamed agent",
-			event:           publishedAgentUpdate(t, "a1"),
-			expectRefreshed: true,
+			name:           "event naming an agent its refresh fully applies",
+			event:          publishedAgentUpdate(t, "a1"),
+			agents:         agentListStub{renamed},
+			expectServedAs: "new-name",
 		},
 		{
-			name:  "event without an agent",
-			event: publishedAgentUpdate(t, ""),
+			name:              "event naming an agent after the peer's last full reload failed",
+			event:             publishedAgentUpdate(t, "a1"),
+			agents:            agentListStub{renamed},
+			previousFullFails: true,
+			expectServedAs:    "new-name",
+			expectFullRefresh: true,
 		},
 		{
-			name:  "malformed payload",
-			event: model.PluginClusterEvent{Id: clusterEventAgentUpdate, Data: []byte("not json")},
+			name:  "event naming an agent whose refresh leaves another agent unserved",
+			event: publishedAgentUpdate(t, "a1"),
+			// The peer's registry does not hold a2, so only a full reload can
+			// bring it in.
+			agents:            agentListStub{renamed, other},
+			expectServedAs:    "new-name",
+			expectFullRefresh: true,
+		},
+		{
+			name:              "event naming a deleted agent",
+			event:             publishedAgentUpdate(t, "a1"),
+			expectFullRefresh: true,
+		},
+		{
+			name:              "event without an agent",
+			event:             publishedAgentUpdate(t, ""),
+			agents:            agentListStub{renamed},
+			expectServedAs:    "old-name",
+			expectFullRefresh: true,
+		},
+		{
+			name:              "malformed payload",
+			event:             model.PluginClusterEvent{Id: clusterEventAgentUpdate, Data: []byte("not json")},
+			agents:            agentListStub{renamed},
+			expectServedAs:    "old-name",
+			expectFullRefresh: true,
 		},
 	}
 
@@ -599,7 +635,7 @@ func TestOnPluginClusterEventAgentUpdateRefreshesRenamedAgent(t *testing.T) {
 			mockAPI.On("KVSetWithOptions", mock.AnythingOfType("string"), mock.AnythingOfType("[]uint8"), mock.AnythingOfType("model.PluginKVSetOptions")).Return(true, nil).Maybe()
 			mockAPI.On("KVDelete", mock.AnythingOfType("string")).Return(nil).Maybe()
 			mockAPI.On("GetBots", mock.AnythingOfType("*model.BotGetOptions")).
-				Return(nil, model.NewAppError("GetBots", "app.bot.get_bots.app_error", nil, "", http.StatusInternalServerError)).Once()
+				Return(nil, model.NewAppError("GetBots", "app.bot.get_bots.app_error", nil, "", http.StatusInternalServerError)).Maybe()
 			mockAPI.On("PublishWebSocketEvent", api.WebsocketEventBotsInvalidate, mock.Anything, mock.Anything).Once()
 			for arity := 1; arity <= 9; arity++ {
 				args := make([]any, arity)
@@ -613,28 +649,42 @@ func TestOnPluginClusterEventAgentUpdateRefreshesRenamedAgent(t *testing.T) {
 
 			var cfg config.Container
 			cfg.Update(&config.Config{Services: []llm.ServiceConfig{{ID: "svc1", Type: llm.ServiceTypeOpenAI, APIKey: "k", DefaultModel: "gpt-4o"}}})
-			store := agentListStub{{ID: "a1", BotUserID: "bot-1", Name: "new-name", DisplayName: "Agent", ServiceID: "svc1"}}
 			accessChecker := accesscontrol.New(accesscontrol.PassthroughClient{}, nil, accesscontrol.NoMCPServerIDs, nil)
-			mmBots := bots.New(mockAPI, client, enterprise.NewLicenseChecker(client), &cfg, store, accessChecker, &http.Client{}, nil)
+			mmBots := bots.New(mockAPI, client, enterprise.NewLicenseChecker(client), &cfg, test.agents, accessChecker, &http.Client{}, nil)
 			t.Cleanup(mmBots.ShutdownServiceLLMs)
 			mmBots.SetBotsForTesting([]*bots.Bot{
 				bots.NewBot(llm.BotConfig{ID: "a1", BotUserID: "bot-1", Name: "old-name", ServiceID: "svc1"}, llm.ServiceConfig{}, &model.Bot{UserId: "bot-1", Username: "old-name"}, nil),
 			})
 
+			fullRefreshes := 0
+			if test.previousFullFails {
+				require.Error(t, mmBots.EnsureBots())
+				fullRefreshes++
+			}
+
 			p := &Plugin{pluginAPI: client, bots: mmBots}
 			p.SetAPI(mockAPI)
 			p.OnPluginClusterEvent(&plugin.Context{}, test.event)
 
+			if test.expectFullRefresh {
+				fullRefreshes++
+			}
+			mockAPI.AssertNumberOfCalls(t, "GetBots", fullRefreshes)
+
 			oldMention := mmBots.GetBotMentioned("@old-name hi")
 			newMention := mmBots.GetBotMentioned("@new-name hi")
-			if test.expectRefreshed {
+			switch test.expectServedAs {
+			case "new-name":
 				require.Nil(t, oldMention, "the peer must stop answering to the agent's old name")
 				require.NotNil(t, newMention)
 				require.Equal(t, "a1", newMention.GetConfig().ID)
-				return
+			case "old-name":
+				require.NotNil(t, oldMention, "without an agent ID the peer keeps its previous registry when the full reload fails")
+				require.Nil(t, newMention)
+			default:
+				require.Nil(t, oldMention)
+				require.Nil(t, newMention)
 			}
-			require.NotNil(t, oldMention, "without an agent ID the peer keeps its previous registry when the full reload fails")
-			require.Nil(t, newMention)
 		})
 	}
 }
