@@ -1,7 +1,7 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useRef, useState} from 'react';
 import {FormattedMessage, useIntl} from 'react-intl';
 import {useSelector} from 'react-redux';
 import styled from 'styled-components';
@@ -37,26 +37,15 @@ export function resetArtifactRunDecisions() {
 interface Props {
     fileId: string;
     fileName: string;
-
-    // Load the artifact right away. Only for the viewer who asked the agent
-    // for it; anyone else sees a placeholder and runs it with a click.
-    autoRun: boolean;
 }
 
-const HTMLArtifactCard = ({fileId, fileName, autoRun}: Props) => {
+const HTMLArtifactCard = ({fileId, fileName}: Props) => {
     const intl = useIntl();
     const frameRef = useRef<ArtifactFrameHandle>(null);
     const [fullscreen, setFullscreen] = useState(false);
     const currentUserId = useSelector<GlobalState, string>((state) => state.entities.users.currentUserId);
     const runKey = `${currentUserId}:${fileId}`;
-    const [run, setRun] = useState(() => autoRun || runDecisions.has(runKey));
-
-    // The requester is only known once the conversation loads.
-    useEffect(() => {
-        if (autoRun) {
-            setRun(true);
-        }
-    }, [autoRun]);
+    const [run, setRun] = useState(() => runDecisions.has(runKey));
 
     const startRun = () => {
         runDecisions.add(runKey);
