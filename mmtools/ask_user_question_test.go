@@ -154,7 +154,7 @@ func TestResolveUserInteractionAnswer(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := ResolveUserInteractionAnswer(tc.kind, tc.input, tc.answer)
+			got, err := ResolveUserInteractionAnswer(tc.kind, tc.input, tc.answer, nil)
 			if tc.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tc.wantErr)

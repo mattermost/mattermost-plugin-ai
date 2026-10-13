@@ -66,6 +66,10 @@ type Tool struct {
 // set of options presented in the Mattermost UI.
 const UserInteractionSelect = "select"
 
+// UserInteractionConnect identifies tools answered by the user connecting
+// (authenticating to) an MCP server from the Mattermost UI.
+const UserInteractionConnect = "connect"
+
 type ToolResolver func(ctx context.Context, llmCtx *Context, argsGetter ToolArgumentGetter) (string, error)
 
 // WithBoundParams creates a new Tool with parameters bound to fixed values.
@@ -360,6 +364,12 @@ type ToolAuthError struct {
 	ServerOrigin string `json:"server_origin"`
 	AuthURL      string `json:"auth_url"`
 	Error        error  `json:"error"`
+
+	// ServerDescription and ToolNames come only from admin-authored server
+	// configuration (never from the server or a shared tools cache), so they
+	// are safe to show the LLM for a server this user has not connected.
+	ServerDescription string   `json:"server_description,omitempty"`
+	ToolNames         []string `json:"tool_names,omitempty"`
 }
 
 type ToolStore struct {

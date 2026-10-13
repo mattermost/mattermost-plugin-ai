@@ -78,16 +78,31 @@ func NewAskUserQuestionTool() llm.Tool {
 	}
 }
 
-// ResolveUserInteractionAnswer turns a user's answer to a pending interaction
-// tool call into the tool result content. kind is the block's UserInteraction
-// value, input the tool_use block's original arguments, and answer the
-// structured selection (predefined labels plus optional free-form text).
-func ResolveUserInteractionAnswer(kind string, input json.RawMessage, answer UserInteractionAnswer) (string, error) {
+// ResolveUserInteractionAnswer turns a user's acceptance of a pending
+// interaction tool call into the tool result content. kind is the block's
+// UserInteraction value, input the tool_use block's original arguments, and
+// answer the structured selection (predefined labels plus optional free-form
+// text). Connect calls carry no answer; their result is derived from
+// llmContext, the tool context rebuilt after the user's click.
+func ResolveUserInteractionAnswer(kind string, input json.RawMessage, answer UserInteractionAnswer, llmContext *llm.Context) (string, error) {
 	switch kind {
 	case llm.UserInteractionSelect:
 		return resolveAskUserQuestionAnswer(input, answer)
+	case llm.UserInteractionConnect:
+		return resolveConnectMCPServerAccepted(input, llmContext)
 	default:
 		return "", fmt.Errorf("unknown user interaction kind %q", kind)
+	}
+}
+
+// UserInteractionSkippedResult is the tool result recorded when the user
+// skips a pending interaction tool call instead of accepting it.
+func UserInteractionSkippedResult(kind string, input json.RawMessage) string {
+	switch kind {
+	case llm.UserInteractionConnect:
+		return connectMCPServerSkippedResult(input)
+	default:
+		return "User skipped the question"
 	}
 }
 

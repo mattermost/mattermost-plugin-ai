@@ -93,6 +93,11 @@ type ToolCatalogContext struct {
 	// attached automatically. The model cannot see provider file ids, so the
 	// prompt must tell it to copy shareable files into $OUTPUT_DIR.
 	SandboxFilesAttached bool
+
+	// UnconnectedMCPServers lists MCP servers this requester could use here
+	// but has not connected. Only populated for interactive, per-user
+	// catalogs; ConnectMCPServer is cataloged exactly when it is non-empty.
+	UnconnectedMCPServers []UnconnectedMCPServer
 }
 
 // CreatedFile identifies a file created by a tool during this turn for
@@ -124,6 +129,11 @@ type ToolRuntimeContext struct {
 	// this turn. 0 means unset (full MaxPostAttachments budget); -1 means the
 	// response post has no room left. Set via SetResponseAttachmentBudget.
 	ResponseAttachmentBudget int
+
+	// MCPServerNeedsReconnect, when non-nil, adds a server whose
+	// authorization lapsed mid-turn to ToolCatalog.UnconnectedMCPServers and
+	// refreshes ConnectMCPServer. Use Context.ReportMCPServerNeedsReconnect.
+	MCPServerNeedsReconnect func(UnconnectedMCPServer)
 }
 
 type MCPDynamicToolTelemetry interface {

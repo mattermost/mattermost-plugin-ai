@@ -243,7 +243,7 @@ func (c *Conversations) HandleToolCall(ctx context.Context, userID string, post 
 	// Validate answers for accepted interaction blocks before mutating any
 	// state, so a malformed or missing answer leaves the question pending and
 	// answerable instead of burning it as an error result.
-	interactionResults, err := resolveInteractionAnswers(pendingBlocks, acceptedToolIDs, toolAnswers)
+	interactionResults, err := resolveInteractionAnswers(pendingBlocks, acceptedToolIDs, toolAnswers, llmContext)
 	if err != nil {
 		return err
 	}
@@ -311,7 +311,7 @@ func (c *Conversations) HandleToolCall(ctx context.Context, userID string, post 
 			toolResults = append(toolResults, toolrunner.ToolResult{
 				ToolCallID: block.ID,
 				Name:       block.Name,
-				Result:     "User skipped the question",
+				Result:     mmtools.UserInteractionSkippedResult(block.UserInteraction, block.Input),
 				IsError:    true,
 			})
 		case block.WouldAutoExecute && autoExec(llm.ToolCall{Name: block.Name, ServerOrigin: block.ServerOrigin}):
@@ -457,8 +457,10 @@ func (c *Conversations) HandleToolCall(ctx context.Context, userID string, post 
 // resolveInteractionAnswers validates the user's answers for every accepted
 // pending user-interaction block and returns the tool result content keyed by
 // block ID. Any invalid or missing answer fails the whole request with
-// ErrInvalidToolAnswer before any state is mutated.
-func resolveInteractionAnswers(blocks []conversation.ContentBlock, acceptedToolIDs []string, toolAnswers map[string]mmtools.UserInteractionAnswer) (map[string]string, error) {
+// ErrInvalidToolAnswer before any state is mutated. Connect blocks take no
+// answer; their result reflects whether llmContext, rebuilt after the click,
+// still lists the server as unconnected.
+func resolveInteractionAnswers(blocks []conversation.ContentBlock, acceptedToolIDs []string, toolAnswers map[string]mmtools.UserInteractionAnswer, llmContext *llm.Context) (map[string]string, error) {
 	results := make(map[string]string)
 	for _, b := range blocks {
 		if b.Type != conversation.BlockTypeToolUse || b.UserInteraction == "" {
@@ -470,7 +472,7 @@ func resolveInteractionAnswers(blocks []conversation.ContentBlock, acceptedToolI
 		if !slices.Contains(acceptedToolIDs, b.ID) {
 			continue
 		}
-		result, err := mmtools.ResolveUserInteractionAnswer(b.UserInteraction, b.Input, toolAnswers[b.ID])
+		result, err := mmtools.ResolveUserInteractionAnswer(b.UserInteraction, b.Input, toolAnswers[b.ID], llmContext)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %s", ErrInvalidToolAnswer, err.Error())
 		}
