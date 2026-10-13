@@ -53,20 +53,45 @@ const artifactCSP = "sandbox allow-scripts; default-src 'none'; script-src 'unsa
 // viewer's bridge token as a JSON string literal.
 const artifactBridgeTokenPlaceholder = "/*MM_ARTIFACT_BRIDGE_TOKEN*/null" //nolint:gosec // placeholder, not a credential
 
+// artifactBridgeTargetOriginPlaceholder is replaced in artifact_bridge.js
+// with the origin the bridge posts to, as a JSON string literal.
+const artifactBridgeTargetOriginPlaceholder = "/*MM_ARTIFACT_BRIDGE_TARGET_ORIGIN*/null"
+
 // artifactSecretKVKey holds the plugin-wide HMAC secret for bridge tokens.
 const artifactSecretKVKey = "html_artifact_bridge_secret_v1" //nolint:gosec // KV key name, not a credential
 
 const artifactSecretSize = 32
 
-// artifactBridgeScript returns the bridge script with token embedded as a
-// JSON string literal. json.Marshal escapes <, > and & (and U+2028/U+2029),
-// so the literal can never close the script element or the string.
-func artifactBridgeScript(token string) string {
-	literal, err := json.Marshal(token)
+// artifactBridgeScript returns the bridge script with token and targetOrigin
+// embedded as JSON string literals. json.Marshal escapes <, > and & (and
+// U+2028/U+2029), so a literal can never close the script element or the
+// string, and the single-pass replacer never rescans an inserted literal.
+func artifactBridgeScript(token, targetOrigin string) string {
+	return "<script>" + strings.NewReplacer(
+		artifactBridgeTokenPlaceholder, jsStringLiteral(token),
+		artifactBridgeTargetOriginPlaceholder, jsStringLiteral(targetOrigin),
+	).Replace(artifactBridgeJS) + "</script>"
+}
+
+func jsStringLiteral(s string) string {
+	literal, err := json.Marshal(s)
 	if err != nil {
-		literal = []byte(`""`)
+		return `""`
 	}
-	return "<script>" + strings.Replace(artifactBridgeJS, artifactBridgeTokenPlaceholder, string(literal), 1) + "</script>"
+	return string(literal)
+}
+
+// artifactTargetOrigin returns the origin of the Mattermost site URL, which
+// is the host page's origin, or "*" when it is unset or unusable.
+func artifactTargetOrigin(cfg *model.Config) string {
+	if cfg == nil || cfg.ServiceSettings.SiteURL == nil {
+		return "*"
+	}
+	u, err := url.Parse(*cfg.ServiceSettings.SiteURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return "*"
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // artifactBridgeToken derives the token that authenticates bridge messages
@@ -138,8 +163,8 @@ func (a *API) artifactSecret() ([]byte, error) {
 // html and head elements implicitly and merges a later <html>'s attributes),
 // the doctype stays first so standards mode is kept, and the charset comes
 // from the Content-Type header.
-func injectArtifactBridge(doc []byte, token string) []byte {
-	script := artifactBridgeScript(token)
+func injectArtifactBridge(doc []byte, token, targetOrigin string) []byte {
+	script := artifactBridgeScript(token, targetOrigin)
 	insertAt := artifactBridgeInsertPos(doc)
 	out := make([]byte, 0, len(doc)+len(script))
 	out = append(out, doc[:insertAt]...)
@@ -347,7 +372,8 @@ func (a *API) handleGetArtifact(c *gin.Context) {
 		return
 	}
 
-	limit := artifactRenderLimit(client.GetConfig())
+	cfg := client.GetConfig()
+	limit := artifactRenderLimit(cfg)
 	if info.Size > limit {
 		c.String(http.StatusRequestEntityTooLarge, "artifact too large")
 		return
@@ -381,7 +407,7 @@ func (a *API) handleGetArtifact(c *gin.Context) {
 	h.Set("Referrer-Policy", "no-referrer")
 	h.Set("Cross-Origin-Resource-Policy", "same-origin")
 	h.Set("Content-Disposition", "inline")
-	c.Data(http.StatusOK, "text/html; charset=utf-8", injectArtifactBridge(body, token))
+	c.Data(http.StatusOK, "text/html; charset=utf-8", injectArtifactBridge(body, token, artifactTargetOrigin(cfg)))
 }
 
 func (a *API) logArtifactError(msg string, err error, fileID string) {

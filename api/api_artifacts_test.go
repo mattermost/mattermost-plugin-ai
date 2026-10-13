@@ -262,7 +262,7 @@ func TestHandleGetArtifact(t *testing.T) {
 				assert.Equal(t, "no-referrer", rec.Header().Get("Referrer-Policy"))
 				assert.Equal(t, "same-origin", rec.Header().Get("Cross-Origin-Resource-Policy"))
 				assert.Equal(t, "inline", rec.Header().Get("Content-Disposition"))
-				assert.Equal(t, string(injectArtifactBridge([]byte(htmlDoc), wantToken)), rec.Body.String())
+				assert.Equal(t, string(injectArtifactBridge([]byte(htmlDoc), wantToken, "*")), rec.Body.String())
 				assert.Contains(t, rec.Body.String(), "const TOKEN = \""+wantToken+"\";")
 			})
 		}
@@ -447,7 +447,7 @@ func TestHandleGetArtifactNonceValidation(t *testing.T) {
 }
 
 func TestInjectArtifactBridge(t *testing.T) {
-	bridge := artifactBridgeScript("tok")
+	bridge := artifactBridgeScript("tok", "*")
 
 	tests := []struct {
 		name string
@@ -528,7 +528,7 @@ func TestInjectArtifactBridge(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := string(injectArtifactBridge([]byte(tt.doc), "tok"))
+			got := string(injectArtifactBridge([]byte(tt.doc), "tok", "*"))
 			require.Equal(t, tt.want, got)
 			assert.Equal(t, 1, strings.Count(got, bridge))
 			assert.Less(t, strings.Index(got, bridge), strings.Index(strings.ToLower(got), "a("))
@@ -580,38 +580,101 @@ func TestArtifactBridgeToken(t *testing.T) {
 
 func TestArtifactBridgeScriptEscaping(t *testing.T) {
 	tests := []struct {
-		name  string
-		token string
+		name         string
+		token        string
+		targetOrigin string
 	}{
-		{name: "plain token", token: "abc_DEF-123"},
-		{name: "script close", token: `</script><script>alert(1)</script>`},
-		{name: "quote breakout", token: `";alert(1);//`},
-		{name: "html comment and ampersand", token: "<!-- & -->"},
-		{name: "line separators", token: "a\u2028b\u2029c\n"},
+		{name: "plain values", token: "abc_DEF-123", targetOrigin: "https://mm.example.com"},
+		{name: "script close", token: `</script><script>alert(1)</script>`, targetOrigin: `</SCRIPT><script>alert(1)</script>`},
+		{name: "quote breakout", token: `";alert(1);//`, targetOrigin: `';alert(1);//"`},
+		{name: "html comment and ampersand", token: "<!-- & -->", targetOrigin: "<!-- & -->"},
+		{name: "line separators", token: "a\u2028b\u2029c\n", targetOrigin: "a\u2028b\u2029c\n"},
+		{name: "token holding the target origin placeholder", token: artifactBridgeTargetOriginPlaceholder, targetOrigin: "*"},
+		{name: "target origin holding the token placeholder", token: "tok", targetOrigin: artifactBridgeTokenPlaceholder},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			script := artifactBridgeScript(tt.token)
+			script := artifactBridgeScript(tt.token, tt.targetOrigin)
 			inner := strings.TrimSuffix(strings.TrimPrefix(script, "<script>"), "</script>")
 			assert.NotContains(t, strings.ToLower(inner), "</script")
 			assert.NotContains(t, inner, "<!--")
-			assert.NotContains(t, inner, artifactBridgeTokenPlaceholder)
 
-			// The literal decodes back to exactly the token.
-			const prefix = "const TOKEN = "
-			i := strings.Index(inner, prefix)
-			require.GreaterOrEqual(t, i, 0)
-			rest := inner[i+len(prefix):]
-			literal, _, found := strings.Cut(rest, ";\n")
-			require.True(t, found)
-			assert.NotContains(t, literal, "<")
-			assert.NotContains(t, literal, ">")
-			assert.NotContains(t, literal, "&")
-			assert.NotContains(t, literal, "\u2028")
-			assert.NotContains(t, literal, "\u2029")
-			var decoded string
-			require.NoError(t, json.Unmarshal([]byte(literal), &decoded))
-			assert.Equal(t, tt.token, decoded)
+			// Each literal decodes back to exactly its value.
+			for prefix, want := range map[string]string{"const TOKEN = ": tt.token, "const TARGET_ORIGIN = ": tt.targetOrigin} {
+				i := strings.Index(inner, prefix)
+				require.GreaterOrEqual(t, i, 0)
+				literal, _, found := strings.Cut(inner[i+len(prefix):], ";\n")
+				require.True(t, found)
+				assert.NotContains(t, literal, "<")
+				assert.NotContains(t, literal, ">")
+				assert.NotContains(t, literal, "&")
+				assert.NotContains(t, literal, "\u2028")
+				assert.NotContains(t, literal, "\u2029")
+				var decoded string
+				require.NoError(t, json.Unmarshal([]byte(literal), &decoded))
+				assert.Equal(t, want, decoded)
+			}
+		})
+	}
+}
+
+func TestHandleGetArtifactTargetOrigin(t *testing.T) {
+	gin.SetMode(gin.ReleaseMode)
+	gin.DefaultWriter = io.Discard
+
+	sessionID := model.NewId()
+	fileID := model.NewId()
+	postID := model.NewId()
+	channelID := model.NewId()
+	const htmlDoc = "<html><body><script>run()</script></body></html>"
+
+	tests := []struct {
+		name    string
+		siteURL *string
+		want    string
+	}{
+		{name: "site url with port and path", siteURL: model.NewPointer("https://mm.example.com:8443/team/sub/"), want: "https://mm.example.com:8443"},
+		{name: "http site url", siteURL: model.NewPointer("http://localhost:8065"), want: "http://localhost:8065"},
+		{name: "ipv6 host", siteURL: model.NewPointer("http://[::1]:8065"), want: "http://[::1]:8065"},
+		{name: "userinfo, query and fragment are dropped", siteURL: model.NewPointer("https://u:p@mm.example.com/x?y=1#z"), want: "https://mm.example.com"},
+		{name: "unset site url", want: "*"},
+		{name: "empty site url", siteURL: model.NewPointer(""), want: "*"},
+		{name: "unparsable site url", siteURL: model.NewPointer("http://[::1"), want: "*"},
+		{name: "site url without scheme", siteURL: model.NewPointer("mm.example.com"), want: "*"},
+		{name: "non-http scheme", siteURL: model.NewPointer("javascript://mm.example.com"), want: "*"},
+		{name: "scheme without host", siteURL: model.NewPointer("https:///path"), want: "*"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := SetupTestEnvironment(t)
+			defer e.Cleanup(t)
+			e.setupTestBot(llm.BotConfig{Name: "test-bot", DisplayName: "Test Bot"})
+			e.config.enableHTMLArtifacts = true
+			e.api.artifactSecretCache = []byte(strings.Repeat("k", artifactSecretSize))
+
+			cfg := &model.Config{}
+			cfg.ServiceSettings.SiteURL = tt.siteURL
+			m := mocks.NewMockClient(t)
+			m.EXPECT().HasPermissionToFileAction(sessionID, fileID, model.AccessControlPolicyActionDownloadFileAttachment).Return(true).Maybe()
+			m.EXPECT().GetFileInfo(fileID).Return(&model.FileInfo{Id: fileID, PostId: postID, ChannelId: channelID, Name: "a.html", Extension: "html", Size: int64(len(htmlDoc))}, nil)
+			m.EXPECT().GetPost(postID).Return(&model.Post{Id: postID, UserId: testBotUserID, ChannelId: channelID, FileIds: model.StringArray{fileID}}, nil)
+			m.EXPECT().HasPermissionToChannel(testUserID, channelID, model.PermissionReadChannel).Return(true)
+			m.EXPECT().GetConfig().Return(cfg)
+			m.EXPECT().GetFile(fileID).Return(io.NopCloser(strings.NewReader(htmlDoc)), nil)
+			e.api.mmClient = m
+
+			req := httptest.NewRequest(http.MethodGet, "/artifacts/"+fileID+"?n="+testArtifactNonce, nil)
+			req.Header.Set("Mattermost-User-Id", testUserID)
+			req.Header.Set("Sec-Fetch-Dest", "iframe")
+			req.Header.Set("Sec-Fetch-Site", "same-origin")
+			rec := httptest.NewRecorder()
+			e.api.ServeHTTP(&plugin.Context{SessionId: sessionID}, rec, req)
+
+			require.Equal(t, http.StatusOK, rec.Code)
+			literal, err := json.Marshal(tt.want)
+			require.NoError(t, err)
+			assert.Contains(t, rec.Body.String(), "const TARGET_ORIGIN = "+string(literal)+";\n")
+			assert.NotContains(t, rec.Body.String(), artifactBridgeTargetOriginPlaceholder)
 		})
 	}
 }
