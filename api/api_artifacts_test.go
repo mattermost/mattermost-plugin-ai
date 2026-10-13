@@ -259,6 +259,8 @@ func TestHandleGetArtifact(t *testing.T) {
 				assert.Equal(t, artifactCSP, rec.Header().Get("Content-Security-Policy"))
 				assert.Contains(t, rec.Header().Get("Content-Security-Policy"), "sandbox allow-scripts;")
 				assert.NotContains(t, rec.Header().Get("Content-Security-Policy"), "allow-same-origin")
+				assert.Equal(t, "()", rec.Header().Get("Connection-Allowlist"))
+				assert.Equal(t, artifactPermissionsPolicy, rec.Header().Get("Permissions-Policy"))
 				assert.Equal(t, "no-referrer", rec.Header().Get("Referrer-Policy"))
 				assert.Equal(t, "same-origin", rec.Header().Get("Cross-Origin-Resource-Policy"))
 				assert.Equal(t, "inline", rec.Header().Get("Content-Disposition"))
@@ -675,6 +677,35 @@ func TestHandleGetArtifactTargetOrigin(t *testing.T) {
 			require.NoError(t, err)
 			assert.Contains(t, rec.Body.String(), "const TARGET_ORIGIN = "+string(literal)+";\n")
 			assert.NotContains(t, rec.Body.String(), artifactBridgeTargetOriginPlaceholder)
+		})
+	}
+}
+
+func TestArtifactPermissionsPolicy(t *testing.T) {
+	denied := map[string]bool{}
+	for entry := range strings.SplitSeq(artifactPermissionsPolicy, ", ") {
+		feature, allowlist, found := strings.Cut(entry, "=")
+		require.True(t, found, entry)
+		require.Regexp(t, `^[a-z][a-z-]*[a-z]$`, feature)
+		require.Equal(t, "()", allowlist, feature)
+		require.False(t, denied[feature], "duplicate %s", feature)
+		denied[feature] = true
+	}
+
+	tests := []struct {
+		name     string
+		features []string
+	}{
+		{name: "devices and sensors", features: []string{"camera", "microphone", "geolocation", "usb", "serial", "hid", "bluetooth", "midi", "accelerometer", "gyroscope", "magnetometer"}},
+		{name: "allowed by default in opaque frames", features: []string{"sync-xhr", "autoplay", "encrypted-media", "picture-in-picture", "fullscreen", "unload"}},
+		{name: "clipboard and screen", features: []string{"clipboard-read", "clipboard-write", "display-capture", "window-management", "screen-wake-lock"}},
+		{name: "credentials and payments", features: []string{"publickey-credentials-get", "publickey-credentials-create", "identity-credentials-get", "otp-credentials", "payment", "storage-access"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, feature := range tt.features {
+				assert.True(t, denied[feature], feature)
+			}
 		})
 	}
 }

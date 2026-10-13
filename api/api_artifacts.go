@@ -49,6 +49,59 @@ const artifactCSP = "sandbox allow-scripts; default-src 'none'; script-src 'unsa
 	"connect-src 'none'; frame-src 'none'; worker-src 'none'; object-src 'none'; " +
 	"form-action 'none'; base-uri 'none'; frame-ancestors 'self'"
 
+// artifactConnectionAllowlist allows the artifact no connections at all:
+// with an empty list, WebRTC and navigations/redirects are blocked too, and
+// local-scheme children (srcdoc, data:, blob:) inherit it. CSP cannot block
+// WebRTC. Honored by Chromium 152+; other browsers ignore it.
+const artifactConnectionAllowlist = "()"
+
+// artifactPermissionsPolicy denies the features an opaque-origin frame would
+// otherwise still get by default, plus powerful features as defense in depth.
+const artifactPermissionsPolicy = "accelerometer=(), " +
+	"ambient-light-sensor=(), " +
+	"attribution-reporting=(), " +
+	"autoplay=(), " +
+	"bluetooth=(), " +
+	"browsing-topics=(), " +
+	"camera=(), " +
+	"clipboard-read=(), " +
+	"clipboard-write=(), " +
+	"compute-pressure=(), " +
+	"display-capture=(), " +
+	"encrypted-media=(), " +
+	"fullscreen=(), " +
+	"gamepad=(), " +
+	"geolocation=(), " +
+	"gyroscope=(), " +
+	"hid=(), " +
+	"identity-credentials-get=(), " +
+	"idle-detection=(), " +
+	"join-ad-interest-group=(), " +
+	"local-fonts=(), " +
+	"magnetometer=(), " +
+	"microphone=(), " +
+	"midi=(), " +
+	"otp-credentials=(), " +
+	"payment=(), " +
+	"picture-in-picture=(), " +
+	"private-aggregation=(), " +
+	"private-state-token-issuance=(), " +
+	"private-state-token-redemption=(), " +
+	"publickey-credentials-create=(), " +
+	"publickey-credentials-get=(), " +
+	"run-ad-auction=(), " +
+	"screen-wake-lock=(), " +
+	"serial=(), " +
+	"shared-storage=(), " +
+	"shared-storage-select-url=(), " +
+	"storage-access=(), " +
+	"sync-xhr=(), " +
+	"unload=(), " +
+	"usb=(), " +
+	"web-share=(), " +
+	"window-management=(), " +
+	"xr-spatial-tracking=()"
+
 // artifactBridgeTokenPlaceholder is replaced in artifact_bridge.js with the
 // viewer's bridge token as a JSON string literal.
 const artifactBridgeTokenPlaceholder = "/*MM_ARTIFACT_BRIDGE_TOKEN*/null" //nolint:gosec // placeholder, not a credential
@@ -404,6 +457,8 @@ func (a *API) handleGetArtifact(c *gin.Context) {
 
 	h := c.Writer.Header()
 	h.Set("Content-Security-Policy", artifactCSP)
+	h.Set("Connection-Allowlist", artifactConnectionAllowlist)
+	h.Set("Permissions-Policy", artifactPermissionsPolicy)
 	h.Set("Referrer-Policy", "no-referrer")
 	h.Set("Cross-Origin-Resource-Policy", "same-origin")
 	h.Set("Content-Disposition", "inline")
