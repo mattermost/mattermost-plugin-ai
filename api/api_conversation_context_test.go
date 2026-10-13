@@ -71,7 +71,7 @@ func TestHandleGetConversationContext_TotalSource(t *testing.T) {
 		t.Helper()
 		mmBot := &model.Bot{UserId: testBotUserID, Username: "ai", DisplayName: "AI"}
 		bot := bots.NewBot(llm.BotConfig{Name: "ai", DisplayName: "AI"}, llm.ServiceConfig{}, mmBot, fake)
-		e.bots.SetBotsForTesting([]*bots.Bot{bot})
+		e.setBots(bot)
 	}
 
 	tests := []struct {
@@ -357,7 +357,7 @@ func TestHandleGetConversationContextPassesSessionToFilePolicy(t *testing.T) {
 			fake := &FakeLLM{TokenCount: 100, TokenLimit: 200000}
 			mmBot := &model.Bot{UserId: testBotUserID, Username: "ai", DisplayName: "AI"}
 			bot := bots.NewBot(llm.BotConfig{Name: "ai", DisplayName: "AI"}, llm.ServiceConfig{}, mmBot, fake)
-			e.bots.SetBotsForTesting([]*bots.Bot{bot})
+			e.setBots(bot)
 
 			mmClient := mmapimocks.NewMockClient(t)
 			mmClient.On(

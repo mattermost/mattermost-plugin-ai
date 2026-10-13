@@ -428,8 +428,9 @@ func (a *API) refreshBotsAndNotify(renamedAgentID string) error {
 // refreshAfterRename refreshes a renamed agent from the store on this node,
 // then reloads every bot and tells peers to refresh it too. The agent is
 // refreshed on its own first because the full reload can fail and keep the
-// whole previous registry, which would leave the agent answering to a name it
-// no longer holds.
+// whole previous registry, which would keep listing the agent under its
+// previous name. Routing by the previous name is refused regardless, since
+// name-based lookups check the live bot account.
 func (a *API) refreshAfterRename(agentID string) error {
 	if a.bots != nil {
 		if err := a.bots.RefreshAgent(agentID); err != nil {

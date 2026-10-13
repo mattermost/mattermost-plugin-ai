@@ -125,7 +125,7 @@ func (p *Plugin) OnPluginClusterEvent(_ *plugin.Context, ev model.PluginClusterE
 
 	case clusterEventAgentUpdate:
 		// A renamed agent is refreshed on its own first, so a failing full
-		// reload cannot keep it answering to its previous name.
+		// reload cannot keep it listed under its previous name.
 		if len(ev.Data) > 0 {
 			var payload agentUpdateClusterPayload
 			if err := json.Unmarshal(ev.Data, &payload); err != nil {

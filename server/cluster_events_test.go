@@ -564,7 +564,8 @@ func TestPublishAgentUpdatePayload(t *testing.T) {
 // TestOnPluginClusterEventAgentUpdateRefreshesRenamedAgent delivers an agent
 // update to a peer whose registry still lists a renamed agent under its old
 // name and whose full bot reload fails. Only the agent ID in the payload lets
-// the peer stop answering to the old name.
+// the peer list the agent under its new name; the old name, which the bot
+// account released, is refused either way.
 func TestOnPluginClusterEventAgentUpdateRefreshesRenamedAgent(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -595,7 +596,9 @@ func TestOnPluginClusterEventAgentUpdateRefreshesRenamedAgent(t *testing.T) {
 			mockAPI.On("GetBot", "bot-1", true).Return(&model.Bot{UserId: "bot-1", Username: "new-name", OwnerId: "mattermost-ai"}, nil).Maybe()
 			mockAPI.On("PatchBot", "bot-1", mock.AnythingOfType("*model.BotPatch")).Return(&model.Bot{UserId: "bot-1", Username: "new-name"}, nil).Maybe()
 			mockAPI.On("UpdateBotActive", "bot-1", true).Return(&model.Bot{}, nil).Maybe()
-			mockAPI.On("GetUser", "bot-1").Return(&model.User{LastPictureUpdate: 1}, nil).Maybe()
+			mockAPI.On("GetUser", "bot-1").Return(&model.User{Id: "bot-1", Username: "new-name", IsBot: true, LastPictureUpdate: 1}, nil).Maybe()
+			mockAPI.On("GetUserByUsername", "old-name").
+				Return(nil, model.NewAppError("GetUserByUsername", "app.user.missing_account.const", nil, "", http.StatusNotFound))
 			mockAPI.On("KVSetWithOptions", mock.AnythingOfType("string"), mock.AnythingOfType("[]uint8"), mock.AnythingOfType("model.PluginKVSetOptions")).Return(true, nil).Maybe()
 			mockAPI.On("KVDelete", mock.AnythingOfType("string")).Return(nil).Maybe()
 			mockAPI.On("GetBots", mock.AnythingOfType("*model.BotGetOptions")).
@@ -625,15 +628,18 @@ func TestOnPluginClusterEventAgentUpdateRefreshesRenamedAgent(t *testing.T) {
 			p.SetAPI(mockAPI)
 			p.OnPluginClusterEvent(&plugin.Context{}, test.event)
 
-			oldMention := mmBots.GetBotMentioned("@old-name hi")
+			require.Nil(t, mmBots.GetBotMentioned("@old-name hi"), "the peer must not answer to the name the agent's account released")
+			require.Nil(t, mmBots.GetBotByUsername("old-name"), "the peer must not select the agent by the name its account released")
+			registered := mmBots.GetBotByID("bot-1")
+			require.NotNil(t, registered)
 			newMention := mmBots.GetBotMentioned("@new-name hi")
 			if test.expectRefreshed {
-				require.Nil(t, oldMention, "the peer must stop answering to the agent's old name")
+				require.Equal(t, "new-name", registered.GetMMBot().Username)
 				require.NotNil(t, newMention)
 				require.Equal(t, "a1", newMention.GetConfig().ID)
 				return
 			}
-			require.NotNil(t, oldMention, "without an agent ID the peer keeps its previous registry when the full reload fails")
+			require.Equal(t, "old-name", registered.GetMMBot().Username, "without an agent ID the peer keeps its previous registry when the full reload fails")
 			require.Nil(t, newMention)
 		})
 	}
