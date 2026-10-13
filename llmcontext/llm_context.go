@@ -14,6 +14,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mcp"
+	"github.com/mattermost/mattermost-plugin-agents/v2/mmtools"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 )
@@ -327,14 +328,22 @@ func (b *Builder) getToolsStoreForUser(ctx stdcontext.Context, c *llm.Context, b
 		mcpTools = filterMCPToolsByDisabledOrigins(mcpTools, c.ToolCatalog.DisabledMCPServerOrigins)
 		mcpTools = filterMCPToolsByPredicate(mcpTools, c.ToolCatalog.KeepMCPTool)
 
+		var authErrors []llm.ToolAuthError
 		if mcpErrors != nil {
-			authErrors := mcpErrors.ToolAuthErrors
+			authErrors = mcpErrors.ToolAuthErrors
 			if !botCfg.AutoEnableNewMCPTools {
 				authErrors = filterToolAuthErrorsForAllowlist(mcpErrors.ToolAuthErrors, botCfg.EnabledMCPTools)
 			}
 			for _, authError := range authErrors {
 				store.AddAuthError(authError)
 			}
+		}
+
+		// Unconnected servers are only offered where the requester can act on
+		// a Connect card for their own account. Service accounts never need
+		// per-user OAuth, and bridge/concrete catalogs have no interactive user.
+		if c.ToolCatalog.InteractiveUserPresent && !useServiceAccount && !forceConcrete {
+			advertiseUnconnectedMCPServers(store, c, unconnectedMCPServers(authErrors, botCfg, c.ToolCatalog))
 		}
 	}
 
@@ -352,6 +361,101 @@ func (b *Builder) getToolsStoreForUser(ctx stdcontext.Context, c *llm.Context, b
 	b.preloadMCPTools(store, mcpTools, c.ToolCatalog.PreloadedMCPTools)
 
 	return store
+}
+
+// unconnectedMCPServers applies the same request eligibility as real MCP tools
+// to OAuth-needed connect failures. Access policy, license, and agent/user
+// origin selection already kept ineligible servers from being dialed; the
+// filters here are defense in depth plus the per-tool rules (agent allowlist,
+// KeepMCPTool) mapped onto each server's admin-configured tool names.
+func unconnectedMCPServers(authErrors []llm.ToolAuthError, botCfg llm.BotConfig, catalog llm.ToolCatalogContext) []llm.UnconnectedMCPServer {
+	if len(authErrors) == 0 {
+		return nil
+	}
+
+	disabled := make(map[string]bool, len(catalog.DisabledMCPServerOrigins))
+	for _, origin := range llm.NormalizeMCPServerOrigins(catalog.DisabledMCPServerOrigins) {
+		disabled[origin] = true
+	}
+
+	var servers []llm.UnconnectedMCPServer
+	seen := make(map[string]bool, len(authErrors))
+	for _, authErr := range authErrors {
+		origin := llm.NormalizeMCPServerOrigin(authErr.ServerOrigin)
+		if disabled[origin] || seen[origin] {
+			continue
+		}
+
+		toolNames := authErr.ToolNames
+		if !botCfg.AutoEnableNewMCPTools {
+			if !toolAuthErrorMatchesAllowlist(authErr, botCfg.EnabledMCPTools) {
+				continue
+			}
+			toolNames = keepUnconnectedToolNames(authErr.ServerOrigin, toolNames, func(tools []llm.Tool) []llm.Tool {
+				return llm.FilterMCPToolsByEnabledAllowlist(tools, botCfg.EnabledMCPTools)
+			})
+		}
+		if catalog.KeepMCPTool != nil {
+			// A context-scoped tool filter can only be honored per tool, and
+			// nothing is known about an unconnected server's tools beyond its
+			// admin configuration: advertise it only if a configured tool
+			// would survive the filter.
+			toolNames = keepUnconnectedToolNames(authErr.ServerOrigin, toolNames, func(tools []llm.Tool) []llm.Tool {
+				return filterMCPToolsByPredicate(tools, catalog.KeepMCPTool)
+			})
+			if len(toolNames) == 0 {
+				continue
+			}
+		}
+
+		authErr.ToolNames = toolNames
+		server, ok := llm.NewUnconnectedMCPServer(authErr)
+		if !ok {
+			continue
+		}
+		seen[origin] = true
+		servers = append(servers, server)
+	}
+	return servers
+}
+
+// keepUnconnectedToolNames runs a tool filter over an unconnected server's
+// admin-configured tool names by presenting them as tools of that origin.
+func keepUnconnectedToolNames(origin string, names []string, filter func([]llm.Tool) []llm.Tool) []string {
+	if len(names) == 0 {
+		return nil
+	}
+	tools := make([]llm.Tool, 0, len(names))
+	for _, name := range names {
+		tools = append(tools, llm.Tool{Name: name, ServerOrigin: origin})
+	}
+	kept := filter(tools)
+	result := make([]string, 0, len(kept))
+	for _, tool := range kept {
+		result = append(result, tool.Name)
+	}
+	return result
+}
+
+// advertiseUnconnectedMCPServers publishes this turn's unconnected servers and
+// catalogs ConnectMCPServer for them. It also lets an MCP tool whose
+// authorization lapses mid-turn add its server, so the model can ask the user
+// to reconnect without waiting for the next turn.
+func advertiseUnconnectedMCPServers(store *llm.ToolStore, c *llm.Context, servers []llm.UnconnectedMCPServer) {
+	publish := func(tools *llm.ToolStore, servers []llm.UnconnectedMCPServer) {
+		c.ToolCatalog.UnconnectedMCPServers = servers
+		if tools != nil && len(servers) > 0 {
+			tools.AddTools([]llm.Tool{mmtools.NewConnectMCPServerTool(servers)})
+		}
+	}
+	publish(store, servers)
+
+	c.ToolRuntime.MCPServerNeedsReconnect = func(server llm.UnconnectedMCPServer) {
+		if _, listed := c.UnconnectedMCPServerByName(server.Name); listed {
+			return
+		}
+		publish(c.Tools, append(slices.Clone(c.ToolCatalog.UnconnectedMCPServers), server))
+	}
 }
 
 func (b *Builder) buildStrictMCPToolStore(store *llm.ToolStore, mcpTools []llm.Tool, c *llm.Context, registryOpts ...mcp.ToolRegistryOption) {
