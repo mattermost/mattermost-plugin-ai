@@ -150,7 +150,9 @@ test.describe('Tool Activity Approval Placement (Aimock)', () => {
         // decision renders in full, below the collapsed row.
         await expectToolActivityCollapsed(botPost);
         await expectToolActivityCurrent(botPost, readChannelLabel);
-        await expect(botPost.getByText(getChannelInfoLabel, {exact: true})).toBeVisible();
+        await expect(
+            botPost.locator(TOOL_CARD_SELECTOR).filter({hasText: getChannelInfoLabel}),
+        ).toBeVisible();
         expect(await approvalPlacement(botPost)).toBe('below');
 
         await acceptButton.click();
