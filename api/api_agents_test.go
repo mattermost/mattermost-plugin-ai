@@ -1495,6 +1495,80 @@ func (n *recordingAgentNotifier) PublishAgentUpdate(agentID string) error {
 	return nil
 }
 
+// TestUpdateAgentRenameFailureStopsRoutingReleasedName covers failed renames
+// that cannot be fully undone, so the bot account keeps the new name and the
+// previous username is released.
+func TestUpdateAgentRenameFailureStopsRoutingReleasedName(t *testing.T) {
+	tests := []struct {
+		name          string
+		setup         func(e *TestEnvironment)
+		failBotRevert bool
+		expectedName  string
+	}{
+		{
+			name: "settings cannot be updated and the agent cannot be restored",
+			setup: func(e *TestEnvironment) {
+				e.api.configStore.(*mockConfigStore).updateErr = errors.New("db down")
+				e.agentStore.updateErrs = []error{nil, errors.New("rollback db down")}
+			},
+			expectedName: "new-name",
+		},
+		{
+			name: "agent cannot be saved and the bot rename cannot be reverted",
+			setup: func(e *TestEnvironment) {
+				e.agentStore.updateErr = errors.New("db down")
+			},
+			failBotRevert: true,
+			expectedName:  "old-name",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			e := setupAgentTestEnvironment(t)
+			defer e.Cleanup(t)
+
+			mockLicensed(e.mockAPI)
+			e.mockAPI.On("LogError", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+			e.mockAPI.On("GetUserByUsername", mock.Anything).
+				Return(nil, model.NewAppError("GetUserByUsername", "app.user.missing", nil, "", http.StatusNotFound)).Maybe()
+			e.api.configStore.(*mockConfigStore).cfg.DefaultBotName = "old-name"
+			notifier := &recordingAgentNotifier{}
+			e.api.clusterAgentNotifier = notifier
+
+			botName := "old-name"
+			e.mockAPI.On("PatchBot", "bot-1", mock.AnythingOfType("*model.BotPatch")).Return(func(_ string, patch *model.BotPatch) (*model.Bot, *model.AppError) {
+				if patch.Username != nil {
+					if tc.failBotRevert && *patch.Username == "old-name" {
+						return nil, model.NewAppError("PatchBot", "app.bot.patchbot.internal_error", nil, "", http.StatusInternalServerError)
+					}
+					botName = *patch.Username
+				}
+				return &model.Bot{UserId: "bot-1", Username: botName}, nil
+			}).Maybe()
+
+			stored := &llm.BotConfig{
+				ID: "agent-1", CreatorID: testUserID, BotUserID: "bot-1",
+				DisplayName: "Agent", Name: "old-name", ServiceID: "svc-1",
+			}
+			e.agentStore.agents["agent-1"] = stored
+			e.bots.SetBotsForTesting([]*bots.Bot{
+				bots.NewBot(*stored, llm.ServiceConfig{}, &model.Bot{UserId: "bot-1", Username: "old-name"}, nil),
+			})
+			tc.setup(e)
+
+			body := updateAgentBodyFromStored(stored, map[string]any{"username": "new-name"})
+			recorder := doRequest(e.api, http.MethodPut, "/agents/agent-1", body, testUserID)
+
+			require.Equal(t, http.StatusInternalServerError, recorder.Result().StatusCode, recorder.Body.String())
+			require.Equal(t, tc.expectedName, e.agentStore.agents["agent-1"].Name)
+			require.Equal(t, "new-name", botName, "precondition: the previous username stays released")
+			assert.Nil(t, e.bots.GetBotMentioned("@old-name hi"), "the released username must not keep routing to the agent")
+			assert.Equal(t, []string{"agent-1"}, notifier.published, "peers must refresh the agent too")
+		})
+	}
+}
+
 func TestUpdateAgentRefreshesRenamedAgent(t *testing.T) {
 	tests := []struct {
 		name             string

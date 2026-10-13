@@ -425,6 +425,20 @@ func (a *API) refreshBotsAndNotify(renamedAgentID string) error {
 	return ensureErr
 }
 
+// refreshAfterRename refreshes a renamed agent from the store on this node,
+// then reloads every bot and tells peers to refresh it too. The agent is
+// refreshed on its own first because the full reload can fail and keep the
+// whole previous registry, which would leave the agent answering to a name it
+// no longer holds.
+func (a *API) refreshAfterRename(agentID string) error {
+	if a.bots != nil {
+		if err := a.bots.RefreshAgent(agentID); err != nil {
+			a.pluginAPI.Log.Error("Failed to refresh renamed agent", "agent_id", agentID, "error", err.Error())
+		}
+	}
+	return a.refreshBotsAndNotify(agentID)
+}
+
 // handleCreateAgent handles POST /agents: creates the bot user and persisted agent config.
 func (a *API) handleCreateAgent(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
@@ -707,6 +721,15 @@ func (a *API) handleUpdateAgent(c *gin.Context) {
 		if !ok {
 			return
 		}
+		// From here a failure can leave the bot account, the stored agent, and
+		// the registries disagreeing on the name (a rollback or the revert can
+		// fail too), with the previous username already released. Bring all of
+		// them to the stored agent before the error is returned.
+		defer func() {
+			if c.IsAborted() {
+				_ = a.refreshAfterRename(cfg.ID)
+			}
+		}()
 		if renamed {
 			revertRename = func() {
 				if _, err := a.pluginAPI.Bot.Patch(cfg.BotUserID, &model.BotPatch{Username: &prev.Name}); err != nil {
@@ -774,19 +797,12 @@ func (a *API) handleUpdateAgent(c *gin.Context) {
 		audit.AddParam(auditRec(c), "default_agent_renamed", true)
 	}
 
-	// The full refresh below can fail and keep the whole previous registry,
-	// which would leave the agent answering to a name it no longer holds.
-	renamedAgentID := ""
+	var ensureErr error
 	if usernameChanged {
-		renamedAgentID = cfg.ID
-		if a.bots != nil {
-			if err := a.bots.RefreshAgent(cfg.ID); err != nil {
-				a.pluginAPI.Log.Error("Failed to refresh renamed agent", "agent_id", cfg.ID, "error", err.Error())
-			}
-		}
+		ensureErr = a.refreshAfterRename(cfg.ID)
+	} else {
+		ensureErr = a.refreshBotsAndNotify("")
 	}
-
-	ensureErr := a.refreshBotsAndNotify(renamedAgentID)
 
 	// EnsureBots patches display name on success; when it did not run (no bot registry) or failed, sync explicitly.
 	if displayNameChanged && (ensureErr != nil || a.bots == nil) {
