@@ -486,6 +486,28 @@ describe('ArtifactFrame focus guard', () => {
         expect(frameIframe()).toBe(frame);
     });
 
+    test('answering the consent prompt does not re-engage a frame hidden by a heartbeat lapse', async () => {
+        const {frame, send} = await renderReadyFrame({initiallyEngaged: true});
+        act(() => frame.focus());
+        send({mmArtifact: 1, type: 'heartbeat'});
+        send({mmArtifact: 1, type: 'request', id: 'r1', method: 'getCurrentUser'});
+        expect(document.activeElement).toBe(screen.getByTestId('html-artifact-consent-deny'));
+
+        advance(HEARTBEAT_HIDE_MS + 500);
+        expect(screen.getByTestId('html-artifact-unresponsive')).toBeTruthy();
+        expect(screen.getByTestId('html-artifact-consent')).toBeTruthy();
+
+        answerPrompt();
+        expect(screen.getByTestId('html-artifact-frame').getAttribute('data-engaged')).toBe('false');
+        advance(300);
+        expect(screen.getByTestId('html-artifact-frame').getAttribute('data-engaged')).toBe('false');
+        expect(frameIframe() !== null && document.activeElement === frameIframe()).toBe(false);
+
+        // The prompt hands focus back to the hidden frame it opened over; the
+        // guard stops a disengaged frame holding it.
+        expect(stopped()?.getAttribute('data-stop-reason')).toBe('focus');
+    });
+
     test('an artifact that takes focus and opens a prompt at once gets no prompt and is stopped', async () => {
         const {frame} = await renderReadyFrame();
         act(() => composer.focus());
