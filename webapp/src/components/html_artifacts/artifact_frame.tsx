@@ -348,10 +348,8 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
                 setUnresponsive(true);
 
                 // Keystrokes must not go to a page the viewer can no longer see.
-                if (document.activeElement === iframeRef.current) {
-                    releaseFocus();
-                    setEngaged(false);
-                }
+                releaseFocus();
+                setEngaged(false);
             }
         };
         const timer = window.setInterval(check, HEARTBEAT_CHECK_MS);
@@ -475,7 +473,7 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
     const answerConsent = useCallback((allowed: boolean) => {
         // The prompt is about to hand focus back to this artifact, which had
         // it when the prompt opened; the viewer answering it is returning there.
-        if (consentReturnsToFrameRef.current) {
+        if (consentReturnsToFrameRef.current && !unresponsiveRef.current) {
             setEngaged(true);
         }
         pendingConsentRef.current?.resolve(allowed);
