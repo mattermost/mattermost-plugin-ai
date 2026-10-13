@@ -826,16 +826,27 @@ func (b *MMBots) findBot(pred func(*Bot) bool) *Bot {
 }
 
 func (b *MMBots) getTranscriberBot() *Bot {
-	return b.findBot(func(bot *Bot) bool {
-		return bot.cfg.Name == b.config.GetTranscriptGenerator()
-	})
+	return b.GetBotByUsername(b.config.GetTranscriptGenerator())
 }
 
-// GetBotByUsername retrieves the bot associated with the given bot username
+// GetBotByUsername retrieves the bot associated with the given bot username.
+// A name the registry does not know is resolved through the Mattermost bot
+// account that holds it, so an agent stays reachable under its new name while
+// the registry still lists it under the old one after a rename.
 func (b *MMBots) GetBotByUsername(botUsername string) *Bot {
-	return b.findBot(func(bot *Bot) bool {
+	if bot := b.findBot(func(bot *Bot) bool {
 		return bot.cfg.Name == botUsername
-	})
+	}); bot != nil {
+		return bot
+	}
+	if botUsername == "" || b.pluginAPI == nil {
+		return nil
+	}
+	user, err := b.pluginAPI.User.GetByUsername(botUsername)
+	if err != nil || !user.IsBot {
+		return nil
+	}
+	return b.GetBotByID(user.Id)
 }
 
 // GetBotByUsernameOrFirst retrieves the bot associated with the given bot username or the first bot if not found

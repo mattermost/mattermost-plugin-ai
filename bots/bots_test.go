@@ -1064,6 +1064,61 @@ func TestEnsureBotsRetriesBotWhoseAccountSyncFailed(t *testing.T) {
 	mockAPI.AssertNumberOfCalls(t, "PatchBot", 4)
 }
 
+func TestGetBotByUsernameFindsRenamedBotAccount(t *testing.T) {
+	other := NewBot(llm.BotConfig{Name: "other"}, llm.ServiceConfig{}, &model.Bot{UserId: "bot-2", Username: "other"}, nil)
+	renamed := NewBot(llm.BotConfig{Name: "old-name"}, llm.ServiceConfig{}, &model.Bot{UserId: "bot-1", Username: "old-name"}, nil)
+	notFound := model.NewAppError("GetUserByUsername", "app.user.missing_account.const", nil, "", http.StatusNotFound)
+
+	testCases := []struct {
+		name          string
+		username      string
+		account       *model.User
+		accountErr    *model.AppError
+		expected      *Bot
+		expectedFirst *Bot
+	}{
+		{
+			name:          "name in the registry",
+			username:      "old-name",
+			expected:      renamed,
+			expectedFirst: renamed,
+		},
+		{
+			name:          "new name already held by the agent's bot account",
+			username:      "new-name",
+			account:       &model.User{Id: "bot-1", Username: "new-name", IsBot: true},
+			expected:      renamed,
+			expectedFirst: renamed,
+		},
+		{
+			name:          "name held by a bot account outside the registry",
+			username:      "unmanaged",
+			account:       &model.User{Id: "bot-3", Username: "unmanaged", IsBot: true},
+			expectedFirst: other,
+		},
+		{
+			name:          "name nobody holds",
+			username:      "missing",
+			accountErr:    notFound,
+			expectedFirst: other,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mmBots := newTestMMBots(t, &mockConfig{})
+			mockAPI := mmBots.ensureBotsClusterMutex.(*plugintest.API)
+			if tc.account != nil || tc.accountErr != nil {
+				mockAPI.On("GetUserByUsername", tc.username).Return(tc.account, tc.accountErr)
+			}
+			mmBots.SetBotsForTesting([]*Bot{other, renamed})
+
+			assert.Same(t, tc.expected, mmBots.GetBotByUsername(tc.username))
+			assert.Same(t, tc.expectedFirst, mmBots.GetBotByUsernameOrFirst(tc.username))
+		})
+	}
+}
+
 // stubAgentStore returns a fixed slice. Tests can swap the slice between
 // EnsureBots calls to mimic a config save changing the DB-backed agent.
 type stubAgentStore struct {

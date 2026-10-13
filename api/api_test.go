@@ -777,6 +777,11 @@ func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 	// behavior replace this with CaptureAuditRecords.
 	mockAPI.On("LogAuditRec", mock.Anything).Maybe()
 
+	// Most tests register a bot under another name, so routing resolves the
+	// default name through its account before falling back to the first bot.
+	mockAPI.On("GetUserByUsername", cfg.GetDefaultBotName()).
+		Return(nil, model.NewAppError("GetUserByUsername", "app.user.missing_account.const", nil, "", http.StatusNotFound)).Maybe()
+
 	conversationsService := conversations.New(
 		llmPrompts,
 		nil,
