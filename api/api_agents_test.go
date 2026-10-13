@@ -51,8 +51,9 @@ func setupAgentTestEnvironment(t *testing.T) *TestEnvironment {
 
 // mockConfigStore is a minimal ConfigStore for agent tests.
 type mockConfigStore struct {
-	cfg    *config.Config
-	getErr error
+	cfg       *config.Config
+	getErr    error
+	updateErr error
 }
 
 func (m *mockConfigStore) GetConfig() (*config.Config, error) {
@@ -69,6 +70,9 @@ func (m *mockConfigStore) SaveConfig(cfg config.Config) error {
 func (m *mockConfigStore) UpdateConfig(transform func(prev *config.Config) (config.Config, error)) (config.Config, error) {
 	if m.getErr != nil {
 		return config.Config{}, m.getErr
+	}
+	if m.updateErr != nil {
+		return config.Config{}, m.updateErr
 	}
 	next, err := transform(m.cfg)
 	if err != nil {
@@ -1287,9 +1291,12 @@ func TestUpdateAgentRename(t *testing.T) {
 	usernameNotFound := model.NewAppError("GetUserByUsername", "app.user.missing", nil, "", http.StatusNotFound)
 
 	tests := []struct {
-		name               string
-		newUsername        string
-		defaultBotName     string
+		name           string
+		newUsername    string
+		defaultBotName string
+		// currentBotName is the bot account's username when the request
+		// arrives; empty means it still has the agent's stored name.
+		currentBotName     string
 		setup              func(e *TestEnvironment)
 		expectedStatus     int
 		expectedName       string
@@ -1344,6 +1351,41 @@ func TestUpdateAgentRename(t *testing.T) {
 			expectedBotName:    "old-name",
 			expectedDefaultBot: "old-name",
 		},
+		{
+			name:           "rename is rolled back when the default agent setting cannot be updated",
+			newUsername:    "new-name",
+			defaultBotName: "old-name",
+			setup: func(e *TestEnvironment) {
+				e.api.configStore.(*mockConfigStore).updateErr = errors.New("db down")
+			},
+			expectedStatus:     http.StatusInternalServerError,
+			expectedName:       "old-name",
+			expectedBotName:    "old-name",
+			expectedDefaultBot: "old-name",
+		},
+		{
+			name:               "bot already renamed by a concurrent save is not treated as taken",
+			newUsername:        "new-name",
+			defaultBotName:     "old-name",
+			currentBotName:     "new-name",
+			expectedStatus:     http.StatusOK,
+			expectedName:       "new-name",
+			expectedBotName:    "new-name",
+			expectedDefaultBot: "new-name",
+		},
+		{
+			name:           "failed save does not revert a rename it did not make",
+			newUsername:    "new-name",
+			defaultBotName: "old-name",
+			currentBotName: "new-name",
+			setup: func(e *TestEnvironment) {
+				e.agentStore.updateErr = errors.New("db down")
+			},
+			expectedStatus:     http.StatusInternalServerError,
+			expectedName:       "old-name",
+			expectedBotName:    "new-name",
+			expectedDefaultBot: "old-name",
+		},
 	}
 
 	for _, tc := range tests {
@@ -1367,6 +1409,10 @@ func TestUpdateAgentRename(t *testing.T) {
 			e.agentStore.agents["agent-1"] = stored
 
 			botName := "old-name"
+			if tc.currentBotName != "" {
+				botName = tc.currentBotName
+				e.mockAPI.On("GetUserByUsername", botName).Return(&model.User{Id: "bot-1", Username: botName}, nil).Maybe()
+			}
 			e.mockAPI.On("GetUserByUsername", "taken-name").Return(&model.User{Id: "other-user", Username: "taken-name"}, nil).Maybe()
 			e.mockAPI.On("GetUserByUsername", mock.Anything).Return(nil, usernameNotFound).Maybe()
 			e.mockAPI.On("PatchBot", "bot-1", mock.AnythingOfType("*model.BotPatch")).Run(func(args mock.Arguments) {
