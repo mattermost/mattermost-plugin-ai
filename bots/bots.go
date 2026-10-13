@@ -527,6 +527,10 @@ func (b *MMBots) EnsureBots() error {
 
 	// For each bot in the configuration, update its existing Mattermost bot to match,
 	// including the username when the agent was renamed. Otherwise, create a new bot.
+	// Bots whose account could not be synced are left out of the registry, and
+	// the next EnsureBots retries them.
+	ensuredBots := make([]*Bot, 0, len(bots))
+	accountSyncFailed := false
 	for _, bot := range bots {
 		description := poweredByDescription(bot.service.Type, bot.service.DefaultModel)
 		if prevBot, ok := matchedMMBots[bot]; ok {
@@ -541,10 +545,12 @@ func (b *MMBots) EnsureBots() error {
 			bot.mmBot, patchErr = b.pluginAPI.Bot.Patch(prevBot.UserId, patch)
 			if patchErr != nil {
 				b.pluginAPI.Log.Error("Failed to patch bot", "bot_name", bot.cfg.Name, "error", patchErr.Error())
+				accountSyncFailed = true
 				continue
 			}
 			if _, activeErr := b.pluginAPI.Bot.UpdateActive(prevBot.UserId, true); activeErr != nil {
 				b.pluginAPI.Log.Error("Failed to update bot active", "bot_name", bot.cfg.Name, "error", activeErr.Error())
+				accountSyncFailed = true
 				continue
 			}
 		} else {
@@ -555,6 +561,7 @@ func (b *MMBots) EnsureBots() error {
 			}
 			if createErr := b.pluginAPI.Bot.Create(bot.mmBot); createErr != nil {
 				b.pluginAPI.Log.Error("Failed to ensure bot", "bot_name", bot.cfg.Name, "error", createErr.Error())
+				accountSyncFailed = true
 				continue
 			}
 		}
@@ -575,10 +582,18 @@ func (b *MMBots) EnsureBots() error {
 		if err != nil {
 			return err
 		}
+		ensuredBots = append(ensuredBots, bot)
 	}
 
 	b.botsLock.Lock()
-	b.bots = bots
+	b.bots = ensuredBots
+	if accountSyncFailed {
+		b.lastEnsuredBotCfgs = nil
+		b.lastEnsuredServiceCfgs = nil
+		b.forceRefresh = true
+		b.botsLock.Unlock()
+		return nil
+	}
 	// Store deep copies of the successfully ensured configs for optimistic checking.
 	// Deep copy is needed because BotConfig contains slice fields (EnabledNativeTools, etc.)
 	// that would otherwise share backing arrays with the live config. The JSON-based

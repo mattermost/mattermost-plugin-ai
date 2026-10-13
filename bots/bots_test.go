@@ -1021,6 +1021,49 @@ func TestEnsureBotsReusesExistingBotAccounts(t *testing.T) {
 	}
 }
 
+func TestEnsureBotsRetriesBotWhoseAccountSyncFailed(t *testing.T) {
+	mockAPI := &plugintest.API{}
+	client := pluginapi.NewClient(mockAPI, nil)
+	mockAPI.On("GetConfig").Return(&model.Config{}).Maybe()
+	mockAPI.On("GetLicense").Return(&model.License{SkuShortName: model.LicenseShortSkuEnterprise, Features: &model.Features{}}).Maybe()
+	mockAPI.On("GetBots", mock.AnythingOfType("*model.BotGetOptions")).Return([]*model.Bot{
+		{UserId: "bot-1", Username: "old-name"},
+		{UserId: "bot-2", Username: "steady"},
+	}, nil)
+	mockAPI.On("GetUser", mock.AnythingOfType("string")).Return(&model.User{LastPictureUpdate: 1}, nil).Maybe()
+	mockAPI.On("UpdateBotActive", mock.AnythingOfType("string"), true).Return(&model.Bot{}, nil).Maybe()
+	mockAPI.On("KVSetWithOptions", mock.AnythingOfType("string"), mock.AnythingOfType("[]uint8"), mock.AnythingOfType("model.PluginKVSetOptions")).Return(true, nil).Maybe()
+	mockAPI.On("KVDelete", mock.AnythingOfType("string")).Return(nil).Maybe()
+	allowBotsLogging(mockAPI)
+
+	mockAPI.On("PatchBot", "bot-1", mock.AnythingOfType("*model.BotPatch")).
+		Return(nil, model.NewAppError("PatchBot", "app.user.save.username_exists.app_error", nil, "", http.StatusBadRequest)).Once()
+	mockAPI.On("PatchBot", "bot-1", mock.AnythingOfType("*model.BotPatch")).
+		Return(&model.Bot{UserId: "bot-1", Username: "new-name"}, nil).Once()
+	mockAPI.On("PatchBot", "bot-2", mock.AnythingOfType("*model.BotPatch")).
+		Return(&model.Bot{UserId: "bot-2", Username: "steady"}, nil)
+
+	services := []llm.ServiceConfig{{ID: "svc1", Type: llm.ServiceTypeOpenAI, APIKey: "k", DefaultModel: "gpt-4o"}}
+	store := &stubAgentStore{agents: []llm.BotConfig{
+		{ID: "a1", BotUserID: "bot-1", Name: "new-name", DisplayName: "Renamed", ServiceID: "svc1"},
+		{ID: "a2", BotUserID: "bot-2", Name: "steady", DisplayName: "Steady", ServiceID: "svc1"},
+	}}
+	mmBots := New(mockAPI, client, enterprise.NewLicenseChecker(client), &mockConfig{services: services}, store, newPassthroughAccessChecker(), &http.Client{}, nil)
+	t.Cleanup(mmBots.ShutdownServiceLLMs)
+
+	require.NoError(t, mmBots.EnsureBots())
+	assert.Nil(t, mmBots.GetBotByID("bot-1"), "a bot whose account could not be synced must not be served")
+	require.NotNil(t, mmBots.GetBotByID("bot-2"))
+
+	require.NoError(t, mmBots.EnsureBots())
+	renamed := mmBots.GetBotByID("bot-1")
+	require.NotNil(t, renamed, "an unchanged config must still retry the failed account sync")
+	assert.Equal(t, "new-name", renamed.GetMMBot().Username)
+
+	require.NoError(t, mmBots.EnsureBots())
+	mockAPI.AssertNumberOfCalls(t, "PatchBot", 4)
+}
+
 // stubAgentStore returns a fixed slice. Tests can swap the slice between
 // EnsureBots calls to mimic a config save changing the DB-backed agent.
 type stubAgentStore struct {
