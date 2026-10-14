@@ -85,7 +85,9 @@ evalviewer report --results eval-results --baseline eval-baseline \
 
 The report writes:
 - `comment.md`: only checks that fail on this change but not on the baseline. It is empty when there is nothing to act on, and CI posts no comment in that case.
-- `summary.md`: every provider's status, including pre-existing failures, flaky checks, and providers that could not run (missing credentials, retired models). CI adds it to the workflow run summary.
+- `summary.md`: every provider's status, including pre-existing failures, flaky checks, providers that could not run (missing credentials, retired models), and failures of providers that have no usable baseline while other providers do. CI adds it to the workflow run summary.
+
+Besides one check per rubric, every graded run records a "Passes the eval's code assertions" check for the eval's other assertions, such as required tool calls or valid citations, so they are reported even when the rubrics pass. Each run of an eval is its own subtest (`run_0`, `run_1`, ...), so a `require` failure in one run does not skip the others.
 
 The summary also has a cost and latency table per provider and per eval, compared with the baseline. Every run records the agent's and the grader's input, output, cached, and reasoning tokens, the cost (reported by the provider, or estimated from `modelPrices` in `evals/usage.go`), and the summed latency of the agent's calls. The pull request comment additionally lists evals whose mean input tokens per run grew by at least 20% and 1,000 tokens, which usually means a change sends more context or a longer prompt.
 

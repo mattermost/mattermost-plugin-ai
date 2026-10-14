@@ -277,6 +277,9 @@ type report struct {
 	// regressions fail on this change and did not fail on the baseline.
 	regressions []*caseStats
 	preExisting []*caseStats
+	// unbaselined fail for a provider that has no usable baseline while
+	// others do, so whether they are new is unknown.
+	unbaselined []*caseStats
 	flaky       []*caseStats
 	// tokenGrowth lists evals whose input tokens grew past the thresholds.
 	tokenGrowth []tokenChange
@@ -322,7 +325,12 @@ func buildReport(results, baseline resultSet, expectedProviders []string) report
 	}
 	slices.Sort(names)
 
-	r := report{hasBaseline: baseline != nil, baselines: map[string]*providerResults{}, labels: pullRequestLabels}
+	r := report{baselines: map[string]*providerResults{}, labels: pullRequestLabels}
+	for _, b := range baseline {
+		if !b.unavailable() {
+			r.hasBaseline = true
+		}
+	}
 	for _, name := range names {
 		p := results.provider(name)
 		r.providers = append(r.providers, p)
@@ -360,6 +368,8 @@ func buildReport(results, baseline resultSet, expectedProviders []string) report
 			switch {
 			case c.failing() && base != nil && failedOnBaseline(base, c.caseKey):
 				r.preExisting = append(r.preExisting, c)
+			case c.failing() && base == nil && r.hasBaseline:
+				r.unbaselined = append(r.unbaselined, c)
 			case c.failing():
 				r.regressions = append(r.regressions, c)
 			case c.flaky():
@@ -470,6 +480,7 @@ func (r report) summaryMarkdown() string {
 
 	writeCaseList(&sb, "Regressions", r.regressions)
 	writeCaseList(&sb, "Pre-existing failures (also failing on "+r.labels.baseline+")", r.preExisting)
+	writeCaseList(&sb, "Failures without a baseline for their provider on "+r.labels.baseline, r.unbaselined)
 	writeCaseList(&sb, "Flaky (failed some runs, passed the majority)", r.flaky)
 	if !r.hasBaseline {
 		fmt.Fprintf(&sb, "\nNo baseline from %s was available for comparison.\n", r.labels.baseline)
@@ -645,10 +656,17 @@ func reproduceCommand(c *caseStats) string {
 	if c.pkg != "" {
 		pkg = "./" + c.pkg
 	}
-	return fmt.Sprintf("GOEVALS=1 LLM_PROVIDER=%s go test %s -run %s -v", c.provider, pkg, shellQuote(pattern))
+	return fmt.Sprintf("GOEVALS=1 LLM_PROVIDER=%s go test %s -run %s -v", shellQuote(c.provider), shellQuote(pkg), shellQuote(pattern))
 }
 
+var shellSafe = regexp.MustCompile(`^[A-Za-z0-9_./-]+$`)
+
+// shellQuote makes s a single POSIX shell word. Values come from evals.jsonl,
+// which the change under test writes, so none may be pasted unquoted.
 func shellQuote(s string) string {
+	if shellSafe.MatchString(s) {
+		return s
+	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 

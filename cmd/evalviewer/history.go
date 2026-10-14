@@ -23,6 +23,7 @@ type runSummary struct {
 	Providers   []providerSummary `json:"providers"`
 	Regressions []checkSummary    `json:"regressions"`
 	PreExisting []checkSummary    `json:"pre_existing"`
+	Unbaselined []checkSummary    `json:"unbaselined,omitempty"`
 	Flaky       []checkSummary    `json:"flaky"`
 }
 
@@ -53,6 +54,7 @@ func (r report) runSummary(now time.Time, commit, runURL string) runSummary {
 		RunURL:      runURL,
 		Regressions: checkSummaries(r.regressions),
 		PreExisting: checkSummaries(r.preExisting),
+		Unbaselined: checkSummaries(r.unbaselined),
 		Flaky:       checkSummaries(r.flaky),
 	}
 	for _, p := range r.providers {

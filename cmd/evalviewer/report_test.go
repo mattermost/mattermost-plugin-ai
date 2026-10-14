@@ -37,6 +37,7 @@ func TestBuildReport(t *testing.T) {
 		expectedProviders []string
 		wantRegressions   []string
 		wantPreExisting   []string
+		wantUnbaselined   []string
 		wantFlaky         []string
 		wantUnavailable   []string
 		wantTokenGrowth   []string
@@ -63,6 +64,24 @@ func TestBuildReport(t *testing.T) {
 			name:            "baseline failure on another provider does not hide a regression",
 			results:         []EvalLogLine{graded(catOpenAI, "is a cat", 0, false), graded(catAnthropic, "is a cat", 0, true)},
 			baseline:        []EvalLogLine{graded(catOpenAI, "is a cat", 0, true), graded(catAnthropic, "is a cat", 0, false)},
+			wantRegressions: []string{"openai TestReactEval/react_cat_message is a cat"},
+		},
+		{
+			name:            "failure on a provider missing from the baseline is not a regression",
+			results:         []EvalLogLine{graded(catOpenAI, "is a cat", 0, false), graded(catAnthropic, "is a cat", 0, true)},
+			baseline:        []EvalLogLine{graded(catAnthropic, "is a cat", 0, true)},
+			wantUnbaselined: []string{"openai TestReactEval/react_cat_message is a cat"},
+		},
+		{
+			name:            "failure on a provider unavailable on the baseline is not a regression",
+			results:         []EvalLogLine{graded(catOpenAI, "is a cat", 0, false), graded(catAnthropic, "is a cat", 0, true)},
+			baseline:        []EvalLogLine{errored(catOpenAI, 0, "401 unauthorized"), graded(catAnthropic, "is a cat", 0, true)},
+			wantUnbaselined: []string{"openai TestReactEval/react_cat_message is a cat"},
+		},
+		{
+			name:            "baseline where every provider errored counts as no baseline",
+			results:         []EvalLogLine{graded(catOpenAI, "is a cat", 0, false)},
+			baseline:        []EvalLogLine{errored(catOpenAI, 0, "401 unauthorized")},
 			wantRegressions: []string{"openai TestReactEval/react_cat_message is a cat"},
 		},
 		{
@@ -163,6 +182,7 @@ func TestBuildReport(t *testing.T) {
 
 			assertCases(t, "regressions", r.regressions, tc.wantRegressions)
 			assertCases(t, "pre-existing", r.preExisting, tc.wantPreExisting)
+			assertCases(t, "unbaselined", r.unbaselined, tc.wantUnbaselined)
 			assertCases(t, "flaky", r.flaky, tc.wantFlaky)
 
 			var unavailable []string
@@ -211,17 +231,31 @@ func TestCommentMarkdown(t *testing.T) {
 	}
 }
 
-func TestReproduceCommandQuotesApostrophes(t *testing.T) {
-	results := buildResultSet([]EvalLogLine{
-		graded("TestDirectMessageConversations/[openai]_bot_dm_knows_it_doesn't_know_what_it_can_do", "refers to docs", 0, false),
-	})
-	r := buildReport(results, nil, nil)
+func TestReproduceCommandQuoting(t *testing.T) {
+	tests := []struct {
+		name string
+		line EvalLogLine
+		want string
+	}{
+		{
+			name: "apostrophe in the test name",
+			line: graded("TestDirectMessageConversations/[openai]_bot_dm_knows_it_doesn't_know_what_it_can_do", "refers to docs", 0, false),
+			want: `GOEVALS=1 LLM_PROVIDER=openai go test ./react -run '^TestDirectMessageConversations$/^\[openai\]_bot_dm_knows_it_doesn'\''t_know_what_it_can_do$' -v`,
+		},
+		{
+			name: "shell syntax in the provider and package",
+			line: EvalLogLine{Name: "TestReactEval/[openai;curl_evil|sh]_cat", Package: "react$(id)", Rubric: "is a cat"},
+			want: `GOEVALS=1 LLM_PROVIDER='openai;curl_evil|sh' go test './react$(id)' -run '^TestReactEval$/^\[openai;curl_evil\|sh\]_cat$' -v`,
+		},
+	}
 
-	got := reproduceCommand(r.regressions[0])
-
-	want := `GOEVALS=1 LLM_PROVIDER=openai go test ./react -run '^TestDirectMessageConversations$/^\[openai\]_bot_dm_knows_it_doesn'\''t_know_what_it_can_do$' -v`
-	if got != want {
-		t.Errorf("reproduceCommand() = %s\nwant %s", got, want)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := buildReport(buildResultSet([]EvalLogLine{tc.line}), nil, nil)
+			if got := reproduceCommand(r.regressions[0]); got != tc.want {
+				t.Errorf("reproduceCommand() = %s\nwant %s", got, tc.want)
+			}
+		})
 	}
 }
 
