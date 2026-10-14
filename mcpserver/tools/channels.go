@@ -156,17 +156,7 @@ func (p *MattermostToolProvider) toolReadChannel(mcpContext *MCPToolContext, arg
 	}
 
 	// Determine team display name; DMs/Groups have no team
-	channelDisplayName := channel.DisplayName
-	if channelDisplayName == "" {
-		switch channel.Type {
-		case model.ChannelTypeDirect:
-			channelDisplayName = "Direct Message"
-		case model.ChannelTypeGroup:
-			channelDisplayName = "Group Message"
-		default:
-			channelDisplayName = channel.Name
-		}
-	}
+	channelDisplayName := channelDisplayNameOrFallback(channel)
 
 	teamDisplayName := ""
 	if channel.TeamId == "" {

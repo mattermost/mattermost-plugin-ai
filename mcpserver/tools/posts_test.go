@@ -541,6 +541,18 @@ func TestToolCreatePostDisplayNameValidation(t *testing.T) {
 			channelName: "alice, bob",
 		},
 		{
+			name:        "direct message channel with empty display name uses the get_channel_info placeholder",
+			channel:     model.Channel{Type: model.ChannelTypeDirect},
+			channelName: "Direct Message",
+			teamName:    "Direct Message",
+		},
+		{
+			name:        "direct message channel with empty display name rejects other names",
+			channel:     model.Channel{Type: model.ChannelTypeDirect},
+			channelName: "alice",
+			wantErr:     "set to exactly 'Direct Message'",
+		},
+		{
 			name:        "group message channel ignores team_display_name",
 			channel:     model.Channel{DisplayName: "alice, bob, carol", Type: model.ChannelTypeGroup},
 			channelName: "alice, bob, carol",

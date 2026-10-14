@@ -250,9 +250,10 @@ func (p *MattermostToolProvider) toolCreatePost(mcpContext *MCPToolContext, args
 		return "", fmt.Errorf("error fetching channel for validation: %w", err)
 	}
 
-	if !displayNamesMatch(args.ChannelDisplayName, channel.DisplayName) {
+	channelDisplayName := channelDisplayNameOrFallback(channel)
+	if !displayNamesMatch(args.ChannelDisplayName, channelDisplayName) {
 		return "", fmt.Errorf("channel_display_name mismatch: provided '%s' but channel ID '%s' has display name '%s' - confirm this is the intended channel, then retry with channel_display_name set to exactly '%s'",
-			args.ChannelDisplayName, args.ChannelID, channel.DisplayName, channel.DisplayName)
+			args.ChannelDisplayName, args.ChannelID, channelDisplayName, channelDisplayName)
 	}
 
 	// Direct and group message channels have no team, so there is nothing to
@@ -297,7 +298,7 @@ func (p *MattermostToolProvider) toolCreatePost(mcpContext *MCPToolContext, args
 
 	if teamDisplayName == "" {
 		return fmt.Sprintf("Successfully created post in channel '%s' with ID: %s%s",
-			channel.DisplayName, createdPost.Id, filesMessage), nil
+			channelDisplayName, createdPost.Id, filesMessage), nil
 	}
 	return fmt.Sprintf("Successfully created post in channel '%s' (Team: %s) with ID: %s%s",
 		channel.DisplayName, teamDisplayName, createdPost.Id, filesMessage), nil

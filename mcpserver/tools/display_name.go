@@ -6,7 +6,26 @@ package tools
 import (
 	"strings"
 	"unicode"
+
+	"github.com/mattermost/mattermost/server/public/model"
 )
+
+// channelDisplayNameOrFallback returns the channel's display name, or the
+// placeholder get_channel_info reports when it is empty (usual for direct
+// messages): "Direct Message", "Group Message", or the channel name.
+func channelDisplayNameOrFallback(channel *model.Channel) string {
+	if channel.DisplayName != "" {
+		return channel.DisplayName
+	}
+	switch channel.Type {
+	case model.ChannelTypeDirect:
+		return "Direct Message"
+	case model.ChannelTypeGroup:
+		return "Group Message"
+	default:
+		return channel.Name
+	}
+}
 
 // displayNamesMatch reports whether a display name supplied by the model
 // refers to the actual one, ignoring cosmetic differences: emoji and other
