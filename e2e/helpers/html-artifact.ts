@@ -112,6 +112,19 @@ export async function engageArtifact(scope: Locator): Promise<void> {
     await expect(frame).toHaveAttribute('data-engaged', 'true');
 }
 
+/** The host's interact overlay on the (first) artifact frame in `scope`, shown while the viewer has not engaged it. */
+export function interactOverlay(scope: Locator): Locator {
+    return scope.getByTestId('html-artifact-frame').first().getByTestId('html-artifact-interact');
+}
+
+/** Moves focus to the message box (the center channel's post textbox), which ends any artifact's engagement. */
+export async function focusMessageBox(page: Page): Promise<Locator> {
+    const textbox = page.getByTestId('post_textbox');
+    await textbox.click();
+    await expect(textbox).toBeFocused();
+    return textbox;
+}
+
 export const SECOND_VIEWER_USERNAME = 'seconduser';
 export const SECOND_VIEWER_PASSWORD = 'seconduser';
 
@@ -135,10 +148,9 @@ export const FOCUS_THIEF_FILE_NAME = 'focus-thief.html';
 export const FOCUS_THIEF_EXFIL = 'https://exfil.example.invalid/keys';
 
 /**
- * An artifact the viewer runs but never clicks that keeps calling focus() on
- * its own off-screen input from load, to catch keystrokes meant for the
- * message box, and tries to send whatever it caught away by navigating its
- * frame.
+ * An artifact that keeps calling focus() on its own off-screen input whenever
+ * its frame does not have focus, to catch keystrokes meant for the message
+ * box, and tries to send whatever it caught away by navigating its frame.
  */
 export const FOCUS_THIEF_HTML = `<!doctype html>
 <html lang="en">
@@ -150,7 +162,7 @@ export const FOCUS_THIEF_HTML = `<!doctype html>
 <script>
   var keys = document.getElementById('keys');
   setInterval(function () {
-    if (document.activeElement !== keys) {
+    if (!document.hasFocus() || document.activeElement !== keys) {
       keys.focus();
     }
   }, 300);
@@ -464,6 +476,74 @@ export const TOKEN_PROBE_HTML = `<!doctype html>
       document.getElementById('dom').textContent = document.documentElement.outerHTML + '\\n' + scripts.join('\\n');
       document.getElementById('recorded').textContent = JSON.stringify(window.__recorded);
     }, 300);
+  });
+</script>
+</body>
+</html>
+`;
+
+export const STANDUP_NOTES_FILE_NAME = 'standup-notes.html';
+
+/**
+ * A keyboard-driven artifact: whatever the viewer types while it has focus
+ * shows in the draft line, and Enter adds the draft as a note.
+ */
+export const STANDUP_NOTES_HTML = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Standup notes</title>
+<style>
+  :root {
+    --bg: var(--mm-center-channel-bg, #ffffff);
+    --fg: var(--mm-center-channel-color, #3f4350);
+    --accent: var(--mm-button-bg, #1c58d9);
+    --muted: color-mix(in srgb, var(--fg) 64%, transparent);
+    --line: color-mix(in srgb, var(--fg) 14%, transparent);
+    --tint: color-mix(in srgb, var(--fg) 4%, var(--bg));
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.45 "Open Sans", system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { padding: 20px 22px 22px; }
+  h1 { margin: 0 0 4px; font-size: 18px; font-weight: 700; }
+  .sub { color: var(--muted); font-size: 12px; }
+  .draft { display: flex; align-items: center; gap: 8px; margin: 16px 0 12px; padding: 10px 12px;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--tint); min-height: 44px; }
+  .draft .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+  #typed { font-weight: 600; white-space: pre; }
+  #typed::after { content: ""; display: inline-block; width: 2px; height: 1.1em; margin-left: 1px;
+    vertical-align: text-bottom; background: var(--accent); animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  ul { margin: 0; padding: 0; list-style: none; }
+  li { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  li::before { content: "\\2022"; color: var(--accent); font-weight: 700; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Standup notes</h1>
+  <div class="sub">Type a note, press Enter to add it.</div>
+  <div class="draft"><span class="label">Draft</span><span id="typed" data-testid="typed"></span></div>
+  <ul id="notes" data-testid="notes">
+    <li>Artifact cards render inline and fullscreen</li>
+    <li>Consent prompt reviewed with design</li>
+  </ul>
+</main>
+<script>
+  var typed = document.getElementById('typed');
+  var notes = document.getElementById('notes');
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && typed.textContent) {
+      var li = document.createElement('li');
+      li.textContent = typed.textContent;
+      notes.appendChild(li);
+      typed.textContent = '';
+    } else if (e.key === 'Backspace') {
+      typed.textContent = typed.textContent.slice(0, -1);
+    } else if (e.key.length === 1) {
+      typed.textContent += e.key;
+    }
   });
 </script>
 </body>

@@ -8,8 +8,10 @@
 // network access. No viewer's page runs an artifact by itself, the
 // requester's included: each viewer clicks Run (or opens it fullscreen). The
 // host frames the sandboxed artifact inside a srcdoc wrapper whose CSP blocks
-// any navigation of the artifact's frame away from the artifact, and an inline
-// artifact takes clicks and keyboard focus only once the viewer activates it.
+// any navigation of the artifact's frame away from the artifact, and an
+// artifact takes clicks and keyboard focus only once the viewer activates it:
+// the click on Run (or Open fullscreen) does, and so does clicking the
+// artifact again after focus moved back to the page.
 
 import fs from 'fs';
 import path from 'path';
@@ -35,6 +37,8 @@ import {
     SECOND_VIEWER_USERNAME,
     SPRINT_DASHBOARD_FILE_NAME,
     SPRINT_DASHBOARD_HTML,
+    STANDUP_NOTES_FILE_NAME,
+    STANDUP_NOTES_HTML,
     SelfNavigationKind,
     TOKEN_PROBE_FILE_NAME,
     TOKEN_PROBE_HTML,
@@ -42,6 +46,8 @@ import {
     artifactFrame,
     artifactWrappers,
     engageArtifact,
+    focusMessageBox,
+    interactOverlay,
     runArtifact,
     selfNavigationHTML,
     setHTMLArtifactsEnabled,
@@ -283,9 +289,11 @@ test.describe('HTML artifacts', () => {
         const center = await openArtifactInBotDM(page);
         const frame = artifactFrame(center.iframe);
 
-        // A running artifact takes clicks (and keyboard focus) only once the
-        // viewer activates it.
+        // Rendered again without a click, the artifact takes clicks (and
+        // keyboard focus) only once the viewer activates it.
+        await expect(center.card.getByTestId('html-artifact-frame')).toHaveAttribute('data-engaged', 'false');
         await expect(center.card.getByTestId('html-artifact-interact')).toBeVisible();
+        await expect(center.card.getByTestId('html-artifact-interact-hint')).toHaveText('Click to interact');
         await expect(center.iframe).toHaveAttribute('tabindex', '-1');
         await engageArtifact(center.card);
         await expect(center.card.getByTestId('html-artifact-interact')).toHaveCount(0);
@@ -343,15 +351,12 @@ test.describe('HTML artifacts', () => {
         await expect(viewer.getByText('Interactive')).toBeVisible();
         await expect(viewer.getByTestId('html-artifact-notice')).toContainText("Don't enter passwords");
 
-        // Opening fullscreen does not hand the artifact keyboard focus: the
-        // viewer covers it until they click it.
-        await expect(viewer.getByTestId('html-artifact-frame')).toHaveAttribute('data-engaged', 'false');
-        await expect(viewer.getByTestId('html-artifact-interact')).toBeVisible();
-        await expect(fullIframe).toHaveAttribute('tabindex', '-1');
-        await engageArtifact(viewer);
-
-        // Focus inside the artifact shows up on this page as the wrapper
-        // frame, which is now the viewer's tab stop.
+        // The click that opened fullscreen engages the fullscreen frame, not
+        // the inline one under it. Focus inside the artifact shows up on this
+        // page as the wrapper frame, which is now the viewer's tab stop.
+        await expect(viewer.getByTestId('html-artifact-frame')).toHaveAttribute('data-engaged', 'true');
+        await expect(viewer.getByTestId('html-artifact-interact')).toHaveCount(0);
+        await expect(center.card.getByTestId('html-artifact-frame')).toHaveAttribute('data-engaged', 'false');
         await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute('data-testid'))).toBe('html-artifact-wrapper');
         expect(await fullIframe.getAttribute('tabindex')).toBeNull();
 
@@ -499,8 +504,9 @@ test.describe('HTML artifacts', () => {
     });
 
     // A sandboxed frame can still call focus() on itself, and keystrokes then
-    // go into the artifact. One that takes focus the viewer did not give it
-    // is unloaded at once, and focus goes back to the page.
+    // go into the artifact. Running it gives it focus; once the viewer moves
+    // on, one that takes focus back is unloaded at once, and focus goes back
+    // to the page.
     test('an artifact that grabs keyboard focus is stopped and the message box keeps what is typed', async ({page}) => {
         test.setTimeout(300000);
         let exfiltrations = 0;
@@ -512,13 +518,21 @@ test.describe('HTML artifacts', () => {
         const botPost = await postArtifact(page, mattermost, aimock, FOCUS_THIEF_FILE_NAME, FOCUS_THIEF_HTML, 'Here is the quarterly dashboard.');
         await runArtifact(botPost);
         const stopped = botPost.getByTestId('html-artifact-navigation-stopped');
-        await expect(stopped).toBeVisible({timeout: 60000});
+
+        // The viewer ran it, so it may hold focus for now.
+        await expect(artifactFrame(artifactWrappers(botPost).first()).getByRole('heading', {name: 'Quarterly dashboard'})).toBeVisible({timeout: 60000});
+        await expect(botPost.getByTestId('html-artifact-frame')).toHaveAttribute('data-engaged', 'true');
+        await page.waitForTimeout(1000);
+        await expect(stopped).toHaveCount(0);
+
+        const composer = new MattermostPage(page).postTextbox;
+        await composer.click();
+        await expect(stopped).toBeVisible({timeout: 15000});
         await expect(stopped).toHaveAttribute('data-stop-reason', 'focus');
         await expect(stopped).toContainText('tried to take keyboard focus');
         await expect(artifactWrappers(botPost)).toHaveCount(0);
         expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe('IFRAME');
 
-        const composer = new MattermostPage(page).postTextbox;
         const typed = 'the merger with Acme closes Friday';
         await composer.click();
         await page.keyboard.type(typed, {delay: 40});
@@ -527,6 +541,58 @@ test.describe('HTML artifacts', () => {
         await expect(composer).toHaveValue(typed);
         await expect(stopped).toBeVisible();
         expect(exfiltrations).toBe(0);
+    });
+
+    // The click on Run is the viewer's first interaction with the artifact:
+    // keys go to it straight away. Once focus moves back to the page, the
+    // overlay returns with its hint showing, scrolling over it nudges the
+    // hint, and a click hands the keyboard back to the artifact.
+    test('Run hands the artifact the keyboard; after the viewer moves on, the hint nudges on scroll and a click re-engages', async ({page}) => {
+        test.setTimeout(300000);
+        const botPost = await postArtifact(page, mattermost, aimock, STANDUP_NOTES_FILE_NAME, STANDUP_NOTES_HTML, 'Here are the standup notes.');
+        await runArtifact(botPost);
+        const area = botPost.getByTestId('html-artifact-frame');
+        const frame = artifactFrame(artifactWrappers(botPost).first());
+        const typed = frame.getByTestId('typed');
+        await expect(frame.getByRole('heading', {name: 'Standup notes'})).toBeVisible({timeout: 60000});
+        await expect(area).toHaveAttribute('data-engaged', 'true');
+        await expect(interactOverlay(botPost)).toHaveCount(0);
+        await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute('data-testid'))).toBe('html-artifact-wrapper');
+
+        await page.keyboard.type('Ship the hint', {delay: 30});
+        await expect(typed).toHaveText('Ship the hint');
+        await page.keyboard.press('Enter');
+        await expect(frame.getByTestId('notes').locator('li').last()).toHaveText('Ship the hint');
+
+        const composer = await focusMessageBox(page);
+        await expect(area).toHaveAttribute('data-engaged', 'false');
+        const overlay = interactOverlay(botPost);
+        const hint = overlay.getByTestId('html-artifact-interact-hint');
+        await expect(overlay).toBeVisible();
+        await expect(hint).toBeVisible();
+        await expect(hint).toHaveText('Click to interact');
+        await expect(overlay).toHaveAttribute('data-nudge', 'false');
+
+        // Keys typed now stay in the message box.
+        await page.keyboard.type('draft', {delay: 30});
+        await expect(composer).toHaveValue('draft');
+        await expect(typed).toHaveText('');
+
+        const box = (await overlay.boundingBox())!;
+        await page.mouse.move(box.x + (box.width / 2), box.y + Math.min(box.height / 2, 60));
+        await page.mouse.wheel(0, 120);
+        await expect(overlay).toHaveAttribute('data-nudge', 'true');
+        await expect(hint).toHaveText('Click to scroll and interact');
+        await expect(overlay).toHaveAttribute('data-nudge', 'false', {timeout: 5000});
+        await expect(hint).toHaveText('Click to interact');
+
+        await overlay.click();
+        await expect(area).toHaveAttribute('data-engaged', 'true');
+        await expect(overlay).toHaveCount(0);
+        await page.keyboard.type('Retro on Friday', {delay: 30});
+        await expect(typed).toHaveText('Retro on Friday');
+        await expect(composer).toHaveValue('draft');
+        await composer.fill('');
     });
 
     // Loading an artifact runs agent-written code for whoever sees the post
@@ -584,9 +650,9 @@ test.describe('HTML artifacts', () => {
         expect(contentLoads[0]![1]).toBe(tokenLoads[0]![1]);
         expect(contentLoads[0]![2]).toBe(tokenLoads[0]![2]);
 
-        // Clicking Run authorises loading, not keyboard focus.
-        await expect(requesterCard.getByTestId('html-artifact-frame')).toHaveAttribute('data-engaged', 'false');
-        await expect(requesterCard.getByTestId('html-artifact-interact')).toBeVisible();
+        // The click on Run is the viewer's first interaction with it.
+        await expect(requesterCard.getByTestId('html-artifact-frame')).toHaveAttribute('data-engaged', 'true');
+        await expect(requesterCard.getByTestId('html-artifact-interact')).toHaveCount(0);
 
         const viewerContext = await browser.newContext({viewport: {width: 1440, height: 900}, permissions: ['notifications']});
         try {
@@ -612,11 +678,13 @@ test.describe('HTML artifacts', () => {
             await expect(viewerCard.getByTestId('html-artifact-frame')).toHaveCount(0);
             expect(artifactRequests).toBe(0);
 
-            // Opening fullscreen also runs it, inline as well.
+            // Opening fullscreen also runs it, inline as well, where the
+            // viewer has not clicked it yet.
             await viewerCard.getByTestId('html-artifact-open-fullscreen').click();
             const viewer = viewerPage.getByTestId('html-artifact-fullscreen');
             await expect(viewer).toBeVisible({timeout: 15000});
             await expect(artifactFrame(artifactWrappers(viewer).first()).getByRole('heading', {name: 'Sprint 42 dashboard'})).toBeVisible({timeout: 30000});
+            await expect(viewer.getByTestId('html-artifact-frame')).toHaveAttribute('data-engaged', 'true');
             await viewer.getByTestId('html-artifact-fullscreen-close').click();
             await expect(viewer).not.toBeVisible();
 
