@@ -521,6 +521,8 @@ One user message produces one `agent run` trace whose ID is derived from the use
 
 The agent's own response posts don't start a trace.
 
+HTTP spans are named by method and route template (for example `POST /bridge/v1/completion/agent/:agent`). Requests that match no route aren't traced, and neither is the long-lived `GET /mcp-server/mcp` stream that an MCP client holds open; the MCP `POST` requests that carry tool calls are traced.
+
 #### Access control spans
 
 Per-request access decisions (`abac can_use_agent`, `abac can_use_service`, `abac can_use_mcp_server`, `abac is_available`) run on nearly every request and would otherwise outnumber all other spans. Both output modes drop decisions that allowed access. Policy administration spans are always kept. Denials (`agents.abac.denied=true`) and failed evaluations (status Error) are kept. Denied resources carry `agents.abac.resource_name` (the agent or MCP server name) next to `agents.abac.resource_id`.
@@ -603,6 +605,8 @@ Traces include these semantic attributes for filtering and analysis. Cached toke
 | `agents.agent.run.trace_id` | On the message hook span: the trace ID of the agent run | `8d5576c0…` |
 | `agents.abac.resource_name` | Name of the agent or MCP server an access check evaluated | `jira` |
 | `agents.abac.denied` | The access check denied access | `true` |
+| `agents.bridge.plugin_id` | On LLM bridge HTTP spans: the calling plugin | `com.mattermost.calls` |
+| `agents.service.id` | On LLM bridge service-completion spans: the requested service | `abc123def456` |
 | `agents.mcp.server` | MCP server name | `github-server` |
 | `agents.mcp.tool` | MCP tool name | `search_issues` |
 | `agents.user.id` | Requesting user ID | `abc123def456` |

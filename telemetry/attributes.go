@@ -57,8 +57,11 @@ var (
 
 // Attribute keys for agent context
 var (
-	AgentName             = attribute.Key("agents.agent.name")
-	AgentID               = attribute.Key("agents.agent.id")
+	AgentName = attribute.Key("agents.agent.name")
+	AgentID   = attribute.Key("agents.agent.id")
+	ServiceID = attribute.Key("agents.service.id")
+	// BridgePluginID is the plugin calling the LLM bridge API.
+	BridgePluginID        = attribute.Key("agents.bridge.plugin_id")
 	AgentProgressPhase    = attribute.Key("agents.agent.progress.phase")
 	AgentProgressSequence = attribute.Key("agents.agent.progress.sequence")
 )
