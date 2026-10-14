@@ -497,19 +497,16 @@ func TestCreateAgentUsernameConflict(t *testing.T) {
 	emailTaken := model.NewAppError("CreateBot", "app.user.save.email_exists.app_error", nil, "", http.StatusBadRequest)
 
 	tests := []struct {
-		name            string
-		nonAdmin        bool
-		createBotErr    *model.AppError
-		usernameOwner   *model.User
-		emailOwner      *model.User
-		wantContains    []string
-		wantNotContains []string
+		name          string
+		createBotErr  *model.AppError
+		usernameOwner *model.User
+		wantCode      agentErrorCode
 	}{
 		{
 			name:          "deactivated bot holds the username",
 			createBotErr:  usernameTaken,
 			usernameOwner: &model.User{Id: "oldbotid", Username: "my-agent", IsBot: true, DeleteAt: 1},
-			wantContains:  []string{"deactivated bot account", "system admin can permanently delete", "mmctl user delete my-agent"},
+			wantCode:      agentErrorUsernameHeldByDeactivatedBot,
 		},
 		{
 			// Postgres reports the email violation first when the Users indexes were
@@ -517,38 +514,24 @@ func TestCreateAgentUsernameConflict(t *testing.T) {
 			name:          "deactivated bot holds the username, reported as an email conflict",
 			createBotErr:  emailTaken,
 			usernameOwner: &model.User{Id: "oldbotid", Username: "my-agent", IsBot: true, DeleteAt: 1},
-			wantContains:  []string{"deactivated bot account", "mmctl user delete my-agent"},
+			wantCode:      agentErrorUsernameHeldByDeactivatedBot,
 		},
 		{
-			name:         "renamed deactivated bot holds the derived email",
-			createBotErr: emailTaken,
-			emailOwner:   &model.User{Id: "renamedbotid", Username: "my-agent-old", IsBot: true, DeleteAt: 1},
-			wantContains: []string{"@my-agent-old", "my-agent@localhost", "mmctl user delete my-agent-old"},
-		},
-		{
-			name:          "active account holds the username",
+			name:          "active bot holds the username",
 			createBotErr:  usernameTaken,
-			usernameOwner: &model.User{Id: "personid", Username: "my-agent"},
-			wantContains:  []string{`username "my-agent" is already taken`},
+			usernameOwner: &model.User{Id: "botid", Username: "my-agent", IsBot: true},
+			wantCode:      agentErrorUsernameTaken,
 		},
 		{
-			name:         "active account holds the derived email",
+			name:          "deactivated person holds the username",
+			createBotErr:  usernameTaken,
+			usernameOwner: &model.User{Id: "personid", Username: "my-agent", DeleteAt: 1},
+			wantCode:      agentErrorUsernameTaken,
+		},
+		{
+			name:         "another account holds the derived email",
 			createBotErr: emailTaken,
-			emailOwner:   &model.User{Id: "personid", Username: "someone"},
-			wantContains: []string{"@someone", "my-agent@localhost", "change that account's email"},
-		},
-		{
-			name:         "blocking account cannot be found",
-			createBotErr: emailTaken,
-			wantContains: []string{`username "my-agent" is already taken`},
-		},
-		{
-			name:            "non-admin is not told which account blocks the username",
-			nonAdmin:        true,
-			createBotErr:    emailTaken,
-			emailOwner:      &model.User{Id: "renamedbotid", Username: "my-agent-old", IsBot: true, DeleteAt: 1},
-			wantContains:    []string{`username "my-agent" is unavailable`, "system admin can permanently delete"},
-			wantNotContains: []string{"my-agent-old", "@localhost", "deactivated"},
+			wantCode:     agentErrorUsernameTaken,
 		},
 	}
 
@@ -559,33 +542,19 @@ func TestCreateAgentUsernameConflict(t *testing.T) {
 
 			mockLicensed(e.mockAPI)
 			e.mockAPI.On("HasPermissionTo", testUserID, model.PermissionManageOwnAgent).Return(true)
-			e.mockAPI.On("HasPermissionTo", testUserID, model.PermissionManageSystem).Return(!tt.nonAdmin)
-			e.mockAPI.On("LogError", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 			e.mockAPI.On("CreateBot", mock.AnythingOfType("*model.Bot")).Return(nil, tt.createBotErr)
 			if tt.usernameOwner != nil {
-				e.mockAPI.On("GetUserByUsername", "my-agent").Return(tt.usernameOwner, nil).Maybe()
+				e.mockAPI.On("GetUserByUsername", "my-agent").Return(tt.usernameOwner, nil)
 			} else {
-				e.mockAPI.On("GetUserByUsername", "my-agent").Return(nil, notFound).Maybe()
-			}
-			if tt.emailOwner != nil {
-				e.mockAPI.On("GetUserByEmail", "my-agent@localhost").Return(tt.emailOwner, nil).Maybe()
-			} else {
-				e.mockAPI.On("GetUserByEmail", "my-agent@localhost").Return(nil, notFound).Maybe()
+				e.mockAPI.On("GetUserByUsername", "my-agent").Return(nil, notFound)
 			}
 
 			recorder := doRequest(e.api, http.MethodPost, "/agents", createAgentBody(nil), testUserID)
 			require.Equal(t, http.StatusConflict, recorder.Code)
-			msg := decodeAgentError(t, recorder)
-			for _, want := range tt.wantContains {
-				assert.Contains(t, msg, want)
-			}
-			for _, unwanted := range tt.wantNotContains {
-				assert.NotContains(t, msg, unwanted)
-			}
-			if tt.nonAdmin {
-				e.mockAPI.AssertNotCalled(t, "GetUserByUsername", mock.Anything)
-				e.mockAPI.AssertNotCalled(t, "GetUserByEmail", mock.Anything)
-			}
+			var resp agentErrorResponse
+			require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+			assert.Equal(t, tt.wantCode, resp.Code)
+			assert.NotEmpty(t, resp.Error)
 			assert.Empty(t, e.agentStore.agents)
 		})
 	}

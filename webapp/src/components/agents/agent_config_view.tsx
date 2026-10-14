@@ -384,7 +384,11 @@ const AgentConfigView = (props: Props) => {
         } catch (e: any) {
             const message = (typeof e?.message === 'string' ? e.message : '').trim();
             if (e?.status_code === 409 || (message.includes('username') && (message.includes('taken') || message.includes('conflict')))) {
-                setErrors({username: message || intl.formatMessage({defaultMessage: 'This username is already taken'})});
+                if (e?.server_error_id === 'username_held_by_deactivated_bot') {
+                    setErrors({username: canEditServiceAccountAuth ? intl.formatMessage({defaultMessage: 'This username belongs to a deactivated bot account. Permanently delete that bot account to make the username available.'}) : intl.formatMessage({defaultMessage: 'This username belongs to a deactivated bot account. A system admin can permanently delete it to make the username available.'})});
+                } else {
+                    setErrors({username: intl.formatMessage({defaultMessage: 'This username is already taken'})});
+                }
                 setActiveTab('config');
             } else if (e?.status_code === 403 && !message) {
                 setErrors({general: intl.formatMessage({defaultMessage: 'You do not have permission to perform this action.'})});
@@ -399,7 +403,7 @@ const AgentConfigView = (props: Props) => {
         } finally {
             setSaving(false);
         }
-    }, [mode, agent, draft, avatarFile, intl, onSaved, validate]);
+    }, [mode, agent, draft, avatarFile, intl, onSaved, validate, canEditServiceAccountAuth]);
 
     const title = mode === 'create' ? intl.formatMessage({defaultMessage: 'New Agent'}) : draft.displayName || intl.formatMessage({defaultMessage: 'Edit Agent'});
 

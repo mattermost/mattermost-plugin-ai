@@ -49,7 +49,22 @@ const MaxAgentRequestBodyBytes = 2 << 20 // 2 MiB
 // human-readable and actionable.
 type agentErrorResponse struct {
 	Error string `json:"error"`
+	// Code, when set, identifies the error so the webapp can show a translated
+	// message instead of Error.
+	Code agentErrorCode `json:"code,omitempty"`
 }
+
+// agentErrorCode identifies an agent request error the webapp localizes.
+type agentErrorCode string
+
+const (
+	// agentErrorUsernameTaken: another account holds the agent's username (or
+	// the email derived from it).
+	agentErrorUsernameTaken agentErrorCode = "username_taken"
+	// agentErrorUsernameHeldByDeactivatedBot: a deactivated bot holds the
+	// username; permanently deleting it frees the name.
+	agentErrorUsernameHeldByDeactivatedBot agentErrorCode = "username_held_by_deactivated_bot"
+)
 
 // statusForAccessErr: policy denials are 403; saving as attribute-based without ABAC is 400.
 func statusForAccessErr(err error) int {
@@ -74,6 +89,13 @@ func abortAgentRequest(c *gin.Context, status int, err error) {
 		publicMsg = "internal server error"
 	}
 	c.AbortWithStatusJSON(status, agentErrorResponse{Error: publicMsg})
+}
+
+// abortAgentRequestWithCode is abortAgentRequest for a client error the webapp
+// localizes by code.
+func abortAgentRequestWithCode(c *gin.Context, status int, code agentErrorCode, err error) {
+	_ = c.Error(err)
+	c.AbortWithStatusJSON(status, agentErrorResponse{Error: err.Error(), Code: code})
 }
 
 // AgentRequestFields are the request fields common to agent create and update.
@@ -422,7 +444,7 @@ func (a *API) handleCreateAgent(c *gin.Context) {
 	if err := a.pluginAPI.Bot.Create(mmBot); err != nil {
 		var appErr *model.AppError
 		if errors.As(err, &appErr) && (appErr.Id == "app.user.save.username_exists.app_error" || appErr.Id == "app.user.save.email_exists.app_error") {
-			abortAgentRequest(c, http.StatusConflict, a.agentUsernameConflictError(userID, req.Username))
+			abortAgentRequestWithCode(c, http.StatusConflict, a.agentUsernameConflictCode(req.Username), fmt.Errorf("username %q is already taken", req.Username))
 			return
 		}
 		abortAgentRequest(c, http.StatusInternalServerError, fmt.Errorf("failed to create bot account: %w", err))
@@ -445,37 +467,14 @@ func (a *API) handleCreateAgent(c *gin.Context) {
 	c.JSON(http.StatusCreated, agent)
 }
 
-// agentUsernameConflictError explains which existing account blocks username for a
-// new agent's bot. Bot emails are derived from the username, so the blocking account
-// may hold either the username or that derived email (e.g. a bot renamed through the
-// user API keeps its old email).
-func (a *API) agentUsernameConflictError(userID, username string) error {
-	// The lookups below bypass the caller's user-visibility and email-privacy
-	// restrictions, so only system admins are told which account blocks the name.
-	if !isSystemAdmin(a.pluginAPI, userID) {
-		return fmt.Errorf("username %q is unavailable because another account already uses it. If that is an unused bot account, a system admin can permanently delete it and its history to make the username available", username)
-	}
-
-	email := model.UserFromBot(&model.Bot{Username: username}).Email
+// agentUsernameConflictCode reports whether a deactivated bot holds username, in
+// which case permanently deleting it makes the name available again.
+func (a *API) agentUsernameConflictCode(username string) agentErrorCode {
 	holder, err := a.pluginAPI.User.GetByUsername(username)
-	if err != nil {
-		holder, err = a.pluginAPI.User.GetByEmail(email)
+	if err == nil && holder.IsBot && holder.DeleteAt != 0 {
+		return agentErrorUsernameHeldByDeactivatedBot
 	}
-	if err != nil {
-		return fmt.Errorf("username %q is already taken", username)
-	}
-
-	if holder.IsBot && holder.DeleteAt != 0 {
-		blocker := "a deactivated bot account uses the username"
-		if holder.Username != username {
-			blocker = fmt.Sprintf("the deactivated bot account @%s uses the email %s reserved for it", holder.Username, email)
-		}
-		return fmt.Errorf("username %q is unavailable because %s. A system admin can permanently delete that bot account and its history (for example with \"mmctl user delete %s\") to make the username available", username, blocker, holder.Username)
-	}
-	if holder.Username == username {
-		return fmt.Errorf("username %q is already taken", username)
-	}
-	return fmt.Errorf("username %q is unavailable because the account @%s uses the email %s reserved for it. A system admin can change that account's email, or permanently delete it if it is an unused bot account", username, holder.Username, email)
+	return agentErrorUsernameTaken
 }
 
 // discardUnusedBot removes a bot created for an agent that failed to persist. The

@@ -783,14 +783,13 @@ describe('AgentConfigView', () => {
     });
 
     test.each([
-        [
-            'the server explanation',
-            'username "myagent" is unavailable because a deactivated bot account uses the username. A system admin can permanently delete that bot account and its history',
-            'username "myagent" is unavailable because a deactivated bot account uses the username. A system admin can permanently delete that bot account and its history',
-        ],
-        ['a generic message when the server gives none', '', 'This username is already taken'],
-    ])('shows %s on the username field when the username conflicts', async (_description, serverMessage, expected) => {
-        mockCreateAgent.mockRejectedValue(Object.assign(new Error(serverMessage), {status_code: 409}));
+        ['username_held_by_deactivated_bot', true, 'This username belongs to a deactivated bot account. Permanently delete that bot account to make the username available.'],
+        ['username_held_by_deactivated_bot', false, 'This username belongs to a deactivated bot account. A system admin can permanently delete it to make the username available.'],
+        ['username_taken', true, 'This username is already taken'],
+        ['', true, 'This username is already taken'],
+    ])('shows a translated message on the username field for conflict code %s (admin: %s)', async (code, isAdmin, expected) => {
+        mockedUseCurrentUserHasSystemPermission.mockReturnValue(isAdmin);
+        mockCreateAgent.mockRejectedValue(Object.assign(new Error('username "myagent" is already taken'), {status_code: 409, server_error_id: code}));
         renderView();
 
         fireEvent.change(screen.getByLabelText('Display Name'), {target: {value: 'My Agent'}});
