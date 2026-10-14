@@ -19,6 +19,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -535,6 +536,16 @@ func multimodalContent[T any](post llm.Post, maxDim int, textBlock func(string) 
 			continue
 		}
 
+		// The declared type comes from the file extension, not the bytes. A
+		// mislabeled image (e.g. a PNG saved as .jpg) is rejected by providers
+		// such as Anthropic, which breaks every later turn of the thread, so
+		// label the image with the type sniffed from its content instead.
+		mimeType := sniffImageMimeType(data)
+		if !llm.IsSupportedImageMimeType(mimeType) {
+			parts = append(parts, textBlock(fmt.Sprintf("[Unsupported image type: %s]", mimeType)))
+			continue
+		}
+
 		if maxDim > 0 {
 			if imageConfig, _, err := image.DecodeConfig(bytes.NewReader(data)); err == nil &&
 				(imageConfig.Width > maxDim || imageConfig.Height > maxDim) {
@@ -549,10 +560,18 @@ func multimodalContent[T any](post llm.Post, maxDim int, textBlock func(string) 
 		}
 
 		encoded := base64.StdEncoding.EncodeToString(data)
-		parts = append(parts, imageBlock(fmt.Sprintf("data:%s;base64,%s", file.MimeType, encoded)))
+		parts = append(parts, imageBlock(fmt.Sprintf("data:%s;base64,%s", mimeType, encoded)))
 	}
 
 	return parts
+}
+
+// sniffImageMimeType returns the media type detected from the content, without
+// parameters. http.DetectContentType recognizes every type accepted by
+// llm.IsSupportedImageMimeType (JPEG, PNG, GIF and WebP).
+func sniffImageMimeType(data []byte) string {
+	mimeType, _, _ := strings.Cut(http.DetectContentType(data), ";")
+	return strings.TrimSpace(mimeType)
 }
 
 func hasToolUseHistory(posts []llm.Post) bool {
