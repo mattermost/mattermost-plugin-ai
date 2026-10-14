@@ -88,9 +88,17 @@ jobs:
           aws s3 cp eval-results "$dest/" --recursive
           aws s3 cp summary.json "$dest/summary.json"
           aws s3 cp summary.md "$dest/summary.md"
-          # A partial matrix must not replace the baseline of providers that did not finish.
+          # Only providers that produced results replace their baseline, so a
+          # night with a provider outage keeps that provider's last good one.
+          # The eval jobs never fail on eval results, so a failed matrix means
+          # a job timed out or was cancelled and its results may be partial.
           if [ "$HISTORY_KIND" = nightly ] && [ "${{ needs.evals.result }}" = success ]; then
-            aws s3 sync eval-results "$EVALS_S3/nightly/latest/" --delete
+            for p in $(jq -r '.providers[] | select(.available) | .name' summary.json); do
+              results="eval-results/eval-results-$p/evals.jsonl"
+              if [ -f "$results" ]; then
+                aws s3 cp "$results" "$EVALS_S3/nightly/latest/eval-results-$p/evals.jsonl"
+              fi
+            done
           fi
 
       - name: Build trend
