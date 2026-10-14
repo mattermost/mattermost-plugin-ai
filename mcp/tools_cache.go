@@ -14,7 +14,30 @@ import (
 const (
 	cacheKeyPrefix = "mcp_tools_cache_v1_"
 	cacheTTL       = 8 * 24 * time.Hour // 8 days
+
+	serverProfileKeyPrefix = "mcp_server_profile_v1_"
+	// serverProfileRefreshAge bounds how long an unchanged profile goes
+	// without being rewritten, so active servers never reach cacheTTL.
+	serverProfileRefreshAge = 24 * time.Hour
 )
+
+// ServerProfile is what a remote MCP server reported about itself when a
+// session was initialized. It lets users who have not connected yet be told
+// what the server is for. Fields are sanitized and length-capped before they
+// are stored.
+type ServerProfile struct {
+	ServerURL    string    `json:"server_url"`
+	Name         string    `json:"name,omitempty"`
+	Title        string    `json:"title,omitempty"`
+	Description  string    `json:"description,omitempty"`
+	Instructions string    `json:"instructions,omitempty"`
+	Timestamp    time.Time `json:"timestamp"`
+}
+
+func (p ServerProfile) sameContent(other ServerProfile) bool {
+	p.Timestamp, other.Timestamp = time.Time{}, time.Time{}
+	return p == other
+}
 
 // CachedTools represents a cached set of tools for a specific MCP server
 type CachedTools struct {
@@ -57,6 +80,24 @@ func NewToolsCache(kvAPI KVStore, log Logger) *ToolsCache {
 
 // GetTools retrieves cached tools for a server, returns nil if missing
 func (tc *ToolsCache) GetTools(serverID string) map[string]*mcp.Tool {
+	cached := tc.getEntry(serverID)
+	if cached == nil {
+		return nil
+	}
+	return cached.Tools
+}
+
+// GetToolsForURL is GetTools restricted to an entry recorded for serverURL, so
+// a server renamed onto a different URL never reports the old URL's tools.
+func (tc *ToolsCache) GetToolsForURL(serverID, serverURL string) map[string]*mcp.Tool {
+	cached := tc.getEntry(serverID)
+	if cached == nil || cached.ServerURL != serverURL {
+		return nil
+	}
+	return cached.Tools
+}
+
+func (tc *ToolsCache) getEntry(serverID string) *CachedTools {
 	key := tc.buildCacheKey(serverID)
 
 	var cached CachedTools
@@ -74,7 +115,40 @@ func (tc *ToolsCache) GetTools(serverID string) map[string]*mcp.Tool {
 	}
 
 	tc.log.Debug("Cache hit for server", "serverID", serverID, "tools", len(cached.Tools))
-	return cached.Tools
+	return &cached
+}
+
+// GetServerProfile returns the stored profile for a server recorded at
+// serverURL, or nil when none is stored.
+func (tc *ToolsCache) GetServerProfile(serverID, serverURL string) *ServerProfile {
+	var profile ServerProfile
+	if err := tc.kvAPI.Get(serverProfileKeyPrefix+serverID, &profile); err != nil {
+		tc.log.Warn("Failed to retrieve MCP server profile from KV store", "serverID", serverID, "error", err)
+		return nil
+	}
+	if profile.Timestamp.IsZero() || profile.ServerURL != serverURL {
+		return nil
+	}
+	return &profile
+}
+
+// SetServerProfile stores profile for a server unless an identical profile was
+// stored recently.
+func (tc *ToolsCache) SetServerProfile(serverID string, profile ServerProfile, now time.Time) error {
+	if existing := tc.GetServerProfile(serverID, profile.ServerURL); existing != nil &&
+		existing.sameContent(profile) && now.Sub(existing.Timestamp) < serverProfileRefreshAge {
+		return nil
+	}
+
+	profile.Timestamp = now
+	success, err := tc.kvAPI.Set(serverProfileKeyPrefix+serverID, profile, pluginapi.SetExpiry(cacheTTL))
+	if err != nil {
+		return fmt.Errorf("failed to persist MCP server profile: %w", err)
+	}
+	if !success {
+		return fmt.Errorf("MCP server profile was not persisted for server %s", serverID)
+	}
+	return nil
 }
 
 // SetTools updates the cache for a server and persists to KV store

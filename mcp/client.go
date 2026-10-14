@@ -417,6 +417,7 @@ func (c *Client) connectAndDiscover(ctx context.Context, serverConfig ServerConf
 	if err != nil {
 		return nil, fmt.Errorf("failed to create MCP session for server %s: %w", serverConfig.Name, err)
 	}
+	c.recordServerProfile(session)
 
 	sharedToolsCache := c.useSharedToolsCache()
 	maybeInvalidateSharedToolsBeforeOAuthListTools(c.userID, serverConfig, c.log, c.toolsCache, c.oauthManager)
