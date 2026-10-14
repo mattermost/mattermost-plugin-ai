@@ -11,7 +11,8 @@ name: nightly-evals
 #
 # Runs started from another branch are stored under evals/branch-runs/ and
 # never become the baseline. The run fails when a check newly fails or input
-# tokens grow compared with the previous night, so GitHub notifies the owner.
+# tokens grow compared with the previous night, so GitHub notifies the owner;
+# the first night has nothing to compare with and does not fail.
 on:
   schedule:
     - cron: '0 6 * * *'
@@ -116,7 +117,7 @@ jobs:
 
       - name: Fail on regressions
         run: |
-          if [ -s regressions.md ]; then
+          if [ -s regressions.md ] && [ -n "$(ls -A eval-baseline 2>/dev/null)" ]; then
             echo "::error title=Nightly eval regressions::Checks newly fail or input tokens grew compared with the previous night. See the run summary."
             exit 1
           fi
