@@ -73,8 +73,8 @@ const ArtifactInteractOverlay = ({onEngage}: Props) => {
 export default ArtifactInteractOverlay;
 
 // Transparent: the artifact stays fully visible (and readable by assistive
-// technology) underneath. The hint keeps to the bottom corner, and stays in
-// view while the rest of a tall artifact is scrolled off.
+// technology) underneath. The hint keeps to the bottom corner, the first part
+// of a post to scroll into view when reading back through a channel.
 const Overlay = styled.button`
     position: absolute;
     inset: 0;
@@ -108,8 +108,6 @@ const pulse = keyframes`
 // Inverted theme colors, like a tooltip: it reads over any artifact content,
 // which tends to share the channel's own background.
 const Hint = styled.span<{$nudging: boolean}>`
-    position: sticky;
-    bottom: 8px;
     display: inline-flex;
     align-items: center;
     gap: 4px;
