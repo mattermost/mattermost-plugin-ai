@@ -39,17 +39,20 @@ type EvalT struct {
 	*testing.T
 	*Eval
 
-	// recorded counts graded results in the current run; lastFailure holds
-	// the most recent assertion message, reported if nothing was graded.
-	recorded    int
-	lastFailure string
+	// name is the provider-level test name results are recorded under, so
+	// every trial of an eval shares one name.
+	name string
+	// recorded counts graded results in the current run; failures holds its
+	// assertion messages other than rubric verdicts.
+	recorded int
+	failures []string
 }
 
-// Errorf captures assertion failures (testify reports through it) so a run
-// that fails before grading can be recorded with its cause.
+// Errorf captures assertion failures (testify reports through it) so they are
+// recorded with the run's results.
 func (e *EvalT) Errorf(format string, args ...any) {
 	e.Helper()
-	e.lastFailure = fmt.Sprintf(format, args...)
+	e.failures = append(e.failures, fmt.Sprintf(format, args...))
 	e.T.Errorf(format, args...)
 }
 
@@ -298,25 +301,30 @@ func Run(t *testing.T, name string, f func(e *EvalT)) {
 		testName := fmt.Sprintf("[%s] %s", providerName, name)
 
 		t.Run(testName, func(t *testing.T) {
-			e.T = t
+			e.name = t.Name()
+			// Each trial is a subtest so a require failure, which ends the
+			// running test, does not skip the remaining trials.
 			for i := range numEvals {
-				e.runNumber = i
-				runOnce(e, f)
+				t.Run(fmt.Sprintf("run_%d", i), func(t *testing.T) {
+					e.T = t
+					e.runNumber = i
+					runOnce(e, f)
+				})
 			}
 		})
 	}
 }
 
-// runOnce runs a single trial. The deferred check also runs when a require
+// runOnce runs a single trial. The deferred recording also runs when a require
 // assertion stops the trial early via runtime.Goexit.
 func runOnce(e *EvalT, f func(e *EvalT)) {
 	e.recorded = 0
-	e.lastFailure = ""
+	e.failures = nil
 	e.agentMeter.reset()
 	e.graderMeter.reset()
 	defer func() {
-		if e.recorded == 0 && e.lastFailure != "" {
-			recordError(e, e.lastFailure)
+		if line, ok := failureLine(e.recorded, e.failures); ok {
+			writeLogLine(e, line)
 		}
 		recordUsage(e)
 	}()

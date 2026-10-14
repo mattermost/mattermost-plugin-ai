@@ -56,10 +56,31 @@ func RecordScore(e *EvalT, result *EvalResult) {
 	})
 }
 
-// recordError records a run that failed before producing any graded result.
-func recordError(e *EvalT, failure string) {
-	e.Helper()
-	writeLogLine(e, EvalLogLine{Error: redactSecrets(summarizeFailure(failure))})
+// assertionsCheck is the check that every graded run records for the eval's
+// assertions other than rubrics, such as required tool calls or valid
+// citations, so a failing assertion is reported even when the rubrics pass.
+const assertionsCheck = "Passes the eval's code assertions"
+
+// failureLine returns the line that records a run's assertion failures: an
+// error when the run failed before anything was graded, and otherwise the
+// assertionsCheck result.
+func failureLine(recorded int, failures []string) (EvalLogLine, bool) {
+	summaries := make([]string, len(failures))
+	for i, failure := range failures {
+		summaries[i] = redactSecrets(summarizeFailure(failure))
+	}
+	switch {
+	case recorded > 0:
+		line := EvalLogLine{Rubric: assertionsCheck, Pass: len(failures) == 0, Reasoning: strings.Join(summaries, "\n")}
+		if line.Pass {
+			line.Score = 1
+		}
+		return line, true
+	case len(failures) > 0:
+		return EvalLogLine{Error: summaries[len(summaries)-1]}, true
+	default:
+		return EvalLogLine{}, false
+	}
 }
 
 // recordUsage records the run's token usage, cost, and latency, if it made any
@@ -75,7 +96,7 @@ func recordUsage(e *EvalT) {
 
 func writeLogLine(e *EvalT, log EvalLogLine) {
 	e.Helper()
-	log.Name = e.Name()
+	log.Name = e.name
 	log.Timestamp = time.Now().Format(time.RFC3339)
 	log.RunNumber = e.runNumber
 

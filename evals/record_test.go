@@ -47,6 +47,53 @@ func TestSummarizeFailure(t *testing.T) {
 	}
 }
 
+func TestFailureLine(t *testing.T) {
+	toolFailure := "\n\tError:      \tShould be true\n\tMessages:   \tthe agent must search with search_posts\n"
+	deliveryFailure := "\n\tError:      \tShould be true\n\tMessages:   \tA DM post mentioning migration should exist\n"
+
+	tests := []struct {
+		name     string
+		recorded int
+		failures []string
+		want     *EvalLogLine
+	}{
+		{
+			name:     "graded run without assertion failures passes the assertions check",
+			recorded: 2,
+			want:     &EvalLogLine{Rubric: assertionsCheck, Pass: true, Score: 1},
+		},
+		{
+			name:     "assertion failures in a graded run fail the assertions check",
+			recorded: 2,
+			failures: []string{toolFailure, deliveryFailure},
+			want: &EvalLogLine{
+				Rubric:    assertionsCheck,
+				Reasoning: "the agent must search with search_posts: Should be true\nA DM post mentioning migration should exist: Should be true",
+			},
+		},
+		{
+			name:     "failure before grading is recorded as an error",
+			failures: []string{toolFailure, "provider rejected the request"},
+			want:     &EvalLogLine{Error: "provider rejected the request"},
+		},
+		{
+			name: "run that neither graded nor failed records nothing",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			line, ok := failureLine(tc.recorded, tc.failures)
+			if tc.want == nil {
+				assert.False(t, ok)
+				return
+			}
+			assert.True(t, ok)
+			assert.Equal(t, *tc.want, line)
+		})
+	}
+}
+
 func TestRedactSecrets(t *testing.T) {
 	t.Setenv("EVAL_TEST_API_KEY", "sk-test-1234567890")
 	t.Setenv("EVAL_TEST_ENDPOINT", "https://secret-resource.openai.azure.com")
