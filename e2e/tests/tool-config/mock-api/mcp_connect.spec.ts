@@ -78,10 +78,6 @@ function systemPrompt(request: any): string {
         join('\n');
 }
 
-function expectedStartPath(): string {
-    return `/plugins/mattermost-ai/mcp/oauth/${encodeURIComponent(MOCK_OAUTH_SERVER_NAME)}/start`;
-}
-
 async function login(browser: Browser, user: { username: string; password: string }): Promise<{ page: Page; mm: MattermostPage; close: () => Promise<void> }> {
     const context = await browser.newContext();
     const page = await context.newPage();
@@ -113,19 +109,6 @@ async function openThreadOf(page: Page, message: string): Promise<Locator> {
     const rhs = page.locator('#rhsContainer');
     await expect(rhs.locator('[data-testid="llm-bot-post"]').first()).toBeVisible({ timeout: 30000 });
     return rhs;
-}
-
-/** The fallback link the bot sends the requester as an ephemeral thread reply. */
-function fallbackLink(rhs: Locator): Locator {
-    return rhs.getByRole('link', { name: `Connect ${MOCK_OAUTH_SERVER_NAME}`, exact: true });
-}
-
-async function expectFallbackLinkToStartURL(rhs: Locator): Promise<void> {
-    const link = fallbackLink(rhs);
-    await expect(link).toBeVisible({ timeout: 30000 });
-    const href = new URL((await link.getAttribute('href'))!);
-    expect(href.origin).toBe(mattermost.url());
-    expect(href.pathname).toBe(expectedStartPath());
 }
 
 async function expectInteractiveConnectCard(botPost: Locator): Promise<Locator> {
@@ -179,7 +162,7 @@ test.describe('Connect MCP server from a conversation (Mocked LLM)', () => {
         await mattermost?.stop();
     });
 
-    test('DM: offers ConnectMCPServer, renders the Connect card and fallback link, and continues after Skip', async ({ browser }) => {
+    test('DM: offers ConnectMCPServer, renders the Connect card and continues after Skip', async ({ browser }) => {
         test.setTimeout(180000);
 
         const userMessage = `open a ticket in the tracker ${Date.now()}`;
@@ -195,7 +178,6 @@ test.describe('Connect MCP server from a conversation (Mocked LLM)', () => {
             const botPost = rhs.locator('[data-testid="llm-bot-post"]').last();
 
             const card = await expectInteractiveConnectCard(botPost);
-            await expectFallbackLinkToStartURL(rhs);
 
             const request = await firstTurnRequest(userMessage);
             const connectTool = offeredTool(request, CONNECT_TOOL);
@@ -234,7 +216,6 @@ test.describe('Connect MCP server from a conversation (Mocked LLM)', () => {
             const ownerRhs = await openThreadOf(owner.page, `@${AIMOCK_BOT_NAME} ${userMessage}`);
             const ownerPost = ownerRhs.locator('[data-testid="llm-bot-post"]').last();
             const card = await expectInteractiveConnectCard(ownerPost);
-            await expectFallbackLinkToStartURL(ownerRhs);
 
             const otherRhs = await openThreadOf(other.page, `@${AIMOCK_BOT_NAME} ${userMessage}`);
             const otherPost = otherRhs.locator('[data-testid="llm-bot-post"]').last();
@@ -245,7 +226,6 @@ test.describe('Connect MCP server from a conversation (Mocked LLM)', () => {
             await expect(otherRhs.getByTestId('connect-mcp-connect-button')).toHaveCount(0);
             await expect(otherRhs.getByTestId('connect-mcp-skip-button')).toHaveCount(0);
             await expect(otherRhs.getByTestId('connect-mcp-continue-button')).toHaveCount(0);
-            await expect(fallbackLink(otherRhs)).toHaveCount(0);
 
             await card.getByTestId('connect-mcp-skip-button').click();
             await expect(ownerPost.getByText(followUpText)).toBeVisible({ timeout: 60000 });

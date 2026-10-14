@@ -769,9 +769,9 @@ Some MCP servers require OAuth per Mattermost user. For those servers, the plugi
 
 Only the user who made the request can act on the card, including in channels. After they connect, the agent continues with the server's tools available. If the connection didn't complete, or the server's tools still aren't available to the agent in that context, the card shows that it couldn't connect and the agent continues without the server. If they select **Skip**, the agent also continues without the server. If a user's authorization expires or is revoked during a conversation, the failing tool call tells the agent to ask the user to reconnect through the same card.
 
-When the agent requests a connection, Mattermost also sends the requesting user an ephemeral message in the thread with a plain link to the plugin's OAuth start URL. The link is sent at most once per server per conversation, and it lets clients that can't render the card, such as mobile, start the connection. Ephemeral messages can't target a single client, so web and desktop users see the link next to the card too. Mattermost doesn't post connection prompts outside of these agent requests.
+Mattermost doesn't post ephemeral messages to prompt MCP OAuth.
 
-**Mobile and other clients:** The **Connect** card and **Tools** menu are part of the Agents webapp. On other clients, use the ephemeral link described in the preceding section, or use Mattermost web or desktop to connect OAuth-backed MCP servers.
+**Mobile and other clients:** The **Connect** card and **Tools** menu are part of the Agents webapp. MCP OAuth is not initiated from the mobile app or other clients that do not use the Agents webapp. Users need Mattermost web or desktop to connect OAuth-backed MCP servers.
 
 **Custom MCP OAuth setups:** If the OAuth start URL includes a `resource_metadata` query parameter, it is accepted only when its origin matches the origin of the configured MCP server **Server URL**. This prevents cross-origin metadata injection during discovery.
 
