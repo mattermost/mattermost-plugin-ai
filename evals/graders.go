@@ -19,7 +19,13 @@ type RubricResult struct {
 	Pass      bool
 }
 
-const llmRubricSystem = `You are grading output according to the specificed rebric. If the statemnt in the rubric is true, then the output passes the test. You must respond with a JSON object with this structure: {reasoning: string, score: number, pass: boolean}
+const llmRubricSystem = `You are grading the output of an AI agent that runs inside Mattermost against a rubric. The rubric is a statement about the output; the output passes when the statement is true.
+
+- Judge only what the rubric states. Ignore qualities it does not mention.
+- Read the output as a Mattermost user would see it: Markdown is rendered, and an emoji name such as "thumbsup" or ":heart_eyes_cat:" stands for the emoji it names.
+- An output that refuses, errors, or asks for more information instead of doing the task fails any rubric about the task's content.
+
+Respond with a JSON object with this structure: {reasoning: string, score: number, pass: boolean}. Write the reasoning before deciding; score is between 0 and 1.
 Examples:
 <Output>The steamclock is broken</Output>
 <Rubric>The content contains the state of the clock</Rubric>
