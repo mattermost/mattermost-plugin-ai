@@ -123,6 +123,13 @@ describe('ToolApprovalSet', () => {
         expect(getToolCardProps('tool_pending').awaitingRequester).toBe(true);
     });
 
+    test('flags a live redacted call, which carries an empty result, for an onlooker', () => {
+        renderComponent([makeTool({id: 'tool_live', status: ToolCallStatus.Pending, result: ''})], 'call', false);
+
+        expect(getToolCardProps('tool_live').awaitingRequester).toBe(true);
+        expect(getToolCardProps('tool_live').isCollapsed).toBe(true);
+    });
+
     test('flags an interrupted auto-run round as awaiting the requester for an onlooker', () => {
         renderComponent([makeTool({id: 'tool_auto_pending', status: ToolCallStatus.Pending, would_auto_execute: true})], 'call', false);
 

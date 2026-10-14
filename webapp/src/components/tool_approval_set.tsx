@@ -82,7 +82,8 @@ const ToolApprovalSet: React.FC<ToolApprovalSetProps> = (props) => {
 
     // Only onlookers get redacted calls. Ownership can still be loading for
     // the requester, so canApprove alone does not identify an onlooker.
-    const isRedacted = !showArguments && !showResults;
+    // Arguments decide it: live calls carry an empty result even when redacted.
+    const isRedacted = !showArguments;
 
     // Approval is per pending tool. Earlier auto-approved tools in the same
     // response should not suppress controls for later manual ones.
