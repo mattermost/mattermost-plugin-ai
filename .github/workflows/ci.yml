@@ -147,26 +147,30 @@ jobs:
 
       - name: Run ${{ matrix.provider.display_name }} evaluations
         id: run-evals
+        # Model variables are optional overrides; when unset, the defaults in
+        # evals/evals.go apply so there is a single place to bump models.
         env:
           LLM_PROVIDER: ${{ matrix.provider.name }}
           # OpenAI
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.2' }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
           # Anthropic
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || 'claude-sonnet-4-6' }}
+          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
           # Azure
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
           AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
-          AZURE_OPENAI_MODEL: ${{ vars.AZURE_OPENAI_MODEL || 'gpt-5.2' }}
+          AZURE_OPENAI_MODEL: ${{ vars.AZURE_OPENAI_MODEL }}
           # Mistral
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
-          MISTRAL_MODEL: ${{ vars.MISTRAL_MODEL || 'mistral-large-latest' }}
+          MISTRAL_MODEL: ${{ vars.MISTRAL_MODEL }}
           # AWS Bedrock
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_BEDROCK_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_BEDROCK_ACCESS_KEY_SECRET }}
           AWS_BEDROCK_REGION: ${{ vars.AWS_BEDROCK_REGION || 'us-east-1' }}
-          AWS_BEDROCK_MODEL: ${{ vars.AWS_BEDROCK_MODEL || 'global.anthropic.claude-sonnet-4-6-v1:0' }}
+          AWS_BEDROCK_MODEL: ${{ vars.AWS_BEDROCK_MODEL }}
+          # Grader
+          GRADER_LLM_MODEL: ${{ vars.GRADER_LLM_MODEL }}
         run: |
           # Run evals - evalviewer writes directly to comment.md
           make evals-comment || true

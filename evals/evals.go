@@ -10,21 +10,25 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/bifrost"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 	"github.com/mattermost/mattermost-plugin-agents/v2/prompts"
-	"github.com/maximhq/bifrost/core/schemas"
 )
 
-// Default models for each provider. Update these when bumping model versions.
+// Default models for each provider. Update these when bumping model versions,
+// together with the matching fallbacks in .github/workflows/ci.yml.
 const (
-	DefaultOpenAIModel    = "gpt-5.2"
-	DefaultAnthropicModel = "claude-sonnet-4-6"
-	DefaultAzureModel     = "gpt-5.2"
+	DefaultOpenAIModel    = "gpt-5.6-terra"
+	DefaultAnthropicModel = "claude-sonnet-5-5"
+	DefaultAzureModel     = "gpt-5.6-terra"
 	DefaultMistralModel   = "mistral-large-latest"
-	DefaultBedrockModel   = "global.anthropic.claude-sonnet-4-6-v1:0"
+	DefaultBedrockModel   = "global.anthropic.claude-sonnet-5-5"
+	DefaultCohereModel    = "command-a-plus-05-2026"
+
+	// DefaultGraderModel is pinned separately from DefaultOpenAIModel so that
+	// bumping the model under test does not silently change the judge.
+	DefaultGraderModel = "gpt-5.6-terra"
 )
 
 type EvalT struct {
@@ -42,19 +46,26 @@ type Eval struct {
 
 // simpleProviders describes providers that need only an API key and a model.
 // Providers with extra requirements (azure, openaicompatible, bedrock) are
-// handled as explicit branches in createProvider.
+// handled as explicit branches in serviceConfigFor.
 var simpleProviders = map[string]struct {
-	provider     schemas.ModelProvider
+	serviceType  string
 	keyEnv       string
 	modelEnv     string
 	defaultModel string
-	reasoning    bool
 }{
-	"openai":    {schemas.OpenAI, "OPENAI_API_KEY", "OPENAI_MODEL", DefaultOpenAIModel, false},
-	"anthropic": {schemas.Anthropic, "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", DefaultAnthropicModel, true},
-	"mistral":   {schemas.Mistral, "MISTRAL_API_KEY", "MISTRAL_MODEL", DefaultMistralModel, false},
-	"cohere":    {schemas.Cohere, "COHERE_API_KEY", "COHERE_MODEL", "command-r-plus", false},
+	"openai":    {llm.ServiceTypeOpenAI, "OPENAI_API_KEY", "OPENAI_MODEL", DefaultOpenAIModel},
+	"anthropic": {llm.ServiceTypeAnthropic, "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", DefaultAnthropicModel},
+	"mistral":   {llm.ServiceTypeMistral, "MISTRAL_API_KEY", "MISTRAL_MODEL", DefaultMistralModel},
+	"cohere":    {llm.ServiceTypeCohere, "COHERE_API_KEY", "COHERE_MODEL", DefaultCohereModel},
 }
+
+// agentUnderTest mirrors the defaults of an agent created in the admin UI, so
+// evals exercise the same provider settings customers get out of the box.
+var agentUnderTest = llm.BotConfig{ReasoningEnabled: true}
+
+// graderAgent keeps grading cheap and stable; reasoning adds latency and
+// variance without improving single-criterion rubric checks.
+var graderAgent = llm.BotConfig{ReasoningEnabled: false}
 
 // resolveModel picks the model to use: the explicit override, then the
 // provider's model environment variable, then the provider default.
@@ -68,93 +79,98 @@ func resolveModel(override, modelEnv, defaultModel string) string {
 	return defaultModel
 }
 
-// createProvider creates an LLM provider based on the provider name using Bifrost
-// Reads configuration from environment variables with optional model override
-func createProvider(providerName string, modelOverride string) (llm.LanguageModel, error) {
-	timeout := 20 * time.Second
+// serviceConfigFor builds the service configuration an admin would create for
+// the provider, reading credentials from environment variables.
+func serviceConfigFor(providerName string, modelOverride string) (llm.ServiceConfig, error) {
 	name := strings.ToLower(providerName)
 
 	if p, ok := simpleProviders[name]; ok {
 		apiKey := os.Getenv(p.keyEnv)
 		if apiKey == "" {
-			return nil, fmt.Errorf("%s environment variable is not set", p.keyEnv)
+			return llm.ServiceConfig{}, fmt.Errorf("%s environment variable is not set", p.keyEnv)
 		}
-
-		return bifrost.New(bifrost.Config{
-			ProviderSettings: bifrost.ProviderSettings{
-				Provider:         p.provider,
-				APIKey:           apiKey,
-				DefaultModel:     resolveModel(modelOverride, p.modelEnv, p.defaultModel),
-				StreamingTimeout: timeout,
-			},
-			ReasoningEnabled: p.reasoning,
-		})
+		return llm.ServiceConfig{
+			ID:           name,
+			Type:         p.serviceType,
+			APIKey:       apiKey,
+			DefaultModel: resolveModel(modelOverride, p.modelEnv, p.defaultModel),
+		}, nil
 	}
 
 	switch name {
 	case "azure":
 		apiKey := os.Getenv("AZURE_OPENAI_API_KEY")
 		if apiKey == "" {
-			return nil, errors.New("AZURE_OPENAI_API_KEY environment variable is not set")
+			return llm.ServiceConfig{}, errors.New("AZURE_OPENAI_API_KEY environment variable is not set")
 		}
-
 		apiURL := os.Getenv("AZURE_OPENAI_ENDPOINT")
 		if apiURL == "" {
-			return nil, errors.New("AZURE_OPENAI_ENDPOINT environment variable is not set")
+			return llm.ServiceConfig{}, errors.New("AZURE_OPENAI_ENDPOINT environment variable is not set")
 		}
-
-		return bifrost.New(bifrost.Config{
-			ProviderSettings: bifrost.ProviderSettings{
-				Provider:         schemas.Azure,
-				APIKey:           apiKey,
-				APIURL:           apiURL,
-				DefaultModel:     resolveModel(modelOverride, "AZURE_OPENAI_MODEL", DefaultAzureModel),
-				StreamingTimeout: timeout,
-			},
-		})
+		return llm.ServiceConfig{
+			ID:           name,
+			Type:         llm.ServiceTypeAzure,
+			APIKey:       apiKey,
+			APIURL:       apiURL,
+			DefaultModel: resolveModel(modelOverride, "AZURE_OPENAI_MODEL", DefaultAzureModel),
+		}, nil
 
 	case "openaicompatible":
 		apiURL := os.Getenv("OPENAI_COMPATIBLE_API_URL")
 		if apiURL == "" {
-			return nil, errors.New("OPENAI_COMPATIBLE_API_URL environment variable is not set")
+			return llm.ServiceConfig{}, errors.New("OPENAI_COMPATIBLE_API_URL environment variable is not set")
 		}
-
 		model := resolveModel(modelOverride, "OPENAI_COMPATIBLE_MODEL", "")
 		if model == "" {
-			return nil, errors.New("OPENAI_COMPATIBLE_MODEL environment variable is not set")
+			return llm.ServiceConfig{}, errors.New("OPENAI_COMPATIBLE_MODEL environment variable is not set")
 		}
-
-		return bifrost.New(bifrost.Config{
-			ProviderSettings: bifrost.ProviderSettings{
-				Provider: schemas.OpenAI,
-				// API key is optional for local LLMs
-				APIKey:           os.Getenv("OPENAI_COMPATIBLE_API_KEY"),
-				APIURL:           apiURL,
-				DefaultModel:     model,
-				StreamingTimeout: timeout,
-			},
-		})
+		return llm.ServiceConfig{
+			ID:   name,
+			Type: llm.ServiceTypeOpenAICompatible,
+			// API key is optional for local LLMs
+			APIKey:       os.Getenv("OPENAI_COMPATIBLE_API_KEY"),
+			APIURL:       apiURL,
+			DefaultModel: model,
+		}, nil
 
 	case "bedrock":
 		region := os.Getenv("AWS_BEDROCK_REGION")
 		if region == "" {
-			return nil, errors.New("AWS_BEDROCK_REGION environment variable is not set")
+			return llm.ServiceConfig{}, errors.New("AWS_BEDROCK_REGION environment variable is not set")
 		}
-
-		return bifrost.New(bifrost.Config{
-			ProviderSettings: bifrost.ProviderSettings{
-				Provider:           schemas.Bedrock,
-				Region:             region,
-				AWSAccessKeyID:     os.Getenv("AWS_ACCESS_KEY_ID"),
-				AWSSecretAccessKey: os.Getenv("AWS_SECRET_ACCESS_KEY"),
-				DefaultModel:       resolveModel(modelOverride, "AWS_BEDROCK_MODEL", DefaultBedrockModel),
-				StreamingTimeout:   timeout,
-			},
-		})
+		return llm.ServiceConfig{
+			ID:                 name,
+			Type:               llm.ServiceTypeBedrock,
+			Region:             region,
+			AWSAccessKeyID:     os.Getenv("AWS_ACCESS_KEY_ID"),
+			AWSSecretAccessKey: os.Getenv("AWS_SECRET_ACCESS_KEY"),
+			DefaultModel:       resolveModel(modelOverride, "AWS_BEDROCK_MODEL", DefaultBedrockModel),
+		}, nil
 
 	default:
-		return nil, fmt.Errorf("unknown provider: %s", providerName)
+		return llm.ServiceConfig{}, fmt.Errorf("unknown provider: %s", providerName)
 	}
+}
+
+// createProvider builds the provider through the same bifrost service and
+// agent construction the plugin uses for configured agents.
+func createProvider(providerName string, modelOverride string, agent llm.BotConfig) (llm.LanguageModel, error) {
+	serviceConfig, err := serviceConfigFor(providerName, modelOverride)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := bifrost.NewServiceClient(serviceConfig, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	agentLLM, err := client.ForAgent(agent)
+	if err != nil {
+		client.Shutdown()
+		return nil, err
+	}
+	return agentLLM, nil
 }
 
 func NewEval() (*Eval, error) {
@@ -171,7 +187,7 @@ func NewEvalWithProvider(providerName string) (*Eval, error) {
 	}
 
 	// Create provider (uses environment variables)
-	provider, err := createProvider(providerName, "")
+	provider, err := createProvider(providerName, "", agentUnderTest)
 	if err != nil {
 		return nil, err
 	}
@@ -199,11 +215,10 @@ func createGraderLLM() (llm.LanguageModel, error) {
 
 	graderModel := os.Getenv("GRADER_LLM_MODEL")
 	if graderModel == "" && graderProvider == "openai" {
-		graderModel = DefaultOpenAIModel
+		graderModel = DefaultGraderModel
 	}
 
-	// Create grader provider with model override
-	return createProvider(graderProvider, graderModel)
+	return createProvider(graderProvider, graderModel, graderAgent)
 }
 
 func NumEvalsOrSkip(t *testing.T) int {
