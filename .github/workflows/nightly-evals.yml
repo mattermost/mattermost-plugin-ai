@@ -21,9 +21,6 @@ on:
         description: Runs per eval
         type: string
         default: '3'
-  push:
-    branches:
-      - cursor/refresh-evals-eb3d
 
 permissions:
   contents: read
@@ -90,7 +87,8 @@ jobs:
           aws s3 cp eval-results "$dest/" --recursive
           aws s3 cp summary.json "$dest/summary.json"
           aws s3 cp summary.md "$dest/summary.md"
-          if [ "$HISTORY_KIND" = nightly ]; then
+          # A partial matrix must not replace the baseline of providers that did not finish.
+          if [ "$HISTORY_KIND" = nightly ] && [ "${{ needs.evals.result }}" = success ]; then
             aws s3 sync eval-results "$EVALS_S3/nightly/latest/" --delete
           fi
 

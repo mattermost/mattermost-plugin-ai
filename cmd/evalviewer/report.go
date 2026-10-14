@@ -243,7 +243,7 @@ func buildResultSet(records []EvalLogLine) resultSet {
 
 // loadResultDir reads every evals.jsonl in dir or its immediate
 // subdirectories (the layout download-artifact produces). It returns nil if
-// the directory does not exist.
+// the directory does not exist or contains no results.
 func loadResultDir(dir string) (resultSet, error) {
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		return nil, nil
@@ -256,6 +256,9 @@ func loadResultDir(dir string) (resultSet, error) {
 			return nil, err
 		}
 		files = append(files, matches...)
+	}
+	if len(files) == 0 {
+		return nil, nil
 	}
 
 	var records []EvalLogLine
