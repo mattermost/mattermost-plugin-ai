@@ -783,11 +783,12 @@ describe('AgentConfigView', () => {
     });
 
     test.each([
-        ['username_held_by_deactivated_bot', 'This username belongs to a deactivated bot account. Permanently delete that bot account to make the username available.'],
-        ['username_taken', 'This username is already taken'],
-        ['', 'This username is already taken'],
-    ])('shows a translated message on the username field for conflict code %s', async (code, expected) => {
-        mockCreateAgent.mockRejectedValue(Object.assign(new Error('username "myagent" is already taken'), {status_code: 409, server_error_id: code}));
+        ['username_held_by_deactivated_bot', 'username "myagent" is already taken', 'This username belongs to a deactivated bot account. Permanently delete that bot account to make the username available.'],
+        ['username_email_taken', 'the account @renamed uses the email reserved for it', 'the account @renamed uses the email reserved for it'],
+        ['username_taken', 'username "myagent" is already taken', 'This username is already taken'],
+        ['', 'username "myagent" is already taken', 'This username is already taken'],
+    ])('shows a message on the username field for conflict code %s', async (code, serverMessage, expected) => {
+        mockCreateAgent.mockRejectedValue(Object.assign(new Error(serverMessage), {status_code: 409, server_error_id: code}));
         renderView();
 
         fireEvent.change(screen.getByLabelText('Display Name'), {target: {value: 'My Agent'}});
