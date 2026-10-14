@@ -414,10 +414,13 @@ func (p *MattermostToolProvider) toolGetChannelInfo(mcpContext *MCPToolContext, 
 	channel := channels[0]
 
 	// Get team info
+	// DM and group message channels have no team.
 	var teamName string
-	team, _, teamErr := client.GetTeam(ctx, channel.TeamId, "")
-	if teamErr == nil {
-		teamName = team.DisplayName
+	if channel.TeamId != "" {
+		team, _, teamErr := client.GetTeam(ctx, channel.TeamId, "")
+		if teamErr == nil {
+			teamName = team.DisplayName
+		}
 	}
 
 	// Get member count
@@ -480,7 +483,7 @@ func (p *MattermostToolProvider) formatMultipleChannels(ctx context.Context, cli
 		// Get team info from cache or fetch
 		var teamName string
 		team, exists := teamCache[channel.TeamId]
-		if !exists {
+		if !exists && channel.TeamId != "" {
 			fetchedTeam, _, err := client.GetTeam(ctx, channel.TeamId, "")
 			if err == nil {
 				team = fetchedTeam

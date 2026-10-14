@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mattermost/mattermost/server/public/model"
@@ -514,4 +515,204 @@ func TestToolDMWithInlineFiles(t *testing.T) {
 	assert.Equal(t, dmChannelID, postedPost.ChannelId)
 	assert.Equal(t, uploadedIDs, []string(postedPost.FileIds))
 	assert.Contains(t, result, "created and attached 1 file(s)")
+}
+
+func TestToolCreatePostDisplayNameValidation(t *testing.T) {
+	teamID := model.NewId()
+
+	tests := []struct {
+		name            string
+		channel         model.Channel
+		channelName     string
+		teamName        string
+		wantErr         string // substring of the returned error; empty means success
+		wantTeamFetched bool
+	}{
+		{
+			name:            "team channel with matching names",
+			channel:         model.Channel{TeamId: teamID, DisplayName: "Town Square", Type: model.ChannelTypeOpen},
+			channelName:     "Town Square",
+			teamName:        "Staff",
+			wantTeamFetched: true,
+		},
+		{
+			name:        "direct message channel without team_display_name",
+			channel:     model.Channel{DisplayName: "alice, bob", Type: model.ChannelTypeDirect},
+			channelName: "alice, bob",
+		},
+		{
+			name:        "group message channel ignores team_display_name",
+			channel:     model.Channel{DisplayName: "alice, bob, carol", Type: model.ChannelTypeGroup},
+			channelName: "alice, bob, carol",
+			teamName:    "Staff",
+		},
+		{
+			name:            "channel name differing only by emoji",
+			channel:         model.Channel{TeamId: teamID, DisplayName: "🚶‍♀️Company KPI Hallway", Type: model.ChannelTypeOpen},
+			channelName:     "Company KPI Hallway",
+			teamName:        "staff",
+			wantTeamFetched: true,
+		},
+		{
+			name:        "different channel name is rejected with the exact name to send",
+			channel:     model.Channel{TeamId: teamID, DisplayName: "🚶‍♀️Company KPI Hallway", Type: model.ChannelTypeOpen},
+			channelName: "Company KPI Lobby",
+			teamName:    "Staff",
+			wantErr:     "set to exactly '🚶‍♀️Company KPI Hallway'",
+		},
+		{
+			name:            "different team name is rejected",
+			channel:         model.Channel{TeamId: teamID, DisplayName: "Town Square", Type: model.ChannelTypeOpen},
+			channelName:     "Town Square",
+			teamName:        "Mattermost",
+			wantErr:         "team_display_name mismatch: provided 'Mattermost'",
+			wantTeamFetched: true,
+		},
+		{
+			name:        "team channel requires team_display_name",
+			channel:     model.Channel{TeamId: teamID, DisplayName: "Town Square", Type: model.ChannelTypeOpen},
+			channelName: "Town Square",
+			wantErr:     "team_display_name cannot be empty",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			channelID := model.NewId()
+			tt.channel.Id = channelID
+
+			teamFetched := false
+			postHit := false
+
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v4/channels/"+channelID, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(&tt.channel)
+			})
+			mux.HandleFunc("/api/v4/teams/"+teamID, func(w http.ResponseWriter, _ *http.Request) {
+				teamFetched = true
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(&model.Team{Id: teamID, DisplayName: "Staff"})
+			})
+			mux.HandleFunc("/api/v4/posts", func(w http.ResponseWriter, r *http.Request) {
+				postHit = true
+				var post model.Post
+				require.NoError(t, json.NewDecoder(r.Body).Decode(&post))
+				post.Id = model.NewId()
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(&post)
+			})
+
+			ts := httptest.NewServer(mux)
+			defer ts.Close()
+
+			provider := newTestProvider(t, ts.URL)
+			mcpCtx := &MCPToolContext{Ctx: t.Context(), Client: newTestClient(ts.URL), AccessMode: AccessModeRemote}
+
+			_, err := provider.toolCreatePost(mcpCtx, CreatePostArgs{
+				ChannelID:          channelID,
+				ChannelDisplayName: tt.channelName,
+				TeamDisplayName:    tt.teamName,
+				Message:            "hello",
+			})
+
+			assert.Equal(t, tt.wantTeamFetched, teamFetched)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				assert.False(t, postHit, "post must not be created when validation fails")
+				return
+			}
+			require.NoError(t, err)
+			assert.True(t, postHit, "post endpoint must be hit on success")
+		})
+	}
+}
+
+func TestUserLookupAcceptsUserID(t *testing.T) {
+	meID := model.NewId()
+	john := &model.User{Id: model.NewId(), Username: "john"}
+	unknownID := model.NewId()
+
+	tests := []struct {
+		name      string
+		value     string
+		wantErr   string // substring of the returned error; empty means success
+		wantMatch string // substring the successful result must contain
+	}{
+		{name: "username", value: "john", wantMatch: "john"},
+		{name: "username with @", value: "@john", wantMatch: "john"},
+		{name: "user ID falls back to ID lookup", value: john.Id, wantMatch: "john"},
+		{name: "unknown username", value: "nobody", wantErr: `error getting user by username "nobody"`},
+		{name: "unknown user ID", value: unknownID, wantErr: fmt.Sprintf("error getting user by username %q", unknownID)},
+	}
+
+	mux := http.NewServeMux()
+	writeJSON := func(w http.ResponseWriter, v any) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(v)
+	}
+	notFound := func(w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(model.NewAppError("GetUser", "app.user.missing_account.const", nil, "", http.StatusNotFound))
+	}
+	mux.HandleFunc("/api/v4/users/me", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, &model.User{Id: meID, Username: "me"})
+	})
+	mux.HandleFunc("/api/v4/users/username/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.TrimPrefix(r.URL.Path, "/api/v4/users/username/") == john.Username {
+			writeJSON(w, john)
+			return
+		}
+		notFound(w)
+	})
+	mux.HandleFunc("/api/v4/users/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.TrimPrefix(r.URL.Path, "/api/v4/users/") == john.Id {
+			writeJSON(w, john)
+			return
+		}
+		notFound(w)
+	})
+	mux.HandleFunc("/api/v4/channels/direct", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, &model.Channel{Id: model.NewId(), Type: model.ChannelTypeDirect})
+	})
+	mux.HandleFunc("/api/v4/posts", func(w http.ResponseWriter, r *http.Request) {
+		var post model.Post
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&post))
+		post.Id = model.NewId()
+		writeJSON(w, &post)
+	})
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	provider := newTestProvider(t, ts.URL)
+	mcpCtx := &MCPToolContext{Ctx: t.Context(), Client: newTestClient(ts.URL), AccessMode: AccessModeRemote}
+
+	tools := []struct {
+		name string
+		call func(value string) (string, error)
+	}{
+		{"dm", func(value string) (string, error) {
+			return provider.toolDM(mcpCtx, DMArgs{Username: value, Message: "hello"})
+		}},
+		{"get_user_by_username", func(value string) (string, error) {
+			return provider.toolGetUserByUsername(mcpCtx, GetUserByUsernameArgs{Username: value})
+		}},
+	}
+
+	for _, tool := range tools {
+		for _, tt := range tests {
+			t.Run(tool.name+"/"+tt.name, func(t *testing.T) {
+				result, err := tool.call(tt.value)
+				if tt.wantErr != "" {
+					require.Error(t, err)
+					assert.Contains(t, err.Error(), tt.wantErr)
+					return
+				}
+				require.NoError(t, err)
+				assert.Contains(t, result, tt.wantMatch)
+			})
+		}
+	}
 }

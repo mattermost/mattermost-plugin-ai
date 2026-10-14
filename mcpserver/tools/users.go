@@ -4,6 +4,7 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -22,7 +23,7 @@ type GetUserArgs struct {
 
 // GetUserByUsernameArgs represents arguments for the get_user_by_username tool.
 type GetUserByUsernameArgs struct {
-	Username string `json:"username" jsonschema:"The username (without @),minLength=1"`
+	Username string `json:"username" jsonschema:"The username (without @). A user ID is also accepted.,minLength=1"`
 }
 
 // GetUserByEmailArgs represents arguments for the get_user_by_email tool.
@@ -63,7 +64,7 @@ type UpdateUserArgs struct {
 const (
 	getMeDescription               = "Get the authenticated agent/bot's own user profile (current user). No parameters."
 	getUserDescription             = "Get a single user's full profile by ID. Parameters: user_id (required)."
-	getUserByUsernameDescription   = "Get a user's profile by username. Parameters: username (required, without @)."
+	getUserByUsernameDescription   = "Get a user's profile by username. Parameters: username (required, without @; a user ID is also accepted)."
 	getUserByEmailDescription      = "Get a user's profile by email. Parameters: email (required)."
 	getUsersByIDsDescription       = "Batch-fetch user profiles by a list of IDs. Parameters: user_ids (required list)."
 	getUsersByUsernamesDescription = "Batch-fetch user profiles by a list of usernames. Parameters: usernames (required list, without @)."
@@ -110,15 +111,33 @@ func (p *MattermostToolProvider) toolGetUser(mcpContext *MCPToolContext, args Ge
 	return formatSingleUser(user), nil
 }
 
+// getUserByUsernameOrID resolves a user by username and, when that fails and
+// the value is shaped like a Mattermost ID, by user ID. Models sometimes pass a
+// user ID where a username is expected (e.g. from a scheduled prompt that
+// embeds one). The username lookup runs first because a 26-character
+// lowercase alphanumeric username is also a valid ID.
+func getUserByUsernameOrID(ctx context.Context, client *model.Client4, value string) (*model.User, error) {
+	user, _, err := client.GetUserByUsername(ctx, value, "")
+	if err == nil {
+		return user, nil
+	}
+	if model.IsValidId(value) {
+		if byID, _, idErr := client.GetUser(ctx, value, ""); idErr == nil {
+			return byID, nil
+		}
+	}
+	return nil, fmt.Errorf("error getting user by username %q: %w", value, err)
+}
+
 // toolGetUserByUsername implements the get_user_by_username tool.
 func (p *MattermostToolProvider) toolGetUserByUsername(mcpContext *MCPToolContext, args GetUserByUsernameArgs) (string, error) {
 	username := strings.TrimPrefix(strings.TrimSpace(args.Username), "@")
 	if username == "" {
 		return "", fmt.Errorf("username cannot be empty")
 	}
-	user, _, err := mcpContext.Client.GetUserByUsername(mcpContext.Ctx, username, "")
+	user, err := getUserByUsernameOrID(mcpContext.Ctx, mcpContext.Client, username)
 	if err != nil {
-		return "", fmt.Errorf("error fetching user by username: %w", err)
+		return "", err
 	}
 	return formatSingleUser(user), nil
 }
