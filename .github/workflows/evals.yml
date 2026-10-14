@@ -29,6 +29,8 @@ jobs:
             display_name: Azure OpenAI
           - name: mistral
             display_name: Mistral
+            # Run packages one at a time to stay under Mistral's rate limits.
+            parallel: '1'
           - name: bedrock
             display_name: AWS Bedrock
     name: evals-${{ matrix.provider.name }}
@@ -44,6 +46,7 @@ jobs:
         # evals/evals.go apply so there is a single place to bump models.
         env:
           LLM_PROVIDER: ${{ matrix.provider.name }}
+          EVAL_TEST_PARALLEL: ${{ matrix.provider.parallel }}
           # Runs per eval, combined by majority vote in the report.
           GOEVALS: ${{ inputs.runs }}
           # OpenAI
