@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -541,9 +542,15 @@ func callSessionIdentityTool(t *testing.T, tools []llm.Tool) string {
 
 type sessionEchoEmbeddedMCPServer struct {
 	ctx context.Context
+
+	tokenMu   sync.Mutex
+	lastToken string
 }
 
-func (s *sessionEchoEmbeddedMCPServer) CreateClientTransport(_ string, sessionID string, _ *pluginapi.Client) (*gomcp.InMemoryTransport, error) {
+func (s *sessionEchoEmbeddedMCPServer) CreateClientTransport(_ string, sessionID, sessionToken string, _ *pluginapi.Client) (*gomcp.InMemoryTransport, error) {
+	s.tokenMu.Lock()
+	s.lastToken = sessionToken
+	s.tokenMu.Unlock()
 	server := gomcp.NewServer(&gomcp.Implementation{Name: "session-echo", Version: "1.0"}, nil)
 	server.AddTool(&gomcp.Tool{
 		Name:        "session_identity",
@@ -713,7 +720,8 @@ func TestClientManagerGetToolsForUser_NewSessionNotYetReadable(t *testing.T) {
 			pluginAPI := pluginapi.NewClient(fakeAPI, nil)
 			runCtx, cancelRun := context.WithCancel(context.Background())
 			t.Cleanup(cancelRun)
-			var server EmbeddedMCPServer = &sessionEchoEmbeddedMCPServer{ctx: runCtx}
+			echoServer := &sessionEchoEmbeddedMCPServer{ctx: runCtx}
+			var server EmbeddedMCPServer = echoServer
 			if tt.transportErr != nil {
 				server = failingEmbeddedMCPServer{err: tt.transportErr}
 			}
@@ -748,6 +756,11 @@ func TestClientManagerGetToolsForUser_NewSessionNotYetReadable(t *testing.T) {
 				return
 			}
 			require.Equal(t, newSessionID, callSessionIdentityTool(t, tools))
+			// The embedded server must get the token too: its own lookup
+			// by ID would hit the same lagging replica.
+			echoServer.tokenMu.Lock()
+			defer echoServer.tokenMu.Unlock()
+			require.Equal(t, "new-token", echoServer.lastToken)
 		})
 	}
 }
@@ -756,6 +769,6 @@ type failingEmbeddedMCPServer struct {
 	err error
 }
 
-func (s failingEmbeddedMCPServer) CreateClientTransport(string, string, *pluginapi.Client) (*gomcp.InMemoryTransport, error) {
+func (s failingEmbeddedMCPServer) CreateClientTransport(string, string, string, *pluginapi.Client) (*gomcp.InMemoryTransport, error) {
 	return nil, s.err
 }
