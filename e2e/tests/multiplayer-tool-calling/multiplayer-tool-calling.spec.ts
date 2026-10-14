@@ -559,6 +559,7 @@ test.describe('Multiplayer Tool Calling (Aimock)', () => {
             const onlookerCard = onlookerRounds.locator(TOOL_CARD_SELECTOR).first();
             await expect(onlookerCard.getByText(getChannelInfoToolLabel, {exact: true})).toBeVisible({timeout: 30000});
             await expect(onlookerCard.locator(TOOL_CARD_CHEVRON_SELECTOR)).toHaveCount(0);
+            await expect(onlookerCard.getByText('Awaiting approval', {exact: true})).toBeVisible();
 
             await onlookerCard.getByText(getChannelInfoToolLabel, {exact: true}).click();
             await expect(onlookerCard.locator(TOOL_CARD_ARGUMENTS_SELECTOR)).toHaveCount(0);

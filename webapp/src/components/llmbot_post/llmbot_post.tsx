@@ -676,6 +676,19 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
     const answerText = activity.answerRounds.map((round) => round.text).filter((text) => text !== '').join('\n\n');
     const foldingText = useFoldingText(answerText, activity.items.length > 0 && !activityExpanded);
 
+    // An onlooker's waiting round keeps its real stage so its cards can show
+    // what the requester owes; onlookers never get decision controls.
+    const onlookerWaitRoundId = awaitingRequester ? onlookerWaitRound?.id ?? null : null;
+    const roundApprovalStage = useCallback((roundId: string): ToolApprovalStage => {
+        if (roundId === anchorRoundId) {
+            return anchorStage;
+        }
+        if (roundId === onlookerWaitRoundId) {
+            return onlookerWaitStage;
+        }
+        return 'done';
+    }, [anchorRoundId, anchorStage, onlookerWaitRoundId, onlookerWaitStage]);
+
     const renderRound = useCallback((round: Round) => {
         const isLiveRound = round.id === LIVE_ROUND_ID;
         return (
@@ -685,7 +698,7 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
                 postID={props.post.id}
                 conversationID={conversationId}
                 channelID={props.post.channel_id}
-                approvalStage={round.id === anchorRoundId ? anchorStage : 'done'}
+                approvalStage={roundApprovalStage(round.id)}
                 canApprove={requesterIsCurrentUser}
                 canExpand={requesterIsCurrentUser}
                 showCursor={generating && isLiveRound && !precontent}
@@ -698,8 +711,7 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
         props.post.id,
         props.post.channel_id,
         conversationId,
-        anchorRoundId,
-        anchorStage,
+        roundApprovalStage,
         requesterIsCurrentUser,
         generating,
         precontent,

@@ -26,6 +26,7 @@ type MockRenderContext = {
     onApprove?: () => void;
     onReject?: () => void;
     isAutoApproved?: boolean;
+    awaitingRequester?: boolean;
 };
 
 // Mock the registry so these tests cover ToolApprovalSet's decision logic
@@ -99,6 +100,32 @@ describe('ToolApprovalSet', () => {
 
         expect(getToolCardProps('tool_auto').isAutoApproved).toBe(true);
         expect(getToolCardProps('tool_pending').isAutoApproved).toBe(false);
+    });
+
+    test.each([
+        {name: 'a pending call', stage: 'call' as const, status: ToolCallStatus.Pending},
+        {name: 'a result awaiting the share decision', stage: 'result' as const, status: ToolCallStatus.Success},
+    ])('flags $name as awaiting the requester for an onlooker', ({stage, status}) => {
+        renderComponent([makeTool({id: 'tool_waiting', status})], stage, false);
+
+        expect(getToolCardProps('tool_waiting').awaitingRequester).toBe(true);
+        expect(getToolCardProps('tool_waiting').onApprove).toBeUndefined();
+    });
+
+    test('does not flag an auto-approved call that already ran while another awaits approval', () => {
+        renderComponent([
+            makeTool({id: 'tool_auto', status: ToolCallStatus.AutoApproved}),
+            makeTool({id: 'tool_pending', status: ToolCallStatus.Pending}),
+        ], 'call', false);
+
+        expect(getToolCardProps('tool_auto').awaitingRequester).toBe(false);
+        expect(getToolCardProps('tool_pending').awaitingRequester).toBe(true);
+    });
+
+    test('does not flag calls as awaiting the requester for the requester', () => {
+        renderComponent([makeTool({id: 'tool_pending', status: ToolCallStatus.Pending})], 'call', true);
+
+        expect(getToolCardProps('tool_pending').awaitingRequester).toBe(false);
     });
 
     test('hides pending tools that passed the auto-execution policy', () => {

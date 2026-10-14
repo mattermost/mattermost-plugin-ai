@@ -72,9 +72,10 @@ jest.mock('../post_text', () => {
     };
 });
 
+const mockToolApprovalSet = jest.fn<null, [{approvalStage: string; canApprove: boolean}]>(() => null);
 jest.mock('../tool_approval_set', () => ({
     __esModule: true,
-    default: () => null,
+    default: (props: {approvalStage: string; canApprove: boolean}) => mockToolApprovalSet(props),
 }));
 
 // The preview fetches the source post and profile on mount; stub it out so the
@@ -853,6 +854,11 @@ describe('LLMBotPost rounds awaiting a decision', () => {
         });
 
         expect(screen.getByTestId('llm-bot-tool-activity-current').textContent).toBe('Waiting for @alice to approve tool use');
+
+        // Expanded, the waiting round's cards get its call stage, still without controls.
+        mockToolApprovalSet.mockClear();
+        expandToolActivity();
+        expect(mockToolApprovalSet).toHaveBeenLastCalledWith(expect.objectContaining({approvalStage: 'call', canApprove: false}));
 
         act(() => {
             listener?.(postUpdateMessage({post_id: 'post_1', control: 'start'}));

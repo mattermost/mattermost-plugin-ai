@@ -89,6 +89,15 @@ const ToolApprovalSet: React.FC<ToolApprovalSetProps> = (props) => {
         [props.toolCalls, props.approvalStage, effectiveCanApprove],
     );
 
+    // Calls the requester still owes a decision on, flagged for onlookers
+    // so a pending card reads as waiting rather than running.
+    const awaitingRequesterIDSet = useMemo(() => {
+        if (props.canApprove) {
+            return new Set<string>();
+        }
+        return new Set(selectDecisionToolCalls(props.toolCalls, props.approvalStage, true).map((call) => call.id));
+    }, [props.toolCalls, props.approvalStage, props.canApprove]);
+
     const decisionToolIDSet = useMemo(() => {
         return new Set(decisionToolCalls.map((call) => call.id));
     }, [decisionToolCalls]);
@@ -291,6 +300,7 @@ const ToolApprovalSet: React.FC<ToolApprovalSetProps> = (props) => {
                             showResults,
                             approvalStage: props.approvalStage,
                             isAutoApproved: tool.status === ToolCallStatus.AutoApproved,
+                            awaitingRequester: awaitingRequesterIDSet.has(tool.id),
                             canAnswer: isDecisionCall && isCallStage,
                             onAnswer: isDecisionCall ? (selections, custom) => handleQuestionAnswer(tool.id, selections, custom) : undefined, // eslint-disable-line no-undefined
                             onSkip: isDecisionCall ? () => handleToolDecision(tool.id, false) : undefined, // eslint-disable-line no-undefined
