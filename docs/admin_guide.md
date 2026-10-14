@@ -649,7 +649,7 @@ The built-in `CreateFile` tool lets an agent create a text file that is attached
 
 ### HTML artifacts
 
-When **Enable HTML artifacts** is turned on (`enableHTMLArtifacts` in the plugin configuration, off by default), HTML files (`.html`/`.htm`) attached to a post by one of the plugin's agents are rendered as interactive artifacts inline in the agent's reply and can be opened in a fullscreen viewer. This covers files the agent creates with the `CreateFile` tool and HTML files produced by the code execution sandbox (code interpreter) that the agent attaches to its reply. The `CreateFile` tool description also tells the model that HTML files must be self-contained and how to use the theme variables and viewer API.
+When **Enable HTML artifacts** is turned on (`enableHTMLArtifacts` in the plugin configuration, off by default), HTML files (`.html`/`.htm`) attached to a post by one of the plugin's agents are rendered as interactive artifacts inline in the agent's reply and can be opened in a fullscreen viewer. This covers files the agent creates with the `CreateFile` tool and HTML files produced by the code execution sandbox (code interpreter) that the agent attaches to its reply. The `CreateFile` tool description also tells the model that HTML files must be self-contained and how to use the theme variables and viewer API. HTML artifacts are an [experimental](https://docs.mattermost.com/manage/feature-labels.html#experimental) feature.
 
 Requirements:
 
