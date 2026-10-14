@@ -348,7 +348,15 @@ const Config = (props: Props) => {
                         helpText={intl.formatMessage({defaultMessage: 'When enabled, AI responses may contain clickable links, including potentially malicious destinations. Enable only if you trust the LLM output and have mitigations for exfiltration risks.'})}
                     />
                     <BooleanItem
-                        label={<FormattedMessage defaultMessage='Enable HTML artifacts'/>}
+                        label={
+                            <Horizontal>
+                                <FormattedMessage defaultMessage='Enable HTML artifacts'/>
+                                <Tag
+                                    type='info'
+                                    label={<FormattedMessage defaultMessage='EXPERIMENTAL'/>}
+                                />
+                            </Horizontal>
+                        }
                         value={Boolean(value.enableHTMLArtifacts)}
                         onChange={(to) => {
                             updateConfig({enableHTMLArtifacts: to});
