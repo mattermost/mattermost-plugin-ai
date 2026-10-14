@@ -414,7 +414,7 @@ const Config = (props: Props) => {
                             type='password'
                             value={value.openTelemetryHeaders || ''}
                             onChange={(e) => updateConfig({openTelemetryHeaders: e.target.value})}
-                            helptext={intl.formatMessage({defaultMessage: 'Headers sent with every trace export, as comma-separated key=value pairs (e.g. Authorization=Basic <credentials>). Use with TLS so credentials are not sent in plaintext.'})}
+                            helptext={intl.formatMessage({defaultMessage: 'Headers sent with every trace export, as comma-separated key=value pairs (e.g. Authorization=Basic YOUR_CREDENTIALS). Use with TLS so credentials are not sent in plaintext.'})}
                         />
                     )}
                     <BooleanItem
