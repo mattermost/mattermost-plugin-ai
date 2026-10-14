@@ -11,7 +11,7 @@ import {
     titleGenerationMockRule,
 } from 'helpers/openai-mock';
 import RunSystemConsoleContainer, { adminUsername, adminPassword } from 'helpers/system-console-container';
-import { MOCK_OAUTH_SERVER_NAME, MOCK_OAUTH_SERVER_URL, registerMCPOAuthMocks } from 'helpers/mcp-oauth-mock';
+import { MOCK_OAUTH_SERVER_NAME, MOCK_OAUTH_SERVER_URL, buildMCPOAuthMocks } from 'helpers/mcp-oauth-mock';
 
 /**
  * Test Suite: Agents ask users to connect MCP servers they have not connected
@@ -49,6 +49,8 @@ async function openBotReply(page: Page, userMessage: string): Promise<Locator> {
 test.describe('MCP connection requests (Mocked LLM)', () => {
     test.beforeAll(async () => {
         mattermost = await RunSystemConsoleContainer({
+            // mentionBot @-mentions the agent, which routes through the mention path.
+            enableChannelMentionToolCalling: true,
             services: [
                 {
                     id: 'mock-service',
@@ -89,7 +91,6 @@ test.describe('MCP connection requests (Mocked LLM)', () => {
             },
         });
         openAIMock = await RunOpenAIMocks(mattermost.network);
-        await registerMCPOAuthMocks(openAIMock);
     });
 
     test.afterAll(async () => {
@@ -101,7 +102,9 @@ test.describe('MCP connection requests (Mocked LLM)', () => {
         test.setTimeout(120000);
 
         const followUpText = 'Understood, continuing without the ticket tracker.';
+        // addMocks resets Smocker, so the OAuth server mocks are registered with every turn.
         await openAIMock.addMocks([
+            ...buildMCPOAuthMocks(),
             buildChatCompletionMockRule(
                 buildToolCallResponse('call_connect_skip', 'RequestMCPConnection', requestArgs),
                 { bodyContains: unconnectedPromptMatch },
@@ -132,6 +135,7 @@ test.describe('MCP connection requests (Mocked LLM)', () => {
 
         const followUpText = 'The ticket tracker is still not connected, so here is what I can do instead.';
         await openAIMock.addMocks([
+            ...buildMCPOAuthMocks(),
             buildChatCompletionMockRule(
                 buildToolCallResponse('call_connect_continue', 'RequestMCPConnection', requestArgs),
                 { bodyContains: unconnectedPromptMatch },
