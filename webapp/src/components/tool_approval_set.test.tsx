@@ -27,6 +27,7 @@ type MockRenderContext = {
     onReject?: () => void;
     isAutoApproved?: boolean;
     awaitingRequester?: boolean;
+    isCollapsed?: boolean;
 };
 
 // Mock the registry so these tests cover ToolApprovalSet's decision logic
@@ -120,6 +121,18 @@ describe('ToolApprovalSet', () => {
 
         expect(getToolCardProps('tool_auto').awaitingRequester).toBe(false);
         expect(getToolCardProps('tool_pending').awaitingRequester).toBe(true);
+    });
+
+    test('flags an interrupted auto-run round as awaiting the requester for an onlooker', () => {
+        renderComponent([makeTool({id: 'tool_auto_pending', status: ToolCallStatus.Pending, would_auto_execute: true})], 'call', false);
+
+        expect(getToolCardProps('tool_auto_pending').awaitingRequester).toBe(true);
+    });
+
+    test('keeps an onlooker\'s pending cards collapsed by default', () => {
+        renderComponent([makeTool({id: 'tool_pending', status: ToolCallStatus.Pending})], 'call', false);
+
+        expect(getToolCardProps('tool_pending').isCollapsed).toBe(true);
     });
 
     test('does not flag calls as awaiting the requester for the requester', () => {

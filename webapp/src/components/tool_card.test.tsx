@@ -145,6 +145,13 @@ describe('ToolCard awaiting the requester', () => {
         expect(screen.queryByTestId('llm-bot-tool-status')).toBeNull();
     });
 
+    test('says a pending question awaits an answer', () => {
+        renderComponent(makeTool({user_interaction: 'select'}), {awaitingRequester: true});
+
+        expect(screen.getByText('Awaiting answer')).not.toBeNull();
+        expect(screen.queryByText('Awaiting approval')).toBeNull();
+    });
+
     test('keeps the result glyph on a result awaiting the share decision', () => {
         renderComponent(makeTool({status: ToolCallStatus.Success}), {awaitingRequester: true, approvalStage: 'result'});
 

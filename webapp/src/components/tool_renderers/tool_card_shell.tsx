@@ -417,12 +417,17 @@ const ToolCardShell: React.FC<ToolCardShellProps> = ({
                         type='warning'
                         size='x-small'
                         data-testid='llm-bot-tool-awaiting-approval'
-                        label={
+                        label={tool.user_interaction ? (
+                            <FormattedMessage
+                                id='ai.tool_call.awaiting_answer'
+                                defaultMessage='Awaiting answer'
+                            />
+                        ) : (
                             <FormattedMessage
                                 id='ai.tool_call.awaiting_approval'
                                 defaultMessage='Awaiting approval'
                             />
-                        }
+                        )}
                     />
                 )}
                 {(tool.status === ToolCallStatus.AutoApproved || isAutoApproved) && (

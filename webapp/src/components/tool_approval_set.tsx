@@ -95,8 +95,11 @@ const ToolApprovalSet: React.FC<ToolApprovalSetProps> = (props) => {
         if (props.canApprove) {
             return new Set<string>();
         }
-        return new Set(selectDecisionToolCalls(props.toolCalls, props.approvalStage, true).map((call) => call.id));
-    }, [props.toolCalls, props.approvalStage, props.canApprove]);
+        const awaiting = isInterruptedAutoRound ?
+            props.toolCalls.filter((call) => call.status === ToolCallStatus.Pending) :
+            selectDecisionToolCalls(props.toolCalls, props.approvalStage, true);
+        return new Set(awaiting.map((call) => call.id));
+    }, [props.toolCalls, props.approvalStage, props.canApprove, isInterruptedAutoRound]);
 
     const decisionToolIDSet = useMemo(() => {
         return new Set(decisionToolCalls.map((call) => call.id));
@@ -255,10 +258,11 @@ const ToolApprovalSet: React.FC<ToolApprovalSetProps> = (props) => {
         // they are being asked to approve. Executed tools in the result
         // stage also expand so the output is visible during the share
         // decision. Otherwise collapse.
-        const defaultExpanded = isCallStage ?
+        // Onlookers get redacted calls, so there is nothing to expand into.
+        const defaultExpanded = props.canApprove && (isCallStage ?
             tool.status === ToolCallStatus.Pending :
             isResultStage && (tool.status === ToolCallStatus.Success ||
-                tool.status === ToolCallStatus.Error);
+                tool.status === ToolCallStatus.Error));
 
         // Check if user has toggled this tool
         const isCollapsed = collapsedTools.includes(tool.id);
