@@ -48,6 +48,7 @@ async function openBotReply(page: Page, userMessage: string): Promise<Locator> {
 
 test.describe('MCP connection requests (Mocked LLM)', () => {
     test.beforeAll(async () => {
+        test.setTimeout(180000);
         mattermost = await RunSystemConsoleContainer({
             // mentionBot @-mentions the agent, which routes through the mention path.
             enableChannelMentionToolCalling: true,

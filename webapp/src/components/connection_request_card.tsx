@@ -1,7 +1,7 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import React, {useCallback, useEffect, useMemo, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import styled from 'styled-components';
 import {FormattedMessage} from 'react-intl';
 import {CheckIcon, CloseCircleOutlineIcon, OpenInNewIcon, PowerPlugOutlineIcon} from '@mattermost/compass-icons/components';
@@ -84,13 +84,19 @@ const ConnectionRequestCard: React.FC<ConnectionRequestCardProps> = ({
 
     const [lookup, setLookup] = useState<Lookup>({state: 'loading'});
     const [connectOpened, setConnectOpened] = useState(false);
+    const latestFetchRef = useRef(0);
 
     const fetchServer = useCallback(async () => {
+        const fetchID = ++latestFetchRef.current;
         try {
             const response = await getUserMCPTools();
-            setLookup({state: 'loaded', server: response.servers.find((s) => s.name === request.server)});
+            if (fetchID === latestFetchRef.current) {
+                setLookup({state: 'loaded', server: response.servers.find((s) => s.name === request.server)});
+            }
         } catch {
-            setLookup({state: 'failed'});
+            if (fetchID === latestFetchRef.current) {
+                setLookup({state: 'failed'});
+            }
         }
     }, [request.server]);
 

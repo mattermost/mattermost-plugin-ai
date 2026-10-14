@@ -37,9 +37,10 @@ func promptSafeText(s string, maxRunes int) string {
 
 // recordServerProfile stores what the server reported about itself during
 // initialize. Instructions can be written for the connected identity, so they
-// are only kept where the tool catalog is already shared across users.
+// are only kept where the user-mode tool catalog is already shared across
+// users. Service-account handshakes never write the user-facing profile.
 func (c *Client) recordServerProfile(session *mcp.ClientSession) {
-	if c.toolsCache == nil || session == nil {
+	if c.toolsCache == nil || session == nil || c.serviceAccount {
 		return
 	}
 	result := session.InitializeResult()
@@ -53,7 +54,7 @@ func (c *Client) recordServerProfile(session *mcp.ClientSession) {
 		profile.Title = promptSafeText(info.Title, maxServerNameRunes)
 		profile.Description = promptSafeText(info.Description, maxServerDescriptionRunes)
 	}
-	if c.useSharedToolsCache() {
+	if sharedToolsCacheAllowedForServer(c.config) {
 		profile.Instructions = promptSafeText(result.Instructions, maxServerInstructionsRunes)
 	}
 
