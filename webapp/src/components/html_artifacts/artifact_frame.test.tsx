@@ -11,6 +11,7 @@ import {getArtifactToken} from '@/client';
 import {getConsentDecision, isConsentPromptPending, resetConsentStore} from './artifact_broker';
 import ArtifactConsentPrompt, {CONSENT_ARM_DELAY_MS} from './artifact_consent_prompt';
 import ArtifactFrame, {HEARTBEAT_HIDE_MS, HEARTBEAT_STOP_MS} from './artifact_frame';
+import {NUDGE_MS} from './artifact_interact_overlay';
 import HTMLArtifactCard, {resetArtifactRunDecisions} from './html_artifact_card';
 import HTMLArtifactFullscreen from './html_artifact_fullscreen';
 
@@ -694,6 +695,77 @@ describe('ArtifactFrame focus guard', () => {
         expect(screen.getByTestId('html-artifact-unresponsive')).toBeTruthy();
         expect(document.activeElement).toBe(composer);
         expect(stopped()).toBeNull();
+    });
+});
+
+describe('ArtifactFrame interact hint', () => {
+    const interact = () => screen.queryByTestId('html-artifact-interact');
+    const hint = () => screen.queryByTestId('html-artifact-interact-hint');
+    let composer: HTMLTextAreaElement;
+    beforeEach(() => {
+        composer = addComposer();
+    });
+    afterEach(() => {
+        composer.remove();
+    });
+
+    const expectHintShown = () => {
+        expect(interact()).not.toBeNull();
+        const style = window.getComputedStyle(hint()!);
+        expect(style.opacity).not.toBe('0');
+        expect(style.visibility).not.toBe('hidden');
+        expect(style.display).not.toBe('none');
+        expect(hint()!.textContent).toBe('Click to interact');
+    };
+
+    test.each([
+        {name: 'on a frame no click started', startedByClick: false},
+        {name: 'after focus leaves an engaged frame for the page', startedByClick: true},
+    ])('the hint shows without hover or focus whenever the overlay does, $name', async ({startedByClick}) => {
+        await renderReadyFrame({startedByClick});
+        if (startedByClick) {
+            expect(interact()).toBeNull();
+            act(() => composer.focus());
+        }
+        expectHintShown();
+
+        trustedClick(interact()!);
+        expect(interact()).toBeNull();
+        act(() => composer.focus());
+        expectHintShown();
+    });
+
+    test.each([
+        {name: 'a mouse wheel', scroll: (el: HTMLElement) => fireEvent.wheel(el, {deltaY: 120})},
+        {name: 'a touch drag', scroll: (el: HTMLElement) => fireEvent.touchMove(el)},
+    ])('scrolling with $name over the overlay nudges the hint for a moment without stopping the page scroll', async ({scroll}) => {
+        await renderReadyFrame();
+        expect(interact()!.getAttribute('data-nudge')).toBe('false');
+
+        expect(scroll(interact()!)).toBe(true);
+        expect(interact()!.getAttribute('data-nudge')).toBe('true');
+        expect(hint()!.textContent).toBe('Click to scroll and interact');
+
+        // Each scroll keeps the nudge going.
+        advance(NUDGE_MS - 100);
+        expect(scroll(interact()!)).toBe(true);
+        advance(NUDGE_MS - 100);
+        expect(interact()!.getAttribute('data-nudge')).toBe('true');
+
+        advance(200);
+        expect(interact()!.getAttribute('data-nudge')).toBe('false');
+        expect(hint()!.textContent).toBe('Click to interact');
+        expect(interact()!.getAttribute('aria-label')).toBe('Interact with this artifact');
+    });
+
+    test('a wheel over the overlay keeps its default action', async () => {
+        await renderReadyFrame();
+        const wheel = new WheelEvent('wheel', {bubbles: true, cancelable: true, deltaY: 120});
+        act(() => {
+            interact()!.dispatchEvent(wheel);
+        });
+        expect(wheel.defaultPrevented).toBe(false);
+        expect(interact()!.getAttribute('data-nudge')).toBe('true');
     });
 });
 

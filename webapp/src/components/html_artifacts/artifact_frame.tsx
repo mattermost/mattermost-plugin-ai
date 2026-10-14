@@ -24,6 +24,7 @@ import {
     toArtifactUser,
 } from './artifact_broker';
 import ArtifactConsentPrompt from './artifact_consent_prompt';
+import ArtifactInteractOverlay from './artifact_interact_overlay';
 import {newArtifactNonce} from './artifact_token';
 import {downloadArtifact} from './download';
 
@@ -690,16 +691,7 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
                 />
             )}
             {visible && !engaged && (
-                <InteractOverlay
-                    type='button'
-                    aria-label={intl.formatMessage({defaultMessage: 'Interact with this artifact'})}
-                    onClick={engage}
-                    data-testid='html-artifact-interact'
-                >
-                    <InteractHint aria-hidden='true'>
-                        <FormattedMessage defaultMessage='Click to interact'/>
-                    </InteractHint>
-                </InteractOverlay>
+                <ArtifactInteractOverlay onEngage={engage}/>
             )}
             {stopReason && (
                 <Overlay
@@ -835,49 +827,6 @@ const Frame = styled.iframe<{$hidden: boolean}>`
     border: none;
     background: var(--center-channel-bg);
     visibility: ${(props) => (props.$hidden ? 'hidden' : 'visible')};
-`;
-
-const InteractHint = styled.span`
-    padding: 4px 10px;
-    border-radius: 12px;
-    background: rgba(var(--center-channel-color-rgb), 0.8);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
-    color: var(--center-channel-bg);
-    font-size: 12px;
-    font-weight: 600;
-    line-height: 16px;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.15s ease-out;
-`;
-
-// Transparent: the artifact stays fully visible (and readable by assistive
-// technology) underneath; only the hint shows on hover or keyboard focus.
-const InteractOverlay = styled.button`
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: flex-end;
-    justify-content: center;
-    width: 100%;
-    margin: 0;
-    padding: 0 0 12px;
-    border: none;
-    background: transparent;
-    cursor: pointer;
-
-    &:focus {
-        outline: none;
-    }
-
-    &:focus-visible {
-        box-shadow: inset 0 0 0 2px var(--button-bg);
-    }
-
-    &:hover ${InteractHint},
-    &:focus-visible ${InteractHint} {
-        opacity: 1;
-    }
 `;
 
 const Overlay = styled.div`
