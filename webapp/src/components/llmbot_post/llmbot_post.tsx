@@ -655,9 +655,9 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
     let awaitingRequesterMessage: string;
     if (awaitingAnswer) {
         awaitingRequesterMessage = requesterUsername ? intl.formatMessage(
-            {defaultMessage: 'Waiting for @{username} to respond'},
+            {defaultMessage: 'Waiting for an answer from @{username}'},
             {username: requesterUsername},
-        ) : intl.formatMessage({defaultMessage: 'Waiting for the requester to respond'});
+        ) : intl.formatMessage({defaultMessage: 'Waiting for an answer from the requester'});
     } else {
         awaitingRequesterMessage = requesterUsername ? intl.formatMessage(
             {defaultMessage: 'Waiting for @{username} to approve tool use'},

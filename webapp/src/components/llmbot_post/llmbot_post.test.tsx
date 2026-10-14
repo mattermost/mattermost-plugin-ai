@@ -872,7 +872,7 @@ describe('LLMBotPost rounds awaiting a decision', () => {
 
         renderPost();
 
-        expect(screen.getByTestId('llm-bot-tool-activity-current').textContent).toBe('Waiting for @alice to respond');
+        expect(screen.getByTestId('llm-bot-tool-activity-current').textContent).toBe('Waiting for an answer from @alice');
     });
 
     test('does not show the waiting line to the requester', () => {
