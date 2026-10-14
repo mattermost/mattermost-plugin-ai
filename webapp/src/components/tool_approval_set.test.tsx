@@ -130,6 +130,13 @@ describe('ToolApprovalSet', () => {
         expect(getToolCardProps('tool_live').isCollapsed).toBe(true);
     });
 
+    test('expands an argument-free result for the requester before ownership loads', () => {
+        renderComponent([makeTool({id: 'tool_done', status: ToolCallStatus.Success, result: 'channel info'})], 'result', false);
+
+        expect(getToolCardProps('tool_done').isCollapsed).toBe(false);
+        expect(getToolCardProps('tool_done').awaitingRequester).toBe(false);
+    });
+
     test('flags an interrupted auto-run round as awaiting the requester for an onlooker', () => {
         renderComponent([makeTool({id: 'tool_auto_pending', status: ToolCallStatus.Pending, would_auto_execute: true})], 'call', false);
 
