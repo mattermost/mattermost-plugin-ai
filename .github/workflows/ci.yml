@@ -171,55 +171,6 @@ jobs:
         with:
           go-version-file: 'go.mod'
 
-      - name: "TEMP: probe OpenAI model access"
-        if: matrix.provider.name == 'openai'
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: |
-          for m in gpt-6.1-sol gpt-6-sol gpt-6-luna gpt-5.6-terra gpt-5.6-sol gpt-5.4 gpt-5.2; do
-            for ep in responses chat; do
-              if [ "$ep" = responses ]; then
-                url=https://api.openai.com/v1/responses; body="{\"model\":\"$m\",\"input\":\"hi\",\"max_output_tokens\":16}"
-              else
-                url=https://api.openai.com/v1/chat/completions; body="{\"model\":\"$m\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_completion_tokens\":16}"
-              fi
-              code=$(curl -s -o /tmp/probe.json -w '%{http_code}' "$url" -H "Authorization: Bearer $OPENAI_API_KEY" -H 'Content-Type: application/json' -d "$body")
-              echo "$m $ep $code $(jq -r '[.error.type, .error.code] | map(select(. != null)) | join(" ") // ""' /tmp/probe.json)"
-            done
-          done
-
-      - name: "TEMP: probe Azure deployments"
-        if: matrix.provider.name == 'azure'
-        env:
-          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
-          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
-        run: |
-          ep="${AZURE_OPENAI_ENDPOINT%/}"
-          code=$(curl -s -o /tmp/probe.json -w '%{http_code}' "$ep/openai/deployments?api-version=2022-12-01" -H "api-key: $AZURE_OPENAI_API_KEY")
-          echo "list deployments $code"
-          jq -r '.data[]? | "deployment \(.id) model \(.model)"' /tmp/probe.json
-          for m in gpt-6.1-sol; do
-            code=$(curl -s -o /tmp/probe.json -w '%{http_code}' "$ep/openai/v1/responses" -H "api-key: $AZURE_OPENAI_API_KEY" -H 'Content-Type: application/json' -d "{\"model\":\"$m\",\"input\":\"hi\",\"max_output_tokens\":16}")
-            echo "$m responses $code $(jq -r '.error.code // ""' /tmp/probe.json)"
-            code=$(curl -s -o /tmp/probe.json -w '%{http_code}' "$ep/openai/v1/chat/completions" -H "api-key: $AZURE_OPENAI_API_KEY" -H 'Content-Type: application/json' -d "{\"model\":\"$m\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_completion_tokens\":16}")
-            echo "$m chat $code $(jq -r '.error.code // ""' /tmp/probe.json)"
-          done
-
-      - name: "TEMP: probe Bedrock model access"
-        if: matrix.provider.name == 'bedrock'
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_BEDROCK_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_BEDROCK_ACCESS_KEY_SECRET }}
-          AWS_REGION: ${{ vars.AWS_BEDROCK_REGION || 'us-east-1' }}
-        run: |
-          for m in global.anthropic.claude-sonnet-5-5 us.anthropic.claude-sonnet-5-5 global.anthropic.claude-sonnet-4-6; do
-            if aws bedrock-runtime converse --model-id "$m" --messages '[{"role":"user","content":[{"text":"hi"}]}]' --inference-config maxTokens=16 > /dev/null 2> /tmp/probe.txt; then
-              echo "$m ok"
-            else
-              echo "$m $(tr '\n' ' ' < /tmp/probe.txt | sed -E 's/[0-9]{12}/<account>/g' | cut -c1-300)"
-            fi
-          done
-
       - name: Run ${{ matrix.provider.display_name }} evaluations
         # Model variables are optional overrides; when unset, the defaults in
         # evals/evals.go apply so there is a single place to bump models.
