@@ -268,12 +268,12 @@ func reportCommand() {
 	r := buildReport(results, baseline, reportProviders)
 
 	comment := r.commentMarkdown()
-	if err := os.WriteFile(reportCommentFile, []byte(comment), 0644); err != nil {
+	if err := os.WriteFile(reportCommentFile, []byte(comment), 0600); err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing %s: %v\n", reportCommentFile, err)
 		os.Exit(1)
 	}
 	summary := r.summaryMarkdown()
-	if err := os.WriteFile(reportSummaryFile, []byte(summary), 0644); err != nil {
+	if err := os.WriteFile(reportSummaryFile, []byte(summary), 0600); err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing %s: %v\n", reportSummaryFile, err)
 		os.Exit(1)
 	}
