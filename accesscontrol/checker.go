@@ -14,6 +14,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/telemetry"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -100,6 +101,7 @@ func (c *Checker) CanUseAgent(ctx context.Context, userID string, cfg *llm.BotCo
 		telemetry.UserID.String(userID),
 		telemetry.ABACResourceType.String(ResourceTypeAgent),
 		telemetry.ABACResourceID.String(cfg.ID),
+		telemetry.ABACResourceName.String(cfg.DisplayName),
 	))
 	defer span.End()
 
@@ -110,10 +112,10 @@ func (c *Checker) CanUseAgent(ctx context.Context, userID string, cfg *llm.BotCo
 		return nil
 	}
 	deny := func() error {
-		err := fmt.Errorf("agent %s: %w", cfg.ID, ErrAccessDenied)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "access denied")
-		return err
+		// A policy denial is an expected decision, not a failure: it is
+		// recorded through ABACDenied, and the span status stays unset.
+		span.SetAttributes(telemetry.ABACDenied.Bool(true))
+		return fmt.Errorf("agent %s: %w", cfg.ID, ErrAccessDenied)
 	}
 	attributeBased := cfg.UserAccessLevel == llm.UserAccessLevelAttributeBased
 
@@ -121,6 +123,7 @@ func (c *Checker) CanUseAgent(ctx context.Context, userID string, cfg *llm.BotCo
 	if err != nil {
 		logError(c.log, "ABAC agent evaluation failed", "agent_id", cfg.ID, "error", err.Error())
 		span.RecordError(err)
+		span.SetStatus(codes.Error, "access control evaluation failed")
 		return deny()
 	}
 	span.SetAttributes(telemetry.ABACOutcome.String(outcomeAttribute(*decision)))
@@ -139,26 +142,46 @@ func (c *Checker) CanUseAgent(ctx context.Context, userID string, cfg *llm.BotCo
 	return runLegacy()
 }
 
+type resourceNameKey struct{}
+
+// WithResourceName returns a ctx that labels the next policy check's span with
+// the resource's display name (e.g. an MCP server name), so a denied resource
+// can be identified without looking its ID up in the config.
+func WithResourceName(ctx context.Context, name string) context.Context {
+	if name == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, resourceNameKey{}, name)
+}
+
+func resourceNameFromContext(ctx context.Context) string {
+	name, _ := ctx.Value(resourceNameKey{}).(string)
+	return name
+}
+
 // canUseResource: allow (including no_policy) permits; deny or evaluation failure denies.
 func (c *Checker) canUseResource(ctx context.Context, spanName, userID, resourceType, resourceID string) error {
-	ctx, span := telemetry.Tracer().Start(ctx, spanName, trace.WithAttributes(
+	attrs := []attribute.KeyValue{
 		telemetry.UserID.String(userID),
 		telemetry.ABACResourceType.String(resourceType),
 		telemetry.ABACResourceID.String(resourceID),
-	))
+	}
+	if name := resourceNameFromContext(ctx); name != "" {
+		attrs = append(attrs, telemetry.ABACResourceName.String(name))
+	}
+	ctx, span := telemetry.Tracer().Start(ctx, spanName, trace.WithAttributes(attrs...))
 	defer span.End()
 
 	deny := func() error {
-		err := fmt.Errorf("%s %s: %w", resourceType, resourceID, ErrAccessDenied)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "access denied")
-		return err
+		span.SetAttributes(telemetry.ABACDenied.Bool(true))
+		return fmt.Errorf("%s %s: %w", resourceType, resourceID, ErrAccessDenied)
 	}
 
 	decision, err := c.evaluate(ctx, userID, resourceType, resourceID)
 	if err != nil {
 		logError(c.log, "ABAC resource evaluation failed", "resource_type", resourceType, "resource_id", resourceID, "error", err.Error())
 		span.RecordError(err)
+		span.SetStatus(codes.Error, "access control evaluation failed")
 		return deny()
 	}
 	span.SetAttributes(telemetry.ABACOutcome.String(outcomeAttribute(*decision)))
@@ -188,9 +211,6 @@ const availabilityProbeExpression = "true"
 // A policy-read probe is unsound: the server 404s an absent row before consulting
 // license or ABAC config, so an unlicensed enterprise binary would look available.
 func (c *Checker) IsAvailable(ctx context.Context, actingUserID string) bool {
-	_, span := telemetry.Tracer().Start(ctx, "abac is_available")
-	defer span.End()
-
 	c.availabilityMu.Lock()
 	if !c.availabilityChecked.IsZero() && time.Since(c.availabilityChecked) < availabilityCacheTTL {
 		cached := c.availabilityValue
@@ -198,6 +218,10 @@ func (c *Checker) IsAvailable(ctx context.Context, actingUserID string) bool {
 		return cached
 	}
 	c.availabilityMu.Unlock()
+
+	// Only the uncached probe gets a span; cache hits do no work worth tracing.
+	_, span := telemetry.Tracer().Start(ctx, "abac is_available")
+	defer span.End()
 
 	// Probe without the lock so a slow plugin RPC does not convoy other callers.
 	available := false

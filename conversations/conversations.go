@@ -23,6 +23,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/telemetry"
 	"github.com/mattermost/mattermost-plugin-agents/v2/toolrunner"
 	"github.com/mattermost/mattermost/server/public/model"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const ThreadIDProp = "referenced_thread"
@@ -226,8 +227,17 @@ func (c *Conversations) processDMRequest(
 	maxToolTurns int,
 	beforeProvider func(),
 ) (*DMStreamResult, error) {
-	ctx, span := telemetry.Tracer().Start(ctx, "process dm request")
-	defer span.End()
+	ctx, span := telemetry.Tracer().Start(ctx, "process dm request",
+		trace.WithAttributes(telemetry.ConversationID.String(convID)),
+	)
+	// The tool loop keeps running after this returns; on success the span
+	// ends when the returned stream closes so it covers that work.
+	spanHandedOff := false
+	defer func() {
+		if !spanHandedOff {
+			span.End()
+		}
+	}()
 
 	if c.convService == nil {
 		return nil, fmt.Errorf("conversation service not configured")
@@ -266,7 +276,28 @@ func (c *Conversations) processDMRequest(
 		stream = mmtools.DecorateStreamWithAnnotations(stream, webSearchData, nil)
 	}
 
-	return &DMStreamResult{Stream: stream}, nil
+	spanHandedOff = true
+	return &DMStreamResult{Stream: endSpanOnStreamClose(stream, span)}, nil
+}
+
+// endSpanOnStreamClose forwards every event of stream and ends span when the
+// stream ends (an end or error event, or the channel closing), so a span
+// around lazily-produced work lasts as long as it. The span ends before the
+// terminal event is forwarded: consumers stop reading at that event, and
+// must not observe the span still open afterwards.
+func endSpanOnStreamClose(stream *llm.TextStreamResult, span trace.Span) *llm.TextStreamResult {
+	out := make(chan llm.TextStreamEvent)
+	go func() {
+		defer close(out)
+		defer span.End() // idempotent; covers a close without a terminal event
+		for event := range stream.Stream {
+			if event.Type == llm.EventTypeEnd || event.Type == llm.EventTypeError {
+				span.End()
+			}
+			out <- event
+		}
+	}()
+	return &llm.TextStreamResult{Stream: out}
 }
 
 // runToolLoop runs the ToolRunner over req, persisting each intermediate tool

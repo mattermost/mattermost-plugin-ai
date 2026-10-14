@@ -12,7 +12,6 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/mcp"
 	"github.com/mattermost/mattermost-plugin-agents/v2/telemetry"
 	"github.com/mattermost/mattermost-plugin-agents/v2/toolrunner/limits"
-	"go.opentelemetry.io/otel/trace"
 )
 
 // MaxToolRounds is the maximum number of tool-call-execute-recall iterations
@@ -157,7 +156,7 @@ func (r *ToolRunner) Run(
 
 	// Make the first LLM call synchronously so initialization errors
 	// (auth failures, rate limits, etc.) are returned directly.
-	firstStream, err := r.llm.ChatCompletion(ctx, request, currentOpts...)
+	firstStream, err := r.llm.ChatCompletion(telemetry.WithLLMRound(ctx, 0), request, currentOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("llm completion failed: %w", err)
 	}
@@ -196,7 +195,7 @@ func (r *ToolRunner) runLoop(
 		// For round > 0, make a new LLM call.
 		if round > 0 {
 			var err error
-			stream, err = r.llm.ChatCompletion(ctx, request, currentOpts...)
+			stream, err = r.llm.ChatCompletion(telemetry.WithLLMRound(ctx, round), request, currentOpts...)
 			if err != nil {
 				r.deliverToolTurns(result, onToolTurns)
 				output <- llm.TextStreamEvent{
@@ -418,24 +417,15 @@ func (r *ToolRunner) executeTools(ctx context.Context, toolCalls []llm.ToolCall,
 				resolveErr = fmt.Errorf("unknown tool %s", tc.Name)
 				break
 			}
-			toolCtx, span := telemetry.Tracer().Start(ctx, "resolve tool",
-				trace.WithAttributes(
-					telemetry.ToolName.String(lookup.RuntimeName),
-					telemetry.ToolID.String(tc.ID),
-				),
-			)
-			result, resolveErr = request.Context.Tools.ResolveTool(
-				toolCtx,
+			// executeTools only runs batches shouldExecute approved
+			// without asking the user.
+			result, resolveErr = request.Context.Tools.ResolveToolCall(
+				ctx,
 				lookup.RuntimeName,
+				llm.ToolCallInfo{ID: tc.ID, Execution: telemetry.ToolExecutionAuto},
 				func(args any) error { return json.Unmarshal(tc.Arguments, args) },
 				request.Context,
 			)
-			if resolveErr != nil {
-				span.SetAttributes(telemetry.ToolStatus.String("error"))
-			} else {
-				span.SetAttributes(telemetry.ToolStatus.String("success"))
-			}
-			span.End()
 		}
 
 		if resolveErr != nil {

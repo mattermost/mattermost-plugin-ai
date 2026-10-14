@@ -90,6 +90,8 @@ const defaultConfig: Config = {
     transcriptBackend: '',
     telemetryOutput: 'off',
     openTelemetryEndpoint: '',
+    openTelemetryTLS: false,
+    openTelemetryHeaders: '',
     enableTokenUsageLogging: false,
     enableCallSummary: false,
     allowedUpstreamHostnames: '',
@@ -396,6 +398,23 @@ const Config = (props: Props) => {
                             onChange={(e) => updateConfig({openTelemetryEndpoint: e.target.value})}
                             helptext={intl.formatMessage({defaultMessage: 'OTLP gRPC endpoint for trace export (e.g. localhost:4317).'})}
                             placeholder={'localhost:4317'}
+                        />
+                    )}
+                    {value.telemetryOutput === 'otlp' && (
+                        <BooleanItem
+                            label={intl.formatMessage({defaultMessage: 'Use TLS for OTLP Export'})}
+                            value={Boolean(value.openTelemetryTLS)}
+                            onChange={(to) => updateConfig({openTelemetryTLS: to})}
+                            helpText={intl.formatMessage({defaultMessage: 'Connect to the OTLP endpoint over TLS, verified against the system root certificates. Required by hosted collectors such as Grafana Cloud Tempo.'})}
+                        />
+                    )}
+                    {value.telemetryOutput === 'otlp' && (
+                        <TextItem
+                            label={intl.formatMessage({defaultMessage: 'OTLP Export Headers'})}
+                            type='password'
+                            value={value.openTelemetryHeaders || ''}
+                            onChange={(e) => updateConfig({openTelemetryHeaders: e.target.value})}
+                            helptext={intl.formatMessage({defaultMessage: 'Headers sent with every trace export, as comma-separated key=value pairs (e.g. Authorization=Basic <credentials>). Use with TLS so credentials are not sent in plaintext.'})}
                         />
                     )}
                     <BooleanItem

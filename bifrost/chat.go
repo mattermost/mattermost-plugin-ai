@@ -115,17 +115,14 @@ func (b *LLM) streamChat(ctx context.Context, request llm.CompletionRequest, cfg
 
 				// Check finish reason
 				if choice.FinishReason != nil {
+					span.SetAttributes(telemetry.LLMFinishReason.String(*choice.FinishReason))
 					switch *choice.FinishReason {
 					case "tool_calls":
-						// Convert buffered tool calls in index order
+						// Convert buffered tool calls in index order. They
+						// are emitted once the stream ends: providers send
+						// usage in a chunk after the finish reason, and
+						// returning here would drop it for every tool round.
 						toolCalls = flushToolCallBuffers(toolCallsBuffer, false)
-						if len(toolCalls) > 0 {
-							output <- llm.TextStreamEvent{
-								Type:  llm.EventTypeToolCalls,
-								Value: toolCalls,
-							}
-							return
-						}
 					case "stop":
 						// Emit reasoning end if we accumulated reasoning
 						reasoning.emitEnd(output)
@@ -148,11 +145,20 @@ func (b *LLM) streamChat(ctx context.Context, request llm.CompletionRequest, cfg
 		}
 	}
 
+	// Tool calls completed by a "tool_calls" finish reason.
+	if len(toolCalls) > 0 {
+		output <- llm.TextStreamEvent{
+			Type:  llm.EventTypeToolCalls,
+			Value: toolCalls,
+		}
+		return
+	}
+
 	// Emit any unsent reasoning
 	reasoning.emitEnd(output)
 
 	// If we have pending tool calls, emit them in index order
-	if len(toolCallsBuffer) > 0 && len(toolCalls) == 0 {
+	if len(toolCallsBuffer) > 0 {
 		toolCalls = flushToolCallBuffers(toolCallsBuffer, true)
 		if len(toolCalls) > 0 {
 			output <- llm.TextStreamEvent{
