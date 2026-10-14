@@ -138,7 +138,7 @@ jobs:
           fi
           # The pull_request checkout is a merge commit; its first parent is the base.
           changed=$(git diff --name-only HEAD^1 HEAD)
-          if grep -qvE '^(webapp/|e2e/|docs/|loadtest/|assets/|img/)|\.md$' <<< "$changed"; then
+          if [ -n "$changed" ] && grep -qvE '^(webapp/|e2e/|docs/|loadtest/|assets/|img/)|\.md$' <<< "$changed"; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
