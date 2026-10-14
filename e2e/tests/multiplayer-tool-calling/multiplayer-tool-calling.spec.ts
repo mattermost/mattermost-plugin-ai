@@ -411,8 +411,9 @@ test.describe('Multiplayer Tool Calling (Aimock)', () => {
             await expect(onlookerBot).toBeVisible({timeout: 30000});
 
             // Onlookers owe no decision, so the pending call folds into the
-            // activity area instead of rendering as an approval card.
-            await expectToolActivityCurrent(onlookerBot, getChannelInfoToolLabel);
+            // activity area instead of rendering as an approval card, and the
+            // status line says who the response is waiting on.
+            await expectToolActivityCurrent(onlookerBot, `Waiting for @${invokerUsername} to approve tool use`);
             await expect(onlookerBot.getByText('Working...', {exact: true})).toHaveCount(0);
             await expect(onlookerRhs.getByRole('button', {name: 'Accept'})).not.toBeVisible();
             await expect(onlookerRhs.getByRole('button', {name: 'Reject'})).not.toBeVisible();
@@ -553,7 +554,7 @@ test.describe('Multiplayer Tool Calling (Aimock)', () => {
             // Onlooker: the same round folds into the activity area, which
             // they can open, but its redacted card offers no expansion.
             const onlookerPost = onlookerPage.locator('#rhsContainer').locator('[data-testid="llm-bot-post"]').last();
-            await expectToolActivityCurrent(onlookerPost, getChannelInfoToolLabel);
+            await expectToolActivityCurrent(onlookerPost, `Waiting for @${invokerUsername} to approve tool use`);
             const onlookerRounds = await expandToolActivity(onlookerPost);
             const onlookerCard = onlookerRounds.locator(TOOL_CARD_SELECTOR).first();
             await expect(onlookerCard.getByText(getChannelInfoToolLabel, {exact: true})).toBeVisible({timeout: 30000});

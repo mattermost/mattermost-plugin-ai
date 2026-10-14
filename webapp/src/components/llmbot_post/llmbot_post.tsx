@@ -628,6 +628,31 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
         needsViewerDecision(anchorRound.toolCalls, anchorStage, mayBeRequester);
     const pendingDecisionRoundId = awaitingDecision ? anchorRound.id : undefined; // eslint-disable-line no-undefined
 
+    // Onlookers owe no decision, but should see that the requester does instead
+    // of an empty post. Tool calls reach them redacted; only statuses are used.
+    const requesterUserId = knownConversation?.user_id ?? (conversationId ? undefined : legacyRequester); // eslint-disable-line no-undefined
+    const isOnlooker = Boolean(requesterUserId) && requesterUserId !== currentUserId;
+    const isLivePending = lastRendered?.id === LIVE_ROUND_ID &&
+        selectDecisionToolCalls(lastRendered.toolCalls, 'call', true).length > 0;
+    let onlookerWaitRound: Round | null = null;
+    let onlookerWaitStage: ToolApprovalStage = 'done';
+    if (isLivePending) {
+        onlookerWaitRound = lastRendered;
+        onlookerWaitStage = 'call';
+    } else if (isPersistedAnchor) {
+        onlookerWaitRound = lastRendered;
+        onlookerWaitStage = persistedAnchorStage;
+    }
+    const awaitingRequester = isOnlooker && !isGenerationInProgress && onlookerWaitRound !== null &&
+        needsViewerDecision(onlookerWaitRound.toolCalls, onlookerWaitStage, true);
+    const requesterUsername = useSelector<GlobalState, string | undefined>(
+        (state) => (requesterUserId ? state.entities.users.profiles?.[requesterUserId]?.username : undefined), // eslint-disable-line no-undefined
+    );
+    const awaitingRequesterMessage = requesterUsername ? intl.formatMessage(
+        {defaultMessage: 'Waiting for @{username} to approve tool use'},
+        {username: requesterUsername},
+    ) : intl.formatMessage({defaultMessage: 'Waiting for the requester to approve tool use'});
+
     const reasoningLoadingRoundId = isReasoningLoading ? LIVE_ROUND_ID : undefined; // eslint-disable-line no-undefined
     const activity = useMemo(
         () => deriveActivity(renderedRounds, {pendingDecisionRoundId, reasoningLoadingRoundId, live: isGenerationInProgress}),
@@ -678,6 +703,13 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
         (precontent && (generating || renderedRounds.length === 0)) ||
         (conversationLoading && !generating && renderedRounds.length === 0);
 
+    let statusMessage: string | undefined;
+    if (awaitingRequester) {
+        statusMessage = awaitingRequesterMessage;
+    } else if (showWorking) {
+        statusMessage = precontentMessage;
+    }
+
     return (
         <PostBody
             data-testid='llm-bot-post'
@@ -691,14 +723,15 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
                 {permalinkView}
             </>
             }
-            {(showWorking || activity.items.length > 0) && (
+            {(showWorking || awaitingRequester || activity.items.length > 0) && (
                 <ToolActivityDisplay
                     activity={activity}
                     expanded={activityExpanded}
                     onToggleExpanded={setActivityExpanded}
-                    inProgress={isGenerationInProgress || awaitingDecision}
+                    inProgress={isGenerationInProgress || awaitingDecision || awaitingRequester}
                     working={isGenerationInProgress || progressPhase !== null}
-                    statusMessage={showWorking ? precontentMessage : undefined} // eslint-disable-line no-undefined
+                    statusMessage={statusMessage}
+                    statusWaiting={awaitingRequester}
                     renderRound={renderRound}
                 />
             )}
