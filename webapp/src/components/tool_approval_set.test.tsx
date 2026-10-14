@@ -135,6 +135,13 @@ describe('ToolApprovalSet', () => {
         expect(getToolCardProps('tool_pending').isCollapsed).toBe(true);
     });
 
+    test('expands and does not flag a pending call for the requester before ownership loads', () => {
+        renderComponent([makeTool({id: 'tool_pending', status: ToolCallStatus.Pending, arguments: {channel: 'town-square'}})], 'call', false);
+
+        expect(getToolCardProps('tool_pending').isCollapsed).toBe(false);
+        expect(getToolCardProps('tool_pending').awaitingRequester).toBe(false);
+    });
+
     test('does not flag calls as awaiting the requester for the requester', () => {
         renderComponent([makeTool({id: 'tool_pending', status: ToolCallStatus.Pending})], 'call', true);
 

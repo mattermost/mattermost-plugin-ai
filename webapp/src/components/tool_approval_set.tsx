@@ -80,6 +80,10 @@ const ToolApprovalSet: React.FC<ToolApprovalSetProps> = (props) => {
     const showArguments = props.toolCalls.some((call) => call.arguments != null);
     const showResults = props.toolCalls.some((call) => call.result != null);
 
+    // Only onlookers get redacted calls. Ownership can still be loading for
+    // the requester, so canApprove alone does not identify an onlooker.
+    const isRedacted = !showArguments && !showResults;
+
     // Approval is per pending tool. Earlier auto-approved tools in the same
     // response should not suppress controls for later manual ones.
     const effectiveCanApprove = props.canApprove;
@@ -92,14 +96,14 @@ const ToolApprovalSet: React.FC<ToolApprovalSetProps> = (props) => {
     // Calls the requester still owes a decision on, flagged for onlookers
     // so a pending card reads as waiting rather than running.
     const awaitingRequesterIDSet = useMemo(() => {
-        if (props.canApprove) {
+        if (props.canApprove || !isRedacted) {
             return new Set<string>();
         }
         const awaiting = isInterruptedAutoRound ?
             props.toolCalls.filter((call) => call.status === ToolCallStatus.Pending) :
             selectDecisionToolCalls(props.toolCalls, props.approvalStage, true);
         return new Set(awaiting.map((call) => call.id));
-    }, [props.toolCalls, props.approvalStage, props.canApprove, isInterruptedAutoRound]);
+    }, [props.toolCalls, props.approvalStage, props.canApprove, isRedacted, isInterruptedAutoRound]);
 
     const decisionToolIDSet = useMemo(() => {
         return new Set(decisionToolCalls.map((call) => call.id));
@@ -258,8 +262,8 @@ const ToolApprovalSet: React.FC<ToolApprovalSetProps> = (props) => {
         // they are being asked to approve. Executed tools in the result
         // stage also expand so the output is visible during the share
         // decision. Otherwise collapse.
-        // Onlookers get redacted calls, so there is nothing to expand into.
-        const defaultExpanded = props.canApprove && (isCallStage ?
+        // Redacted calls have nothing to expand into.
+        const defaultExpanded = !isRedacted && (isCallStage ?
             tool.status === ToolCallStatus.Pending :
             isResultStage && (tool.status === ToolCallStatus.Success ||
                 tool.status === ToolCallStatus.Error));
