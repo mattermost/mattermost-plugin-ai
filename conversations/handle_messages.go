@@ -554,7 +554,11 @@ func (c *Conversations) streamDMConversation(
 
 	stream := c.decorateStreamWithCreatedFiles(ctx, bot, dmStream.Stream, responsePost, nil, llmContext, llmContext)
 
-	if streamErr := c.streamToExistingPost(ctx, stream, responsePost, postingUser, channel, false, func() { runSpan.End() }); streamErr != nil {
+	if streamErr := c.streamToExistingPost(ctx, stream, responsePost, postingUser, channel, false, func() {
+		dmStream.release()
+		runSpan.End()
+	}); streamErr != nil {
+		dmStream.release()
 		return fmt.Errorf("unable to stream response: %w", streamErr)
 	}
 	runHandedOff = true

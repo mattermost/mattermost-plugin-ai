@@ -6,6 +6,7 @@ package conversations
 import (
 	stdcontext "context"
 	"fmt"
+	"sync"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/bots"
 	"github.com/mattermost/mattermost-plugin-agents/v2/conversation"
@@ -200,6 +201,9 @@ func (c *Conversations) createOrGetDMConversation(
 // DMStreamResult is the return value of ProcessDMRequest.
 type DMStreamResult struct {
 	Stream *llm.TextStreamResult
+	// release ends the request's span and stops forwarding Stream. Call it
+	// once the consumer stops reading, including when it never starts.
+	release func()
 }
 
 // ProcessDMRequest builds a completion request from the conversation and
@@ -277,7 +281,8 @@ func (c *Conversations) processDMRequest(
 	}
 
 	spanHandedOff = true
-	return &DMStreamResult{Stream: endSpanOnStreamClose(stream, span)}, nil
+	wrapped, release := endSpanOnStreamClose(stream, span)
+	return &DMStreamResult{Stream: wrapped, release: release}, nil
 }
 
 // endSpanOnStreamClose forwards every event of stream and ends span when the
@@ -285,8 +290,15 @@ func (c *Conversations) processDMRequest(
 // around lazily-produced work lasts as long as it. The span ends before the
 // terminal event is forwarded: consumers stop reading at that event, and
 // must not observe the span still open afterwards.
-func endSpanOnStreamClose(stream *llm.TextStreamResult, span trace.Span) *llm.TextStreamResult {
+//
+// The returned release ends the span and stops forwarding. A consumer that
+// stops reading early (a canceled reply) or never starts must call it, or
+// the forwarder blocks on its next send and the span is never exported.
+func endSpanOnStreamClose(stream *llm.TextStreamResult, span trace.Span) (*llm.TextStreamResult, func()) {
 	out := make(chan llm.TextStreamEvent)
+	done := make(chan struct{})
+	var once sync.Once
+	release := func() { once.Do(func() { close(done) }) }
 	go func() {
 		defer close(out)
 		defer span.End() // idempotent; covers a close without a terminal event
@@ -294,10 +306,14 @@ func endSpanOnStreamClose(stream *llm.TextStreamResult, span trace.Span) *llm.Te
 			if event.Type == llm.EventTypeEnd || event.Type == llm.EventTypeError {
 				span.End()
 			}
-			out <- event
+			select {
+			case out <- event:
+			case <-done:
+				return
+			}
 		}
 	}()
-	return &llm.TextStreamResult{Stream: out}
+	return &llm.TextStreamResult{Stream: out}, release
 }
 
 // runToolLoop runs the ToolRunner over req, persisting each intermediate tool
