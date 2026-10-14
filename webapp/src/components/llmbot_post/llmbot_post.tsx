@@ -23,7 +23,7 @@ import {isValidId} from '@/utils/ids';
 import {ServerToolUse} from '@/types/conversation';
 
 import {needsViewerDecision, selectDecisionToolCalls} from '../tool_decisions';
-import {ToolApprovalStage, ToolCall} from '../tool_types';
+import {ToolApprovalStage, ToolCall, ToolCallStatus} from '../tool_types';
 import {Annotation} from '../citations/types';
 
 import {
@@ -648,10 +648,22 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
     const requesterUsername = useSelector<GlobalState, string | undefined>(
         (state) => (requesterUserId ? state.entities.users.profiles?.[requesterUserId]?.username : undefined), // eslint-disable-line no-undefined
     );
-    const awaitingRequesterMessage = requesterUsername ? intl.formatMessage(
-        {defaultMessage: 'Waiting for @{username} to approve tool use'},
-        {username: requesterUsername},
-    ) : intl.formatMessage({defaultMessage: 'Waiting for the requester to approve tool use'});
+
+    // A question to the requester is answered, not approved.
+    const awaitingAnswer = awaitingRequester && onlookerWaitRound !== null && onlookerWaitStage === 'call' &&
+        onlookerWaitRound.toolCalls.some((call) => Boolean(call.user_interaction) && call.status === ToolCallStatus.Pending);
+    let awaitingRequesterMessage: string;
+    if (awaitingAnswer) {
+        awaitingRequesterMessage = requesterUsername ? intl.formatMessage(
+            {defaultMessage: 'Waiting for @{username} to respond'},
+            {username: requesterUsername},
+        ) : intl.formatMessage({defaultMessage: 'Waiting for the requester to respond'});
+    } else {
+        awaitingRequesterMessage = requesterUsername ? intl.formatMessage(
+            {defaultMessage: 'Waiting for @{username} to approve tool use'},
+            {username: requesterUsername},
+        ) : intl.formatMessage({defaultMessage: 'Waiting for the requester to approve tool use'});
+    }
 
     const reasoningLoadingRoundId = isReasoningLoading ? LIVE_ROUND_ID : undefined; // eslint-disable-line no-undefined
     const activity = useMemo(

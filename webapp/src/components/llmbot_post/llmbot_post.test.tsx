@@ -863,6 +863,18 @@ describe('LLMBotPost rounds awaiting a decision', () => {
         jest.useRealTimers();
     });
 
+    test('tells an onlooker the requester owes an answer to a question', () => {
+        const conversation = conversationAwaitingApproval('requester_1');
+        const anchorTurn = conversation.turns[conversation.turns.length - 1];
+        anchorTurn.content = [{type: 'tool_use', id: 'tc_q', name: 'AskUserQuestion', status: 'pending', user_interaction: 'select'}];
+        mockUseConversation.mockReturnValue({conversation, loading: false, error: null});
+        withRequesterProfile();
+
+        renderPost();
+
+        expect(screen.getByTestId('llm-bot-tool-activity-current').textContent).toBe('Waiting for @alice to respond');
+    });
+
     test('does not show the waiting line to the requester', () => {
         mockUseConversation.mockReturnValue({conversation: conversationAwaitingApproval(), loading: false, error: null});
 
