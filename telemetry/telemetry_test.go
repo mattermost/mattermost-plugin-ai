@@ -242,6 +242,8 @@ func TestParseHeaders(t *testing.T) {
 		{name: "empty", raw: "", want: map[string]string{}},
 		{name: "single", raw: "Authorization=Basic abc==", want: map[string]string{"Authorization": "Basic abc=="}},
 		{name: "multiple with spaces", raw: " X-Scope-OrgID = tenant , Authorization=Bearer t ", want: map[string]string{"X-Scope-OrgID": "tenant", "Authorization": "Bearer t"}},
+		{name: "percent-encoded value", raw: "X-Token=a%2Cb%3Dc", want: map[string]string{"X-Token": "a,b=c"}},
+		{name: "bad percent-encoding", raw: "X-Token=a%zz", wantErr: true},
 		{name: "missing separator", raw: "Authorization", wantErr: true},
 		{name: "missing key", raw: "=value", wantErr: true},
 	}

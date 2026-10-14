@@ -673,11 +673,17 @@ func (p *Plugin) applyTelemetryConfig() {
 		return
 	}
 
-	headers, parseErr := telemetry.ParseHeaders(otlp.headers)
-	if parseErr != nil {
-		// The error names the bad pair's position only, never its value.
-		p.pluginAPI.Log.Error("Failed to initialize OpenTelemetry: invalid OTLP headers", "error", parseErr)
-		return
+	// Headers only matter for OTLP; a malformed value must not block
+	// switching to another mode.
+	var headers map[string]string
+	if mode == telemetry.OutputModeOTLP {
+		var parseErr error
+		headers, parseErr = telemetry.ParseHeaders(otlp.headers)
+		if parseErr != nil {
+			// The error names the bad pair's position only, never its value.
+			p.pluginAPI.Log.Error("Failed to initialize OpenTelemetry: invalid OTLP headers", "error", parseErr)
+			return
+		}
 	}
 
 	if p.telemetryShutdown != nil {

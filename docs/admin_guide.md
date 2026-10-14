@@ -559,7 +559,7 @@ For production, send traces to your existing OpenTelemetry Collector or directly
 By default the exporter connects over plaintext gRPC, which suits a collector on the same host or private network. For a collector that requires TLS or credentials, such as hosted Grafana Tempo:
 
 - Enable **Use TLS for OTLP Export** (`openTelemetryTLS`). The endpoint's certificate is verified against the system root certificates.
-- Set **OTLP Export Headers** (`openTelemetryHeaders`) to the headers the collector expects, as comma-separated `key=value` pairs in the `OTEL_EXPORTER_OTLP_HEADERS` format, for example `Authorization=Basic <base64 of instance-id:token>`. The value is a credential: it's stored with the plugin configuration like other API keys, and it's never written to logs, spans, or audit records. Use it with TLS, or the credentials are sent in plaintext.
+- Set **OTLP Export Headers** (`openTelemetryHeaders`) to the headers the collector expects, as comma-separated `key=value` pairs in the `OTEL_EXPORTER_OTLP_HEADERS` format, for example `Authorization=Basic <base64 of instance-id:token>`. Percent-encode commas in values as `%2C`. The value is a credential: it's stored with the plugin configuration like other API keys, and it's never written to logs, spans, or audit records. Use it with TLS, or the credentials are sent in plaintext.
 
 ```json
 {

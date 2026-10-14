@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -64,7 +65,7 @@ type Options struct {
 }
 
 // ParseHeaders parses OTLP headers in the OTEL_EXPORTER_OTLP_HEADERS format:
-// comma-separated key=value pairs. The error never echoes a value, since
+// comma-separated key=value pairs with percent-encoded values. The error never echoes a value, since
 // values are credentials.
 func ParseHeaders(raw string) (map[string]string, error) {
 	headers := map[string]string{}
@@ -78,7 +79,12 @@ func ParseHeaders(raw string) (map[string]string, error) {
 		if !ok || key == "" {
 			return nil, fmt.Errorf("invalid OTLP header at position %d: expected key=value", i+1)
 		}
-		headers[key] = strings.TrimSpace(value)
+		// Values are percent-encoded in this format (e.g. %2C for a comma).
+		decoded, err := url.PathUnescape(strings.TrimSpace(value))
+		if err != nil {
+			return nil, fmt.Errorf("invalid OTLP header at position %d: bad percent-encoding", i+1)
+		}
+		headers[key] = decoded
 	}
 	return headers, nil
 }
