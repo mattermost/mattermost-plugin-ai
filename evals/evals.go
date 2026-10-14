@@ -4,12 +4,15 @@
 package evals
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/bifrost"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
@@ -17,14 +20,15 @@ import (
 )
 
 // Default models for each provider. Update these when bumping model versions,
-// together with the matching fallbacks in .github/workflows/ci.yml.
+// and add the model's price to modelPrices in usage.go.
 const (
 	DefaultOpenAIModel    = "gpt-5.6-terra"
 	DefaultAnthropicModel = "claude-sonnet-5-5"
-	DefaultAzureModel     = "gpt-5.6-terra"
-	DefaultMistralModel   = "mistral-large-latest"
-	DefaultBedrockModel   = "global.anthropic.claude-sonnet-5-5"
-	DefaultCohereModel    = "command-a-plus-05-2026"
+	// DefaultAzureModel is the deployment name in the CI Azure OpenAI resource.
+	DefaultAzureModel   = "gpt-6.1-sol"
+	DefaultMistralModel = "mistral-large-latest"
+	DefaultBedrockModel = "global.anthropic.claude-sonnet-5-5"
+	DefaultCohereModel  = "command-a-plus-05-2026"
 
 	// DefaultGraderModel is pinned separately from DefaultOpenAIModel so that
 	// bumping the model under test does not silently change the judge.
@@ -54,7 +58,23 @@ type Eval struct {
 	GraderLLM llm.LanguageModel
 	Prompts   *llm.Prompts
 
-	runNumber int
+	Provider    string
+	Model       string
+	GraderModel string
+
+	agent       roleModel
+	grader      roleModel
+	agentMeter  *usageMeter
+	graderMeter *usageMeter
+	runNumber   int
+}
+
+// roleModel is the unmetered model behind one role, used for the preflight.
+type roleModel struct {
+	role     string
+	provider string
+	model    string
+	llm      llm.LanguageModel
 }
 
 // simpleProviders describes providers that need only an API key and a model.
@@ -126,6 +146,8 @@ func serviceConfigFor(providerName string, modelOverride string) (llm.ServiceCon
 			APIKey:       apiKey,
 			APIURL:       apiURL,
 			DefaultModel: resolveModel(modelOverride, "AZURE_OPENAI_MODEL", DefaultAzureModel),
+			// New services default to the Responses API in the admin UI.
+			UseResponsesAPI: true,
 		}, nil
 
 	case "openaicompatible":
@@ -167,23 +189,23 @@ func serviceConfigFor(providerName string, modelOverride string) (llm.ServiceCon
 
 // createProvider builds the provider through the same bifrost service and
 // agent construction the plugin uses for configured agents.
-func createProvider(providerName string, modelOverride string, agent llm.BotConfig) (llm.LanguageModel, error) {
+func createProvider(providerName string, modelOverride string, agent llm.BotConfig) (roleModel, error) {
 	serviceConfig, err := serviceConfigFor(providerName, modelOverride)
 	if err != nil {
-		return nil, err
+		return roleModel{}, err
 	}
 
 	client, err := bifrost.NewServiceClient(serviceConfig, nil)
 	if err != nil {
-		return nil, err
+		return roleModel{}, err
 	}
 
 	agentLLM, err := client.ForAgent(agent)
 	if err != nil {
 		client.Shutdown()
-		return nil, err
+		return roleModel{}, err
 	}
-	return agentLLM, nil
+	return roleModel{provider: strings.ToLower(providerName), model: serviceConfig.DefaultModel, llm: agentLLM}, nil
 }
 
 func NewEval() (*Eval, error) {
@@ -200,27 +222,38 @@ func NewEvalWithProvider(providerName string) (*Eval, error) {
 	}
 
 	// Create provider (uses environment variables)
-	provider, err := createProvider(providerName, "", agentUnderTest)
+	agent, err := createProvider(providerName, "", agentUnderTest)
 	if err != nil {
 		return nil, err
 	}
+	agent.role = "model under test"
 
 	// Setup grader LLM (separate from main LLM)
-	graderLLM, err := createGraderLLM()
+	grader, err := createGraderLLM()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create grader LLM: %w", err)
 	}
+	grader.role = "grader"
 
+	agentMeter := newUsageMeter(agent.model)
+	graderMeter := newUsageMeter(grader.model)
 	return &Eval{
-		Prompts:   prompts,
-		LLM:       provider,
-		GraderLLM: graderLLM,
+		Prompts:     prompts,
+		LLM:         &meteredLLM{LanguageModel: agent.llm, meter: agentMeter},
+		GraderLLM:   &meteredLLM{LanguageModel: grader.llm, meter: graderMeter},
+		Provider:    agent.provider,
+		Model:       agent.model,
+		GraderModel: grader.model,
+		agent:       agent,
+		grader:      grader,
+		agentMeter:  agentMeter,
+		graderMeter: graderMeter,
 	}, nil
 }
 
 // createGraderLLM creates a separate LLM for grading based on environment variables.
 // Defaults to OpenAI if not specified.
-func createGraderLLM() (llm.LanguageModel, error) {
+func createGraderLLM() (roleModel, error) {
 	graderProvider := os.Getenv("GRADER_LLM_PROVIDER")
 	if graderProvider == "" {
 		graderProvider = "openai"
@@ -279,12 +312,67 @@ func Run(t *testing.T, name string, f func(e *EvalT)) {
 func runOnce(e *EvalT, f func(e *EvalT)) {
 	e.recorded = 0
 	e.lastFailure = ""
+	e.agentMeter.reset()
+	e.graderMeter.reset()
 	defer func() {
 		if e.recorded == 0 && e.lastFailure != "" {
 			recordError(e, e.lastFailure)
 		}
+		recordUsage(e)
 	}()
+
+	for _, role := range []roleModel{e.agent, e.grader} {
+		if err := preflight(role); err != nil {
+			e.Errorf("%v", err)
+			e.FailNow()
+		}
+	}
 	f(e)
+}
+
+var (
+	preflightMu      sync.Mutex
+	preflightResults = map[string]error{}
+)
+
+// preflight sends one tiny request per provider and model, once per test
+// binary, so a credential or model-access problem fails every eval at once
+// with an error that names the model instead of repeating per eval.
+func preflight(role roleModel) error {
+	key := role.provider + "/" + role.model
+	preflightMu.Lock()
+	defer preflightMu.Unlock()
+	if err, done := preflightResults[key]; done {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), preflightTimeout)
+	defer cancel()
+	_, err := role.llm.ChatCompletionNoStream(ctx, llm.CompletionRequest{
+		Posts:     []llm.Post{{Role: llm.PostRoleUser, Message: "Reply with the word OK."}},
+		Context:   llm.NewContext(),
+		Operation: llm.OperationEvalGrading,
+	}, llm.WithMaxGeneratedTokens(64), llm.WithReasoningDisabled(), llm.WithToolsDisabled())
+	if err != nil {
+		err = fmt.Errorf("%s %s/%s is unusable: %w%s", role.role, role.provider, role.model, err, preflightHint(err))
+	}
+	preflightResults[key] = err
+	return err
+}
+
+const preflightTimeout = 2 * time.Minute
+
+// preflightHint explains errors whose provider message bifrost discards.
+func preflightHint(err error) string {
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "upstream_credentials_exhausted"), strings.Contains(msg, "status=401"), strings.Contains(msg, "status=403"):
+		return ". The provider rejected the request as unauthorized: check that the API key is valid and that its project has access to this model"
+	case strings.Contains(msg, "DeploymentNotFound"), strings.Contains(msg, "model_not_found"):
+		return ". The model or deployment does not exist for these credentials: set the provider's model variable or create it"
+	default:
+		return ""
+	}
 }
 
 // getProvidersToTest returns the list of providers to test based on LLM_PROVIDER env var

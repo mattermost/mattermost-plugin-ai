@@ -28,6 +28,28 @@ type EvalLogLine struct {
 	Score     float64 `json:"score"`
 	Pass      bool    `json:"pass"`
 	Error     string  `json:"error"`
+	// Usage is set on the one line per run that carries token usage, cost,
+	// and latency instead of a graded result.
+	Usage *UsageRecord `json:"usage"`
+}
+
+// RunUsage matches evals.RunUsage.
+type RunUsage struct {
+	Model            string  `json:"model"`
+	Calls            int     `json:"calls"`
+	InputTokens      int64   `json:"input_tokens"`
+	OutputTokens     int64   `json:"output_tokens"`
+	CachedReadTokens int64   `json:"cached_read_tokens"`
+	ReasoningTokens  int64   `json:"reasoning_tokens"`
+	CostUSD          float64 `json:"cost_usd"`
+	LatencyMS        int64   `json:"latency_ms"`
+	FirstTokenMS     int64   `json:"first_token_ms"`
+}
+
+// UsageRecord matches evals.UsageRecord.
+type UsageRecord struct {
+	Agent  RunUsage `json:"agent"`
+	Grader RunUsage `json:"grader"`
 }
 
 var (
@@ -231,6 +253,11 @@ func checkCommand(args []string) {
 
 	// Print summary
 	printSummary(results)
+	if lines, err := loadLines(evalFile); err == nil {
+		var usage strings.Builder
+		buildReport(buildResultSet(lines), nil, nil).writeUsage(&usage)
+		fmt.Print(usage.String())
+	}
 
 	// Exit with appropriate status code
 	hasFailures := false
@@ -435,7 +462,25 @@ func findEvalsFile() (string, error) {
 	}
 }
 
+// loadResults loads graded and errored results, skipping usage lines.
 func loadResults(filename string, showOnlyFailures bool) ([]EvalLogLine, error) {
+	lines, err := loadLines(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	var results []EvalLogLine
+	for _, result := range lines {
+		if result.Usage != nil || (showOnlyFailures && result.Pass) {
+			continue
+		}
+		results = append(results, result)
+	}
+	return results, nil
+}
+
+// loadLines loads every line of an evals.jsonl file, including usage lines.
+func loadLines(filename string) ([]EvalLogLine, error) {
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, fmt.Errorf("error opening file %s: %v", filename, err)
@@ -444,6 +489,8 @@ func loadResults(filename string, showOnlyFailures bool) ([]EvalLogLine, error) 
 
 	var results []EvalLogLine
 	scanner := bufio.NewScanner(file)
+	// Lines carry full agent outputs, which can exceed the default 64KB limit.
+	scanner.Buffer(make([]byte, 0, 1024*1024), 64*1024*1024)
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -456,12 +503,6 @@ func loadResults(filename string, showOnlyFailures bool) ([]EvalLogLine, error) 
 			fmt.Fprintf(os.Stderr, "Error parsing line: %v\n", err)
 			continue
 		}
-
-		// Filter based on failures-only flag
-		if showOnlyFailures && result.Pass {
-			continue
-		}
-
 		results = append(results, result)
 	}
 

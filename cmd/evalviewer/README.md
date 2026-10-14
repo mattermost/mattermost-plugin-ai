@@ -87,9 +87,13 @@ The report writes:
 - `comment.md`: only checks that fail on this change but not on the baseline. It is empty when there is nothing to act on, and CI posts no comment in that case.
 - `summary.md`: every provider's status, including pre-existing failures, flaky checks, and providers that could not run (missing credentials, retired models). CI adds it to the workflow run summary.
 
+The summary also has a cost and latency table per provider and per eval, compared with the baseline. Every run records the agent's and the grader's input, output, cached, and reasoning tokens, the cost (reported by the provider, or estimated from `modelPrices` in `evals/usage.go`), and the summed latency of the agent's calls. The pull request comment additionally lists evals whose mean input tokens per run grew by at least 20% and 1,000 tokens, which usually means a change sends more context or a longer prompt.
+
 Repeated runs (`GOEVALS=N`) are combined by majority vote, so a check that fails one run out of three is reported as flaky rather than failing. A run that errors before grading (for example, the provider rejects the request) is recorded with its error, with credential values redacted.
 
 ### How CI uses the evals
+- `make evals-ci` runs every test whose name ends in `Eval` in `conversations`, `threads`, `channels`, `react`, and `mcpserver`. The `mcpserver` evals start Mattermost containers and need Docker.
+- Before the first eval, each provider and the grader get one small request. If a model is unusable (bad key, no access to the model, missing deployment), every eval for that provider is recorded with that error instead of failing one by one.
 - Evals run on pull requests that change more than `webapp/`, `e2e/`, `docs/`, `loadtest/`, images, or Markdown, and on every push to `master`.
 - The `evals-comment` job compares pull request results with the latest `master` results and comments only when a check newly fails. When a later push fixes them, the comment is replaced with a short resolved note.
 - Set the `EVAL_RUNS` repository variable to run each eval several times per CI run.
@@ -124,7 +128,7 @@ The evalviewer and evaluation tests support multiple LLM providers. Configure wh
 
 ### Grader Configuration
 
-The grader LLM is used to evaluate the quality of responses from the main LLM. By default, it uses OpenAI with `DefaultGraderModel` from `evals/evals.go`, which is pinned separately from the model under test. `TestLLMRubric` in `evals/graders_test.go` checks the grader against outputs with known verdicts; run it after changing the grader prompt or model. You can configure a different provider or model for grading:
+The grader LLM is used to evaluate the quality of responses from the main LLM. By default, it uses OpenAI with `DefaultGraderModel` from `evals/evals.go`, which is pinned separately from the model under test. `TestLLMRubricEval` in `evals/graders_test.go` checks the grader against outputs with known verdicts; run it after changing the grader prompt or model. You can configure a different provider or model for grading:
 
 - **`GRADER_LLM_PROVIDER`**: Provider to use for grading (e.g., `openai`, `anthropic`, `azure`)
   - Default: `openai`

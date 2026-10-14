@@ -27,6 +27,9 @@ type EvalLogLine struct {
 	// Error is set when the run failed before any rubric could be graded,
 	// for example because the provider rejected the request.
 	Error string `json:"error,omitempty"`
+	// Usage is set on the one line per run that carries its token usage,
+	// cost, and latency; such lines have no rubric or error.
+	Usage *UsageRecord `json:"usage,omitempty"`
 }
 
 type EvalResult struct {
@@ -57,6 +60,17 @@ func RecordScore(e *EvalT, result *EvalResult) {
 func recordError(e *EvalT, failure string) {
 	e.Helper()
 	writeLogLine(e, EvalLogLine{Error: redactSecrets(summarizeFailure(failure))})
+}
+
+// recordUsage records the run's token usage, cost, and latency, if it made any
+// LLM calls.
+func recordUsage(e *EvalT) {
+	e.Helper()
+	usage := UsageRecord{Agent: e.agentMeter.snapshot(), Grader: e.graderMeter.snapshot()}
+	if usage.Agent.Calls == 0 && usage.Grader.Calls == 0 {
+		return
+	}
+	writeLogLine(e, EvalLogLine{Usage: &usage})
 }
 
 func writeLogLine(e *EvalT, log EvalLogLine) {
