@@ -30,71 +30,48 @@ func connectCallableStore() *llm.ToolStore {
 	return store
 }
 
-func TestSearchToolsReportsUnavailableServers(t *testing.T) {
+// search_tools results may be shared with a channel, so the connect hint must
+// not name the requester's unconnected servers.
+func TestSearchToolsConnectHint(t *testing.T) {
 	unconnected := []llm.UnconnectedMCPServer{
 		{Name: "Jira", Origin: "https://jira.example.com", Description: "Atlassian issue tracker", AuthURL: "https://mm/jira/start", ToolNames: []string{"create_issue"}},
-		{Name: "Calendar", Origin: "https://cal.example.com", Description: "Meetings and events", AuthURL: "https://mm/cal/start"},
 	}
 	registry := NewToolRegistry([]llm.Tool{testRegistryTool("github__create_pr", "Open a pull request", "https://github.example.com")})
+	connectContext := func() *llm.Context {
+		return &llm.Context{
+			Tools:       connectCallableStore(),
+			ToolCatalog: llm.ToolCatalogContext{UnconnectedMCPServers: unconnected},
+		}
+	}
 
 	tests := []struct {
 		name       string
 		query      string
 		llmContext *llm.Context
-		want       []llm.UnconnectedMCPServer
+		wantTools  bool
+		wantHint   bool
 	}{
+		{name: "no match with ConnectMCPServer callable", query: "weather forecast", llmContext: connectContext(), wantHint: true},
+		{name: "empty query with ConnectMCPServer callable", query: " ", llmContext: connectContext(), wantHint: true},
+		{name: "matching tools", query: "pull request", llmContext: connectContext(), wantTools: true},
 		{
-			name:  "matches by admin tool name",
-			query: "create issue",
-			llmContext: &llm.Context{
-				Tools:       connectCallableStore(),
-				ToolCatalog: llm.ToolCatalogContext{UnconnectedMCPServers: unconnected},
-			},
-			want: unconnected[:1],
-		},
-		{
-			name:  "matches by description",
-			query: "meetings",
-			llmContext: &llm.Context{
-				Tools:       connectCallableStore(),
-				ToolCatalog: llm.ToolCatalogContext{UnconnectedMCPServers: unconnected},
-			},
-			want: unconnected[1:],
-		},
-		{
-			name:  "no match",
+			name:  "ConnectMCPServer not callable",
 			query: "weather forecast",
-			llmContext: &llm.Context{
-				Tools:       connectCallableStore(),
-				ToolCatalog: llm.ToolCatalogContext{UnconnectedMCPServers: unconnected},
-			},
-		},
-		{
-			name:  "omitted when ConnectMCPServer is not callable",
-			query: "create issue",
 			llmContext: &llm.Context{
 				Tools:       llm.NewToolStore(),
 				ToolCatalog: llm.ToolCatalogContext{UnconnectedMCPServers: unconnected},
 			},
 		},
 		{
-			name:  "omitted when ConnectMCPServer is disabled in this context",
-			query: "create issue",
+			name:  "ConnectMCPServer disabled in this context",
+			query: "weather forecast",
 			llmContext: &llm.Context{
 				Tools:             connectCallableStore(),
 				DisabledToolsInfo: []llm.ToolInfo{{Name: llm.ConnectMCPServerToolName}},
 				ToolCatalog:       llm.ToolCatalogContext{UnconnectedMCPServers: unconnected},
 			},
 		},
-		{
-			name:  "omitted for empty query",
-			query: " ",
-			llmContext: &llm.Context{
-				Tools:       connectCallableStore(),
-				ToolCatalog: llm.ToolCatalogContext{UnconnectedMCPServers: unconnected},
-			},
-		},
-		{name: "nil context", query: "create issue"},
+		{name: "nil context", query: "weather forecast"},
 	}
 
 	for _, tt := range tests {
@@ -108,16 +85,18 @@ func TestSearchToolsReportsUnavailableServers(t *testing.T) {
 
 			var result SearchToolsResult
 			require.NoError(t, json.Unmarshal([]byte(raw), &result))
-			require.Len(t, result.UnavailableServers, len(tt.want))
-			for i, server := range tt.want {
-				got := result.UnavailableServers[i]
-				assert.Equal(t, server.Name, got.Server)
-				assert.Equal(t, "needs_authentication", got.Status)
-				assert.Contains(t, got.Hint, server.PromptLine())
-				assert.Contains(t, got.Hint, `ConnectMCPServer with {"server":"`+server.Name+`"}`)
+			assert.Equal(t, tt.wantTools, len(result.Tools) > 0)
+			if tt.wantHint {
+				assert.Contains(t, result.Hint, llm.ConnectMCPServerToolName)
+			} else {
+				assert.Empty(t, result.Hint)
 			}
-			if tt.want == nil {
-				assert.NotContains(t, raw, "unavailable_servers")
+			for _, server := range unconnected {
+				assert.NotContains(t, raw, server.Name)
+				assert.NotContains(t, raw, server.Description)
+				for _, toolName := range server.ToolNames {
+					assert.NotContains(t, raw, toolName)
+				}
 			}
 		})
 	}
