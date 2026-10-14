@@ -384,10 +384,11 @@ const preflightTimeout = 2 * time.Minute
 var preflightBackoff = []time.Duration{15 * time.Second, 45 * time.Second}
 
 // isTransientProviderError reports rate limits, server errors, and timeouts.
-// Bifrost reports rejected credentials as status 502, which is not transient.
+// Bifrost reports rejected credentials as status 502 and exhausted quota as
+// status 429, neither of which is transient.
 func isTransientProviderError(err error) bool {
 	msg := err.Error()
-	if strings.Contains(msg, "upstream_credentials_exhausted") {
+	if strings.Contains(msg, "upstream_credentials_exhausted") || strings.Contains(msg, "insufficient_quota") {
 		return false
 	}
 	for _, marker := range []string{"status=429", "status=500", "status=502", "status=503", "status=504", "rate_limit", "context deadline exceeded"} {

@@ -46,6 +46,7 @@ func TestIsTransientProviderError(t *testing.T) {
 		{"server error", "bifrost error: upstream unavailable (status=503 provider=openai)", true},
 		{"timeout", "bifrost error: context deadline exceeded", true},
 		{"rejected credentials", "bifrost error: all configured keys returned permanent per-key errors (401/402/403) (status=502 type=upstream_credentials_exhausted provider=openai)", false},
+		{"exhausted quota", "bifrost error: You exceeded your current quota (status=429 type=insufficient_quota code=insufficient_quota provider=openai)", false},
 		{"missing deployment", "bifrost error: The API deployment for this resource does not exist. (status=404 type=invalid_request_error code=DeploymentNotFound provider=azure)", false},
 	}
 
