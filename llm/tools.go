@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -65,6 +66,10 @@ type Tool struct {
 // UserInteractionSelect identifies tools answered by the user picking from a
 // set of options presented in the Mattermost UI.
 const UserInteractionSelect = "select"
+
+// UserInteractionConnect identifies tools answered by the user connecting
+// their account to an MCP server from the Mattermost UI.
+const UserInteractionConnect = "connect"
 
 type ToolResolver func(ctx context.Context, llmCtx *Context, argsGetter ToolArgumentGetter) (string, error)
 
@@ -620,6 +625,25 @@ func (s *ToolStore) lookupUnloadedMCPTool(name string) (Tool, bool) {
 		return Tool{}, false
 	}
 	return matched, true
+}
+
+// MCPToolNamesFromOrigin returns the sorted names of every MCP tool from
+// origin in the store, loaded or not.
+func (s *ToolStore) MCPToolNamesFromOrigin(origin string) []string {
+	origin = NormalizeMCPServerOrigin(origin)
+	if s == nil || origin == "" {
+		return nil
+	}
+	var names []string
+	for _, tools := range []map[string]Tool{s.tools, s.unloadedMCPTools} {
+		for name, tool := range tools {
+			if NormalizeMCPServerOrigin(tool.ServerOrigin) == origin {
+				names = append(names, name)
+			}
+		}
+	}
+	slices.Sort(names)
+	return slices.Compact(names)
 }
 
 // GetServerOrigin returns the ServerOrigin for a tool by name.
