@@ -385,7 +385,7 @@ const AgentConfigView = (props: Props) => {
             const message = (typeof e?.message === 'string' ? e.message : '').trim();
             if (e?.status_code === 409 || (message.includes('username') && (message.includes('taken') || message.includes('conflict')))) {
                 if (e?.server_error_id === 'username_held_by_deactivated_bot') {
-                    setErrors({username: canEditServiceAccountAuth ? intl.formatMessage({defaultMessage: 'This username belongs to a deactivated bot account. Permanently delete that bot account to make the username available.'}) : intl.formatMessage({defaultMessage: 'This username belongs to a deactivated bot account. A system admin can permanently delete it to make the username available.'})});
+                    setErrors({username: intl.formatMessage({defaultMessage: 'This username belongs to a deactivated bot account. Permanently delete that bot account to make the username available.'})});
                 } else {
                     setErrors({username: intl.formatMessage({defaultMessage: 'This username is already taken'})});
                 }
@@ -403,7 +403,7 @@ const AgentConfigView = (props: Props) => {
         } finally {
             setSaving(false);
         }
-    }, [mode, agent, draft, avatarFile, intl, onSaved, validate, canEditServiceAccountAuth]);
+    }, [mode, agent, draft, avatarFile, intl, onSaved, validate]);
 
     const title = mode === 'create' ? intl.formatMessage({defaultMessage: 'New Agent'}) : draft.displayName || intl.formatMessage({defaultMessage: 'Edit Agent'});
 

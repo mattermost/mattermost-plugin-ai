@@ -444,7 +444,7 @@ func (a *API) handleCreateAgent(c *gin.Context) {
 	if err := a.pluginAPI.Bot.Create(mmBot); err != nil {
 		var appErr *model.AppError
 		if errors.As(err, &appErr) && (appErr.Id == "app.user.save.username_exists.app_error" || appErr.Id == "app.user.save.email_exists.app_error") {
-			abortAgentRequestWithCode(c, http.StatusConflict, a.agentUsernameConflictCode(req.Username), fmt.Errorf("username %q is already taken", req.Username))
+			abortAgentRequestWithCode(c, http.StatusConflict, a.agentUsernameConflictCode(userID, req.Username), fmt.Errorf("username %q is already taken", req.Username))
 			return
 		}
 		abortAgentRequest(c, http.StatusInternalServerError, fmt.Errorf("failed to create bot account: %w", err))
@@ -468,8 +468,13 @@ func (a *API) handleCreateAgent(c *gin.Context) {
 }
 
 // agentUsernameConflictCode reports whether a deactivated bot holds username, in
-// which case permanently deleting it makes the name available again.
-func (a *API) agentUsernameConflictCode(username string) agentErrorCode {
+// which case permanently deleting it makes the name available again. The lookup
+// bypasses the caller's user-visibility restrictions, so only system admins are
+// told what holds the name.
+func (a *API) agentUsernameConflictCode(userID, username string) agentErrorCode {
+	if !isSystemAdmin(a.pluginAPI, userID) {
+		return agentErrorUsernameTaken
+	}
 	holder, err := a.pluginAPI.User.GetByUsername(username)
 	if err == nil && holder.IsBot && holder.DeleteAt != 0 {
 		return agentErrorUsernameHeldByDeactivatedBot

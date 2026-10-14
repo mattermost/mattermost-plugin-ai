@@ -783,12 +783,10 @@ describe('AgentConfigView', () => {
     });
 
     test.each([
-        ['username_held_by_deactivated_bot', true, 'This username belongs to a deactivated bot account. Permanently delete that bot account to make the username available.'],
-        ['username_held_by_deactivated_bot', false, 'This username belongs to a deactivated bot account. A system admin can permanently delete it to make the username available.'],
-        ['username_taken', true, 'This username is already taken'],
-        ['', true, 'This username is already taken'],
-    ])('shows a translated message on the username field for conflict code %s (admin: %s)', async (code, isAdmin, expected) => {
-        mockedUseCurrentUserHasSystemPermission.mockReturnValue(isAdmin);
+        ['username_held_by_deactivated_bot', 'This username belongs to a deactivated bot account. Permanently delete that bot account to make the username available.'],
+        ['username_taken', 'This username is already taken'],
+        ['', 'This username is already taken'],
+    ])('shows a translated message on the username field for conflict code %s', async (code, expected) => {
         mockCreateAgent.mockRejectedValue(Object.assign(new Error('username "myagent" is already taken'), {status_code: 409, server_error_id: code}));
         renderView();
 

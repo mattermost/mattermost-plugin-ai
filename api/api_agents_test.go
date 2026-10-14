@@ -498,6 +498,7 @@ func TestCreateAgentUsernameConflict(t *testing.T) {
 
 	tests := []struct {
 		name          string
+		nonAdmin      bool
 		createBotErr  *model.AppError
 		usernameOwner *model.User
 		wantCode      agentErrorCode
@@ -529,6 +530,13 @@ func TestCreateAgentUsernameConflict(t *testing.T) {
 			wantCode:      agentErrorUsernameTaken,
 		},
 		{
+			name:          "non-admin is not told a deactivated bot holds the username",
+			nonAdmin:      true,
+			createBotErr:  usernameTaken,
+			usernameOwner: &model.User{Id: "oldbotid", Username: "my-agent", IsBot: true, DeleteAt: 1},
+			wantCode:      agentErrorUsernameTaken,
+		},
+		{
 			name:         "another account holds the derived email",
 			createBotErr: emailTaken,
 			wantCode:     agentErrorUsernameTaken,
@@ -542,11 +550,12 @@ func TestCreateAgentUsernameConflict(t *testing.T) {
 
 			mockLicensed(e.mockAPI)
 			e.mockAPI.On("HasPermissionTo", testUserID, model.PermissionManageOwnAgent).Return(true)
+			e.mockAPI.On("HasPermissionTo", testUserID, model.PermissionManageSystem).Return(!tt.nonAdmin)
 			e.mockAPI.On("CreateBot", mock.AnythingOfType("*model.Bot")).Return(nil, tt.createBotErr)
 			if tt.usernameOwner != nil {
-				e.mockAPI.On("GetUserByUsername", "my-agent").Return(tt.usernameOwner, nil)
+				e.mockAPI.On("GetUserByUsername", "my-agent").Return(tt.usernameOwner, nil).Maybe()
 			} else {
-				e.mockAPI.On("GetUserByUsername", "my-agent").Return(nil, notFound)
+				e.mockAPI.On("GetUserByUsername", "my-agent").Return(nil, notFound).Maybe()
 			}
 
 			recorder := doRequest(e.api, http.MethodPost, "/agents", createAgentBody(nil), testUserID)
