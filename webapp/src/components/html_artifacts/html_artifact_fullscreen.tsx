@@ -1,7 +1,7 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import React, {useEffect, useRef} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import ReactDOM from 'react-dom';
 import {FormattedMessage, useIntl} from 'react-intl';
 import styled from 'styled-components';
@@ -19,6 +19,9 @@ import {downloadArtifact} from './download';
 interface Props {
     fileId: string;
     fileName: string;
+
+    // Opened by the viewer's trusted click: see ArtifactFrame.
+    startedByClick?: boolean;
     onClose: () => void;
 }
 
@@ -40,11 +43,15 @@ function isShown(el: HTMLElement): boolean {
     return el.getClientRects().length > 0 && window.getComputedStyle(el).visibility !== 'hidden';
 }
 
-const HTMLArtifactFullscreen = ({fileId, fileName, onClose}: Props) => {
+const HTMLArtifactFullscreen = ({fileId, fileName, startedByClick = false, onClose}: Props) => {
     const intl = useIntl();
     const rootRef = useRef<HTMLDivElement>(null);
     const closeRef = useRef<HTMLButtonElement>(null);
     const frameRef = useRef<ArtifactFrameHandle>(null);
+
+    // Read before the frame mounts: a frame the viewer's click started takes
+    // focus as it mounts.
+    const [previousFocus] = useState(() => (document.activeElement instanceof HTMLElement ? document.activeElement : null));
 
     // The viewer covers the inline card: a prompt pending there would be
     // invisible, so drop it and let this frame ask instead.
@@ -55,8 +62,11 @@ const HTMLArtifactFullscreen = ({fileId, fileName, onClose}: Props) => {
     onCloseRef.current = onClose;
 
     useEffect(() => {
-        const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-        closeRef.current?.focus();
+        // A frame the viewer's click started already holds focus inside the
+        // dialog; moving it to Close would end that engagement.
+        if (!rootRef.current?.contains(document.activeElement)) {
+            closeRef.current?.focus();
+        }
 
         // Tab wrapping is done by the focus sentinels below: a keydown check
         // cannot see Tab presses inside the artifact, so tabbing past its
@@ -73,7 +83,7 @@ const HTMLArtifactFullscreen = ({fileId, fileName, onClose}: Props) => {
             document.removeEventListener('keydown', onKeyDown, true);
             previousFocus?.focus?.({preventScroll: true});
         };
-    }, []);
+    }, [previousFocus]);
 
     const focusFirst = () => focusableControls(rootRef.current)[0]?.focus();
     const focusLast = () => focusableControls(rootRef.current).at(-1)?.focus();
@@ -122,7 +132,7 @@ const HTMLArtifactFullscreen = ({fileId, fileName, onClose}: Props) => {
                     icon={<Icon glyph={<RefreshIcon/>}/>}
                     aria-label={reloadLabel}
                     title={reloadLabel}
-                    onClick={() => frameRef.current?.reload()}
+                    onClick={(e) => frameRef.current?.reload(e.nativeEvent.isTrusted)}
                     data-testid='html-artifact-fullscreen-reload'
                 />
                 <Divider/>
@@ -142,6 +152,7 @@ const HTMLArtifactFullscreen = ({fileId, fileName, onClose}: Props) => {
                     fileId={fileId}
                     fileName={fileName}
                     displayMode='fullscreen'
+                    startedByClick={startedByClick}
                     onEscape={onClose}
                 />
             </Body>

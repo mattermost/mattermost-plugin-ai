@@ -47,6 +47,11 @@ const HTMLArtifactCard = ({fileId, fileName}: Props) => {
     const runKey = `${currentUserId}:${fileId}`;
     const [run, setRun] = useState(() => runDecisions.has(runKey));
 
+    // Whether the viewer's click in this card started the frame. A run
+    // remembered from elsewhere in the session starts without one.
+    const [runClicked, setRunClicked] = useState(false);
+    const [fullscreenClicked, setFullscreenClicked] = useState(false);
+
     const startRun = () => {
         runDecisions.add(runKey);
         setRun(true);
@@ -56,9 +61,12 @@ const HTMLArtifactCard = ({fileId, fileName}: Props) => {
         if (!e.nativeEvent.isTrusted) {
             return;
         }
+        setRunClicked(true);
         startRun();
     };
 
+    // From the placeholder this also runs the inline frame, which the viewer
+    // has not seen yet: only the fullscreen frame counts as clicked.
     const openFullscreen = (e: React.MouseEvent) => {
         if (!run) {
             if (!e.nativeEvent.isTrusted) {
@@ -66,6 +74,7 @@ const HTMLArtifactCard = ({fileId, fileName}: Props) => {
             }
             startRun();
         }
+        setFullscreenClicked(e.nativeEvent.isTrusted);
         setFullscreen(true);
     };
 
@@ -115,7 +124,7 @@ const HTMLArtifactCard = ({fileId, fileName}: Props) => {
                             icon={<Icon glyph={<RefreshIcon/>}/>}
                             aria-label={reloadLabel}
                             title={reloadLabel}
-                            onClick={() => frameRef.current?.reload()}
+                            onClick={(e) => frameRef.current?.reload(e.nativeEvent.isTrusted)}
                             data-testid='html-artifact-reload'
                         />
                     )}
@@ -128,6 +137,7 @@ const HTMLArtifactCard = ({fileId, fileName}: Props) => {
                     fileName={fileName}
                     displayMode='inline'
                     obscured={fullscreen}
+                    startedByClick={runClicked}
                 />
             ) : (
                 <RunPlaceholder data-testid='html-artifact-run-placeholder'>
@@ -149,6 +159,7 @@ const HTMLArtifactCard = ({fileId, fileName}: Props) => {
                 <HTMLArtifactFullscreen
                     fileId={fileId}
                     fileName={fileName}
+                    startedByClick={fullscreenClicked}
                     onClose={() => setFullscreen(false)}
                 />
             )}

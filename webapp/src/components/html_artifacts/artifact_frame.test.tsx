@@ -286,7 +286,7 @@ describe('ArtifactFrame navigation guard', () => {
         {name: 'the artifact frame reports an error after loading (Firefox, blocked navigation)', reload: 'inner-error'},
         {name: 'the wrapper document is replaced', reload: 'wrapper'},
     ])('stops answering the frame and drops a pending consent prompt when $name', async ({reload}) => {
-        const {frame, inner, win, send} = await renderReadyFrame({initiallyEngaged: true});
+        const {frame, inner, win, send} = await renderReadyFrame({startedByClick: true});
         const posted = jest.spyOn(win, 'postMessage');
         send({mmArtifact: 1, type: 'request', id: 'r1', method: 'getCurrentUser'});
         expect(screen.getByTestId('html-artifact-consent-deny')).toBeTruthy();
@@ -343,7 +343,7 @@ describe('ArtifactFrame heartbeat watchdog', () => {
     });
 
     test('unloads a frame whose heartbeat stays gone, dropping its prompt and answering nothing more', async () => {
-        const {frame, win, send} = await renderReadyFrame({initiallyEngaged: true});
+        const {frame, win, send} = await renderReadyFrame({startedByClick: true});
         send(heartbeat);
         send({mmArtifact: 1, type: 'request', id: 'r1', method: 'getCurrentUser'});
         expect(screen.getByTestId('html-artifact-consent')).toBeTruthy();
@@ -512,7 +512,7 @@ describe('ArtifactFrame focus guard', () => {
     });
 
     test('an engaged artifact may hold focus until the viewer focuses the page again', async () => {
-        const {frame, inner} = await renderReadyFrame({initiallyEngaged: true});
+        const {frame, inner} = await renderReadyFrame({startedByClick: true});
         expect(interact()).toBeNull();
         expect(inner.hasAttribute('tabindex')).toBe(false);
         focusArtifact(frame);
@@ -530,21 +530,48 @@ describe('ArtifactFrame focus guard', () => {
         expect(document.activeElement).toBe(composer);
     });
 
-    test('a viewer reload starts over as initially engaged', async () => {
-        const {frame} = await renderReadyFrame({initiallyEngaged: true});
-        act(() => composer.focus());
-        focusArtifact(frame);
-        advance(300);
-        expect(stopped()).not.toBeNull();
-
-        fireEvent.click(screen.getByRole('button', {name: 'Reload'}));
+    test.each([
+        {name: 'a trusted click on Reload after a stop', trigger: 'stop', button: 'Reload', trusted: true},
+        {name: 'a scripted click on Reload after a stop', trigger: 'stop', button: 'Reload', trusted: false},
+        {name: 'a trusted click on Retry after a failed load', trigger: 'error', button: 'Retry', trusted: true},
+        {name: 'a scripted click on Retry after a failed load', trigger: 'error', button: 'Retry', trusted: false},
+    ])('$name starts the new load engaged only when trusted', async ({trigger, button, trusted}) => {
+        renderFrame('reload.html');
         await flushLoad();
-        expect(wrapperIframe()!.hasAttribute('tabindex')).toBe(false);
-        expect(innerIframe()!.hasAttribute('tabindex')).toBe(false);
+        const first = innerIframe()!;
+        if (trigger === 'stop') {
+            fireEvent.load(first);
+            fireEvent.load(first);
+            expect(stopped()).not.toBeNull();
+        } else {
+            fireEvent.error(first);
+            expect(screen.getByRole('alert').textContent).toContain('could not be loaded');
+        }
+
+        const control = screen.getByRole('button', {name: button});
+        if (trusted) {
+            trustedClick(control);
+        } else {
+            fireEvent.click(control);
+        }
+        await flushLoad();
+        const frame = wrapperIframe()!;
+        const inner = innerIframe(frame)!;
+        fireEvent.load(inner);
+        postFrom(inner.contentWindow, {mmArtifact: 1, type: 'ready', token: TOKEN});
+
+        expect(screen.getByTestId('html-artifact-frame').getAttribute('data-engaged')).toBe(String(trusted));
+        expect(interact() === null).toBe(trusted);
+        expect(document.activeElement === frame).toBe(trusted);
+        if (trusted) {
+            expect(frame.contentDocument!.activeElement).toBe(inner);
+        }
+        advance(1000);
+        expect(stopped()).toBeNull();
     });
 
     test('a click on page content that takes no focus ends engagement without stopping the artifact', async () => {
-        const {frame} = await renderReadyFrame({initiallyEngaged: true});
+        const {frame} = await renderReadyFrame({startedByClick: true});
         focusArtifact(frame);
         expect(document.activeElement).toBe(frame);
 
@@ -562,7 +589,7 @@ describe('ArtifactFrame focus guard', () => {
     });
 
     test('a pointerdown inside the frame keeps it engaged', async () => {
-        const {frame} = await renderReadyFrame({initiallyEngaged: true});
+        const {frame} = await renderReadyFrame({startedByClick: true});
         act(() => {
             frame.dispatchEvent(new MouseEvent('pointerdown', {bubbles: true}));
         });
@@ -593,7 +620,7 @@ describe('ArtifactFrame focus guard', () => {
     };
 
     test('answering the consent prompt hands focus back to the engaged artifact without tripping the guard', async () => {
-        const {frame, inner, send} = await renderReadyFrame({initiallyEngaged: true});
+        const {frame, inner, send} = await renderReadyFrame({startedByClick: true});
         focusArtifact(frame);
         send({mmArtifact: 1, type: 'request', id: 'r1', method: 'getCurrentUser'});
         expect(document.activeElement).toBe(screen.getByTestId('html-artifact-consent-deny'));
@@ -614,7 +641,7 @@ describe('ArtifactFrame focus guard', () => {
     });
 
     test('a heartbeat lapse drops the open consent prompt without recording a decision', async () => {
-        const {frame, win, send} = await renderReadyFrame({initiallyEngaged: true});
+        const {frame, win, send} = await renderReadyFrame({startedByClick: true});
         act(() => frame.focus());
         send({mmArtifact: 1, type: 'heartbeat'});
         send({mmArtifact: 1, type: 'request', id: 'r1', method: 'getCurrentUser'});
@@ -923,7 +950,7 @@ describe('HTMLArtifactCard run gate', () => {
         ));
     }
 
-    test('shows Run and no frame until a trusted click on Run, then loads the artifact not engaged', async () => {
+    test('shows Run and no frame until a trusted click on Run, then loads the artifact engaged', async () => {
         renderCard();
         await flushLoad();
         expect(placeholder()?.textContent).toContain('runs code only when you choose');
@@ -940,40 +967,128 @@ describe('HTMLArtifactCard run gate', () => {
         await flushLoad();
         expect(placeholder()).toBeNull();
         expect(wrapperIframe()).not.toBeNull();
-        expect(screen.getByTestId('html-artifact-frame').getAttribute('data-engaged')).toBe('false');
+        expect(screen.getByTestId('html-artifact-frame').getAttribute('data-engaged')).toBe('true');
         expect(screen.getByTestId('html-artifact-reload')).toBeTruthy();
     });
 
-    test('Run loads the artifact covered: clicking Run does not give it keyboard focus', async () => {
-        renderCard();
+    // Renders the card, runs it and unmounts it: the next card for the same
+    // file runs without a click, as when it is rendered again in the RHS.
+    async function renderRememberedCard() {
+        const first = renderCard();
         trustedClick(screen.getByTestId('html-artifact-run'));
         await flushLoad();
+        first.unmount();
+        const again = renderCard();
+        await flushLoad();
+        return again;
+    }
+
+    const viewerFrame = () => {
+        const viewer = screen.queryByTestId('html-artifact-fullscreen');
+        return screen.getAllByTestId('html-artifact-frame').find((f) => viewer?.contains(f)) ?? null;
+    };
+    const inlineFrame = () => screen.getAllByTestId('html-artifact-frame').find((f) => f !== viewerFrame())!;
+    const wrapperIn = (frame: HTMLElement) => frame.querySelector('iframe') as HTMLIFrameElement;
+
+    function sendReadyIn(frame: HTMLElement) {
+        const inner = innerIframe(wrapperIn(frame))!;
+        fireEvent.load(inner);
+        postFrom(inner.contentWindow, {mmArtifact: 1, type: 'ready', token: TOKEN});
+    }
+
+    const expectFocused = (frame: HTMLElement) => {
+        const wrapper = wrapperIn(frame);
+        expect(document.activeElement).toBe(wrapper);
+        expect(wrapper.contentDocument!.activeElement).toBe(innerIframe(wrapper));
+    };
+
+    test.each([
+        {name: 'Run', remembered: false, click: 'html-artifact-run', clicked: 'inline'},
+        {name: 'Open fullscreen from the placeholder', remembered: false, click: 'html-artifact-open-fullscreen', clicked: 'fullscreen'},
+        {name: 'Open fullscreen on a remembered run', remembered: true, click: 'html-artifact-open-fullscreen', clicked: 'fullscreen'},
+        {name: 'Reload on a remembered run', remembered: true, click: 'html-artifact-reload', clicked: 'inline'},
+    ])('a trusted click on $name engages the frame it starts and focuses it once ready', async ({remembered, click, clicked}) => {
+        if (remembered) {
+            await renderRememberedCard();
+        } else {
+            renderCard();
+        }
+        trustedClick(screen.getByTestId(click));
+        await flushLoad();
+        const target = clicked === 'fullscreen' ? viewerFrame()! : inlineFrame();
+        expect(target.getAttribute('data-engaged')).toBe('true');
+
+        screen.getAllByTestId('html-artifact-frame').forEach(sendReadyIn);
+        expect(target.querySelector('[data-testid="html-artifact-interact"]')).toBeNull();
+        expectFocused(target);
+
+        // The inline frame under the fullscreen viewer is not what the viewer clicked.
+        if (clicked === 'fullscreen') {
+            expect(inlineFrame().getAttribute('data-engaged')).toBe('false');
+            expect(inlineFrame().querySelector('[data-testid="html-artifact-interact"]')).not.toBeNull();
+        }
+        advance(1000);
+        expect(stopped()).toBeNull();
+        expectFocused(target);
+    });
+
+    test('a run remembered for the session starts covered: nothing is focused and an artifact taking focus is stopped', async () => {
+        await renderRememberedCard();
+        expect(placeholder()).toBeNull();
         const frame = wrapperIframe()!;
-        postFrom(innerIframe(frame)!.contentWindow, {mmArtifact: 1, type: 'ready', token: TOKEN});
+        sendReadyIn(screen.getByTestId('html-artifact-frame'));
+        expect(screen.getByTestId('html-artifact-frame').getAttribute('data-engaged')).toBe('false');
         expect(screen.getByTestId('html-artifact-interact')).toBeTruthy();
+        expect(document.activeElement).not.toBe(frame);
+
         focusArtifact(frame);
         advance(300);
         expect(stopped()?.getAttribute('data-stop-reason')).toBe('focus');
     });
 
     test('Run is remembered per viewer and file for the page session', async () => {
-        const first = renderCard();
-        trustedClick(screen.getByTestId('html-artifact-run'));
-        await flushLoad();
-        first.unmount();
-
-        const again = renderCard();
-        await flushLoad();
+        const again = await renderRememberedCard();
         expect(placeholder()).toBeNull();
         expect(wrapperIframe()).not.toBeNull();
-
-        // Not clicked in this view: it mounts covered.
-        expect(screen.getByTestId('html-artifact-frame').getAttribute('data-engaged')).toBe('false');
         again.unmount();
 
         renderCard('zyxwvutsrqponmlkjihgfedcba');
         await flushLoad();
         expect(placeholder()).not.toBeNull();
+    });
+
+    describe('when the viewer moves on before the artifact is ready', () => {
+        let composer: HTMLTextAreaElement;
+        beforeEach(() => {
+            composer = addComposer();
+        });
+        afterEach(() => {
+            composer.remove();
+        });
+
+        test.each([
+            {name: 'focus moves to the message box', moveOn: 'focus'},
+            {name: 'a click on page content that takes no focus', moveOn: 'pointerdown'},
+        ])('$name: the overlay shows once ready and nothing is focused', async ({moveOn}) => {
+            renderCard();
+            trustedClick(screen.getByTestId('html-artifact-run'));
+            await flushLoad();
+            act(() => {
+                if (moveOn === 'focus') {
+                    composer.focus();
+                } else {
+                    composer.dispatchEvent(new MouseEvent('pointerdown', {bubbles: true}));
+                }
+            });
+            const frame = screen.getByTestId('html-artifact-frame');
+            expect(frame.getAttribute('data-engaged')).toBe('false');
+
+            sendReadyIn(frame);
+            expect(screen.getByTestId('html-artifact-interact')).toBeTruthy();
+            expect(document.activeElement).not.toBe(wrapperIn(frame));
+            advance(1000);
+            expect(stopped()).toBeNull();
+        });
     });
 
     test('the inline card and the fullscreen viewer each load with their own nonce', async () => {
@@ -990,17 +1105,5 @@ describe('HTMLArtifactCard run gate', () => {
             `/plugins/mattermost-ai/artifacts/${FILE_ID}?n=${cardNonce}`,
             `/plugins/mattermost-ai/artifacts/${FILE_ID}?n=${fullscreenNonce}`,
         ]);
-    });
-
-    test('opening fullscreen from the placeholder runs the artifact there, covered', async () => {
-        renderCard();
-        trustedClick(screen.getByTestId('html-artifact-open-fullscreen'));
-        await flushLoad();
-        const viewer = screen.getByTestId('html-artifact-fullscreen');
-        const frames = screen.getAllByTestId('html-artifact-frame');
-        const fullscreenFrame = frames.find((f) => viewer.contains(f))!;
-        expect(fullscreenFrame.getAttribute('data-engaged')).toBe('false');
-        expect(fullscreenFrame.querySelector('iframe')).not.toBeNull();
-        expect(placeholder()).toBeNull();
     });
 });

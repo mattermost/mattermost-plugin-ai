@@ -45,7 +45,9 @@ export function clampInlineHeight(height: number): number {
 }
 
 export interface ArtifactFrameHandle {
-    reload: () => void;
+
+    // startedByClick: see Props; pass the click's isTrusted.
+    reload: (startedByClick: boolean) => void;
 }
 
 // One host load of the frame. The server serves the artifact and accepts the
@@ -99,10 +101,11 @@ interface Props {
     // viewer): it must not show a consent prompt the viewer cannot see.
     obscured?: boolean;
 
-    // Start as if the viewer had already clicked the artifact, so it may take
-    // keyboard focus right away. Production callers leave this off: neither
-    // Run nor opening fullscreen counts as clicking the artifact itself.
-    initiallyEngaged?: boolean;
+    // The viewer's trusted click (Run, Open fullscreen) started this frame:
+    // that click is their first interaction with the artifact, so the load
+    // starts engaged and the artifact gets keyboard focus once it is ready,
+    // unless the viewer moved on in the meantime. Read on mount only.
+    startedByClick?: boolean;
 }
 
 type Status = 'loading' | 'ready' | 'error';
@@ -120,7 +123,7 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
     displayMode,
     onEscape,
     obscured = false,
-    initiallyEngaged = false,
+    startedByClick = false,
 }, ref) => {
     const intl = useIntl();
     const containerRef = useRef<HTMLDivElement>(null);
@@ -146,12 +149,17 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
     // Engaged: the viewer chose to interact with the artifact, so it may hold
     // keyboard focus. Until then a host overlay takes every click, the iframe
     // is not a tab stop, and an artifact that focuses itself is stopped.
-    const [engaged, setEngagedState] = useState(initiallyEngaged);
-    const engagedRef = useRef(initiallyEngaged);
+    const startsEngaged = startedByClick && !obscured;
+    const [engaged, setEngagedState] = useState(startsEngaged);
+    const engagedRef = useRef(startsEngaged);
     const setEngaged = useCallback((value: boolean) => {
         engagedRef.current = value;
         setEngagedState(value);
     }, []);
+
+    // This load was started by the viewer's click: hand the artifact focus
+    // when it first shows, if the viewer is still engaged with it by then.
+    const focusWhenShownRef = useRef(startsEngaged);
 
     // Where focus goes back to when it has to leave the artifact.
     const lastHostFocusRef = useRef<HTMLElement | null>(null);
@@ -199,8 +207,6 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
     pendingConsentRef.current = pendingConsent;
     const obscuredRef = useRef(obscured);
     obscuredRef.current = obscured;
-    const initiallyEngagedRef = useRef(initiallyEngaged);
-    initiallyEngagedRef.current = initiallyEngaged;
     const stopReasonRef = useRef(stopReason);
     stopReasonRef.current = stopReason;
     const title = intl.formatMessage({defaultMessage: 'Interactive artifact: {fileName}'}, {fileName});
@@ -492,15 +498,38 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
         };
     }, [releaseFocus, stopFrame, setEngaged]);
 
-    const reload = useCallback(() => {
+    // While a load the viewer started gets ready, focus waits on the frame's
+    // area: the control they clicked may be gone, and focus moving to the
+    // page would end the engagement.
+    const holdFocus = useCallback(() => {
+        containerRef.current?.focus({preventScroll: true});
+    }, []);
+
+    useEffect(() => {
+        if (focusWhenShownRef.current) {
+            holdFocus();
+        }
+
+    // Mount only: a load started later holds focus from reload().
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    const reload = useCallback((byClick: boolean) => {
+        const engage = byClick && !obscuredRef.current;
         setStopReason(null);
         setLoadFailed(false);
         setUnresponsive(false);
-        setEngaged(initiallyEngagedRef.current);
+        setEngaged(engage);
+        focusWhenShownRef.current = engage;
+        if (engage) {
+            holdFocus();
+        }
         setHeight(DEFAULT_INLINE_HEIGHT);
         setLoad(null);
         setLoadKey((k) => k + 1);
-    }, [setEngaged]);
+    }, [setEngaged, holdFocus]);
+
+    const reloadOnClick = useCallback((e: React.MouseEvent) => reload(e.nativeEvent.isTrusted), [reload]);
 
     useImperativeHandle(ref, () => ({reload}), [reload]);
 
@@ -626,9 +655,21 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
     const showStatus = !stopReason && !tooLarge;
     const visible = showStatus && Boolean(load) && shownStatus === 'ready' && !unresponsive;
 
+    // A hidden frame cannot take focus, so the hand-off waits for it to show.
+    useEffect(() => {
+        if (!visible || !focusWhenShownRef.current) {
+            return;
+        }
+        focusWhenShownRef.current = false;
+        if (engagedRef.current && !obscuredRef.current) {
+            focusArtifact();
+        }
+    }, [visible, focusArtifact]);
+
     return (
         <Container
             ref={containerRef}
+            tabIndex={-1}
             $displayMode={displayMode}
             $height={height}
             $consentShown={Boolean(pendingConsent)}
@@ -683,7 +724,7 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
                             emphasis='tertiary'
                             size='x-small'
                             leadingIcon={<Icon glyph={<RefreshIcon/>}/>}
-                            onClick={reload}
+                            onClick={reloadOnClick}
                         >
                             <FormattedMessage defaultMessage='Reload'/>
                         </Button>
@@ -721,7 +762,7 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
                             emphasis='tertiary'
                             size='x-small'
                             leadingIcon={<Icon glyph={<RefreshIcon/>}/>}
-                            onClick={reload}
+                            onClick={reloadOnClick}
                         >
                             <FormattedMessage defaultMessage='Retry'/>
                         </Button>
@@ -770,6 +811,10 @@ const Container = styled.div<{$displayMode: DisplayMode; $height: number; $conse
     position: relative;
     width: 100%;
     background: var(--center-channel-bg);
+
+    &:focus {
+        outline: none;
+    }
     ${(props) => (props.$displayMode === 'inline' ? css`
         height: ${props.$consentShown ? Math.max(props.$height, CONSENT_MIN_HEIGHT) : props.$height}px;
         transition: height 0.15s ease-out;
