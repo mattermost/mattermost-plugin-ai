@@ -389,8 +389,15 @@ func (c *UserClients) recordConnectFailure(mcpErrors *Errors, plan connectPlan) 
 	}
 
 	if plan.task.silent {
-		c.log.Debug("MCP server unavailable for user",
-			"userID", c.userID, "serverID", plan.task.serverID, "error", plan.err)
+		// Silent failures are not surfaced to the user, so the dialing caller
+		// warns: otherwise a turn quietly runs without these tools.
+		if plan.dialing {
+			c.log.Warn("MCP server unavailable for user; continuing without its tools",
+				"userID", c.userID, "serverID", plan.task.serverID, "error", plan.err)
+		} else {
+			c.log.Debug("MCP server unavailable for user",
+				"userID", c.userID, "serverID", plan.task.serverID, "error", plan.err)
+		}
 		return mcpErrors
 	}
 
@@ -608,7 +615,7 @@ func closeDetachedClients(log pluginapi.LogService, detached []*Client) {
 			continue
 		}
 		if err := client.Close(); err != nil {
-			log.Error("Failed to close detached MCP client", "serverID", client.config.Name, "error", err)
+			log.Warn("Failed to close detached MCP client", "serverID", client.config.Name, "error", err)
 		}
 	}
 }

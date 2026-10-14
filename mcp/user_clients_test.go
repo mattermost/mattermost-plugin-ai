@@ -10,8 +10,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmapi"
@@ -658,5 +660,122 @@ func testClientWithTools(name, baseURL string, toolNames ...string) *Client {
 			Enabled: true,
 		},
 		tools: tools,
+	}
+}
+
+// A freshly minted embedded session can be briefly invisible to lookups (e.g.
+// replica lag). The connect on the same turn must still yield the tools.
+func TestClientManagerGetToolsForUser_NewSessionLookupLag(t *testing.T) {
+	const (
+		userID       = "alice"
+		newSessionID = "new-session"
+	)
+
+	tests := []struct {
+		name          string
+		failedLookups int
+		wantTools     bool
+	}{
+		{name: "connects after transient lookup failures", failedLookups: 3, wantTools: true},
+		{name: "omits tools when session never becomes visible", failedLookups: 1000, wantTools: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			origBackoff := embeddedSessionLookupBackoff
+			embeddedSessionLookupBackoff = []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond, time.Millisecond, time.Millisecond}
+			t.Cleanup(func() { embeddedSessionLookupBackoff = origBackoff })
+
+			var storedSessionID string
+			var sessionsMu sync.Mutex
+			sessions := map[string]*model.Session{}
+			lookupsOfNew := 0
+			fakeAPI := &plugintest.API{}
+			setupTestLogger(fakeAPI)
+			fakeAPI.On("KVGet", mock.AnythingOfType("string")).Return(func(key string) []byte {
+				if key == buildEmbeddedSessionKey(userID) && storedSessionID != "" {
+					return []byte(storedSessionID)
+				}
+				return nil
+			}, (*model.AppError)(nil))
+			fakeAPI.On("KVDelete", mock.AnythingOfType("string")).Return((*model.AppError)(nil))
+			fakeAPI.On("KVSetWithOptions", mock.AnythingOfType("string"), mock.Anything, mock.AnythingOfType("model.PluginKVSetOptions")).Run(func(args mock.Arguments) {
+				if args.String(0) == buildEmbeddedSessionKey(userID) {
+					storedSessionID = string(args.Get(1).([]byte))
+				}
+			}).Return(true, (*model.AppError)(nil))
+			fakeAPI.On("GetUser", userID).Return(&model.User{Id: userID, Roles: "system_user"}, (*model.AppError)(nil))
+			// visible reports whether a lookup sees the session; the newly
+			// created one stays invisible for the first failedLookups calls.
+			visible := func(sessionID string) *model.Session {
+				sessionsMu.Lock()
+				defer sessionsMu.Unlock()
+				if lookupsOfNew <= tt.failedLookups {
+					return nil
+				}
+				return sessions[sessionID]
+			}
+			fakeAPI.On("GetSession", mock.AnythingOfType("string")).Run(func(args mock.Arguments) {
+				sessionsMu.Lock()
+				defer sessionsMu.Unlock()
+				if sessions[args.String(0)] != nil {
+					lookupsOfNew++
+				}
+			}).Return(
+				visible,
+				func(sessionID string) *model.AppError {
+					if visible(sessionID) == nil {
+						return model.NewAppError("GetSessionById", "app.session.get.app_error", nil, "", http.StatusInternalServerError)
+					}
+					return nil
+				},
+			)
+			fakeAPI.On("CreateSession", mock.AnythingOfType("*model.Session")).Return(func(session *model.Session) *model.Session {
+				session.Id = newSessionID
+				session.Token = "new-token"
+				sessionsMu.Lock()
+				sessions[newSessionID] = session
+				sessionsMu.Unlock()
+				return session
+			}, (*model.AppError)(nil))
+			defaultConfig := &model.Config{}
+			defaultConfig.SetDefaults()
+			fakeAPI.On("GetConfig").Return(defaultConfig)
+
+			pluginAPI := pluginapi.NewClient(fakeAPI, nil)
+			runCtx, cancelRun := context.WithCancel(context.Background())
+			t.Cleanup(cancelRun)
+			manager := NewClientManager(
+				Config{
+					EmbeddedServer: EmbeddedServerConfig{
+						Enabled: true,
+						ToolConfigs: []ToolConfig{{
+							Name:    "session_identity",
+							Policy:  "auto_run_in_dm",
+							Enabled: true,
+						}},
+					},
+				},
+				pluginAPI.Log,
+				pluginAPI,
+				nil,
+				&sessionEchoEmbeddedMCPServer{ctx: runCtx},
+				http.DefaultClient,
+				nil,
+				RemoteMCPAlwaysAllowed,
+				nil)
+			t.Cleanup(manager.Close)
+
+			tools, mcpErrors := manager.GetTools(context.Background(), UserCatalogRequest(userID))
+			require.Nil(t, mcpErrors)
+			require.Equal(t, newSessionID, storedSessionID)
+			if !tt.wantTools {
+				require.Empty(t, tools)
+				fakeAPI.AssertCalled(t, "LogWarn", "MCP server unavailable for user; continuing without its tools",
+					mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+				return
+			}
+			require.Equal(t, newSessionID, callSessionIdentityTool(t, tools))
+		})
 	}
 }
