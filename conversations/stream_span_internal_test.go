@@ -53,3 +53,24 @@ func TestEndSpanOnStreamCloseReleaseAfterAbandon(t *testing.T) {
 		t.Fatal("forwarder still blocked after release")
 	}
 }
+
+// Released while the forwarder waits on a producer that has gone quiet (a
+// tool call in progress): the span must end now, not at the next event.
+func TestEndSpanOnStreamCloseReleaseWhileUpstreamIdle(t *testing.T) {
+	previous := otel.GetTracerProvider()
+	exporter := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	otel.SetTracerProvider(tp)
+	t.Cleanup(func() {
+		_ = tp.Shutdown(context.Background())
+		otel.SetTracerProvider(previous)
+	})
+
+	upstream := make(chan llm.TextStreamEvent) // never sends, never closes
+	_, span := telemetry.Tracer().Start(context.Background(), "process dm request")
+	_, release := endSpanOnStreamClose(&llm.TextStreamResult{Stream: upstream}, span)
+
+	release()
+
+	require.Len(t, exporter.GetSpans(), 1)
+}

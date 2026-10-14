@@ -291,18 +291,30 @@ func (c *Conversations) processDMRequest(
 // terminal event is forwarded: consumers stop reading at that event, and
 // must not observe the span still open afterwards.
 //
-// The returned release ends the span and stops forwarding. A consumer that
-// stops reading early (a canceled reply) or never starts must call it, or
-// the forwarder blocks on its next send and the span is never exported.
+// The returned release ends the span at once and stops forwarding. A
+// consumer that stops reading early (a canceled reply) or never starts must
+// call it, or the span stays open while the tool loop runs on.
 func endSpanOnStreamClose(stream *llm.TextStreamResult, span trace.Span) (*llm.TextStreamResult, func()) {
 	out := make(chan llm.TextStreamEvent)
 	done := make(chan struct{})
 	var once sync.Once
-	release := func() { once.Do(func() { close(done) }) }
+	// release ends the span itself: the forwarder may be blocked reading
+	// upstream (mid tool call) and not notice done until the next event.
+	release := func() {
+		once.Do(func() {
+			close(done)
+			span.End()
+		})
+	}
 	go func() {
 		defer close(out)
 		defer span.End() // idempotent; covers a close without a terminal event
 		for event := range stream.Stream {
+			select {
+			case <-done:
+				return // released while waiting on upstream; don't forward
+			default:
+			}
 			if event.Type == llm.EventTypeEnd || event.Type == llm.EventTypeError {
 				span.End()
 			}
