@@ -6,6 +6,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 
@@ -118,7 +119,7 @@ func (p *MattermostToolProvider) toolGetUser(mcpContext *MCPToolContext, args Ge
 // ID-shaped values both lookups run; if they resolve to different accounts the
 // call fails rather than letting a username squat on another user's ID.
 func getUserByUsernameOrID(ctx context.Context, client *model.Client4, value string) (*model.User, error) {
-	byName, _, err := client.GetUserByUsername(ctx, value, "")
+	byName, nameResp, err := client.GetUserByUsername(ctx, value, "")
 	if !model.IsValidId(value) {
 		if err != nil {
 			return nil, fmt.Errorf("error getting user by username %q: %w", value, err)
@@ -126,7 +127,16 @@ func getUserByUsernameOrID(ctx context.Context, client *model.Client4, value str
 		return byName, nil
 	}
 
-	byID, _, idErr := client.GetUser(ctx, value, "")
+	// Only a confirmed not-found counts as an absent candidate; any other
+	// failure could hide a collision, so it is returned as is.
+	byID, idResp, idErr := client.GetUser(ctx, value, "")
+	if err != nil && !isNotFound(nameResp) {
+		return nil, fmt.Errorf("error getting user by username %q: %w", value, err)
+	}
+	if idErr != nil && !isNotFound(idResp) {
+		return nil, fmt.Errorf("error getting user by ID %q: %w", value, idErr)
+	}
+
 	switch {
 	case err == nil && idErr == nil && byName.Id != byID.Id:
 		return nil, fmt.Errorf("%q is ambiguous: it is the username of one user and the ID of another; ask the user which account they mean", value)
@@ -137,6 +147,10 @@ func getUserByUsernameOrID(ctx context.Context, client *model.Client4, value str
 	default:
 		return nil, fmt.Errorf("error getting user by username %q: %w", value, err)
 	}
+}
+
+func isNotFound(resp *model.Response) bool {
+	return resp != nil && resp.StatusCode == http.StatusNotFound
 }
 
 // toolGetUserByUsername implements the get_user_by_username tool.

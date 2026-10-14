@@ -650,6 +650,8 @@ func TestUserLookupAcceptsUserID(t *testing.T) {
 	squatter := &model.User{Id: model.NewId(), Username: victim.Id}
 	// longname is a real 26-character username that is no one's ID.
 	longname := &model.User{Id: model.NewId(), Username: model.NewId()}
+	// failingID is a user ID whose username lookup fails with a server error.
+	failingID := model.NewId()
 
 	tests := []struct {
 		name      string
@@ -662,6 +664,7 @@ func TestUserLookupAcceptsUserID(t *testing.T) {
 		{name: "user ID falls back to ID lookup", value: john.Id, wantMatch: "john"},
 		{name: "ID-shaped username that is no one's ID", value: longname.Username, wantMatch: longname.Username},
 		{name: "username squatting on another user's ID is rejected", value: victim.Id, wantErr: "ambiguous"},
+		{name: "server error on one lookup is not treated as not found", value: failingID, wantErr: "error getting user by username"},
 		{name: "unknown username", value: "nobody", wantErr: `error getting user by username "nobody"`},
 		{name: "unknown user ID", value: unknownID, wantErr: fmt.Sprintf("error getting user by username %q", unknownID)},
 	}
@@ -680,6 +683,10 @@ func TestUserLookupAcceptsUserID(t *testing.T) {
 		writeJSON(w, &model.User{Id: meID, Username: "me"})
 	})
 	mux.HandleFunc("/api/v4/users/username/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.TrimPrefix(r.URL.Path, "/api/v4/users/username/") == failingID {
+			http.Error(w, "boom", http.StatusInternalServerError)
+			return
+		}
 		for _, u := range []*model.User{john, squatter, longname} {
 			if strings.TrimPrefix(r.URL.Path, "/api/v4/users/username/") == u.Username {
 				writeJSON(w, u)
@@ -689,6 +696,10 @@ func TestUserLookupAcceptsUserID(t *testing.T) {
 		notFound(w)
 	})
 	mux.HandleFunc("/api/v4/users/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.TrimPrefix(r.URL.Path, "/api/v4/users/") == failingID {
+			writeJSON(w, &model.User{Id: failingID, Username: "someone"})
+			return
+		}
 		for _, u := range []*model.User{john, victim, squatter, longname} {
 			if strings.TrimPrefix(r.URL.Path, "/api/v4/users/") == u.Id {
 				writeJSON(w, u)
