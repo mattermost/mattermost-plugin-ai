@@ -194,49 +194,6 @@ func NewEmbeddedServerClientWithCache(server EmbeddedMCPServer, log pluginapi.Lo
 	return client
 }
 
-// embeddedSessionLookupBackoff is the wait before each retry of a failed
-// session lookup. A session minted moments earlier can be briefly invisible
-// (e.g. a read replica that has not caught up), so the lookup is retried
-// before giving up rather than dropping the Mattermost tools for the turn.
-var embeddedSessionLookupBackoff = []time.Duration{
-	50 * time.Millisecond,
-	100 * time.Millisecond,
-	200 * time.Millisecond,
-	400 * time.Millisecond,
-	800 * time.Millisecond,
-}
-
-// getSessionWithRetry looks up sessionID, retrying transient failures with
-// backoff until it succeeds, the retries run out, or ctx ends.
-func (c *EmbeddedServerClient) getSessionWithRetry(ctx context.Context, sessionID string) (*model.Session, error) {
-	var lastErr error
-	for attempt := 0; ; attempt++ {
-		mmSession, err := c.pluginAPI.Session.Get(sessionID)
-		switch {
-		case err != nil:
-			lastErr = err
-		case mmSession == nil:
-			lastErr = fmt.Errorf("session not found")
-		default:
-			if attempt > 0 {
-				c.log.Debug("Embedded session lookup succeeded after retry", "attempts", attempt+1)
-			}
-			return mmSession, nil
-		}
-
-		if attempt >= len(embeddedSessionLookupBackoff) {
-			return nil, lastErr
-		}
-		timer := time.NewTimer(embeddedSessionLookupBackoff[attempt])
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return nil, fmt.Errorf("%w (lookup abandoned: %w)", lastErr, ctx.Err())
-		case <-timer.C:
-		}
-	}
-}
-
 // NewSDKClient builds a go-sdk MCP client hardened against hostile tools/list
 // responses. Use it instead of calling mcp.NewClient directly.
 func NewSDKClient(impl *mcp.Implementation, opts *mcp.ClientOptions) *mcp.Client {
@@ -347,15 +304,35 @@ func (c *EmbeddedServerClient) CreateClient(ctx context.Context, userID, session
 		if c.pluginAPI == nil {
 			return nil, fmt.Errorf("plugin API is required when sessionID is provided")
 		}
-		mmSession, err := c.getSessionWithRetry(ctx, sessionID)
+		mmSession, err := c.pluginAPI.Session.Get(sessionID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get session: %w", err)
+		}
+		if mmSession == nil {
+			return nil, fmt.Errorf("session not found")
 		}
 		if mmSession.UserId != userID {
 			return nil, fmt.Errorf("session user ID does not match: expected %s, got %s", userID, mmSession.UserId)
 		}
 	}
 
+	return c.connect(ctx, userID, sessionID)
+}
+
+// CreateClientForSession connects using a session the caller has already
+// created or validated. It skips re-reading the session: the plugin API reads
+// sessions by ID from a DB read replica, which can miss a just-created session.
+func (c *EmbeddedServerClient) CreateClientForSession(ctx context.Context, userID string, session *model.Session) (*Client, error) {
+	if session == nil || session.Id == "" {
+		return nil, fmt.Errorf("session not found")
+	}
+	if session.UserId != userID {
+		return nil, fmt.Errorf("session user ID does not match: expected %s, got %s", userID, session.UserId)
+	}
+	return c.connect(ctx, userID, session.Id)
+}
+
+func (c *EmbeddedServerClient) connect(ctx context.Context, userID, sessionID string) (*Client, error) {
 	// Get the in-memory transport from the embedded server
 	transport, err := c.server.CreateClientTransport(userID, sessionID, c.pluginAPI)
 	if err != nil {

@@ -10,10 +10,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmapi"
@@ -285,7 +283,7 @@ func connectEmbeddedServer(uc *UserClients, sessionID string, embeddedClient *Em
 		return nil
 	}
 	ctx := context.Background()
-	return uc.ensureConnections(ctx, []connectTask{uc.embeddedConnectTask(ctx, sessionID, embeddedClient)})
+	return uc.ensureConnections(ctx, []connectTask{uc.embeddedConnectTask(ctx, sessionID, nil, embeddedClient)})
 }
 
 func TestOriginAttemptWaitFinishedOutcomeWinsCanceledContext(t *testing.T) {
@@ -663,33 +661,28 @@ func testClientWithTools(name, baseURL string, toolNames ...string) *Client {
 	}
 }
 
-// A freshly minted embedded session can be briefly invisible to lookups (e.g.
-// replica lag). The connect on the same turn must still yield the tools.
-func TestClientManagerGetToolsForUser_NewSessionLookupLag(t *testing.T) {
+// A freshly minted embedded session can be invisible to lookups by ID for a
+// while (the plugin API reads them from a DB read replica). The connect on the
+// same turn must still yield the tools, and a failed connect must be logged
+// at a level operators see.
+func TestClientManagerGetToolsForUser_NewSessionNotYetReadable(t *testing.T) {
 	const (
 		userID       = "alice"
 		newSessionID = "new-session"
 	)
 
 	tests := []struct {
-		name          string
-		failedLookups int
-		wantTools     bool
+		name         string
+		transportErr error
+		wantTools    bool
 	}{
-		{name: "connects after transient lookup failures", failedLookups: 3, wantTools: true},
-		{name: "omits tools when session never becomes visible", failedLookups: 1000, wantTools: false},
+		{name: "connects without reading the new session back", wantTools: true},
+		{name: "warns when the embedded server is unreachable", transportErr: errors.New("embedded server down")},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			origBackoff := embeddedSessionLookupBackoff
-			embeddedSessionLookupBackoff = []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond, time.Millisecond, time.Millisecond}
-			t.Cleanup(func() { embeddedSessionLookupBackoff = origBackoff })
-
 			var storedSessionID string
-			var sessionsMu sync.Mutex
-			sessions := map[string]*model.Session{}
-			lookupsOfNew := 0
 			fakeAPI := &plugintest.API{}
 			setupTestLogger(fakeAPI)
 			fakeAPI.On("KVGet", mock.AnythingOfType("string")).Return(func(key string) []byte {
@@ -705,37 +698,12 @@ func TestClientManagerGetToolsForUser_NewSessionLookupLag(t *testing.T) {
 				}
 			}).Return(true, (*model.AppError)(nil))
 			fakeAPI.On("GetUser", userID).Return(&model.User{Id: userID, Roles: "system_user"}, (*model.AppError)(nil))
-			// visible reports whether a lookup sees the session; the newly
-			// created one stays invisible for the first failedLookups calls.
-			visible := func(sessionID string) *model.Session {
-				sessionsMu.Lock()
-				defer sessionsMu.Unlock()
-				if lookupsOfNew <= tt.failedLookups {
-					return nil
-				}
-				return sessions[sessionID]
-			}
-			fakeAPI.On("GetSession", mock.AnythingOfType("string")).Run(func(args mock.Arguments) {
-				sessionsMu.Lock()
-				defer sessionsMu.Unlock()
-				if sessions[args.String(0)] != nil {
-					lookupsOfNew++
-				}
-			}).Return(
-				visible,
-				func(sessionID string) *model.AppError {
-					if visible(sessionID) == nil {
-						return model.NewAppError("GetSessionById", "app.session.get.app_error", nil, "", http.StatusInternalServerError)
-					}
-					return nil
-				},
-			)
+			// The replica never catches up during the turn.
+			fakeAPI.On("GetSession", mock.AnythingOfType("string")).Return((*model.Session)(nil),
+				model.NewAppError("GetSessionById", "app.session.get.app_error", nil, "", http.StatusBadRequest)).Maybe()
 			fakeAPI.On("CreateSession", mock.AnythingOfType("*model.Session")).Return(func(session *model.Session) *model.Session {
 				session.Id = newSessionID
 				session.Token = "new-token"
-				sessionsMu.Lock()
-				sessions[newSessionID] = session
-				sessionsMu.Unlock()
 				return session
 			}, (*model.AppError)(nil))
 			defaultConfig := &model.Config{}
@@ -745,6 +713,10 @@ func TestClientManagerGetToolsForUser_NewSessionLookupLag(t *testing.T) {
 			pluginAPI := pluginapi.NewClient(fakeAPI, nil)
 			runCtx, cancelRun := context.WithCancel(context.Background())
 			t.Cleanup(cancelRun)
+			var server EmbeddedMCPServer = &sessionEchoEmbeddedMCPServer{ctx: runCtx}
+			if tt.transportErr != nil {
+				server = failingEmbeddedMCPServer{err: tt.transportErr}
+			}
 			manager := NewClientManager(
 				Config{
 					EmbeddedServer: EmbeddedServerConfig{
@@ -759,7 +731,7 @@ func TestClientManagerGetToolsForUser_NewSessionLookupLag(t *testing.T) {
 				pluginAPI.Log,
 				pluginAPI,
 				nil,
-				&sessionEchoEmbeddedMCPServer{ctx: runCtx},
+				server,
 				http.DefaultClient,
 				nil,
 				RemoteMCPAlwaysAllowed,
@@ -778,4 +750,12 @@ func TestClientManagerGetToolsForUser_NewSessionLookupLag(t *testing.T) {
 			require.Equal(t, newSessionID, callSessionIdentityTool(t, tools))
 		})
 	}
+}
+
+type failingEmbeddedMCPServer struct {
+	err error
+}
+
+func (s failingEmbeddedMCPServer) CreateClientTransport(string, string, *pluginapi.Client) (*gomcp.InMemoryTransport, error) {
+	return nil, s.err
 }

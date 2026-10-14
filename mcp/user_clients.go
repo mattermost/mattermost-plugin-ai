@@ -19,6 +19,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/config"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmapi"
+	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 )
 
@@ -215,7 +216,7 @@ func (c *UserClients) ConnectToEmbeddedServerIfAvailable(ctx context.Context, se
 		return nil
 	}
 
-	task := c.embeddedConnectTask(ctx, sessionID, embeddedClient)
+	task := c.embeddedConnectTask(ctx, sessionID, nil, embeddedClient)
 	task.silent = false
 	return firstConnectError(c.ensureConnections(ctx, []connectTask{task}))
 }
@@ -479,8 +480,9 @@ func remoteOriginIdentityForMode(server ServerConfig, conflicting, serviceAccoun
 
 // embeddedConnectTask builds the task for the embedded Mattermost MCP server.
 // It replaces any cached session because the caller only schedules it when the
-// user's embedded session ID changed.
-func (c *UserClients) embeddedConnectTask(ctx context.Context, sessionID string, embeddedClient *EmbeddedServerClient) connectTask {
+// user's embedded session ID changed. A non-nil session is one the caller has
+// already validated and is used as-is instead of being read back.
+func (c *UserClients) embeddedConnectTask(ctx context.Context, sessionID string, session *model.Session, embeddedClient *EmbeddedServerClient) connectTask {
 	var server EmbeddedMCPServer
 	if embeddedClient != nil {
 		server = embeddedClient.server
@@ -497,7 +499,13 @@ func (c *UserClients) embeddedConnectTask(ctx context.Context, sessionID string,
 			dialCtx, cancel := context.WithTimeout(ctx, embeddedConnectTimeout)
 			defer cancel()
 
-			client, err := embeddedClient.CreateClient(dialCtx, c.userID, sessionID)
+			var client *Client
+			var err error
+			if session != nil {
+				client, err = embeddedClient.CreateClientForSession(dialCtx, c.userID, session)
+			} else {
+				client, err = embeddedClient.CreateClient(dialCtx, c.userID, sessionID)
+			}
 			if err != nil {
 				return nil, fmt.Errorf("failed to connect to embedded server: %w", err)
 			}
