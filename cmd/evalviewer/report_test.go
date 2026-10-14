@@ -225,6 +225,23 @@ func TestReproduceCommandQuotesApostrophes(t *testing.T) {
 	}
 }
 
+func TestNestedEvalNames(t *testing.T) {
+	name := "TestSearchPostsOutputQualityEval/keyword/[openai]_search_posts_keyword_quality"
+	results := buildResultSet([]EvalLogLine{graded(name, "lists results", 0, false)})
+	r := buildReport(results, nil, nil)
+
+	if len(r.regressions) != 1 || r.regressions[0].provider != "openai" {
+		t.Fatalf("regressions = %+v, want one openai regression", r.regressions)
+	}
+	c := r.regressions[0]
+	if got, want := displayTestName(c.test), "TestSearchPostsOutputQualityEval › keyword › search posts keyword quality"; got != want {
+		t.Errorf("displayTestName() = %q, want %q", got, want)
+	}
+	if got, want := reproduceCommand(c), `GOEVALS=1 LLM_PROVIDER=openai go test ./react -run '^TestSearchPostsOutputQualityEval$/^keyword$/^\[openai\]_search_posts_keyword_quality$' -v`; got != want {
+		t.Errorf("reproduceCommand() = %s\nwant %s", got, want)
+	}
+}
+
 func assertCases(t *testing.T, label string, cases []*caseStats, want []string) {
 	t.Helper()
 	got := make([]string, 0, len(cases))

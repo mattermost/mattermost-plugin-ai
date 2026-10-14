@@ -45,7 +45,7 @@ type caseKey struct {
 type caseStats struct {
 	caseKey
 	pkg      string
-	subtest  string
+	segments []string
 	passes   int
 	failures int
 	// sample is the most recent failed or errored record, shown in reports.
@@ -167,25 +167,30 @@ func (r resultSet) provider(name string) *providerResults {
 }
 
 // splitEvalName splits "TestReactEval/[openai]_react_cat_message" into the
-// provider, a provider-independent test name, and the subtest name.
-func splitEvalName(name string) (provider, test, subtest string) {
-	parent, sub, _ := strings.Cut(name, "/")
+// provider, a provider-independent test name, and the name's segments. The
+// provider tag can be on any segment, since evals.Run may be called inside a
+// subtest.
+func splitEvalName(name string) (provider, test string, segments []string) {
+	segments = strings.Split(name, "/")
 	provider = "unknown"
-	rest := sub
-	if after, ok := strings.CutPrefix(sub, "["); ok {
-		if p, r, found := strings.Cut(after, "]"); found {
-			provider = p
-			rest = strings.TrimPrefix(r, "_")
+	parts := slices.Clone(segments)
+	for i, segment := range parts {
+		if after, ok := strings.CutPrefix(segment, "["); ok {
+			if p, rest, found := strings.Cut(after, "]"); found {
+				provider = p
+				parts[i] = strings.TrimPrefix(rest, "_")
+				break
+			}
 		}
 	}
-	return provider, parent + "/" + rest, sub
+	return provider, strings.Join(parts, "/"), segments
 }
 
 func buildResultSet(records []EvalLogLine) resultSet {
 	set := resultSet{}
 	gradedRuns := map[[2]string]map[int]bool{}
 	for _, record := range records {
-		provider, test, subtest := splitEvalName(record.Name)
+		provider, test, segments := splitEvalName(record.Name)
 		p := set.provider(provider)
 		if record.Usage != nil {
 			u, ok := p.usage[test]
@@ -205,7 +210,7 @@ func buildResultSet(records []EvalLogLine) resultSet {
 		}
 		c, ok := p.cases[key]
 		if !ok {
-			c = &caseStats{caseKey: key, pkg: record.Package, subtest: subtest}
+			c = &caseStats{caseKey: key, pkg: record.Package, segments: segments}
 			p.cases[key] = c
 		}
 		if record.Error == "" {
@@ -610,16 +615,19 @@ func checkLabel(c *caseStats) string {
 // displayTestName turns "TestReactEval/react_cat_message" into
 // "TestReactEval › react cat message".
 func displayTestName(test string) string {
-	parent, sub, found := strings.Cut(test, "/")
-	if !found {
-		return test
+	segments := strings.Split(test, "/")
+	for i := 1; i < len(segments); i++ {
+		segments[i] = strings.ReplaceAll(segments[i], "_", " ")
 	}
-	return parent + " › " + strings.ReplaceAll(sub, "_", " ")
+	return strings.Join(segments, " › ")
 }
 
 func reproduceCommand(c *caseStats) string {
-	parent, _, _ := strings.Cut(c.test, "/")
-	pattern := "^" + regexp.QuoteMeta(parent) + "$/^" + regexp.QuoteMeta(c.subtest) + "$"
+	anchored := make([]string, len(c.segments))
+	for i, segment := range c.segments {
+		anchored[i] = "^" + regexp.QuoteMeta(segment) + "$"
+	}
+	pattern := strings.Join(anchored, "/")
 	pkg := "./..."
 	if c.pkg != "" {
 		pkg = "./" + c.pkg
