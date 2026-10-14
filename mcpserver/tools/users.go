@@ -111,22 +111,32 @@ func (p *MattermostToolProvider) toolGetUser(mcpContext *MCPToolContext, args Ge
 	return formatSingleUser(user), nil
 }
 
-// getUserByUsernameOrID resolves a user by username and, when that fails and
-// the value is shaped like a Mattermost ID, by user ID. Models sometimes pass a
-// user ID where a username is expected (e.g. from a scheduled prompt that
-// embeds one). The username lookup runs first because a 26-character
-// lowercase alphanumeric username is also a valid ID.
+// getUserByUsernameOrID resolves a user by username or, when the value is
+// shaped like a Mattermost ID, by user ID. Models sometimes pass a user ID
+// where a username is expected (e.g. from a scheduled prompt that embeds one).
+// A 26-character lowercase alphanumeric username is also a valid ID, so for
+// ID-shaped values both lookups run; if they resolve to different accounts the
+// call fails rather than letting a username squat on another user's ID.
 func getUserByUsernameOrID(ctx context.Context, client *model.Client4, value string) (*model.User, error) {
-	user, _, err := client.GetUserByUsername(ctx, value, "")
-	if err == nil {
-		return user, nil
-	}
-	if model.IsValidId(value) {
-		if byID, _, idErr := client.GetUser(ctx, value, ""); idErr == nil {
-			return byID, nil
+	byName, _, err := client.GetUserByUsername(ctx, value, "")
+	if !model.IsValidId(value) {
+		if err != nil {
+			return nil, fmt.Errorf("error getting user by username %q: %w", value, err)
 		}
+		return byName, nil
 	}
-	return nil, fmt.Errorf("error getting user by username %q: %w", value, err)
+
+	byID, _, idErr := client.GetUser(ctx, value, "")
+	switch {
+	case err == nil && idErr == nil && byName.Id != byID.Id:
+		return nil, fmt.Errorf("%q is ambiguous: it is the username of one user and the ID of another; ask the user which account they mean", value)
+	case idErr == nil:
+		return byID, nil
+	case err == nil:
+		return byName, nil
+	default:
+		return nil, fmt.Errorf("error getting user by username %q: %w", value, err)
+	}
 }
 
 // toolGetUserByUsername implements the get_user_by_username tool.
