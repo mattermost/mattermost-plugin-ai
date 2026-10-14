@@ -164,11 +164,29 @@ jobs:
           - name: bedrock
             display_name: AWS Bedrock
     name: evals-${{ matrix.provider.name }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
+
+      - name: "TEMP: probe OpenAI model access"
+        if: matrix.provider.name == 'openai'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          for m in gpt-6.1-sol gpt-6-sol gpt-6-luna gpt-5.6-terra gpt-5.6-sol gpt-5.4 gpt-5.2; do
+            for ep in responses chat; do
+              if [ "$ep" = responses ]; then
+                url=https://api.openai.com/v1/responses; body="{\"model\":\"$m\",\"input\":\"hi\",\"max_output_tokens\":16}"
+              else
+                url=https://api.openai.com/v1/chat/completions; body="{\"model\":\"$m\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_completion_tokens\":16}"
+              fi
+              code=$(curl -s -o /tmp/probe.json -w '%{http_code}' "$url" -H "Authorization: Bearer $OPENAI_API_KEY" -H 'Content-Type: application/json' -d "$body")
+              echo "$m $ep $code $(jq -r '[.error.type, .error.code] | map(select(. != null)) | join(" ") // ""' /tmp/probe.json)"
+            done
+          done
 
       - name: Run ${{ matrix.provider.display_name }} evaluations
         # Model variables are optional overrides; when unset, the defaults in
