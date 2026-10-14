@@ -8,12 +8,15 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 )
 
 type EvalLogLine struct {
 	Name      string  `json:"name"`
+	Package   string  `json:"package,omitempty"`
 	Timestamp string  `json:"timestamp"`
 	RunNumber int     `json:"run_number"`
 	Rubric    string  `json:"rubric"`
@@ -21,6 +24,9 @@ type EvalLogLine struct {
 	Reasoning string  `json:"reasoning"`
 	Score     float64 `json:"score"`
 	Pass      bool    `json:"pass"`
+	// Error is set when the run failed before any rubric could be graded,
+	// for example because the provider rejected the request.
+	Error string `json:"error,omitempty"`
 }
 
 type EvalResult struct {
@@ -37,22 +43,37 @@ var evalFileLock sync.Mutex
 // RecordScore records the score of an eval in a JSONL file.
 func RecordScore(e *EvalT, result *EvalResult) {
 	e.Helper()
-
-	log := EvalLogLine{
-		Name:      e.Name(),
-		Timestamp: time.Now().Format(time.RFC3339),
-		RunNumber: e.runNumber,
+	e.recorded++
+	writeLogLine(e, EvalLogLine{
 		Rubric:    result.Rubric,
 		Output:    result.Output,
 		Reasoning: result.Reasoning,
 		Score:     result.Score,
 		Pass:      result.Pass,
-	}
+	})
+}
+
+// recordError records a run that failed before producing any graded result.
+func recordError(e *EvalT, failure string) {
+	e.Helper()
+	writeLogLine(e, EvalLogLine{Error: redactSecrets(summarizeFailure(failure))})
+}
+
+func writeLogLine(e *EvalT, log EvalLogLine) {
+	e.Helper()
+	log.Name = e.Name()
+	log.Timestamp = time.Now().Format(time.RFC3339)
+	log.RunNumber = e.runNumber
 
 	dir, err := findCurrentModuleRoot()
 	if err != nil {
 		e.Fatalf("Failed to find module root: %v", err)
 		return
+	}
+	if cwd, cwdErr := os.Getwd(); cwdErr == nil {
+		if rel, relErr := filepath.Rel(dir, cwd); relErr == nil {
+			log.Package = filepath.ToSlash(rel)
+		}
 	}
 	file := filepath.Join(dir, "evals.jsonl")
 
@@ -70,6 +91,59 @@ func RecordScore(e *EvalT, result *EvalResult) {
 		e.Fatalf("Failed to write to evals.jsonl: %v", err)
 		return
 	}
+}
+
+var testifyLabel = regexp.MustCompile(`^\s*([A-Za-z ]+):\s*\t(.*)$`)
+
+// summarizeFailure reduces a testify failure message to its error and
+// message sections, dropping the stack trace and test name.
+func summarizeFailure(failure string) string {
+	sections := map[string][]string{}
+	label := ""
+	for line := range strings.SplitSeq(failure, "\n") {
+		if m := testifyLabel.FindStringSubmatch(line); m != nil {
+			label = strings.TrimSpace(m[1])
+			line = m[2]
+		}
+		if label == "" {
+			continue
+		}
+		if text := strings.TrimSpace(line); text != "" {
+			sections[label] = append(sections[label], text)
+		}
+	}
+
+	if len(sections["Error"]) == 0 {
+		return strings.TrimSpace(failure)
+	}
+	summary := strings.Join(sections["Error"], " ")
+	if messages := sections["Messages"]; len(messages) > 0 {
+		summary = strings.Join(messages, " ") + ": " + summary
+	}
+	return summary
+}
+
+// redactSecrets removes credential values that provider errors may echo back
+// (keys, endpoints) so results can be published outside the job log.
+func redactSecrets(s string) string {
+	for _, kv := range os.Environ() {
+		name, value, _ := strings.Cut(kv, "=")
+		if len(value) < 8 || !isSecretEnv(name) {
+			continue
+		}
+		s = strings.ReplaceAll(s, value, "[REDACTED]")
+	}
+	return s
+}
+
+func isSecretEnv(name string) bool {
+	name = strings.ToUpper(name)
+	for _, suffix := range []string{"_KEY", "_KEY_ID", "_SECRET", "_TOKEN", "_ENDPOINT", "_API_URL"} {
+		if strings.HasSuffix(name, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 func findCurrentModuleRoot() (string, error) {

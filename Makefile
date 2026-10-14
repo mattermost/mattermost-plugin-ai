@@ -446,6 +446,7 @@ evalviewer:
 ##   AZURE_OPENAI_API_KEY: Azure OpenAI API key
 ##   AZURE_OPENAI_ENDPOINT: Azure OpenAI endpoint URL
 ##   AZURE_OPENAI_MODEL: Model to use for Azure OpenAI (overrides code default)
+##   GOEVALS: Runs per eval; repeated runs are combined by majority vote (default: 1)
 .PHONY: evals
 evals: evalviewer
 	@echo Running evaluations interactively...
@@ -457,13 +458,6 @@ evals: evalviewer
 evals-ci: evalviewer
 	@echo Running evaluations in CI mode...
 	./bin/evalviewer check -v ./conversations ./threads ./channels ./react
-
-## Runs evaluations and generates GitHub comment (always succeeds).
-## Uses the same environment variables as the evals target.
-.PHONY: evals-comment
-evals-comment: evalviewer
-	@echo Running evaluations and generating GitHub comment...
-	./bin/evalviewer comment -v ./conversations ./threads ./channels ./react
 
 ## Runs MCP server evaluations testing tool output quality and agentic flows.
 ## Requires: OPENAI_API_KEY (or other provider keys), Docker for testcontainers.

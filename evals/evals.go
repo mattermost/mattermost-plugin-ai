@@ -34,6 +34,19 @@ const (
 type EvalT struct {
 	*testing.T
 	*Eval
+
+	// recorded counts graded results in the current run; lastFailure holds
+	// the most recent assertion message, reported if nothing was graded.
+	recorded    int
+	lastFailure string
+}
+
+// Errorf captures assertion failures (testify reports through it) so a run
+// that fails before grading can be recorded with its cause.
+func (e *EvalT) Errorf(format string, args ...any) {
+	e.Helper()
+	e.lastFailure = fmt.Sprintf(format, args...)
+	e.T.Errorf(format, args...)
 }
 
 type Eval struct {
@@ -255,10 +268,23 @@ func Run(t *testing.T, name string, f func(e *EvalT)) {
 			e.T = t
 			for i := range numEvals {
 				e.runNumber = i
-				f(e)
+				runOnce(e, f)
 			}
 		})
 	}
+}
+
+// runOnce runs a single trial. The deferred check also runs when a require
+// assertion stops the trial early via runtime.Goexit.
+func runOnce(e *EvalT, f func(e *EvalT)) {
+	e.recorded = 0
+	e.lastFailure = ""
+	defer func() {
+		if e.recorded == 0 && e.lastFailure != "" {
+			recordError(e, e.lastFailure)
+		}
+	}()
+	f(e)
 }
 
 // getProvidersToTest returns the list of providers to test based on LLM_PROVIDER env var

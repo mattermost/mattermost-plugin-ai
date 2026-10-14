@@ -1,0 +1,435 @@
+// Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
+
+package main
+
+import (
+	"cmp"
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"slices"
+	"strings"
+)
+
+// commentMarker identifies the eval results comment on a pull request. The
+// heading is kept from earlier versions so their comments are updated in place.
+const commentMarker = "## 🤖 LLM Evaluation Results"
+
+var providerDisplayNames = map[string]string{
+	"openai":           "OpenAI",
+	"anthropic":        "Anthropic",
+	"azure":            "Azure OpenAI",
+	"mistral":          "Mistral",
+	"bedrock":          "AWS Bedrock",
+	"cohere":           "Cohere",
+	"openaicompatible": "OpenAI-compatible",
+}
+
+func providerDisplayName(provider string) string {
+	if name, ok := providerDisplayNames[provider]; ok {
+		return name
+	}
+	return provider
+}
+
+// caseKey identifies one graded check: a rubric of an eval for a provider.
+// An empty rubric holds runs that errored before grading.
+type caseKey struct {
+	provider string
+	test     string
+	rubric   string
+}
+
+type caseStats struct {
+	caseKey
+	pkg      string
+	subtest  string
+	passes   int
+	failures int
+	// sample is the most recent failed or errored record, shown in reports.
+	sample EvalLogLine
+}
+
+func (c *caseStats) runs() int {
+	return c.passes + c.failures
+}
+
+// failing is a majority vote across runs, so a single flaky run among several
+// does not count as a failure.
+func (c *caseStats) failing() bool {
+	return c.failures > c.passes
+}
+
+func (c *caseStats) flaky() bool {
+	return c.failures > 0 && !c.failing()
+}
+
+func (c *caseStats) errored() bool {
+	return c.rubric == ""
+}
+
+type providerResults struct {
+	name    string
+	records int
+	errors  int
+	cases   map[caseKey]*caseStats
+}
+
+// unavailable reports a provider whose every run errored or that produced no
+// results at all: a credentials or configuration problem, not a PR regression.
+func (p *providerResults) unavailable() bool {
+	return p.records == 0 || p.records == p.errors
+}
+
+func (p *providerResults) firstError() string {
+	for _, c := range p.sortedCases() {
+		if c.sample.Error != "" {
+			return c.sample.Error
+		}
+	}
+	return "no results were recorded; check that the provider credentials are configured"
+}
+
+func (p *providerResults) sortedCases() []*caseStats {
+	cases := make([]*caseStats, 0, len(p.cases))
+	for _, c := range p.cases {
+		cases = append(cases, c)
+	}
+	slices.SortFunc(cases, func(a, b *caseStats) int {
+		return cmp.Or(cmp.Compare(a.test, b.test), cmp.Compare(a.rubric, b.rubric))
+	})
+	return cases
+}
+
+// resultSet holds results grouped by provider. A nil resultSet means no
+// results were available at all (for example, a missing baseline).
+type resultSet map[string]*providerResults
+
+func (r resultSet) provider(name string) *providerResults {
+	if p, ok := r[name]; ok {
+		return p
+	}
+	p := &providerResults{name: name, cases: map[caseKey]*caseStats{}}
+	r[name] = p
+	return p
+}
+
+// splitEvalName splits "TestReactEval/[openai]_react_cat_message" into the
+// provider, a provider-independent test name, and the subtest name.
+func splitEvalName(name string) (provider, test, subtest string) {
+	parent, sub, _ := strings.Cut(name, "/")
+	provider = "unknown"
+	rest := sub
+	if after, ok := strings.CutPrefix(sub, "["); ok {
+		if p, r, found := strings.Cut(after, "]"); found {
+			provider = p
+			rest = strings.TrimPrefix(r, "_")
+		}
+	}
+	return provider, parent + "/" + rest, sub
+}
+
+func buildResultSet(records []EvalLogLine) resultSet {
+	set := resultSet{}
+	gradedRuns := map[[2]string]map[int]bool{}
+	for _, record := range records {
+		provider, test, subtest := splitEvalName(record.Name)
+		p := set.provider(provider)
+		p.records++
+
+		key := caseKey{provider: provider, test: test, rubric: record.Rubric}
+		if record.Error != "" {
+			p.errors++
+			key.rubric = ""
+		}
+		c, ok := p.cases[key]
+		if !ok {
+			c = &caseStats{caseKey: key, pkg: record.Package, subtest: subtest}
+			p.cases[key] = c
+		}
+		if record.Error == "" {
+			runs := gradedRuns[[2]string{provider, test}]
+			if runs == nil {
+				runs = map[int]bool{}
+				gradedRuns[[2]string{provider, test}] = runs
+			}
+			runs[record.RunNumber] = true
+		}
+		if record.Error == "" && record.Pass {
+			c.passes++
+		} else {
+			c.failures++
+			c.sample = record
+		}
+	}
+
+	// Runs of the same eval that were graded count against its errored runs,
+	// so an eval only counts as errored when most of its runs errored.
+	for _, p := range set {
+		for key, c := range p.cases {
+			if key.rubric == "" {
+				c.passes = len(gradedRuns[[2]string{key.provider, key.test}])
+			}
+		}
+	}
+	return set
+}
+
+// loadResultDir reads every evals.jsonl in dir or its immediate
+// subdirectories (the layout download-artifact produces). It returns nil if
+// the directory does not exist.
+func loadResultDir(dir string) (resultSet, error) {
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return nil, nil
+	}
+
+	var files []string
+	for _, pattern := range []string{"*.jsonl", "*/*.jsonl"} {
+		matches, err := filepath.Glob(filepath.Join(dir, pattern))
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, matches...)
+	}
+
+	var records []EvalLogLine
+	for _, file := range files {
+		loaded, err := loadResults(file, false)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, loaded...)
+	}
+	return buildResultSet(records), nil
+}
+
+type report struct {
+	providers []*providerResults
+	// regressions fail on this change and did not fail on the baseline.
+	regressions []*caseStats
+	preExisting []*caseStats
+	flaky       []*caseStats
+	hasBaseline bool
+}
+
+func buildReport(results, baseline resultSet, expectedProviders []string) report {
+	names := slices.Clone(expectedProviders)
+	for name := range results {
+		if !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+
+	r := report{hasBaseline: baseline != nil}
+	for _, name := range names {
+		p := results.provider(name)
+		r.providers = append(r.providers, p)
+		if p.unavailable() {
+			continue
+		}
+
+		var base *providerResults
+		if baseline != nil {
+			if b, ok := baseline[name]; ok && !b.unavailable() {
+				base = b
+			}
+		}
+
+		for _, c := range p.sortedCases() {
+			switch {
+			case c.failing() && base != nil && failedOnBaseline(base, c.caseKey):
+				r.preExisting = append(r.preExisting, c)
+			case c.failing():
+				r.regressions = append(r.regressions, c)
+			case c.flaky():
+				r.flaky = append(r.flaky, c)
+			}
+		}
+	}
+	return r
+}
+
+func failedOnBaseline(base *providerResults, key caseKey) bool {
+	c, ok := base.cases[key]
+	return ok && c.failing()
+}
+
+// commentMarkdown renders the pull request comment. It is empty when there is
+// nothing for the author to act on.
+func (r report) commentMarkdown() string {
+	if len(r.regressions) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString(commentMarker + "\n\n")
+	if r.hasBaseline {
+		fmt.Fprintf(&sb, "⚠️ **%d eval %s on this PR but not on `master`.**\n\n", len(r.regressions), plural(len(r.regressions), "check fails", "checks fail"))
+	} else {
+		fmt.Fprintf(&sb, "⚠️ **%d eval %s on this PR.** No `master` baseline was available, so these may be pre-existing.\n\n", len(r.regressions), plural(len(r.regressions), "check fails", "checks fail"))
+	}
+
+	sb.WriteString("| Eval | Check | Provider | Passed runs |\n")
+	sb.WriteString("|------|-------|----------|-------------|\n")
+	for _, c := range r.regressions {
+		fmt.Fprintf(&sb, "| %s | %s | %s | %d/%d |\n",
+			tableCell(displayTestName(c.test)), tableCell(checkLabel(c)), providerDisplayName(c.provider), c.passes, c.runs())
+	}
+
+	sb.WriteString("\n<details>\n<summary>Grader reasoning, agent output, and how to reproduce</summary>\n")
+	for _, group := range groupByEval(r.regressions) {
+		first := group[0]
+		fmt.Fprintf(&sb, "\n#### %s (%s)\n\n", displayTestName(first.test), providerDisplayName(first.provider))
+		for _, c := range group {
+			if c.errored() {
+				fmt.Fprintf(&sb, "- **Errored before grading:** %s\n", truncateString(oneLine(c.sample.Error), 500))
+				continue
+			}
+			fmt.Fprintf(&sb, "- **%s** — %s\n", oneLine(c.rubric), truncateString(oneLine(c.sample.Reasoning), 500))
+		}
+		if output := latestOutput(group); output != "" {
+			sb.WriteString("\n<details>\n<summary>Agent output</summary>\n\n````text\n")
+			sb.WriteString(truncateString(output, 3000))
+			sb.WriteString("\n````\n\n</details>\n")
+		}
+		fmt.Fprintf(&sb, "\nReproduce: `%s`\n", reproduceCommand(first))
+	}
+	sb.WriteString("\n</details>\n\n")
+	sb.WriteString("<sub>Only checks that newly fail are listed. Pre-existing failures, flaky checks, and unavailable providers are in the workflow run summary.</sub>\n")
+	return sb.String()
+}
+
+// summaryMarkdown renders the full results for the workflow run summary.
+func (r report) summaryMarkdown() string {
+	var sb strings.Builder
+	sb.WriteString("## LLM evaluation results\n\n")
+	sb.WriteString("| Provider | Status | Checks passed |\n")
+	sb.WriteString("|----------|--------|---------------|\n")
+	for _, p := range r.providers {
+		if p.unavailable() {
+			fmt.Fprintf(&sb, "| %s | ⚪ Unavailable: %s | – |\n", providerDisplayName(p.name), tableCell(truncateString(oneLine(p.firstError()), 200)))
+			continue
+		}
+		passing, total := 0, 0
+		for _, c := range p.cases {
+			total++
+			if !c.failing() {
+				passing++
+			}
+		}
+		status := "✅ Passing"
+		if passing < total {
+			status = "⚠️ Failing"
+		}
+		fmt.Fprintf(&sb, "| %s | %s | %d/%d |\n", providerDisplayName(p.name), status, passing, total)
+	}
+
+	writeCaseList(&sb, "Regressions", r.regressions)
+	writeCaseList(&sb, "Pre-existing failures (also failing on master)", r.preExisting)
+	writeCaseList(&sb, "Flaky (failed some runs, passed the majority)", r.flaky)
+	if !r.hasBaseline {
+		sb.WriteString("\nNo `master` baseline was available for comparison.\n")
+	}
+	return sb.String()
+}
+
+// annotations returns GitHub workflow commands that flag unavailable
+// providers on the run without adding noise to the pull request.
+func (r report) annotations() []string {
+	var lines []string
+	for _, p := range r.providers {
+		if p.unavailable() {
+			lines = append(lines, fmt.Sprintf("::warning title=Evals unavailable for %s::%s",
+				providerDisplayName(p.name), escapeWorkflowCommand(truncateString(oneLine(p.firstError()), 500))))
+		}
+	}
+	return lines
+}
+
+func writeCaseList(sb *strings.Builder, title string, cases []*caseStats) {
+	if len(cases) == 0 {
+		return
+	}
+	fmt.Fprintf(sb, "\n### %s\n\n", title)
+	for _, c := range cases {
+		fmt.Fprintf(sb, "- %s — %s (%s, %d/%d passed)\n", displayTestName(c.test), oneLine(checkLabel(c)), providerDisplayName(c.provider), c.passes, c.runs())
+	}
+}
+
+// groupByEval groups cases of the same eval and provider, preserving order.
+func groupByEval(cases []*caseStats) [][]*caseStats {
+	var groups [][]*caseStats
+	index := map[[2]string]int{}
+	for _, c := range cases {
+		key := [2]string{c.provider, c.test}
+		if i, ok := index[key]; ok {
+			groups[i] = append(groups[i], c)
+			continue
+		}
+		index[key] = len(groups)
+		groups = append(groups, []*caseStats{c})
+	}
+	return groups
+}
+
+func latestOutput(group []*caseStats) string {
+	for _, c := range group {
+		if c.sample.Output != "" {
+			return c.sample.Output
+		}
+	}
+	return ""
+}
+
+func checkLabel(c *caseStats) string {
+	if c.errored() {
+		return "errored before grading"
+	}
+	return c.rubric
+}
+
+// displayTestName turns "TestReactEval/react_cat_message" into
+// "TestReactEval › react cat message".
+func displayTestName(test string) string {
+	parent, sub, found := strings.Cut(test, "/")
+	if !found {
+		return test
+	}
+	return parent + " › " + strings.ReplaceAll(sub, "_", " ")
+}
+
+func reproduceCommand(c *caseStats) string {
+	parent, _, _ := strings.Cut(c.test, "/")
+	pattern := "^" + regexp.QuoteMeta(parent) + "$/^" + regexp.QuoteMeta(c.subtest) + "$"
+	pkg := "./..."
+	if c.pkg != "" {
+		pkg = "./" + c.pkg
+	}
+	return fmt.Sprintf("GOEVALS=1 LLM_PROVIDER=%s go test %s -run %s -v", c.provider, pkg, shellQuote(pattern))
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+func tableCell(s string) string {
+	return strings.ReplaceAll(oneLine(s), "|", `\|`)
+}
+
+func oneLine(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
+func escapeWorkflowCommand(s string) string {
+	return strings.NewReplacer("%", "%25", "\r", "%0D", "\n", "%0A").Replace(s)
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}

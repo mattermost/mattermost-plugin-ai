@@ -68,7 +68,7 @@ func (e *Eval) LLMRubric(rubric, output string) (*RubricResult, error) {
 func LLMRubricT(e *EvalT, rubric, output string) {
 	e.Helper()
 	result, err := e.LLMRubric(rubric, output)
-	require.NoError(e.T, err)
+	require.NoError(e, err, "failed to grade rubric %q", rubric)
 	RecordScore(e, &EvalResult{
 		Rubric:    rubric,
 		Output:    output,
@@ -76,6 +76,6 @@ func LLMRubricT(e *EvalT, rubric, output string) {
 		Score:     result.Score,
 		Pass:      result.Pass,
 	})
-	assert.True(e.T, result.Pass, "LLM Rubric Failed")
-	assert.GreaterOrEqual(e.T, result.Score, 0.6, "LLM Rubric Score is too low")
+	assert.True(e, result.Pass, "LLM Rubric Failed")
+	assert.GreaterOrEqual(e, result.Score, 0.6, "LLM Rubric Score is too low")
 }
