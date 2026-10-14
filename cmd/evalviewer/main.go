@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -63,6 +64,15 @@ var (
 	reportProviders   []string
 	reportCommentFile string
 	reportSummaryFile string
+	reportJSONFile    string
+	reportCommit      string
+	reportRunURL      string
+	reportChangeLabel string
+	reportBaseLabel   string
+
+	// Flags for trend command
+	trendHistoryDir string
+	trendLimit      int
 )
 
 func main() {
@@ -138,6 +148,18 @@ evals.jsonl files in the directory or its immediate subdirectories.`,
 		},
 	}
 
+	var trendCmd = &cobra.Command{
+		Use:   "trend",
+		Short: "Render eval trends from past report --json summaries",
+		Long: `Read every summary.json under a directory (for example, nightly summaries
+downloaded from S3) and render pass rate, tokens, cost, and latency per
+provider across runs, newest first.`,
+		Example: `  evalviewer trend --history eval-history --limit 14`,
+		Run: func(cmd *cobra.Command, args []string) {
+			trendCommand()
+		},
+	}
+
 	// Add flags to view command
 	viewCmd.Flags().StringVarP(&filename, "file", "f", "evals.jsonl", "Path to the evals.jsonl file")
 	viewCmd.Flags().BoolVar(&showOnlyFailures, "failures-only", false, "Show only failed evaluations")
@@ -147,12 +169,21 @@ evals.jsonl files in the directory or its immediate subdirectories.`,
 	reportCmd.Flags().StringSliceVar(&reportProviders, "providers", nil, "Providers expected to have results; missing ones are reported as unavailable")
 	reportCmd.Flags().StringVar(&reportCommentFile, "comment", "comment.md", "Where to write the pull request comment (empty when nothing is actionable)")
 	reportCmd.Flags().StringVar(&reportSummaryFile, "summary", "summary.md", "Where to write the workflow run summary")
+	reportCmd.Flags().StringVar(&reportJSONFile, "json", "", "Where to write a machine-readable summary for history (optional)")
+	reportCmd.Flags().StringVar(&reportCommit, "commit", "", "Commit the results belong to, recorded in the JSON summary")
+	reportCmd.Flags().StringVar(&reportRunURL, "run-url", "", "Workflow run URL, recorded in the JSON summary")
+	reportCmd.Flags().StringVar(&reportChangeLabel, "change-label", pullRequestLabels.change, "How the report refers to the results being checked")
+	reportCmd.Flags().StringVar(&reportBaseLabel, "baseline-label", pullRequestLabels.baseline, "How the report refers to the baseline")
+
+	trendCmd.Flags().StringVar(&trendHistoryDir, "history", ".", "Directory containing summary.json files")
+	trendCmd.Flags().IntVar(&trendLimit, "limit", 14, "Number of most recent runs to show (0 for all)")
 
 	// Add commands to root
 	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(viewCmd)
 	rootCmd.AddCommand(checkCmd)
 	rootCmd.AddCommand(reportCmd)
+	rootCmd.AddCommand(trendCmd)
 
 	// Execute
 	if err := rootCmd.Execute(); err != nil {
@@ -293,6 +324,7 @@ func reportCommand() {
 	}
 
 	r := buildReport(results, baseline, reportProviders)
+	r.labels = reportLabels{change: reportChangeLabel, baseline: reportBaseLabel}
 
 	comment := r.commentMarkdown()
 	if err := os.WriteFile(reportCommentFile, []byte(comment), 0600); err != nil {
@@ -303,6 +335,18 @@ func reportCommand() {
 	if err := os.WriteFile(reportSummaryFile, []byte(summary), 0600); err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing %s: %v\n", reportSummaryFile, err)
 		os.Exit(1)
+	}
+
+	if reportJSONFile != "" {
+		data, err := json.MarshalIndent(r.runSummary(time.Now(), reportCommit, reportRunURL), "", "  ")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error encoding summary: %v\n", err)
+			os.Exit(1)
+		}
+		if err := os.WriteFile(reportJSONFile, data, 0600); err != nil {
+			fmt.Fprintf(os.Stderr, "Error writing %s: %v\n", reportJSONFile, err)
+			os.Exit(1)
+		}
 	}
 
 	if os.Getenv("GITHUB_ACTIONS") == "true" {
@@ -316,6 +360,15 @@ func reportCommand() {
 	} else {
 		fmt.Printf("\n%d regressions written to %s\n", len(r.regressions), reportCommentFile)
 	}
+}
+
+func trendCommand() {
+	history, err := loadHistory(trendHistoryDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading history: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Print(trendMarkdown(history, trendLimit))
 }
 
 // providerStat accumulates per-provider pass/fail counts and failed results.

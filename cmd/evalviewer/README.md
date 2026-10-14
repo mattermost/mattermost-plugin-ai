@@ -98,6 +98,17 @@ Repeated runs (`GOEVALS=N`) are combined by majority vote, so a check that fails
 - The `evals-comment` job compares pull request results with the latest `master` results and comments only when a check newly fails. When a later push fixes them, the comment is replaced with a short resolved note.
 - Set the `EVAL_RUNS` repository variable to run each eval several times per CI run.
 
+### Nightly runs and history
+`.github/workflows/nightly-evals.yml` runs every eval against `master` at 06:00 UTC (and on manual dispatch), three times each by default (`NIGHTLY_EVAL_RUNS` repository variable). It compares the results with the previous night and stores them in S3 under `s3://$AWS_S3_BUCKET/mattermost-plugin-agents/evals/nightly/<date>/<run id>/`, along with `summary.json` (written by `report --json`). The run summary shows the report and a 14-night trend, and the run fails when a check newly fails or input tokens grow, so GitHub notifies the workflow's owner.
+
+To look at history locally, download the summaries and render the trend:
+
+```bash
+aws s3 cp s3://$AWS_S3_BUCKET/mattermost-plugin-agents/evals/nightly/ eval-history \
+  --recursive --exclude '*' --include '*/summary.json'
+evalviewer trend --history eval-history --limit 30
+```
+
 ## Environment Variables
 
 - **`GOEVALS`**: Number of runs per eval (default: `1`). The `run`, `check`, and CI commands set it to `1` when unset.

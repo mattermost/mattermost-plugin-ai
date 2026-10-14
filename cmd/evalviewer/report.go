@@ -279,7 +279,17 @@ type report struct {
 	tokenGrowth []tokenChange
 	baselines   map[string]*providerResults
 	hasBaseline bool
+	labels      reportLabels
 }
+
+// reportLabels names what is compared, for example "this PR" against
+// "`master`", or "this run" against "the previous night".
+type reportLabels struct {
+	change   string
+	baseline string
+}
+
+var pullRequestLabels = reportLabels{change: "this PR", baseline: "`master`"}
 
 // Input token growth is reported on the pull request only when it is both
 // relative and absolute: prompt size is close to deterministic, so growth this
@@ -309,7 +319,7 @@ func buildReport(results, baseline resultSet, expectedProviders []string) report
 	}
 	slices.Sort(names)
 
-	r := report{hasBaseline: baseline != nil, baselines: map[string]*providerResults{}}
+	r := report{hasBaseline: baseline != nil, baselines: map[string]*providerResults{}, labels: pullRequestLabels}
 	for _, name := range names {
 		p := results.provider(name)
 		r.providers = append(r.providers, p)
@@ -382,9 +392,9 @@ func (r report) commentMarkdown() string {
 }
 
 func (r report) writeTokenGrowth(sb *strings.Builder) {
-	fmt.Fprintf(sb, "📈 **Input tokens grew by at least %.0f%% (and %d tokens) for %d %s compared to `master`.** This usually means more context or a longer prompt is being sent to the model.\n\n",
-		tokenGrowthRatio*100, tokenGrowthMinTokens, len(r.tokenGrowth), plural(len(r.tokenGrowth), "eval", "evals"))
-	sb.WriteString("| Eval | Provider | Input tokens per run (master → PR) | Change |\n")
+	fmt.Fprintf(sb, "📈 **Input tokens grew by at least %.0f%% (and %d tokens) for %d %s compared to %s.** This usually means more context or a longer prompt is being sent to the model.\n\n",
+		tokenGrowthRatio*100, tokenGrowthMinTokens, len(r.tokenGrowth), plural(len(r.tokenGrowth), "eval", "evals"), r.labels.baseline)
+	fmt.Fprintf(sb, "| Eval | Provider | Input tokens per run (%s → %s) | Change |\n", r.labels.baseline, r.labels.change)
 	sb.WriteString("|------|----------|------------------------------------|--------|\n")
 	for _, c := range r.tokenGrowth {
 		fmt.Fprintf(sb, "| %s | %s | %s → %s | +%.0f%% |\n",
@@ -395,9 +405,9 @@ func (r report) writeTokenGrowth(sb *strings.Builder) {
 
 func (r report) writeRegressions(sb *strings.Builder) {
 	if r.hasBaseline {
-		fmt.Fprintf(sb, "⚠️ **%d eval %s on this PR but not on `master`.**\n\n", len(r.regressions), plural(len(r.regressions), "check fails", "checks fail"))
+		fmt.Fprintf(sb, "⚠️ **%d eval %s on %s but not on %s.**\n\n", len(r.regressions), plural(len(r.regressions), "check fails", "checks fail"), r.labels.change, r.labels.baseline)
 	} else {
-		fmt.Fprintf(sb, "⚠️ **%d eval %s on this PR.** No `master` baseline was available, so these may be pre-existing.\n\n", len(r.regressions), plural(len(r.regressions), "check fails", "checks fail"))
+		fmt.Fprintf(sb, "⚠️ **%d eval %s on %s.** No baseline from %s was available, so these may be pre-existing.\n\n", len(r.regressions), plural(len(r.regressions), "check fails", "checks fail"), r.labels.change, r.labels.baseline)
 	}
 
 	sb.WriteString("| Eval | Check | Provider | Passed runs |\n")
@@ -456,10 +466,10 @@ func (r report) summaryMarkdown() string {
 	r.writeUsage(&sb)
 
 	writeCaseList(&sb, "Regressions", r.regressions)
-	writeCaseList(&sb, "Pre-existing failures (also failing on master)", r.preExisting)
+	writeCaseList(&sb, "Pre-existing failures (also failing on "+r.labels.baseline+")", r.preExisting)
 	writeCaseList(&sb, "Flaky (failed some runs, passed the majority)", r.flaky)
 	if !r.hasBaseline {
-		sb.WriteString("\nNo `master` baseline was available for comparison.\n")
+		fmt.Fprintf(&sb, "\nNo baseline from %s was available for comparison.\n", r.labels.baseline)
 	}
 	return sb.String()
 }
@@ -478,7 +488,7 @@ func (r report) writeUsage(sb *strings.Builder) {
 	}
 
 	sb.WriteString("\n### Cost and latency\n\n")
-	sb.WriteString("| Provider | Model | Runs | Input / output tokens | Cost | Grader cost | Latency per run | Cost vs master |\n")
+	fmt.Fprintf(sb, "| Provider | Model | Runs | Input / output tokens | Cost | Grader cost | Latency per run | Cost vs %s |\n", r.labels.baseline)
 	sb.WriteString("|----------|-------|------|-----------------------|------|-------------|-----------------|----------------|\n")
 	for _, p := range providers {
 		total := p.usageTotals()
@@ -497,7 +507,7 @@ func (r report) writeUsage(sb *strings.Builder) {
 	sb.WriteString("\nCost is estimated from list prices when the provider does not report it; \"–\" means the model has no known price. Latency is the summed wall time of the agent's LLM calls per run.\n")
 
 	sb.WriteString("\n<details>\n<summary>Per eval</summary>\n\n")
-	sb.WriteString("| Eval | Provider | Input tokens | Output tokens | Cost | Latency | Input vs master | Latency vs master |\n")
+	fmt.Fprintf(sb, "| Eval | Provider | Input tokens | Output tokens | Cost | Latency | Input vs %s | Latency vs %s |\n", r.labels.baseline, r.labels.baseline)
 	sb.WriteString("|------|----------|--------------|---------------|------|---------|-----------------|-------------------|\n")
 	for _, p := range providers {
 		base := r.baselines[p.name]
