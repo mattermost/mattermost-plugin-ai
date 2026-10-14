@@ -48,7 +48,7 @@ func runThreadAnalysisEval(t *evals.EvalT, threadData *evals.ThreadExport, promp
 	return output
 }
 
-func TestThreadsSummarizeFromExportedData(t *testing.T) {
+func TestThreadsSummarizeFromExportedDataEval(t *testing.T) {
 	// Define the evaluation rubrics for each thread
 	evalConfigs := []struct {
 		filename string
@@ -89,7 +89,7 @@ func TestThreadsSummarizeFromExportedData(t *testing.T) {
 	}
 }
 
-func TestThreadsActionItemsFromExportedData(t *testing.T) {
+func TestThreadsActionItemsFromExportedDataEval(t *testing.T) {
 	evalConfigs := []struct {
 		filename string
 		rubrics  []string
@@ -127,7 +127,7 @@ func TestThreadsActionItemsFromExportedData(t *testing.T) {
 	}
 }
 
-func TestThreadsOpenQuestionsFromExportedData(t *testing.T) {
+func TestThreadsOpenQuestionsFromExportedDataEval(t *testing.T) {
 	evalConfigs := []struct {
 		filename string
 		rubrics  []string

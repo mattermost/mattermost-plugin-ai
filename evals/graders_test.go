@@ -10,10 +10,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestLLMRubric calibrates the grader against outputs with a known verdict, so
+// TestLLMRubricEval calibrates the grader against outputs with a known verdict, so
 // a grader prompt or model change that flips them is caught before it skews
 // every other eval.
-func TestLLMRubric(t *testing.T) {
+func TestLLMRubricEval(t *testing.T) {
 	NumEvalsOrSkip(t)
 	eval, err := NewEval()
 	require.NoError(t, err)

@@ -30,10 +30,10 @@ func runAgenticFlowEval(e *evals.EvalT, suite *TestSuite, requestingUser *model.
 	setup := setupAgenticEval(e.T, e, suite, requestingUser, team)
 
 	promptsObj, err := llm.NewPrompts(prompts.PromptsFolder)
-	require.NoError(e.T, err, "Failed to load prompts")
+	require.NoError(e, err, "Failed to load prompts")
 
 	systemPrompt, err := promptsObj.Format(prompts.PromptDirectMessageQuestionSystem, setup.llmContext)
-	require.NoError(e.T, err, "Failed to format system prompt")
+	require.NoError(e, err, "Failed to format system prompt")
 
 	posts := []llm.Post{
 		{Role: llm.PostRoleSystem, Message: systemPrompt},
@@ -46,11 +46,11 @@ func runAgenticFlowEval(e *evals.EvalT, suite *TestSuite, requestingUser *model.
 		Context:   setup.llmContext,
 		Operation: llm.OperationConversation,
 	}, func(tc llm.ToolCall) bool { return true }, nil)
-	require.NoError(e.T, err, "ToolRunner should succeed")
+	require.NoError(e, err, "ToolRunner should succeed")
 
 	response, err := runResult.Stream.ReadAll()
-	require.NoError(e.T, err, "ReadAll should succeed")
-	require.NotEmpty(e.T, response, "Response should not be empty")
+	require.NoError(e, err, "ReadAll should succeed")
+	require.NotEmpty(e, response, "Response should not be empty")
 
 	e.Logf("LLM response:\n%s", response)
 
@@ -58,7 +58,7 @@ func runAgenticFlowEval(e *evals.EvalT, suite *TestSuite, requestingUser *model.
 	calledTools := setup.logger.CalledTools()
 	for _, requiredTool := range requiredTools {
 		found := slices.Contains(calledTools, requiredTool)
-		assert.True(e.T, found, "Required tool %q was not called by the LLM (called tools: %v)", requiredTool, calledTools)
+		assert.True(e, found, "Required tool %q was not called by the LLM (called tools: %v)", requiredTool, calledTools)
 	}
 
 	for _, rubric := range rubrics {
@@ -101,10 +101,10 @@ func TestReadChannelOutputQualityEval(t *testing.T) {
 			"channel_id": data.channel.Id,
 			"limit":      20,
 		})
-		require.NoError(e.T, err, "read_channel should succeed")
+		require.NoError(e, err, "read_channel should succeed")
 
 		text := extractMCPText(result)
-		require.NotEmpty(e.T, text, "read_channel should return text content")
+		require.NotEmpty(e, text, "read_channel should return text content")
 		e.Logf("read_channel output:\n%s", text)
 
 		for _, rubric := range rubrics {
@@ -142,10 +142,10 @@ func TestSearchPostsOutputQualityEval(t *testing.T) {
 				"team_id": data.team.Id,
 				"limit":   10,
 			})
-			require.NoError(e.T, err, "search_posts should succeed")
+			require.NoError(e, err, "search_posts should succeed")
 
 			text := extractMCPText(result)
-			require.NotEmpty(e.T, text, "search_posts should return text content")
+			require.NotEmpty(e, text, "search_posts should return text content")
 			e.Logf("search_posts keyword output:\n%s", text)
 
 			for _, rubric := range rubrics {
@@ -168,10 +168,10 @@ func TestSearchPostsOutputQualityEval(t *testing.T) {
 				"team_id": data.team.Id,
 				"limit":   10,
 			})
-			require.NoError(e.T, err, "search_posts should succeed")
+			require.NoError(e, err, "search_posts should succeed")
 
 			text := extractMCPText(result)
-			require.NotEmpty(e.T, text, "search_posts should return text content")
+			require.NotEmpty(e, text, "search_posts should return text content")
 			e.Logf("search_posts semantic output:\n%s", text)
 
 			for _, rubric := range rubrics {
@@ -204,10 +204,10 @@ func TestGetChannelMembersOutputQualityEval(t *testing.T) {
 			"channel_id": data.channel.Id,
 			"limit":      50,
 		})
-		require.NoError(e.T, err, "get_channel_members should succeed")
+		require.NoError(e, err, "get_channel_members should succeed")
 
 		text := extractMCPText(result)
-		require.NotEmpty(e.T, text, "get_channel_members should return text content")
+		require.NotEmpty(e, text, "get_channel_members should return text content")
 		e.Logf("get_channel_members output:\n%s", text)
 
 		for _, rubric := range rubrics {
@@ -240,7 +240,7 @@ func TestChannelSummarizationFlowEval(t *testing.T) {
 				"Mentions at least two of: timeline/sprint, data volume/downtime, rollback plan",
 				"Is a coherent summary, not a raw dump of messages or tool output",
 				// Rubric referencing a user that only exists in the seeded data (anti-hallucination)
-				"Mentions at least one of alice.eval, bob.eval, or charlie.eval by username",
+				"Attributes at least one point to a participant (alice.eval, bob.eval, or charlie.eval), by username or by name",
 			},
 			[]string{"get_channel_info", "read_channel"},
 		)
@@ -289,7 +289,7 @@ func TestDMSummaryFlowEval(t *testing.T) {
 			// Use wrong capitalization on "Planning" to test case-insensitive lookup
 			"Send bob.eval a DM summarizing the key decisions made in the migration Planning channel on the Eval team.",
 			[]string{
-				"Confirms that a DM was sent to bob.eval",
+				"Confirms that a DM was sent to bob.eval, referring to him by username or by name",
 			},
 			[]string{"read_channel", "dm"},
 		)
@@ -301,15 +301,15 @@ func TestDMSummaryFlowEval(t *testing.T) {
 
 		// Get the admin user (MCP server identity)
 		adminUser, _, err := adminClient.GetMe(ctx, "")
-		require.NoError(e.T, err, "Should get admin user")
+		require.NoError(e, err, "Should get admin user")
 
 		// Get DM channel between admin and bob
 		dmChannel, _, err := adminClient.CreateDirectChannel(ctx, adminUser.Id, data.bob.Id)
-		require.NoError(e.T, err, "Should get DM channel")
+		require.NoError(e, err, "Should get DM channel")
 
 		// Check that a post exists in the DM channel
 		dmPosts, _, err := adminClient.GetPostsForChannel(ctx, dmChannel.Id, 0, 10, "", false, false)
-		require.NoError(e.T, err, "Should get DM posts")
+		require.NoError(e, err, "Should get DM posts")
 
 		// Find a post that mentions migration (the summary the LLM sent)
 		found := false
@@ -320,7 +320,7 @@ func TestDMSummaryFlowEval(t *testing.T) {
 				break
 			}
 		}
-		assert.True(e.T, found, "A DM post mentioning migration should exist in the DM channel with bob")
+		assert.True(e, found, "A DM post mentioning migration should exist in the DM channel with bob")
 	})
 }
 
@@ -365,16 +365,16 @@ func TestBroadcastDMToTeamFlowEval(t *testing.T) {
 
 		// Get the admin user (MCP server identity — also a team member)
 		adminUser, _, err := adminClient.GetMe(ctx, "")
-		require.NoError(e.T, err, "Should get admin user")
+		require.NoError(e, err, "Should get admin user")
 
 		// Verify DMs were sent to all non-requesting team members including admin.
 		// (dana is the requesting user — LLMs may reasonably skip DM'ing "yourself")
 		for _, targetUser := range []*model.User{data.emma, data.frank, adminUser} {
 			dmChannel, _, dmErr := adminClient.CreateDirectChannel(ctx, adminUser.Id, targetUser.Id)
-			require.NoError(e.T, dmErr, "Should get DM channel with %s", targetUser.Username)
+			require.NoError(e, dmErr, "Should get DM channel with %s", targetUser.Username)
 
 			dmPosts, _, dmErr := adminClient.GetPostsForChannel(ctx, dmChannel.Id, 0, 10, "", false, false)
-			require.NoError(e.T, dmErr, "Should get DM posts for %s", targetUser.Username)
+			require.NoError(e, dmErr, "Should get DM posts for %s", targetUser.Username)
 
 			found := false
 			for _, post := range dmPosts.Posts {
@@ -384,19 +384,19 @@ func TestBroadcastDMToTeamFlowEval(t *testing.T) {
 					break
 				}
 			}
-			assert.True(e.T, found, "A DM about the all-hands meeting should have been sent to %s", targetUser.Username)
+			assert.True(e, found, "A DM about the all-hands meeting should have been sent to %s", targetUser.Username)
 		}
 
 		// Verify NO DM was sent to the bot
 		botDMChannel, _, err := adminClient.CreateDirectChannel(ctx, adminUser.Id, data.botUser.Id)
-		require.NoError(e.T, err, "Should get DM channel with bot")
+		require.NoError(e, err, "Should get DM channel with bot")
 
 		botDMPosts, _, err := adminClient.GetPostsForChannel(ctx, botDMChannel.Id, 0, 10, "", false, false)
-		require.NoError(e.T, err, "Should get DM posts for bot")
+		require.NoError(e, err, "Should get DM posts for bot")
 
 		for _, post := range botDMPosts.Posts {
 			if post.UserId == adminUser.Id && strings.Contains(strings.ToLower(post.Message), "all-hands") {
-				assert.Fail(e.T, "A DM about the all-hands meeting should NOT have been sent to bot %s", data.botUser.Username)
+				assert.Fail(e, "A DM about the all-hands meeting should NOT have been sent to bot %s", data.botUser.Username)
 				break
 			}
 		}

@@ -19,7 +19,7 @@ func (m *mockConfigProvider) GetServiceByID(id string) (llm.ServiceConfig, bool)
 	return llm.ServiceConfig{}, false
 }
 
-func TestConversationMentionHandling(t *testing.T) {
+func TestConversationMentionHandlingEval(t *testing.T) {
 	evalConfigs := []struct {
 		filename string
 		rubrics  []string

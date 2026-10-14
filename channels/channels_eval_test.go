@@ -26,7 +26,7 @@ const (
 	fixedStart = int64(23974)
 )
 
-func TestChannelSummarization(t *testing.T) {
+func TestChannelSummarizationEval(t *testing.T) {
 	evalConfigs := []struct {
 		name            string
 		filename        string

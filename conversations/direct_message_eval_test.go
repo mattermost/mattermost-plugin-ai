@@ -23,7 +23,7 @@ const (
 	dmEvalChannelID = "dmevalchannelid1234567890a"
 )
 
-func TestDirectMessageConversations(t *testing.T) {
+func TestDirectMessageConversationsEval(t *testing.T) {
 	webSearch := llm.Tool{
 		Name:        "WebSearch",
 		Description: "Search the web for information.",
