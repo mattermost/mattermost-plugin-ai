@@ -337,7 +337,9 @@ var (
 
 // preflight sends one tiny request per provider and model, once per test
 // binary, so a credential or model-access problem fails every eval at once
-// with an error that names the model instead of repeating per eval.
+// with an error that names the model instead of repeating per eval. Transient
+// errors (rate limits, server errors) are retried and never cached, so they
+// cost at most the evals that hit them.
 func preflight(role roleModel) error {
 	key := role.provider + "/" + role.model
 	preflightMu.Lock()
@@ -346,6 +348,25 @@ func preflight(role roleModel) error {
 		return err
 	}
 
+	var err error
+	for attempt := 0; ; attempt++ {
+		err = preflightRequest(role)
+		if err == nil || !isTransientProviderError(err) || attempt == len(preflightBackoff) {
+			break
+		}
+		time.Sleep(preflightBackoff[attempt])
+	}
+	if err != nil {
+		err = fmt.Errorf("%s %s/%s is unusable: %w%s", role.role, role.provider, role.model, err, preflightHint(err))
+		if isTransientProviderError(err) {
+			return err
+		}
+	}
+	preflightResults[key] = err
+	return err
+}
+
+func preflightRequest(role roleModel) error {
 	ctx, cancel := context.WithTimeout(context.Background(), preflightTimeout)
 	defer cancel()
 	_, err := role.llm.ChatCompletionNoStream(ctx, llm.CompletionRequest{
@@ -353,14 +374,29 @@ func preflight(role roleModel) error {
 		Context:   llm.NewContext(),
 		Operation: llm.OperationEvalGrading,
 	}, llm.WithMaxGeneratedTokens(64), llm.WithReasoningDisabled(), llm.WithToolsDisabled())
-	if err != nil {
-		err = fmt.Errorf("%s %s/%s is unusable: %w%s", role.role, role.provider, role.model, err, preflightHint(err))
-	}
-	preflightResults[key] = err
 	return err
 }
 
 const preflightTimeout = 2 * time.Minute
+
+// preflightBackoff is on top of bifrost's own short retries, long enough for
+// per-minute rate limits to reset.
+var preflightBackoff = []time.Duration{15 * time.Second, 45 * time.Second}
+
+// isTransientProviderError reports rate limits, server errors, and timeouts.
+// Bifrost reports rejected credentials as status 502, which is not transient.
+func isTransientProviderError(err error) bool {
+	msg := err.Error()
+	if strings.Contains(msg, "upstream_credentials_exhausted") {
+		return false
+	}
+	for _, marker := range []string{"status=429", "status=500", "status=502", "status=503", "status=504", "rate_limit", "context deadline exceeded"} {
+		if strings.Contains(msg, marker) {
+			return true
+		}
+	}
+	return false
+}
 
 // preflightHint explains errors whose provider message bifrost discards.
 func preflightHint(err error) string {
