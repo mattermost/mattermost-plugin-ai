@@ -345,7 +345,7 @@ func TestStandardPersonalitySandboxFileGuidance(t *testing.T) {
 }
 
 // The system prompt is fixed when a conversation starts, so it carries only
-// static guidance; the per-turn ConnectMCPServer tool description is the one
+// static guidance; the per-turn ConnectMCPServer tool schema is the one
 // place unconnected servers are listed.
 func TestStandardPersonalityUnconnectedMCPServers(t *testing.T) {
 	const guidance = "integration listed in the ConnectMCPServer tool"

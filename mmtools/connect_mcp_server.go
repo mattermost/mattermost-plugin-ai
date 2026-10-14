@@ -15,14 +15,14 @@ import (
 )
 
 const connectMCPServerDescription = "Ask the requesting user to connect (sign in to) an MCP server they have not connected yet, so its tools become available. " +
-	"Call this when the user's request needs one of the servers listed below instead of saying the capability does not exist. " +
-	"Only call it when the request actually needs that server. " +
+	"Call this when the request needs an integration listed in the `server` parameter instead of saying the capability does not exist. " +
+	"Only call it when the request actually needs that integration. " +
 	"The user is shown a Connect card and may connect or skip; the tool result tells you which. " +
 	"Never claim to have performed an action with a server that is not connected."
 
 // ConnectMCPServerArgs is the LLM-visible input schema for the connect tool.
 type ConnectMCPServerArgs struct {
-	Server string `json:"server" jsonschema_description:"Name of the MCP server to connect, exactly as listed in the tool description."`
+	Server string `json:"server" jsonschema_description:"Name of the MCP server to connect, exactly as listed."`
 }
 
 // NewConnectMCPServerTool returns the connect tool for this turn's unconnected
@@ -40,11 +40,12 @@ func NewConnectMCPServerTool(servers []llm.UnconnectedMCPServer) llm.Tool {
 		for _, name := range names {
 			prop.Enum = append(prop.Enum, name)
 		}
+		prop.Description = connectMCPServerParamDescription(prop.Description, servers)
 	}
 
 	return llm.Tool{
 		Name:            llm.ConnectMCPServerToolName,
-		Description:     connectMCPServerToolDescription(servers),
+		Description:     connectMCPServerDescription,
 		Schema:          schema,
 		UserInteraction: llm.UserInteractionConnect,
 		ValidateArguments: func(input json.RawMessage) error {
@@ -65,13 +66,14 @@ func NewConnectMCPServerTool(servers []llm.UnconnectedMCPServer) llm.Tool {
 	}
 }
 
-// connectMCPServerToolDescription embeds the current server list because the
-// conversation's system prompt is fixed when it is created, while the tool
-// catalog is rebuilt every turn.
-func connectMCPServerToolDescription(servers []llm.UnconnectedMCPServer) string {
+// connectMCPServerParamDescription lists the user's unconnected servers in the
+// schema, which only the model sees. The tool description must stay static:
+// it is copied onto tool calls, which are persisted and shown to other
+// channel members.
+func connectMCPServerParamDescription(base string, servers []llm.UnconnectedMCPServer) string {
 	var b strings.Builder
-	b.WriteString(connectMCPServerDescription)
-	b.WriteString("\n\nServers the user has not connected:")
+	b.WriteString(base)
+	b.WriteString(" Servers the user has not connected:")
 	for _, server := range servers {
 		b.WriteString("\n- ")
 		b.WriteString(server.PromptLine())

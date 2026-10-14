@@ -64,12 +64,43 @@ func TestConnectMCPServerToolShape(t *testing.T) {
 	require.NotNil(t, server)
 	assert.Equal(t, []any{"Jira Cloud", "Notes"}, server.Enum)
 
+	// Tool.Description is copied onto persisted tool calls that other channel
+	// members can see, so only the model-facing schema may list servers.
+	assert.Equal(t, NewConnectMCPServerTool(nil).Description, tool.Description)
 	for _, s := range testUnconnectedServers() {
-		assert.Contains(t, tool.Description, s.PromptLine())
+		assert.Contains(t, server.Description, s.PromptLine())
+		assert.NotContains(t, tool.Description, s.Name)
+		if s.Description != "" {
+			assert.NotContains(t, tool.Description, s.Description)
+		}
+		for _, toolName := range s.ToolNames {
+			assert.NotContains(t, tool.Description, toolName)
+		}
 	}
 
 	_, err := tool.Resolver(context.Background(), &llm.Context{}, nil)
 	require.Error(t, err)
+}
+
+func TestConnectMCPServerToolCallDescriptionNamesNoServer(t *testing.T) {
+	servers := testUnconnectedServers()
+	store := llm.NewToolStore()
+	store.AddTools([]llm.Tool{NewConnectMCPServerTool(servers)})
+
+	call := llm.ToolCall{ID: "c1", Name: llm.ConnectMCPServerToolName, Arguments: json.RawMessage(`{"server":"Jira Cloud"}`)}
+	llm.EnrichToolCall(&call, store, llm.EnrichToolCallOptions{})
+
+	require.NotEmpty(t, call.Description)
+	assert.Equal(t, llm.UserInteractionConnect, call.UserInteraction)
+	for _, s := range servers {
+		assert.NotContains(t, call.Description, s.Name)
+		if s.Description != "" {
+			assert.NotContains(t, call.Description, s.Description)
+		}
+		for _, toolName := range s.ToolNames {
+			assert.NotContains(t, call.Description, toolName)
+		}
+	}
 }
 
 func TestResolveConnectMCPServerAnswer(t *testing.T) {

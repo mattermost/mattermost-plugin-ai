@@ -71,6 +71,18 @@ function offeredTool(request: any, name: string): any {
     return (request.tools ?? []).find((tool: any) => tool?.function?.name === name);
 }
 
+/**
+ * The connect tool lists servers only in its model-facing schema; the
+ * top-level description is copied onto persisted tool calls.
+ */
+function expectServerListedOnlyInSchema(connectTool: any, ...needles: string[]): void {
+    const serverParam = connectTool.function.parameters?.properties?.server;
+    for (const needle of needles) {
+        expect(serverParam?.description).toContain(needle);
+        expect(connectTool.function.description).not.toContain(needle);
+    }
+}
+
 function systemPrompt(request: any): string {
     return (request.messages ?? []).
         filter((message: any) => message.role === 'system').
@@ -182,9 +194,8 @@ test.describe('Connect MCP server from a conversation (Mocked LLM)', () => {
             const request = await firstTurnRequest(userMessage);
             const connectTool = offeredTool(request, CONNECT_TOOL);
             expect(connectTool, 'ConnectMCPServer offered to the model').toBeDefined();
-            expect(connectTool.function.description).toContain(MOCK_OAUTH_SERVER_NAME);
-            expect(connectTool.function.description).toContain(SERVER_DESCRIPTION);
-            // The per-turn tool description is the only list of unconnected servers.
+            expectServerListedOnlyInSchema(connectTool, MOCK_OAUTH_SERVER_NAME, SERVER_DESCRIPTION);
+            // The per-turn tool schema is the only list of unconnected servers.
             expect(systemPrompt(request)).not.toContain(SERVER_DESCRIPTION);
 
             await card.getByTestId('connect-mcp-skip-button').click();
@@ -263,7 +274,7 @@ test.describe('Connect MCP server from a conversation (Mocked LLM)', () => {
             expect(offeredTool(request, 'search_tools'), 'dynamic mode is active').toBeDefined();
             const connectTool = offeredTool(request, CONNECT_TOOL);
             expect(connectTool, 'ConnectMCPServer offered to the model').toBeDefined();
-            expect(connectTool.function.description).toContain(MOCK_OAUTH_SERVER_NAME);
+            expectServerListedOnlyInSchema(connectTool, MOCK_OAUTH_SERVER_NAME);
 
             await card.getByTestId('connect-mcp-skip-button').click();
             await expect(botPost.getByText(followUpText)).toBeVisible({ timeout: 60000 });

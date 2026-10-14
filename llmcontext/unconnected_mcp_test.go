@@ -8,6 +8,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -176,7 +177,7 @@ func TestBuilderAdvertisesUnconnectedMCPServers(t *testing.T) {
 			require.NotNil(t, connect)
 			assert.Equal(t, llm.UserInteractionConnect, connect.UserInteraction)
 			for _, name := range tt.wantServers {
-				assert.Contains(t, connect.Description, "- "+name)
+				assert.Contains(t, connectServerParamDescription(t, connect), "- "+name)
 			}
 			assert.True(t, c.IsToolCallable(llm.ConnectMCPServerToolName))
 		})
@@ -387,7 +388,7 @@ func TestMCPToolErrorResultOffersReconnectMidTurn(t *testing.T) {
 			assert.Equal(t, tt.wantServers, unconnectedNames(c.ToolCatalog.UnconnectedMCPServers))
 			require.True(t, c.IsToolCallable(llm.ConnectMCPServerToolName))
 			connect := c.Tools.GetTool(llm.ConnectMCPServerToolName)
-			assert.Contains(t, connect.Description, "- Confluence")
+			assert.Contains(t, connectServerParamDescription(t, connect), "- Confluence")
 			require.NoError(t, connect.ValidateArguments([]byte(`{"server":"Confluence"}`)))
 
 			// A second failure from the same server does not list it twice.
@@ -395,4 +396,14 @@ func TestMCPToolErrorResultOffersReconnectMidTurn(t *testing.T) {
 			assert.Equal(t, tt.wantServers, unconnectedNames(c.ToolCatalog.UnconnectedMCPServers))
 		})
 	}
+}
+
+// connectServerParamDescription returns the model-only schema text that lists
+// the connect tool's servers.
+func connectServerParamDescription(t *testing.T, connect *llm.Tool) string {
+	t.Helper()
+	schema, ok := connect.Schema.(*jsonschema.Schema)
+	require.True(t, ok)
+	require.NotNil(t, schema.Properties["server"])
+	return schema.Properties["server"].Description
 }
