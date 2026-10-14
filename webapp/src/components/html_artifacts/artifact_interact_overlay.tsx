@@ -105,8 +105,8 @@ const pulse = keyframes`
     100% { transform: scale(1); }
 `;
 
-// Opaque in the theme's own colors, so it reads over any artifact content in
-// light and dark themes alike.
+// Inverted theme colors, like a tooltip: it reads over any artifact content,
+// which tends to share the channel's own background.
 const Hint = styled.span<{$nudging: boolean}>`
     position: sticky;
     bottom: 8px;
@@ -115,37 +115,26 @@ const Hint = styled.span<{$nudging: boolean}>`
     gap: 4px;
     margin: 8px;
     padding: 4px 10px 4px 6px;
-    border: 1px solid rgba(var(--center-channel-color-rgb), 0.16);
     border-radius: 14px;
-    background: var(--center-channel-bg);
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.12);
-    color: rgba(var(--center-channel-color-rgb), 0.8);
+    background: rgba(var(--center-channel-color-rgb), 0.84);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.24);
+    color: var(--center-channel-bg);
     font-size: 12px;
     font-weight: 600;
     line-height: 16px;
     white-space: nowrap;
     pointer-events: none;
     transform-origin: right bottom;
-    transition: color 0.15s ease-out, background-color 0.15s ease-out, border-color 0.15s ease-out;
-
-    > :first-child {
-        color: var(--button-bg);
-    }
+    transition: color 0.15s ease-out, background-color 0.15s ease-out, box-shadow 0.15s ease-out;
 
     ${(props) => (props.$nudging ? css`
-        border-color: var(--button-bg);
         background: var(--button-bg);
-        box-shadow: 0 6px 14px rgba(0, 0, 0, 0.24);
+        box-shadow: 0 0 0 4px rgba(var(--button-bg-rgb), 0.32), 0 6px 14px rgba(0, 0, 0, 0.28);
         color: var(--button-color);
         animation: ${pulse} 0.45s ease-out 2;
-
-        > :first-child {
-            color: var(--button-color);
-        }
     ` : css`
         ${Overlay}:hover &, ${Overlay}:focus-visible & {
-            border-color: rgba(var(--button-bg-rgb), 0.48);
-            color: var(--center-channel-color);
+            background: var(--center-channel-color);
         }
     `)}
 
