@@ -386,8 +386,6 @@ const AgentConfigView = (props: Props) => {
             if (e?.status_code === 409 || (message.includes('username') && (message.includes('taken') || message.includes('conflict')))) {
                 if (e?.server_error_id === 'username_held_by_deactivated_bot') {
                     setErrors({username: intl.formatMessage({defaultMessage: 'This username belongs to a deactivated bot account. Permanently delete that bot account to make the username available.'})});
-                } else if (e?.server_error_id === 'username_email_taken' && message) {
-                    setErrors({username: message});
                 } else {
                     setErrors({username: intl.formatMessage({defaultMessage: 'This username is already taken'})});
                 }

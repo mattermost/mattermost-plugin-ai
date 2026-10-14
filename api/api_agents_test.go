@@ -498,16 +498,13 @@ func TestCreateAgentUsernameConflict(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		isAdmin       bool
+		nonAdmin      bool
 		createBotErr  *model.AppError
 		usernameOwner *model.User
-		emailOwner    *model.User
 		wantCode      agentErrorCode
-		wantInError   string
 	}{
 		{
 			name:          "deactivated bot holds the username",
-			isAdmin:       true,
 			createBotErr:  usernameTaken,
 			usernameOwner: &model.User{Id: "oldbotid", Username: "my-agent", IsBot: true, DeleteAt: 1},
 			wantCode:      agentErrorUsernameHeldByDeactivatedBot,
@@ -516,50 +513,32 @@ func TestCreateAgentUsernameConflict(t *testing.T) {
 			// Postgres reports the email violation first when the Users indexes were
 			// recreated alphabetically (e.g. by pg_dump/restore).
 			name:          "deactivated bot holds the username, reported as an email conflict",
-			isAdmin:       true,
 			createBotErr:  emailTaken,
 			usernameOwner: &model.User{Id: "oldbotid", Username: "my-agent", IsBot: true, DeleteAt: 1},
 			wantCode:      agentErrorUsernameHeldByDeactivatedBot,
 		},
 		{
 			name:          "active bot holds the username",
-			isAdmin:       true,
 			createBotErr:  usernameTaken,
 			usernameOwner: &model.User{Id: "botid", Username: "my-agent", IsBot: true},
 			wantCode:      agentErrorUsernameTaken,
 		},
 		{
 			name:          "deactivated person holds the username",
-			isAdmin:       true,
 			createBotErr:  usernameTaken,
 			usernameOwner: &model.User{Id: "personid", Username: "my-agent", DeleteAt: 1},
 			wantCode:      agentErrorUsernameTaken,
 		},
 		{
-			name:         "renamed deactivated bot holds the derived email",
-			isAdmin:      true,
-			createBotErr: emailTaken,
-			emailOwner:   &model.User{Id: "oldbotid", Username: "renamed-bot", IsBot: true, DeleteAt: 1},
-			wantCode:     agentErrorUsernameEmailTaken,
-			wantInError:  "@renamed-bot",
+			name:          "non-admin is not told a deactivated bot holds the username",
+			nonAdmin:      true,
+			createBotErr:  usernameTaken,
+			usernameOwner: &model.User{Id: "oldbotid", Username: "my-agent", IsBot: true, DeleteAt: 1},
+			wantCode:      agentErrorUsernameTaken,
 		},
 		{
 			name:         "another account holds the derived email",
-			isAdmin:      true,
 			createBotErr: emailTaken,
-			emailOwner:   &model.User{Id: "personid", Username: "someone"},
-			wantCode:     agentErrorUsernameEmailTaken,
-			wantInError:  "@someone",
-		},
-		{
-			name:         "holder of the derived email cannot be found",
-			isAdmin:      true,
-			createBotErr: emailTaken,
-			wantCode:     agentErrorUsernameTaken,
-		},
-		{
-			name:         "non-admin is not told which account holds the username",
-			createBotErr: usernameTaken,
 			wantCode:     agentErrorUsernameTaken,
 		},
 	}
@@ -571,19 +550,12 @@ func TestCreateAgentUsernameConflict(t *testing.T) {
 
 			mockLicensed(e.mockAPI)
 			e.mockAPI.On("HasPermissionTo", testUserID, model.PermissionManageOwnAgent).Return(true)
-			e.mockAPI.On("HasPermissionTo", testUserID, model.PermissionManageSystem).Return(tt.isAdmin)
+			e.mockAPI.On("HasPermissionTo", testUserID, model.PermissionManageSystem).Return(!tt.nonAdmin)
 			e.mockAPI.On("CreateBot", mock.AnythingOfType("*model.Bot")).Return(nil, tt.createBotErr)
-			if tt.isAdmin {
-				if tt.usernameOwner != nil {
-					e.mockAPI.On("GetUserByUsername", "my-agent").Return(tt.usernameOwner, nil)
-				} else {
-					e.mockAPI.On("GetUserByUsername", "my-agent").Return(nil, notFound)
-				}
-				if tt.emailOwner != nil {
-					e.mockAPI.On("GetUserByEmail", "my-agent@localhost").Return(tt.emailOwner, nil)
-				} else {
-					e.mockAPI.On("GetUserByEmail", "my-agent@localhost").Return(nil, notFound).Maybe()
-				}
+			if tt.usernameOwner != nil {
+				e.mockAPI.On("GetUserByUsername", "my-agent").Return(tt.usernameOwner, nil).Maybe()
+			} else {
+				e.mockAPI.On("GetUserByUsername", "my-agent").Return(nil, notFound).Maybe()
 			}
 
 			recorder := doRequest(e.api, http.MethodPost, "/agents", createAgentBody(nil), testUserID)
@@ -592,7 +564,6 @@ func TestCreateAgentUsernameConflict(t *testing.T) {
 			require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
 			assert.Equal(t, tt.wantCode, resp.Code)
 			assert.NotEmpty(t, resp.Error)
-			assert.Contains(t, resp.Error, tt.wantInError)
 			assert.Empty(t, e.agentStore.agents)
 		})
 	}
