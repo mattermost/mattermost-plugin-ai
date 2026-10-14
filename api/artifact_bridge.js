@@ -5,25 +5,29 @@
 //
 // Injected by the server as the first script of every HTML artifact. The
 // artifact runs in an opaque-origin sandbox with no access to the Mattermost
-// session; this bridge is its only channel to the host page. Every message is
-// a plain object tagged with mmArtifact: 1 and carrying the viewer's bridge
-// token, which the host requires on every message. Targets '*' because an
-// opaque origin cannot know the parent's origin.
+// session; this bridge is its only channel to the host page. The host frames
+// the artifact inside a same-origin wrapper frame, so the host page is
+// window.parent.parent. Every message is a plain object tagged with
+// mmArtifact: 1 and carrying the viewer's bridge token, which the host
+// requires on every message. Messages target the Mattermost site origin the
+// server injects ('*' only when the server has no usable site URL).
 //
 // The token must never become reachable by artifact code (which runs after
 // this script and can replace any global or prototype method). So, before any
 // artifact code runs, this script captures everything it needs, removes its
 // own element from the DOM, and from then on only ever puts the token into
-// object literals handed straight to the parent WindowProxy's postMessage
+// object literals handed straight to the host WindowProxy's postMessage
 // (a cross-origin method artifact code cannot hook). Messages are never
 // passed to, mutated by, or built with any overridable function.
 (function () {
     'use strict';
 
     const TOKEN = /*MM_ARTIFACT_BRIDGE_TOKEN*/null;
+    const TARGET_ORIGIN = /*MM_ARTIFACT_BRIDGE_TARGET_ORIGIN*/null;
 
     // window.parent is [Replaceable]: never read it again after this line.
     const parentWin = window.parent;
+    const hostWin = parentWin.parent;
     const PromiseCtor = Promise;
     const ErrorCtor = Error;
     const setTimeoutFn = setTimeout;
@@ -37,15 +41,47 @@
     const parseFloatFn = parseFloat;
     const CustomEventCtor = CustomEvent;
     const dispatchEventFn = window.dispatchEvent.bind(window);
+    const reflectApply = Reflect.apply;
+    const DOMExceptionCtor = DOMException;
 
     if (document.currentScript) {
         document.currentScript.remove();
     }
 
-    // Best-effort defense in depth: CSP cannot block WebRTC in Chromium, so a
-    // peer connection could reach the network (e.g. STUN to reveal the
-    // viewer's IP). A fresh realm with intact constructors would need a child
-    // frame, which the artifact CSP (frame-src 'none') already blocks.
+    // Opening the document (document.open(), and document.write() or
+    // writeln() outside parsing, which open it implicitly) erases every
+    // listener on the window and document, the bridge's included. Writes from
+    // a script the parser is running keep working. Best-effort: a script that
+    // artifact code inserts while the document is still loading also passes.
+    (function () {
+        const DocumentProto = Document.prototype;
+        const readyStateGetter = Object.getOwnPropertyDescriptor(DocumentProto, 'readyState').get;
+        const currentScriptGetter = Object.getOwnPropertyDescriptor(DocumentProto, 'currentScript').get;
+
+        function lock(name, fn) {
+            Object.defineProperty(DocumentProto, name, {value: fn, writable: false, enumerable: true, configurable: false});
+        }
+        function guardWrite(original) {
+            return function () {
+                if (reflectApply(readyStateGetter, this, []) !== 'loading' || reflectApply(currentScriptGetter, this, []) === null) {
+                    throw new DOMExceptionCtor('Artifacts cannot write to the document after it has loaded.', 'InvalidStateError');
+                }
+                return reflectApply(original, this, arguments);
+            };
+        }
+
+        lock('write', guardWrite(DocumentProto.write));
+        lock('writeln', guardWrite(DocumentProto.writeln));
+        lock('open', function () {
+            throw new DOMExceptionCtor('Artifacts cannot reopen the document.', 'InvalidStateError');
+        });
+    }());
+
+    // Best-effort defense in depth: CSP cannot block WebRTC, so a peer
+    // connection could reach the network (e.g. STUN to reveal the viewer's
+    // IP). Child frames (srcdoc, about:blank) and blob:/data: documents get
+    // fresh constructors; the real block is the Connection-Allowlist response
+    // header (Chromium 152+).
     ['RTCPeerConnection', 'webkitRTCPeerConnection', 'mozRTCPeerConnection', 'RTCDataChannel'].forEach(function (name) {
         try {
             Object.defineProperty(window, name, {value: undefined, writable: false, configurable: false});
@@ -53,6 +89,11 @@
             // Already non-configurable: nothing more this script can do.
         }
     });
+
+    // Outside the host's wrapper frame there is no host page to talk to.
+    if (parentWin === window || hostWin === parentWin) {
+        return;
+    }
 
     var PROTOCOL = 1;
     var REQUEST_TIMEOUT_MS = 120000;
@@ -123,7 +164,7 @@
 
     window.addEventListener('message', function (event) {
         var data = event.data;
-        if (event.source !== parentWin || !data || typeof data !== 'object' || data.mmArtifact !== PROTOCOL) {
+        if (event.source !== hostWin || !data || typeof data !== 'object' || data.mmArtifact !== PROTOCOL) {
             return;
         }
         if (data.type === 'context') {
@@ -144,9 +185,9 @@
             }, REQUEST_TIMEOUT_MS);
             pending[id] = {resolve: resolve, reject: reject, timer: timer};
             if (params === undefined) {
-                parentWin.postMessage({mmArtifact: PROTOCOL, type: 'request', id: id, method: method, token: TOKEN}, '*');
+                hostWin.postMessage({mmArtifact: PROTOCOL, type: 'request', id: id, method: method, token: TOKEN}, TARGET_ORIGIN);
             } else {
-                parentWin.postMessage({mmArtifact: PROTOCOL, type: 'request', id: id, method: method, params: params, token: TOKEN}, '*');
+                hostWin.postMessage({mmArtifact: PROTOCOL, type: 'request', id: id, method: method, params: params, token: TOKEN}, TARGET_ORIGIN);
             }
         });
     }
@@ -195,7 +236,7 @@
         var height = contentHeight();
         if (height !== lastHeight) {
             lastHeight = height;
-            parentWin.postMessage({mmArtifact: PROTOCOL, type: 'resize', height: height, token: TOKEN}, '*');
+            hostWin.postMessage({mmArtifact: PROTOCOL, type: 'resize', height: height, token: TOKEN}, TARGET_ORIGIN);
         }
     }
     function scheduleResize() {
@@ -213,7 +254,7 @@
             return;
         }
         if (event.key === 'Escape' && !event.defaultPrevented) {
-            parentWin.postMessage({mmArtifact: PROTOCOL, type: 'escape', token: TOKEN}, '*');
+            hostWin.postMessage({mmArtifact: PROTOCOL, type: 'escape', token: TOKEN}, TARGET_ORIGIN);
         }
     });
 
@@ -222,13 +263,13 @@
     // host never sees a second load event) cannot send it, so the host hides
     // and then unloads a frame whose heartbeat stops.
     function heartbeat() {
-        parentWin.postMessage({mmArtifact: PROTOCOL, type: 'heartbeat', token: TOKEN}, '*');
+        hostWin.postMessage({mmArtifact: PROTOCOL, type: 'heartbeat', token: TOKEN}, TARGET_ORIGIN);
     }
     heartbeat();
     setIntervalFn(heartbeat, HEARTBEAT_INTERVAL_MS);
 
     function onReady() {
-        parentWin.postMessage({mmArtifact: PROTOCOL, type: 'ready', token: TOKEN}, '*');
+        hostWin.postMessage({mmArtifact: PROTOCOL, type: 'ready', token: TOKEN}, TARGET_ORIGIN);
         if (typeof ResizeObserverCtor === 'function') {
             var observer = new ResizeObserverCtor(scheduleResize);
             observer.observe(document.documentElement);

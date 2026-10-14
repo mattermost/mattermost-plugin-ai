@@ -64,9 +64,15 @@ export function baseRoute(): string {
     return `${Client4.url}/plugins/${manifest.id}`;
 }
 
-// URL of the sandboxed HTML artifact document served by the plugin.
-export function artifactURL(fileId: string): string {
+// Path of the sandboxed HTML artifact document served by the plugin, without
+// the per-load nonce the server requires.
+export function artifactPath(fileId: string): string {
     return `${baseRoute()}/artifacts/${encodeURIComponent(fileId)}`;
+}
+
+// URL of the artifact document for one host load of its frame.
+export function artifactURL(fileId: string, nonce: string): string {
+    return `${artifactPath(fileId)}?n=${encodeURIComponent(nonce)}`;
 }
 
 export interface ArtifactTokenInfo {
@@ -77,9 +83,10 @@ export interface ArtifactTokenInfo {
 }
 
 // Fetches the viewer's token that authenticates messages from the artifact's
-// bridge script to this page.
-export async function getArtifactToken(fileId: string): Promise<ArtifactTokenInfo> {
-    const url = `${artifactURL(fileId)}/token`;
+// bridge script to this page. The token is only valid for the frame load
+// that uses the same nonce.
+export async function getArtifactToken(fileId: string, nonce: string): Promise<ArtifactTokenInfo> {
+    const url = `${artifactPath(fileId)}/token?n=${encodeURIComponent(nonce)}`;
     const response = await fetch(url, Client4.getOptions({
         method: 'GET',
     }));

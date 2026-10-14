@@ -12,7 +12,7 @@ import {Icon} from '@mattermost/compass-ui/components/icon';
 import {Spinner} from '@mattermost/compass-ui/components/spinner';
 import {AlertCircleOutlineIcon, DownloadOutlineIcon, RefreshIcon} from '@mattermost/compass-icons/components';
 
-import {artifactURL} from '@/client';
+import {artifactPath, artifactURL, getArtifactToken} from '@/client';
 
 import {
     ArtifactBroker,
@@ -24,7 +24,7 @@ import {
     toArtifactUser,
 } from './artifact_broker';
 import ArtifactConsentPrompt from './artifact_consent_prompt';
-import {fetchArtifactToken} from './artifact_token';
+import {newArtifactNonce} from './artifact_token';
 import {downloadArtifact} from './download';
 
 export const MIN_INLINE_HEIGHT = 120;
@@ -46,6 +46,47 @@ export function clampInlineHeight(height: number): number {
 
 export interface ArtifactFrameHandle {
     reload: () => void;
+}
+
+// One host load of the frame. The server serves the artifact and accepts the
+// bridge token only for this nonce.
+interface FrameLoad {
+    fileId: string;
+    nonce: string;
+    token: string;
+}
+
+function escapeAttribute(value: string): string {
+    return value.
+        replace(/&/g, '&amp;').
+        replace(/"/g, '&quot;').
+        replace(/'/g, '&#39;').
+        replace(/</g, '&lt;').
+        replace(/>/g, '&gt;');
+}
+
+// The artifact's sandbox cannot keep it from navigating its own frame, which
+// could carry data away in the URL. So the host frame holds a script-free
+// wrapper document whose policy lets its child frame load nothing but the
+// artifact: any other navigation is blocked before a request goes out. Only
+// host-controlled values may appear in this markup.
+function wrapperMarkup(fileId: string): string {
+    const url = new URL(artifactPath(fileId), window.location.href);
+    const csp = `default-src 'none'; style-src 'unsafe-inline'; frame-src ${url.origin}${url.pathname}`;
+    return '<!doctype html>' +
+        `<meta http-equiv="Content-Security-Policy" content="${escapeAttribute(csp)}">` +
+        '<style>html,body,iframe{display:block;width:100%;height:100%;margin:0;padding:0;border:0}</style>';
+}
+
+// Like the wrapper, the artifact's own frame is no tab stop until the viewer
+// engages it.
+function syncInnerFrame(inner: HTMLIFrameElement, title: string, engaged: boolean) {
+    inner.setAttribute('title', title);
+    if (engaged) {
+        inner.removeAttribute('tabindex');
+    } else {
+        inner.setAttribute('tabindex', '-1');
+    }
 }
 
 interface Props {
@@ -83,12 +124,18 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
 }, ref) => {
     const intl = useIntl();
     const containerRef = useRef<HTMLDivElement>(null);
-    const iframeRef = useRef<HTMLIFrameElement>(null);
 
-    // Bumping loadKey remounts the iframe (with a fresh broker), which is the
-    // only host-initiated load.
+    // The host's own frame holds the wrapper document; innerRef is the
+    // sandboxed frame inside it that runs the artifact. Focus anywhere in
+    // either shows up on this page as the wrapper being the active element.
+    const iframeRef = useRef<HTMLIFrameElement | null>(null);
+    const innerRef = useRef<HTMLIFrameElement | null>(null);
+
+    // Bumping loadKey starts a new host load: a new nonce and token, a fresh
+    // broker and a remounted frame. It is the only host-initiated load.
     const [loadKey, setLoadKey] = useState(0);
     const loadCountRef = useRef(0);
+    const wrapperLoadCountRef = useRef(0);
     const [status, setStatus] = useState<Status>('loading');
     const [height, setHeight] = useState(DEFAULT_INLINE_HEIGHT);
     const [stopReason, setStopReason] = useState<StopReason | null>(null);
@@ -119,7 +166,7 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
     const preferences = useSelector<GlobalState, unknown>((state) => state.entities.preferences?.myPreferences);
     const currentUserId = useSelector<GlobalState, string>((state) => state.entities.users.currentUserId);
     const currentUser = useSelector<GlobalState, any>((state) => state.entities.users.profiles[state.entities.users.currentUserId]);
-    const [token, setToken] = useState<string | null>(null);
+    const [load, setLoad] = useState<FrameLoad | null>(null);
     const [tokenFailed, setTokenFailed] = useState(false);
 
     // The server would refuse to serve the artifact: it exceeds the render
@@ -156,11 +203,14 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
     initiallyEngagedRef.current = initiallyEngaged;
     const stopReasonRef = useRef(stopReason);
     stopReasonRef.current = stopReason;
+    const title = intl.formatMessage({defaultMessage: 'Interactive artifact: {fileName}'}, {fileName});
+    const titleRef = useRef(title);
+    titleRef.current = title;
 
-    // The frame is only rendered once the viewer's bridge token is known.
+    // The frame is only rendered once this load's bridge token is known.
     useEffect(() => {
         let cancelled = false;
-        setToken(null);
+        setLoad(null);
         setTokenFailed(false);
         setTooLarge(false);
         setStatus('loading');
@@ -168,14 +218,15 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
             setTokenFailed(true);
             return undefined; // eslint-disable-line no-undefined
         }
-        fetchArtifactToken(fileId, currentUserId).then((info) => {
+        const nonce = newArtifactNonce();
+        getArtifactToken(fileId, nonce).then((info) => {
             if (cancelled) {
                 return;
             }
             if (info.tooLarge) {
                 setTooLarge(true);
             } else {
-                setToken(info.token);
+                setLoad({fileId, nonce, token: info.token});
             }
         }, () => {
             if (!cancelled) {
@@ -187,11 +238,12 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
         };
     }, [fileId, currentUserId, loadKey]);
 
-    const broker = useMemo(() => (token ? new ArtifactBroker({
-        fileId,
+    // Every host load has its own FrameLoad, so a disposed broker is never reused.
+    const broker = useMemo(() => (load ? new ArtifactBroker({
+        fileId: load.fileId,
         viewerId: currentUserId,
-        token,
-        getTargetWindow: () => iframeRef.current?.contentWindow,
+        token: load.token,
+        getTargetWindow: () => innerRef.current?.contentWindow,
         getContext: () => contextRef.current,
         getCurrentUser: () => userRef.current,
         requestConsent: () => new Promise<boolean>((resolve, reject) => {
@@ -210,11 +262,7 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
         },
         onResize: (h) => setHeight(clampInlineHeight(h)),
         onEscape: () => onEscapeRef.current?.(),
-    }) : null),
-
-    // loadKey: every host load gets its own broker, so a disposed one is never reused.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [fileId, currentUserId, token, loadKey]);
+    }) : null), [load, currentUserId]);
     const brokerRef = useRef(broker);
     brokerRef.current = broker;
 
@@ -252,7 +300,6 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
             return undefined; // eslint-disable-line no-undefined
         }
         broker.reset();
-        loadCountRef.current = 0;
         setStatus('loading');
         const timer = window.setTimeout(() => {
             if (!broker.isReady()) {
@@ -451,13 +498,24 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
         setUnresponsive(false);
         setEngaged(initiallyEngagedRef.current);
         setHeight(DEFAULT_INLINE_HEIGHT);
+        setLoad(null);
         setLoadKey((k) => k + 1);
     }, [setEngaged]);
 
     useImperativeHandle(ref, () => ({reload}), [reload]);
 
+    // A new wrapper element is a new host load: count its loads from zero.
+    const setWrapper = useCallback((el: HTMLIFrameElement | null) => {
+        iframeRef.current = el;
+        innerRef.current = null;
+        wrapperLoadCountRef.current = 0;
+        loadCountRef.current = 0;
+    }, []);
+
     // The artifact navigated its own frame (reload, meta refresh, link):
-    // whatever is in the frame now is not the artifact we served.
+    // whatever is in the frame now is not the artifact we served. The wrapper
+    // blocks navigations away from the artifact URL, and in some browsers a
+    // blocked one still loads an error page into the frame.
     const handleLoad = useCallback(() => {
         loadCountRef.current += 1;
         if (loadCountRef.current > 1) {
@@ -467,29 +525,106 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
 
     const handleError = failLoad;
 
+    // Firefox reports a navigation the wrapper blocked as an error on the
+    // artifact's frame, where Chromium loads an error page into it. After the
+    // artifact has loaded, either one is the artifact navigating itself.
+    const handleInnerError = useCallback(() => {
+        if (loadCountRef.current > 0) {
+            stopFrame('navigation');
+        } else {
+            failLoad();
+        }
+    }, [stopFrame, failLoad]);
+
+    // Focus can rest on the wrapper document instead of the artifact, where
+    // neither this page's key handlers nor the bridge see the keystroke.
+    const handleWrapperKeyDown = useCallback((e: KeyboardEvent) => {
+        if (e.key === 'Escape' && onEscapeRef.current) {
+            e.preventDefault();
+            onEscapeRef.current();
+        }
+    }, []);
+
+    // The artifact's frame is created from here once the wrapper document
+    // exists, with its load listener attached before it starts loading, so
+    // the host load is always the first one counted.
+    const handleWrapperLoad = useCallback(() => {
+        wrapperLoadCountRef.current += 1;
+        if (wrapperLoadCountRef.current > 1) {
+            stopFrame('navigation');
+            return;
+        }
+        const doc = iframeRef.current?.contentDocument;
+        if (!load || !doc?.body) {
+            failLoad();
+            return;
+        }
+        const inner = doc.createElement('iframe');
+        inner.setAttribute('sandbox', 'allow-scripts');
+        inner.setAttribute('referrerpolicy', 'no-referrer');
+        inner.setAttribute('data-testid', 'html-artifact-content');
+        syncInnerFrame(inner, titleRef.current, engagedRef.current);
+        inner.addEventListener('load', handleLoad);
+        inner.addEventListener('error', handleInnerError);
+        inner.setAttribute('src', artifactURL(load.fileId, load.nonce));
+        doc.addEventListener('keydown', handleWrapperKeyDown);
+        innerRef.current = inner;
+        doc.body.appendChild(inner);
+    }, [load, stopFrame, failLoad, handleLoad, handleInnerError, handleWrapperKeyDown]);
+
+    // Focusing the wrapper alone leaves keystrokes in the wrapper document,
+    // and focus() on an inner frame that is still its document's focused
+    // element does nothing, so it is blurred first.
+    const focusArtifact = useCallback(() => {
+        iframeRef.current?.focus();
+        const inner = innerRef.current;
+        if (inner) {
+            inner.blur();
+            inner.focus();
+        }
+    }, []);
+
     const engage = useCallback((e: React.MouseEvent) => {
         if (!e.nativeEvent.isTrusted) {
             return;
         }
         setEngaged(true);
-        iframeRef.current?.focus();
-    }, [setEngaged]);
+        focusArtifact();
+    }, [setEngaged, focusArtifact]);
 
+    const refocusAfterConsentRef = useRef(false);
     const answerConsent = useCallback((allowed: boolean) => {
         // The prompt is about to hand focus back to this artifact, which had
         // it when the prompt opened; the viewer answering it is returning there.
         if (consentReturnsToFrameRef.current && !unresponsiveRef.current) {
             setEngaged(true);
+            refocusAfterConsentRef.current = true;
         }
         pendingConsentRef.current?.resolve(allowed);
         setPendingConsent(null);
     }, [setEngaged]);
 
+    // The prompt gives focus back to the wrapper element as it unmounts,
+    // which leaves keystrokes in the wrapper document; pass them on to the artifact.
+    useEffect(() => {
+        if (pendingConsent || !refocusAfterConsentRef.current) {
+            return;
+        }
+        refocusAfterConsentRef.current = false;
+        if (document.activeElement === iframeRef.current) {
+            focusArtifact();
+        }
+    }, [pendingConsent, focusArtifact]);
+
+    useEffect(() => {
+        if (innerRef.current) {
+            syncInnerFrame(innerRef.current, title, engaged);
+        }
+    }, [title, engaged]);
+
     const shownStatus: Status = tokenFailed ? 'error' : status;
     const showStatus = !stopReason && !tooLarge;
-    const visible = showStatus && Boolean(token) && shownStatus === 'ready' && !unresponsive;
-
-    const title = intl.formatMessage({defaultMessage: 'Interactive artifact: {fileName}'}, {fileName});
+    const visible = showStatus && Boolean(load) && shownStatus === 'ready' && !unresponsive;
 
     return (
         <Container
@@ -500,17 +635,16 @@ const ArtifactFrame = forwardRef<ArtifactFrameHandle, Props>(({
             data-testid='html-artifact-frame'
             data-engaged={engaged}
         >
-            {!stopReason && !loadFailed && token && (
+            {!stopReason && !loadFailed && load && (
                 <Frame
-                    key={loadKey}
-                    ref={iframeRef}
-                    src={artifactURL(fileId)}
-                    sandbox='allow-scripts'
-                    referrerPolicy='no-referrer'
+                    key={load.nonce}
+                    ref={setWrapper}
+                    srcDoc={wrapperMarkup(load.fileId)}
                     title={title}
                     tabIndex={engaged ? undefined : -1} // eslint-disable-line no-undefined
-                    onLoad={handleLoad}
+                    onLoad={handleWrapperLoad}
                     onError={handleError}
+                    data-testid='html-artifact-wrapper'
                     $hidden={shownStatus !== 'ready' || unresponsive}
                 />
             )}

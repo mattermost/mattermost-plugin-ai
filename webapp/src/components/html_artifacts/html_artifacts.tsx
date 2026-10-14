@@ -23,13 +23,10 @@ interface Props {
 
     // post.metadata.files; files attach to the post when generation finishes.
     files: FileInfoLike[] | undefined | null;
-
-    // The viewer requested this response: their artifacts load right away.
-    autoRun: boolean;
 }
 
 // Renders an inline artifact card for each HTML attachment of an agent post.
-const HTMLArtifacts = ({postId, files: metadataFiles, autoRun}: Props) => {
+const HTMLArtifacts = ({postId, files: metadataFiles}: Props) => {
     const enabled = useSelector(getHTMLArtifactsEnabled);
 
     // A streamed post gains file_ids through a websocket edit that carries no
@@ -53,7 +50,6 @@ const HTMLArtifacts = ({postId, files: metadataFiles, autoRun}: Props) => {
                     key={file.id}
                     fileId={file.id as string}
                     fileName={file.name || `${file.id}.html`}
-                    autoRun={autoRun}
                 />
             ))}
         </>

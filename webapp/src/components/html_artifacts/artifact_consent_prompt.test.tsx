@@ -57,7 +57,6 @@ describe('ArtifactConsentPrompt pointer-entry gate', () => {
             {name: 'pointer click after a pointerenter that preceded arming is ignored', enterBeforeArm: true, armed: true, enterAfterArm: false, press: true, detail: 1, expectCalled: false},
             {name: 'pointer click after a post-arm pointerenter counts', enterBeforeArm: false, armed: true, enterAfterArm: true, press: true, detail: 1, expectCalled: true},
             {name: 'post-arm pointerenter without a press on the button is ignored', enterBeforeArm: false, armed: true, enterAfterArm: true, press: false, detail: 1, expectCalled: false},
-            {name: 'keyboard activation needs no pointerenter', enterBeforeArm: false, armed: true, enterAfterArm: false, press: false, detail: 0, expectCalled: true},
             {name: 'early pointer click is blocked by the arm delay', enterBeforeArm: true, armed: false, enterAfterArm: false, press: true, detail: 1, expectCalled: false},
             {name: 'early keyboard activation is blocked by the arm delay', enterBeforeArm: false, armed: false, enterAfterArm: false, press: false, detail: 0, expectCalled: false},
         ];
@@ -103,12 +102,103 @@ describe('ArtifactConsentPrompt pointer-entry gate', () => {
         expect(prompt.onAllow).not.toHaveBeenCalled();
         expect(prompt.onDeny).not.toHaveBeenCalled();
     });
+});
 
-    test('Enter on the default-focused Deny works once armed', () => {
-        const {deny, onDeny} = renderPrompt();
-        expect(document.activeElement).toBe(deny);
+describe('ArtifactConsentPrompt keyboard gate for Allow', () => {
+    type Step = 'focus' | 'keydown' | 'arm' | 'click';
+
+    const cases: Array<{name: string; steps: Step[]; expectCalled: boolean}> = [
+        {name: 'focus and keydown after arming count', steps: ['arm', 'focus', 'keydown', 'click'], expectCalled: true},
+        {name: 'a click with no key press is ignored', steps: ['arm', 'focus'], expectCalled: false},
+        {name: 'focus that arrived before arming is ignored', steps: ['focus', 'arm', 'keydown', 'click'], expectCalled: false},
+        {name: 'a keydown that began before arming is ignored', steps: ['focus', 'keydown', 'arm', 'click'], expectCalled: false},
+        {name: 'a keydown without focus arriving after arming is ignored', steps: ['arm', 'keydown', 'click'], expectCalled: false},
+        {name: 'activation before arming is ignored', steps: ['focus', 'keydown', 'click'], expectCalled: false},
+    ];
+
+    test.each(cases)('$name', ({steps, expectCalled}) => {
+        const {allow, onAllow} = renderPrompt();
+        for (const step of steps) {
+            switch (step) {
+            case 'arm':
+                arm();
+                break;
+            case 'focus':
+                fireEvent.focus(allow);
+                break;
+            case 'keydown':
+                fireEvent.keyDown(allow, {key: 'Enter'});
+                break;
+            case 'click':
+                fireEvent.click(allow, {detail: 0});
+                break;
+            }
+        }
+        expect(onAllow).toHaveBeenCalledTimes(expectCalled ? 1 : 0);
+    });
+
+    test.each([' ', 'Enter'])('key %j starts a press that counts', (key) => {
+        const {allow, onAllow} = renderPrompt();
         arm();
+        fireEvent.focus(allow);
+        fireEvent.keyDown(allow, {key});
+        fireEvent.click(allow, {detail: 0});
+        expect(onAllow).toHaveBeenCalledTimes(1);
+    });
+
+    test.each([
+        {name: 'Tab', init: {key: 'Tab'}},
+        {name: 'a repeated Enter', init: {key: 'Enter', repeat: true}},
+    ])('$name does not start a press', ({init}) => {
+        const {allow, onAllow} = renderPrompt();
+        arm();
+        fireEvent.focus(allow);
+        fireEvent.keyDown(allow, init);
+        fireEvent.click(allow, {detail: 0});
+        expect(onAllow).not.toHaveBeenCalled();
+    });
+
+    test('a key press does not carry over to a second activation', () => {
+        const {allow, onAllow} = renderPrompt();
+        arm();
+        fireEvent.focus(allow);
+        fireEvent.keyDown(allow, {key: 'Enter'});
+        fireEvent.click(allow, {detail: 0});
+        fireEvent.click(allow, {detail: 0});
+        expect(onAllow).toHaveBeenCalledTimes(1);
+    });
+
+    test('focus leaving and returning needs a fresh focus after arming', () => {
+        const {allow, onAllow} = renderPrompt();
+        arm();
+        fireEvent.focus(allow);
+        fireEvent.blur(allow);
+        fireEvent.keyDown(allow, {key: 'Enter'});
+        fireEvent.click(allow, {detail: 0});
+        expect(onAllow).not.toHaveBeenCalled();
+        fireEvent.focus(allow);
+        fireEvent.keyDown(allow, {key: 'Enter'});
+        fireEvent.click(allow, {detail: 0});
+        expect(onAllow).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('ArtifactConsentPrompt keyboard activation of Deny', () => {
+    const cases: Array<{name: string; armed: boolean; key: string; expectCalled: boolean}> = [
+        {name: 'Enter on the default-focused Deny works once armed', armed: true, key: 'Enter', expectCalled: true},
+        {name: 'Space on the default-focused Deny works once armed', armed: true, key: ' ', expectCalled: true},
+        {name: 'activation before arming is ignored', armed: false, key: 'Enter', expectCalled: false},
+    ];
+
+    test.each(cases)('$name', ({armed, key, expectCalled}) => {
+        const {deny, onAllow, onDeny} = renderPrompt();
+        expect(document.activeElement).toBe(deny);
+        if (armed) {
+            arm();
+        }
+        fireEvent.keyDown(deny, {key});
         fireEvent.click(deny, {detail: 0});
-        expect(onDeny).toHaveBeenCalledTimes(1);
+        expect(onDeny).toHaveBeenCalledTimes(expectCalled ? 1 : 0);
+        expect(onAllow).not.toHaveBeenCalled();
     });
 });

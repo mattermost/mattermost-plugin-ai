@@ -14,7 +14,9 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -47,32 +49,125 @@ const artifactCSP = "sandbox allow-scripts; default-src 'none'; script-src 'unsa
 	"connect-src 'none'; frame-src 'none'; worker-src 'none'; object-src 'none'; " +
 	"form-action 'none'; base-uri 'none'; frame-ancestors 'self'"
 
+// artifactConnectionAllowlist allows the artifact no connections at all:
+// with an empty list, WebRTC and navigations/redirects are blocked too, and
+// local-scheme children (srcdoc, data:, blob:) inherit it. CSP cannot block
+// WebRTC. Honored by Chromium 152+; other browsers ignore it.
+const artifactConnectionAllowlist = "()"
+
+// artifactPermissionsPolicy denies the features an opaque-origin frame would
+// otherwise still get by default, plus powerful features as defense in depth.
+const artifactPermissionsPolicy = "accelerometer=(), " +
+	"ambient-light-sensor=(), " +
+	"attribution-reporting=(), " +
+	"autoplay=(), " +
+	"bluetooth=(), " +
+	"browsing-topics=(), " +
+	"camera=(), " +
+	"clipboard-read=(), " +
+	"clipboard-write=(), " +
+	"compute-pressure=(), " +
+	"display-capture=(), " +
+	"encrypted-media=(), " +
+	"fullscreen=(), " +
+	"gamepad=(), " +
+	"geolocation=(), " +
+	"gyroscope=(), " +
+	"hid=(), " +
+	"identity-credentials-get=(), " +
+	"idle-detection=(), " +
+	"join-ad-interest-group=(), " +
+	"local-fonts=(), " +
+	"magnetometer=(), " +
+	"microphone=(), " +
+	"midi=(), " +
+	"otp-credentials=(), " +
+	"payment=(), " +
+	"picture-in-picture=(), " +
+	"private-aggregation=(), " +
+	"private-state-token-issuance=(), " +
+	"private-state-token-redemption=(), " +
+	"publickey-credentials-create=(), " +
+	"publickey-credentials-get=(), " +
+	"run-ad-auction=(), " +
+	"screen-wake-lock=(), " +
+	"serial=(), " +
+	"shared-storage=(), " +
+	"shared-storage-select-url=(), " +
+	"storage-access=(), " +
+	"sync-xhr=(), " +
+	"unload=(), " +
+	"usb=(), " +
+	"web-share=(), " +
+	"window-management=(), " +
+	"xr-spatial-tracking=()"
+
 // artifactBridgeTokenPlaceholder is replaced in artifact_bridge.js with the
 // viewer's bridge token as a JSON string literal.
 const artifactBridgeTokenPlaceholder = "/*MM_ARTIFACT_BRIDGE_TOKEN*/null" //nolint:gosec // placeholder, not a credential
+
+// artifactBridgeTargetOriginPlaceholder is replaced in artifact_bridge.js
+// with the origin the bridge posts to, as a JSON string literal.
+const artifactBridgeTargetOriginPlaceholder = "/*MM_ARTIFACT_BRIDGE_TARGET_ORIGIN*/null"
 
 // artifactSecretKVKey holds the plugin-wide HMAC secret for bridge tokens.
 const artifactSecretKVKey = "html_artifact_bridge_secret_v1" //nolint:gosec // KV key name, not a credential
 
 const artifactSecretSize = 32
 
-// artifactBridgeScript returns the bridge script with token embedded as a
-// JSON string literal. json.Marshal escapes <, > and & (and U+2028/U+2029),
-// so the literal can never close the script element or the string.
-func artifactBridgeScript(token string) string {
-	literal, err := json.Marshal(token)
+// artifactBridgeScript returns the bridge script with token and targetOrigin
+// embedded as JSON string literals. json.Marshal escapes <, > and & (and
+// U+2028/U+2029), so a literal can never close the script element or the
+// string, and the single-pass replacer never rescans an inserted literal.
+func artifactBridgeScript(token, targetOrigin string) string {
+	return "<script>" + strings.NewReplacer(
+		artifactBridgeTokenPlaceholder, jsStringLiteral(token),
+		artifactBridgeTargetOriginPlaceholder, jsStringLiteral(targetOrigin),
+	).Replace(artifactBridgeJS) + "</script>"
+}
+
+func jsStringLiteral(s string) string {
+	literal, err := json.Marshal(s)
 	if err != nil {
-		literal = []byte(`""`)
+		return `""`
 	}
-	return "<script>" + strings.Replace(artifactBridgeJS, artifactBridgeTokenPlaceholder, string(literal), 1) + "</script>"
+	return string(literal)
+}
+
+// artifactTargetOrigin returns the origin of the Mattermost site URL, which
+// is the host page's origin, or "*" when it is unset or unusable.
+func artifactTargetOrigin(cfg *model.Config) string {
+	if cfg == nil || cfg.ServiceSettings.SiteURL == nil {
+		return "*"
+	}
+	u, err := url.Parse(*cfg.ServiceSettings.SiteURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return "*"
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // artifactBridgeToken derives the token that authenticates bridge messages
-// for one viewer and one artifact file.
-func artifactBridgeToken(secret []byte, userID, fileID string) string {
+// for one viewer, one artifact file and one host load of its frame (nonce).
+func artifactBridgeToken(secret []byte, userID, fileID, nonce string) string {
 	mac := hmac.New(sha256.New, secret)
-	mac.Write([]byte("html-artifact-bridge:v1|" + userID + "|" + fileID))
+	mac.Write([]byte("html-artifact-bridge:v2|" + userID + "|" + fileID + "|" + nonce))
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+// artifactNonceRe matches the host's per-load nonce: 16 random bytes,
+// base64url without padding.
+var artifactNonceRe = regexp.MustCompile(`^[A-Za-z0-9_-]{22}$`)
+
+// artifactNonce returns the request's nonce, which must be the only query
+// parameter. On failure it writes a 400 and returns ok=false.
+func artifactNonce(c *gin.Context) (string, bool) {
+	query, err := url.ParseQuery(c.Request.URL.RawQuery)
+	if err != nil || len(query) != 1 || len(query["n"]) != 1 || !artifactNonceRe.MatchString(query["n"][0]) {
+		c.String(http.StatusBadRequest, "invalid request")
+		return "", false
+	}
+	return query["n"][0], true
 }
 
 // artifactSecret returns the plugin-wide bridge token secret, creating it on
@@ -121,8 +216,8 @@ func (a *API) artifactSecret() ([]byte, error) {
 // html and head elements implicitly and merges a later <html>'s attributes),
 // the doctype stays first so standards mode is kept, and the charset comes
 // from the Content-Type header.
-func injectArtifactBridge(doc []byte, token string) []byte {
-	script := artifactBridgeScript(token)
+func injectArtifactBridge(doc []byte, token, targetOrigin string) []byte {
+	script := artifactBridgeScript(token, targetOrigin)
 	insertAt := artifactBridgeInsertPos(doc)
 	out := make([]byte, 0, len(doc)+len(script))
 	out = append(out, doc[:insertAt]...)
@@ -270,16 +365,16 @@ func (a *API) authorizeArtifact(c *gin.Context) (client mmapi.Client, info *mode
 	return client, info, true
 }
 
-// viewerArtifactToken returns the bridge token for the requesting viewer and
-// fileID, logging and writing a 500 on failure.
-func (a *API) viewerArtifactToken(c *gin.Context, fileID string) (string, bool) {
+// viewerArtifactToken returns the bridge token for the requesting viewer,
+// fileID and nonce, logging and writing a 500 on failure.
+func (a *API) viewerArtifactToken(c *gin.Context, fileID, nonce string) (string, bool) {
 	secret, err := a.artifactSecret()
 	if err != nil {
 		a.logArtifactError("Failed to load artifact bridge secret", err, fileID)
 		c.String(http.StatusInternalServerError, "failed to prepare artifact")
 		return "", false
 	}
-	return artifactBridgeToken(secret, c.GetHeader("Mattermost-User-Id"), fileID), true
+	return artifactBridgeToken(secret, c.GetHeader("Mattermost-User-Id"), fileID, nonce), true
 }
 
 // handleGetArtifactToken returns the token the viewer's host page uses to
@@ -292,7 +387,11 @@ func (a *API) handleGetArtifactToken(c *gin.Context) {
 	if !ok {
 		return
 	}
-	token, ok := a.viewerArtifactToken(c, c.Param("fileid"))
+	nonce, ok := artifactNonce(c)
+	if !ok {
+		return
+	}
+	token, ok := a.viewerArtifactToken(c, c.Param("fileid"), nonce)
 	if !ok {
 		return
 	}
@@ -308,10 +407,12 @@ func (a *API) handleGetArtifact(c *gin.Context) {
 	}
 	fileID := c.Param("fileid")
 
-	// Only render inside the host's iframe, where the safety notice and
+	// Only render inside the host's frame, where the safety notice and
 	// navigation guard exist. A top-level visit (e.g. the frame URL opened in
 	// a new tab) would let attacker-authored UI fill a tab on this origin.
-	if !strings.EqualFold(c.GetHeader("Sec-Fetch-Dest"), "iframe") {
+	// The host's wrapper frame is same-origin, while the artifact navigating
+	// its own frame (opaque initiator) is cross-site.
+	if !strings.EqualFold(c.GetHeader("Sec-Fetch-Dest"), "iframe") || !strings.EqualFold(c.GetHeader("Sec-Fetch-Site"), "same-origin") {
 		h := c.Writer.Header()
 		h.Set("Content-Security-Policy", artifactInterstitialCSP)
 		h.Set("Referrer-Policy", "no-referrer")
@@ -319,13 +420,19 @@ func (a *API) handleGetArtifact(c *gin.Context) {
 		return
 	}
 
-	limit := artifactRenderLimit(client.GetConfig())
+	nonce, ok := artifactNonce(c)
+	if !ok {
+		return
+	}
+
+	cfg := client.GetConfig()
+	limit := artifactRenderLimit(cfg)
 	if info.Size > limit {
 		c.String(http.StatusRequestEntityTooLarge, "artifact too large")
 		return
 	}
 
-	token, ok := a.viewerArtifactToken(c, fileID)
+	token, ok := a.viewerArtifactToken(c, fileID, nonce)
 	if !ok {
 		return
 	}
@@ -350,10 +457,12 @@ func (a *API) handleGetArtifact(c *gin.Context) {
 
 	h := c.Writer.Header()
 	h.Set("Content-Security-Policy", artifactCSP)
+	h.Set("Connection-Allowlist", artifactConnectionAllowlist)
+	h.Set("Permissions-Policy", artifactPermissionsPolicy)
 	h.Set("Referrer-Policy", "no-referrer")
 	h.Set("Cross-Origin-Resource-Policy", "same-origin")
 	h.Set("Content-Disposition", "inline")
-	c.Data(http.StatusOK, "text/html; charset=utf-8", injectArtifactBridge(body, token))
+	c.Data(http.StatusOK, "text/html; charset=utf-8", injectArtifactBridge(body, token, artifactTargetOrigin(cfg)))
 }
 
 func (a *API) logArtifactError(msg string, err error, fileID string) {
