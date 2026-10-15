@@ -58,4 +58,38 @@ test.describe('Bot Selector in Search', () => {
         const botSelector = page.getByRole('button', { name: 'Mock Bot' });
         await expect(botSelector).toBeVisible({ timeout: 10000 });
     });
+
+    test('Selecting an agent from the dropdown keeps the search box open', async ({ page }) => {
+        const { aiPlugin } = await setupTestPage(page);
+        const selector = await openAgentsSearch(page, aiPlugin);
+        const target = (await selector.textContent())?.includes('Second Bot') ? 'Mock Bot' : 'Second Bot';
+
+        await selector.click();
+        await page.getByTestId('dropdownmenu').getByRole('button', { name: target }).click();
+
+        await expect(page.getByRole('button', { name: target, exact: true })).toBeVisible();
+        await expect(page.getByRole('radio', { name: /Agents/i })).toBeVisible();
+    });
+
+    test('Clicking Manage in the dropdown opens the agents page', async ({ page }) => {
+        const { aiPlugin } = await setupTestPage(page);
+        const selector = await openAgentsSearch(page, aiPlugin);
+
+        await selector.click();
+        await page.getByRole('button', { name: 'Manage' }).click();
+
+        await expect(page).toHaveURL(/\/plug\/mattermost-ai\/agents/);
+    });
 });
+
+async function openAgentsSearch(page: Page, aiPlugin: AIPlugin) {
+    await aiPlugin.openRHS();
+    await expect(aiPlugin.rhsPostTextarea).toBeEnabled({ timeout: 30000 });
+    await aiPlugin.closeRHS();
+
+    await page.getByRole('button', { name: 'Search' }).click();
+    await page.getByRole('radio', { name: /Agents/i }).click();
+    const selector = page.getByRole('button', { name: /^(Mock Bot|Second Bot)$/ });
+    await expect(selector).toBeVisible({ timeout: 10000 });
+    return selector;
+}
