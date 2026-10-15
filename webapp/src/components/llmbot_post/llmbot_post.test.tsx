@@ -6,7 +6,9 @@ import {act, fireEvent, render, screen, waitFor, within} from '@testing-library/
 import {IntlProvider} from 'react-intl';
 import {useSelector} from 'react-redux';
 
+import {doRegenerate} from '@/client';
 import {useConversation} from '@/hooks/use_conversation';
+import manifest from '@/manifest';
 import {PluginWebSocketMessage} from '@/types';
 import type {ConversationResponse, Turn} from '@/types/conversation';
 
@@ -1331,5 +1333,140 @@ describe('LLMBotPost meetings license gating', () => {
         renderPost(makePost('Call summary'));
 
         expect(screen.queryByText('Post summary')).toBeNull();
+    });
+});
+
+describe('LLMBotPost interrupted and stale generation notices', () => {
+    const BOT_ID = 'bot_user_1';
+    const SHUTDOWN_TEXT = 'This response was interrupted because the Agents plugin was restarted or updated.';
+    const LOST_TEXT = 'This response was interrupted because the server went down unexpectedly.';
+    const STALE_TEXT = 'This response seems to have stopped. The server may have restarted.';
+
+    function interruptedPost(reason: string, userId = BOT_ID, message = 'Partial answer') {
+        return {...makePost(message, {llm_interrupted: reason, llm_interrupted_at: 1700000000000}), user_id: userId};
+    }
+
+    beforeEach(() => {
+        (doRegenerate as jest.Mock).mockClear();
+        mockUseConversation.mockReturnValue({
+            conversation: makeConversation([]),
+            loading: false,
+            error: null,
+        });
+        mockUseSelector.mockImplementation((selector) => selector({
+            entities: {
+                channels: {channels: {channel_1: {type: 'D'}}},
+                posts: {posts: {}},
+                users: {currentUserId: 'user_1'},
+            },
+            ['plugins-' + manifest.id]: {bots: [{id: BOT_ID}]},
+        }));
+    });
+
+    afterEach(() => {
+        jest.useRealTimers();
+    });
+
+    test.each([
+        ['shutdown', SHUTDOWN_TEXT],
+        ['lost', LOST_TEXT],
+    ])('renders the %s notice below partial content for a bot-authored post', (reason, text) => {
+        renderPost(interruptedPost(reason));
+
+        expect(screen.getByText('Partial answer')).toBeTruthy();
+        expect(screen.getByText(text)).toBeTruthy();
+        expect(screen.queryByText('Working...')).toBeNull();
+    });
+
+    test('clears the Working state for an interrupted empty post', () => {
+        renderPost(interruptedPost('shutdown', BOT_ID, ''));
+
+        expect(screen.getByText(SHUTDOWN_TEXT)).toBeTruthy();
+        expect(screen.queryByText('Working...')).toBeNull();
+    });
+
+    test.each([
+        ['a non-bot author', 'someone_else'],
+        ['an unknown reason', BOT_ID],
+    ])('renders nothing special for %s', (label, userId) => {
+        const reason = label === 'an unknown reason' ? 'bogus' : 'shutdown';
+        renderPost(interruptedPost(reason, userId));
+
+        expect(screen.queryByTestId('llm-bot-post-interrupted')).toBeNull();
+        expect(screen.queryByText(SHUTDOWN_TEXT)).toBeNull();
+    });
+
+    test('shows Regenerate in the notice for the requester and calls regenerate', () => {
+        mockUseConversation.mockReturnValue({conversation: makeConversation([], 'user_1'), loading: false, error: null});
+        renderPost(interruptedPost('shutdown'));
+
+        const notice = screen.getByTestId('llm-bot-post-interrupted');
+        fireEvent.click(within(notice).getByText('Regenerate'));
+
+        expect(doRegenerate).toHaveBeenCalledWith('post_1');
+        expect(screen.queryByTestId('llm-bot-post-interrupted')).toBeNull();
+    });
+
+    test('hides Regenerate for someone who is not the requester', () => {
+        mockUseConversation.mockReturnValue({conversation: makeConversation([], 'other_user'), loading: false, error: null});
+        renderPost(interruptedPost('lost'));
+
+        expect(screen.getByText(LOST_TEXT)).toBeTruthy();
+        expect(screen.queryByText('Regenerate')).toBeNull();
+    });
+
+    test('shows the stale notice after 60s without events and hides it when events resume', () => {
+        jest.useFakeTimers();
+        let listener: PostUpdateHandler | undefined;
+        renderPost(makePost(''), (postID, listenerID, handler) => {
+            listener = handler;
+        });
+
+        act(() => {
+            jest.advanceTimersByTime(59000);
+        });
+        expect(screen.queryByText(STALE_TEXT)).toBeNull();
+
+        act(() => {
+            jest.advanceTimersByTime(1000);
+        });
+        expect(screen.getByText(STALE_TEXT)).toBeTruthy();
+        fireEvent.click(within(screen.getByTestId('llm-bot-post-stale')).getByText('Regenerate'));
+        expect(doRegenerate).toHaveBeenCalledWith('post_1');
+        expect(screen.queryByText(STALE_TEXT)).toBeNull();
+
+        act(() => {
+            jest.advanceTimersByTime(60000);
+        });
+        expect(screen.getByText(STALE_TEXT)).toBeTruthy();
+
+        act(() => {
+            listener?.(postUpdateMessage({post_id: 'post_1', control: 'start'}));
+        });
+        expect(screen.queryByText(STALE_TEXT)).toBeNull();
+
+        // Timer restarts from the last event.
+        act(() => {
+            jest.advanceTimersByTime(59000);
+            listener?.(postUpdateMessage({post_id: 'post_1', next: 'hello'}));
+            jest.advanceTimersByTime(59000);
+        });
+        expect(screen.queryByText(STALE_TEXT)).toBeNull();
+
+        act(() => {
+            listener?.(postUpdateMessage({post_id: 'post_1', control: 'end'}));
+            jest.advanceTimersByTime(120000);
+        });
+        expect(screen.queryByText(STALE_TEXT)).toBeNull();
+    });
+
+    test('does not show the stale notice for a completed post', () => {
+        jest.useFakeTimers();
+        renderPost(makePost('Done'));
+
+        act(() => {
+            jest.advanceTimersByTime(120000);
+        });
+        expect(screen.queryByText(STALE_TEXT)).toBeNull();
     });
 });
