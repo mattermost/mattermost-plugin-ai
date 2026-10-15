@@ -107,7 +107,19 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 			return fmt.Errorf("could not regenerate thread analysis: %w", err)
 		}
 
-	case llm.OperationMeetingSummary, llm.OperationChannelInterval:
+	case llm.OperationMeetingSummary:
+		// The stored user turn is derived from a recording or captions file;
+		// the requester must still be allowed to download that source.
+		if accessErr := c.checkMeetingSourceAccess(ctx, post); accessErr != nil {
+			return accessErr
+		}
+		post.Message = ""
+		result, err = c.regenerateSingleShot(ctx, bot, user, channel, conv, post)
+		if err != nil {
+			return fmt.Errorf("could not regenerate %s: %w", conv.Operation, err)
+		}
+
+	case llm.OperationChannelInterval:
 		// The stored user turn already holds the formatted source (meeting
 		// transcription or channel posts), so no source files are re-read.
 		post.Message = ""
@@ -148,6 +160,51 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 	c.streamingService.StreamToPost(ctx, result, post, *config.LocalizationSettings.DefaultServerLocale, user.Id)
 
 	return nil
+}
+
+// Meeting post props, mirrored from the meetings package (which imports this
+// package, so it cannot be imported here).
+const (
+	meetingRecordingFileIDProp  = "referenced_recording_file_id"
+	meetingTranscriptPostIDProp = "referenced_transcript_post_id"
+)
+
+// checkMeetingSourceAccess fails closed unless the requesting session may
+// download the recording or captions file a meeting summary was built from.
+func (c *Conversations) checkMeetingSourceAccess(ctx stdcontext.Context, post *model.Post) error {
+	fileID, _ := post.GetProp(meetingRecordingFileIDProp).(string)
+	if fileID == "" {
+		transcriptPostID, _ := post.GetProp(meetingTranscriptPostIDProp).(string)
+		if transcriptPostID == "" {
+			return errors.New("meeting summary post missing its source reference")
+		}
+		transcriptPost, err := c.mmClient.GetPost(transcriptPostID)
+		if err != nil {
+			return fmt.Errorf("could not get transcription post on regen: %w", err)
+		}
+		fileID = captionsFileID(transcriptPost)
+		if fileID == "" {
+			return errors.New("transcription post has no captions file")
+		}
+	}
+
+	mm := mmapi.WithFilePolicy(c.mmClient, auth.SessionIDFromContext(ctx))
+	if _, err := mm.GetFileInfo(fileID); err != nil {
+		return fmt.Errorf("could not access meeting source file on regen: %w", err)
+	}
+	return nil
+}
+
+// captionsFileID returns the first captions file id on a calls transcription
+// post, or "" when absent or malformed.
+func captionsFileID(post *model.Post) string {
+	captions, _ := post.GetProp("captions").([]any)
+	if len(captions) == 0 {
+		return ""
+	}
+	caption, _ := captions[0].(map[string]any)
+	fileID, _ := caption["file_id"].(string)
+	return fileID
 }
 
 // isInitialResponse reports whether the assistant turn anchored to postID
