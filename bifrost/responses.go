@@ -4,7 +4,6 @@
 package bifrost
 
 import (
-	"cmp"
 	"context"
 	"fmt"
 
@@ -242,32 +241,43 @@ func (b *LLM) convertToResponsesTools(request llm.CompletionRequest, cfg llm.Lan
 	return result
 }
 
-// buildResponsesReasoning creates a ResponsesParametersReasoning configuration if reasoning is enabled.
+// buildResponsesReasoning creates the ResponsesParametersReasoning
+// configuration for the primary provider, or nil when no reasoning block
+// should be sent.
 func (b *LLM) buildResponsesReasoning(cfg llm.LanguageModelConfig) *schemas.ResponsesParametersReasoning {
-	if !b.reasoningEnabled || cfg.ReasoningDisabled || b.thinkingBlockedBySchema(cfg) {
-		return nil
-	}
+	return b.responsesReasoningFor(b.provider, cfg)
+}
 
-	if b.provider == schemas.OpenAI || b.provider == schemas.Azure {
+// responsesReasoningFor creates the ResponsesParametersReasoning configuration
+// for provider and cfg.Model, or nil when no reasoning block should be sent.
+func (b *LLM) responsesReasoningFor(provider schemas.ModelProvider, cfg llm.LanguageModelConfig) *schemas.ResponsesParametersReasoning {
+	if provider == schemas.OpenAI || provider == schemas.Azure {
+		if b.thinkingOff(cfg) {
+			return nil
+		}
 		// Enable reasoning summaries so the provider returns reasoning text in
 		// the stream; without this OpenAI omits reasoning_summary events.
 		return &schemas.ResponsesParametersReasoning{
-			Effort:  new(cmp.Or(b.reasoningEffort, "medium")),
+			Effort:  new(standardEffort(b.reasoningEffort)),
 			Summary: new("auto"),
 		}
 	}
 
 	// Bifrost will route a Responses-API request to chat completions for
 	// providers without native Responses support (e.g. Mistral). Those
-	// providers don't accept reasoning_effort, so providerReasoningBudget
-	// drops it for them too.
-	effort, maxTokens, ok := b.providerReasoningBudget(cfg)
+	// providers don't accept reasoning_effort, so providerReasoning drops it
+	// for them too.
+	params, ok := b.providerReasoning(provider, cfg)
 	if !ok {
 		return nil
 	}
-	reasoning := &schemas.ResponsesParametersReasoning{Effort: effort, MaxTokens: maxTokens}
-	// Enable summary so Gemini/Vertex return reasoning text in the stream.
-	if b.provider == schemas.Gemini || b.provider == schemas.Vertex {
+	reasoning := &schemas.ResponsesParametersReasoning{Effort: params.effort, MaxTokens: params.maxTokens}
+	switch {
+	case params.hideThinking:
+		// Bifrost maps summary "none" to Anthropic's thinking.display "omitted".
+		reasoning.Summary = new("none")
+	case provider == schemas.Gemini || provider == schemas.Vertex:
+		// Enable summary so Gemini/Vertex return reasoning text in the stream.
 		reasoning.Summary = new("auto")
 	}
 	return reasoning
@@ -332,6 +342,7 @@ func (b *LLM) streamResponses(ctx context.Context, request llm.CompletionRequest
 	bifrostCtx, cancel := schemas.NewBifrostContextWithTimeout(ctx, b.streamingTimeout*10)
 	defer cancel()
 	b.applyCompletionBetaHeaders(bifrostCtx)
+	b.withHopReasoning(bifrostCtx, cfg)
 
 	// Convert to Bifrost Responses API request
 	bifrostReq, err := b.convertToBifrostResponsesRequest(request, cfg)
