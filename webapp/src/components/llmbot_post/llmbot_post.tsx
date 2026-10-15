@@ -190,8 +190,13 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
         frozenTextLenRef.current = 0;
     };
 
-    // Sync message from post.message changes (e.g. after post update)
+    // Sync message from post.message changes (e.g. after post update). While a
+    // live stream is running, periodic heartbeat flushes edit the post with a
+    // snapshot that lags the websocket text, so don't let them rewind it.
     useEffect(() => {
+        if (generating) {
+            return;
+        }
         if (props.post.message !== '' && props.post.message !== message) {
             progressCompleteRef.current = true;
             setProgressPhase(null);
@@ -204,8 +209,11 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
         if (!conversation) {
             return [];
         }
-        return buildRoundsFromTurns(conversation, props.post.id);
-    }, [conversation, props.post.id]);
+
+        // A still-streaming turn is shown from its persisted snapshot until live
+        // events resume; then the live round replaces it.
+        return buildRoundsFromTurns(conversation, props.post.id, {includeStreaming: !generating});
+    }, [conversation, props.post.id, generating]);
 
     // Keep prior rounds visible during the refetch window after invalidate.
     const lastPersistedRef = useRef<Round[]>([]);

@@ -1519,6 +1519,46 @@ describe('LLMBotPost interrupted and stale generation notices', () => {
         expect(invalidateConversation).toHaveBeenCalledTimes(1);
     });
 
+    test('a heartbeat post flush does not rewind live streamed text', () => {
+        let listener: PostUpdateHandler | undefined;
+        const ui = (message: string) => (
+            <IntlProvider locale='en'>
+                <LLMBotPost
+                    post={makePost(message)}
+                    websocketRegister={(postID: string, listenerID: string, handler: PostUpdateHandler) => {
+                        listener = handler;
+                    }}
+                    websocketUnregister={jest.fn()}
+                />
+            </IntlProvider>
+        );
+        const {rerender} = render(ui(''));
+
+        act(() => {
+            listener?.(postUpdateMessage({post_id: 'post_1', control: 'start'}));
+            listener?.(postUpdateMessage({post_id: 'post_1', next: 'Hello there, live text'}));
+        });
+        expect(screen.getByText('Hello there, live text')).toBeTruthy();
+
+        // A heartbeat flush lands with an older snapshot of the post.
+        rerender(ui('Hello'));
+        expect(screen.getByText('Hello there, live text')).toBeTruthy();
+    });
+
+    test('a remounted post shows the partial text of its still-streaming turn', () => {
+        mockUseConversation.mockReturnValue({
+            conversation: makeConversation([
+                makeTurn({id: 'turn_0', post_id: null, sequence: 1, status: 'complete', content: [{type: 'text', text: 'Earlier round'}]}),
+                makeTurn({id: 'turn_1', post_id: 'post_1', sequence: 2, status: 'streaming', content: [{type: 'text', text: 'Partial answer so far'}]}),
+            ]),
+            loading: false,
+            error: null,
+        });
+        renderPost(makePost('Earlier round Partial answer so far'));
+
+        expect(screen.getByText('Partial answer so far')).toBeTruthy();
+    });
+
     test('does not show the stale notice for a completed post', () => {
         jest.useFakeTimers();
         renderPost(makePost('Done'));

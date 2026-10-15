@@ -407,6 +407,7 @@ function distributeAnnotations(drafts: RoundDraft[], annotations: Annotation[]):
 export function buildRoundsFromTurns(
     conversation: ConversationResponse,
     postId: string,
+    options: {includeStreaming?: boolean} = {},
 ): Round[] {
     const turns = collectResponseTurns(conversation, postId);
     if (turns.length === 0) {
@@ -416,9 +417,9 @@ export function buildRoundsFromTurns(
     const resultMap = buildToolResultMap(conversation);
     const rounds: Round[] = [];
     for (const turn of turns) {
-        // A still-streaming turn is the live round: the stream (or, if it
-        // died, the flushed post message) renders it, so don't duplicate it.
-        if (turn.role !== 'assistant' || turn.status === 'streaming') {
+        // A still-streaming turn duplicates the live round while events flow;
+        // callers include it only when no live stream is rendering it.
+        if (turn.role !== 'assistant' || (turn.status === 'streaming' && !options.includeStreaming)) {
             continue;
         }
         rounds.push(...splitTurnIntoRounds(turn, resultMap));

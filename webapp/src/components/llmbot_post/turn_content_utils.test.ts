@@ -703,6 +703,11 @@ describe('buildRoundsFromTurns', () => {
         expect(buildRoundsFromTurns(makeConversation([turn]), 'post_1')).toHaveLength(expected);
     });
 
+    test('includes a streaming turn when no live stream renders it', () => {
+        const turn = makeTurn({id: 'r1', post_id: 'post_1', sequence: 1, status: 'streaming', content: [{type: 'text', text: 'Partial'}]});
+        expect(buildRoundsFromTurns(makeConversation([turn]), 'post_1', {includeStreaming: true})).toHaveLength(1);
+    });
+
     test('extracts server_tool_use blocks into the round serverTools', () => {
         const turn = makeTurn({
             id: 'r1',
