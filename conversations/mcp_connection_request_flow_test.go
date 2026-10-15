@@ -87,6 +87,15 @@ func TestHandleToolCallResolvesConnectionRequest(t *testing.T) {
 			wantTools:     []string{"jira__get_issue"},
 		},
 		{
+			name:              "continue after connecting in a channel reports the connection without the requester's tool names",
+			channel:           openChannel,
+			connected:         true,
+			accepted:          true,
+			wantStatus:        conversation.StatusSuccess,
+			wantConnected:     true,
+			wantResultSnippet: "The user connected Jira.",
+		},
+		{
 			name:              "continue without connecting reports the server is still unavailable",
 			channel:           dmChannel,
 			accepted:          true,
@@ -194,6 +203,10 @@ func TestHandleToolCallResolvesConnectionRequest(t *testing.T) {
 				assert.Equal(t, tc.wantConnected, parsed.Connected)
 				assert.Equal(t, tc.wantTools, parsed.Tools)
 				assert.Contains(t, parsed.Message, tc.wantResultSnippet)
+			}
+			if tc.channel.Type != model.ChannelTypeDirect {
+				assert.NotContains(t, result.Content, loadedStateTool().Name,
+					"channel members can read the result, so it must not list the requester's tools")
 			}
 
 			require.Len(t, lm.requests, 1, "expected a follow-up LLM request")
