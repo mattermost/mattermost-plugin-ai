@@ -9,23 +9,18 @@ import (
 	"fmt"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/bots"
+	"github.com/mattermost/mattermost-plugin-agents/v2/channels"
 	"github.com/mattermost/mattermost-plugin-agents/v2/conversation"
 	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mcpserver/auth"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmapi"
+	"github.com/mattermost/mattermost-plugin-agents/v2/store"
 	"github.com/mattermost/mattermost-plugin-agents/v2/streaming"
-	"github.com/mattermost/mattermost-plugin-agents/v2/subtitles"
 	"github.com/mattermost/mattermost-plugin-agents/v2/telemetry"
-	"github.com/mattermost/mattermost-plugin-agents/v2/threads"
 	"github.com/mattermost/mattermost-plugin-agents/v2/toolrunner"
 	"github.com/mattermost/mattermost/server/public/model"
 	"go.opentelemetry.io/otel/trace"
-)
-
-const (
-	ReferencedRecordingFileID  = "referenced_recording_file_id"
-	ReferencedTranscriptPostID = "referenced_transcript_post_id"
 )
 
 // HandleRegenerate handles post regeneration requests
@@ -50,30 +45,21 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 	}
 	convIDProp, _ := post.GetProp(streaming.ConversationIDProp).(string)
 	if convIDProp == "" {
-		// Compatibility bridge for meeting summarization posts produced
-		// without a conversation entity. Remove once meeting flows migrate.
-		requester, _ := post.GetProp(streaming.LLMRequesterUserIDProp).(string)
-		if requester == "" {
-			return errors.New("post missing conversation_id for ownership check")
-		}
-		if requester != userID {
-			return errors.New("only the original poster can regenerate")
-		}
-	} else {
-		conv, err := c.convService.GetConversation(convIDProp)
-		if err != nil {
-			return fmt.Errorf("failed to get conversation for ownership check: %w", err)
-		}
-		if conv.UserID != userID {
-			return errors.New("only the original poster can regenerate")
-		}
+		return errors.New("post missing conversation_id for ownership check")
+	}
+	conv, err := c.convService.GetConversation(convIDProp)
+	if err != nil {
+		return fmt.Errorf("failed to get conversation for ownership check: %w", err)
+	}
+	if conv.UserID != userID {
+		return errors.New("only the original poster can regenerate")
 	}
 
 	if post.GetProp(streaming.NoRegen) != nil {
 		return errors.New("tagged no regen")
 	}
 
-	if err := c.checkRegenerateLicense(post); err != nil {
+	if err = c.checkRegenerateLicense(conv.Operation); err != nil {
 		return err
 	}
 
@@ -88,123 +74,39 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 	}
 	defer c.streamingService.FinishStreaming(post.Id)
 
-	threadIDProp := post.GetProp(ThreadIDProp)
-	analysisTypeProp := post.GetProp(AnalysisTypeProp)
-	referenceRecordingFileIDProp := post.GetProp(ReferencedRecordingFileID)
-	referencedTranscriptPostProp := post.GetProp(ReferencedTranscriptPostID)
 	var result *llm.TextStreamResult
-	switch {
-	case threadIDProp != nil:
-		threadID := threadIDProp.(string)
-		analysisType := analysisTypeProp.(string)
-		threadPost, getPostErr := c.mmClient.GetPost(threadID)
-		if getPostErr != nil {
-			return fmt.Errorf("could not get thread post on regen: %w", getPostErr)
+	switch conv.Operation {
+	case llm.OperationThreadAnalysis:
+		// The stored user turn holds the thread content; re-check the
+		// requester can still read the analyzed thread.
+		if threadID, _ := post.GetProp(ThreadIDProp).(string); threadID != "" {
+			threadPost, getPostErr := c.mmClient.GetPost(threadID)
+			if getPostErr != nil {
+				return fmt.Errorf("could not get thread post on regen: %w", getPostErr)
+			}
+			if !c.mmClient.HasPermissionToChannel(userID, threadPost.ChannelId, model.PermissionReadChannel) {
+				return errors.New("user doesn't have permission to read channel original thread in in")
+			}
 		}
-
-		if !c.mmClient.HasPermissionToChannel(userID, threadPost.ChannelId, model.PermissionReadChannel) {
-			return errors.New("user doesn't have permission to read channel original thread in in")
-		}
-
-		llmContext := c.contextBuilder.BuildLLMContextUserRequest(
-			bot,
-			user,
-			channel,
-			c.contextBuilder.WithLLMContextNoTools(),
-		)
-
-		analyzer := threads.New(bot.LLM(), c.prompts, c.mmClient, c.convService)
-		var analyzeResult *threads.AnalyzeResult
-		switch analysisType {
-		case "summarize_thread":
-			analyzeResult, err = analyzer.Summarize(ctx, threadID, llmContext, bot.GetMMBot().UserId, userID)
-		case "action_items":
-			analyzeResult, err = analyzer.FindActionItems(ctx, threadID, llmContext, bot.GetMMBot().UserId, userID)
-		case "open_questions":
-			analyzeResult, err = analyzer.FindOpenQuestions(ctx, threadID, llmContext, bot.GetMMBot().UserId, userID)
-		default:
-			return fmt.Errorf("invalid analysis type: %s", analysisType)
-		}
+		result, err = c.regenerateSingleShot(ctx, bot, user, channel, conv, post)
 		if err != nil {
-			return fmt.Errorf("could not analyze thread on regen: %w", err)
+			return fmt.Errorf("could not regenerate thread analysis: %w", err)
 		}
-		result = analyzeResult.Stream
 
-	case referenceRecordingFileIDProp != nil:
+	case llm.OperationMeetingSummary, llm.OperationChannelInterval:
+		// The stored user turn already holds the formatted source (meeting
+		// transcription or channel posts), so no source files are re-read.
 		post.Message = ""
-		referencedRecordingFileID := referenceRecordingFileIDProp.(string)
-		mm := mmapi.WithFilePolicy(c.mmClient, auth.SessionIDFromContext(ctx))
-
-		fileInfo, getErr := mm.GetFileInfo(referencedRecordingFileID)
-		if getErr != nil {
-			return fmt.Errorf("could not get transcription file on regen: %w", getErr)
+		result, err = c.regenerateSingleShot(ctx, bot, user, channel, conv, post)
+		if err != nil {
+			return fmt.Errorf("could not regenerate %s: %w", conv.Operation, err)
 		}
 
-		if len(post.FileIds) == 0 {
-			return errors.New("no transcription file on regen post")
-		}
-		reader, getErr := mm.GetFile(post.FileIds[0])
-		if getErr != nil {
-			return fmt.Errorf("could not get transcription file on regen: %w", getErr)
-		}
-		transcription, parseErr := subtitles.NewSubtitlesFromVTT(reader)
-		if parseErr != nil {
-			return fmt.Errorf("could not parse transcription file on regen: %w", parseErr)
-		}
-
-		if transcription.IsEmpty() {
-			return errors.New("transcription is empty on regen")
-		}
-
-		originalFileChannel, channelErr := c.mmClient.GetChannel(fileInfo.ChannelId)
-		if channelErr != nil {
-			return fmt.Errorf("could not get channel of original recording on regen: %w", channelErr)
-		}
-
-		context := c.contextBuilder.BuildLLMContextUserRequest(
-			bot,
-			user,
-			originalFileChannel,
-			c.contextBuilder.WithLLMContextNoTools(),
-		)
-		var summaryErr error
-		result, summaryErr = c.meetingsService.SummarizeTranscription(ctx, bot, transcription, context)
-		if summaryErr != nil {
-			return fmt.Errorf("could not summarize transcription on regen: %w", summaryErr)
-		}
-	case referencedTranscriptPostProp != nil:
+	case llm.OperationChannelSummary:
 		post.Message = ""
-		referencedTranscriptionPostID := referencedTranscriptPostProp.(string)
-		referencedTranscriptionPost, postErr := c.mmClient.GetPost(referencedTranscriptionPostID)
-		if postErr != nil {
-			return fmt.Errorf("could not get transcription post on regen: %w", postErr)
-		}
-
-		transcriptionFileID, fileIDErr := c.meetingsService.GetCaptionsFileIDFromProps(referencedTranscriptionPost)
-		if fileIDErr != nil {
-			return fmt.Errorf("unable to get transcription file id: %w", fileIDErr)
-		}
-		mm := mmapi.WithFilePolicy(c.mmClient, auth.SessionIDFromContext(ctx))
-		transcriptionFileReader, fileErr := mm.GetFile(transcriptionFileID)
-		if fileErr != nil {
-			return fmt.Errorf("unable to read calls file: %w", fileErr)
-		}
-
-		transcription, parseErr := subtitles.NewSubtitlesFromVTT(transcriptionFileReader)
-		if parseErr != nil {
-			return fmt.Errorf("unable to parse transcription file: %w", parseErr)
-		}
-
-		context := c.contextBuilder.BuildLLMContextUserRequest(
-			bot,
-			user,
-			channel,
-			c.contextBuilder.WithLLMContextNoTools(),
-		)
-		var summaryErr error
-		result, summaryErr = c.meetingsService.SummarizeTranscription(ctx, bot, transcription, context)
-		if summaryErr != nil {
-			return fmt.Errorf("unable to summarize transcription: %w", summaryErr)
+		result, err = c.regenerateChannelAnalysis(ctx, bot, user, conv, post)
+		if err != nil {
+			return fmt.Errorf("could not regenerate channel summary: %w", err)
 		}
 
 	default:
@@ -215,15 +117,9 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 			return errors.New("post missing responding to prop")
 		}
 
-		// Use the conversation entity path for regeneration.
-		if c.convService != nil {
-			regenResult, regenErr := c.regenerateViaConversation(ctx, bot, user, channel, post, respondingToPostID)
-			if regenErr != nil {
-				return fmt.Errorf("could not regenerate via conversation: %w", regenErr)
-			}
-			result = regenResult
-		} else {
-			return errors.New("conversation service not configured for regeneration")
+		result, err = c.regenerateViaConversation(ctx, bot, user, channel, post, respondingToPostID)
+		if err != nil {
+			return fmt.Errorf("could not regenerate via conversation: %w", err)
 		}
 	}
 
@@ -244,18 +140,85 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 // operation that produced it. Thread summaries are available at Professional
 // and above, channel summaries at Professional and above, and transcription
 // summaries at Enterprise and above. Other conversation posts are not gated.
-func (c *Conversations) checkRegenerateLicense(post *model.Post) error {
-	if post.GetProp(ReferencedRecordingFileID) != nil || post.GetProp(ReferencedTranscriptPostID) != nil {
+func (c *Conversations) checkRegenerateLicense(operation string) error {
+	switch operation {
+	case llm.OperationMeetingSummary:
 		return c.licenseChecker.Check(enterprise.CapMeetings)
-	}
-	threadID, _ := post.GetProp(ThreadIDProp).(string)
-	if threadID != "" {
+	case llm.OperationThreadAnalysis:
 		return c.licenseChecker.Check(enterprise.CapThreadSummarization)
-	}
-	if post.GetProp(AnalysisTypeProp) != nil {
+	case llm.OperationChannelSummary, llm.OperationChannelInterval:
 		return c.licenseChecker.Check(enterprise.CapChannelSummarization)
 	}
 	return nil
+}
+
+// regenerateSingleShot re-runs a tool-less, single-turn conversation (thread
+// analysis, meeting summary, channel interval) from its stored system prompt
+// and user turn, scrubbing the prior response anchored to post.
+func (c *Conversations) regenerateSingleShot(
+	ctx stdcontext.Context,
+	bot *bots.Bot,
+	user *model.User,
+	channel *model.Channel,
+	conv *store.Conversation,
+	post *model.Post,
+) (*llm.TextStreamResult, error) {
+	llmContext := c.contextBuilder.BuildLLMContextUserRequest(
+		bot,
+		user,
+		channel,
+		c.contextBuilder.WithLLMContextNoTools(),
+	)
+
+	// Build before scrubbing: ExcludeAfterPostID needs the anchor.
+	completionReq, err := c.convService.BuildCompletionRequest(conv, llmContext, conversation.BuildOptions{
+		ExcludeAfterPostID: post.Id,
+		SessionID:          auth.SessionIDFromContext(ctx),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to build completion request for regen: %w", err)
+	}
+	completionReq.OperationSubType = llm.SubTypeRegenerate
+
+	if delErr := c.convService.DeleteResponseTurns(conv.ID, post.Id); delErr != nil {
+		c.mmClient.LogError("Failed to scrub prior response turns on regen", "error", delErr.Error(), "post_id", post.Id, "conversation_id", conv.ID)
+	}
+
+	return bot.LLM().ChatCompletion(ctx, *completionReq, llm.WithToolsDisabled())
+}
+
+// regenerateChannelAnalysis re-runs a channel summary in its conversation,
+// re-binding the analysis tools to the channel recorded on the post.
+func (c *Conversations) regenerateChannelAnalysis(
+	ctx stdcontext.Context,
+	bot *bots.Bot,
+	user *model.User,
+	conv *store.Conversation,
+	post *model.Post,
+) (*llm.TextStreamResult, error) {
+	analyzedChannelID, _ := post.GetProp(AnalyzedChannelIDProp).(string)
+	if analyzedChannelID == "" {
+		return nil, errors.New("post missing analyzed channel")
+	}
+	if !c.mmClient.HasPermissionToChannel(user.Id, analyzedChannelID, model.PermissionReadChannel) {
+		return nil, errors.New("user doesn't have permission to read the analyzed channel")
+	}
+	analyzedChannel, err := c.mmClient.GetChannel(analyzedChannelID)
+	if err != nil {
+		return nil, fmt.Errorf("could not get analyzed channel: %w", err)
+	}
+
+	toolBot := channels.ToolBot(bot)
+	llmContext := c.contextBuilder.BuildLLMContextUserRequest(
+		bot,
+		user,
+		analyzedChannel,
+		c.contextBuilder.WithLLMContextPreloadedMCPTools(channels.RequiredMCPTools),
+		c.contextBuilder.WithLLMContextTools(ctx, toolBot),
+	)
+
+	analyzer := channels.New(bot.LLM(), c.prompts, c.mmClient, c.db, c.convService)
+	return analyzer.RegenerateAnalysis(ctx, llmContext, conv, analyzedChannelID, post.Id, auth.SessionIDFromContext(ctx))
 }
 
 // regenerateViaConversation rebuilds the completion request from the conversation entity
