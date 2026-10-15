@@ -92,7 +92,7 @@ func TestResolveConnectionRequest(t *testing.T) {
 			loaded:        append(append([]llm.Tool{}, jiraTools...), githubTools...),
 			wantConnected: true,
 			wantTools:     []string{"jira__create_issue", "jira__search"},
-			wantInMessage: "The user connected Jira.",
+			wantInMessage: "This replaces any earlier note that Jira is not connected",
 		},
 		{
 			name:          "dynamic loading counts unloaded tools and points at load_tool",
@@ -100,7 +100,7 @@ func TestResolveConnectionRequest(t *testing.T) {
 			dynamic:       true,
 			wantConnected: true,
 			wantTools:     []string{"jira__create_issue", "jira__search"},
-			wantInMessage: "Load a tool with load_tool before calling it.",
+			wantInMessage: "call load_tool with one of the exact names below",
 		},
 		{
 			name:          "server still needing OAuth is not connected",

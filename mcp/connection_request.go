@@ -100,9 +100,11 @@ func ResolveConnectionRequest(input json.RawMessage, llmContext *llm.Context) (s
 	if tools := connectedServerTools(args.Server, llmContext); len(tools) > 0 {
 		result.Connected = true
 		result.Tools = tools
-		result.Message = fmt.Sprintf("The user connected %s. Its tools are now available in this conversation.", args.Server)
+		// The conversation's system prompt is fixed when it starts and still
+		// lists the server as unconnected, so the result must override it.
+		result.Message = fmt.Sprintf("The user connected %[1]s. Its tools are now available in this conversation. This replaces any earlier note that %[1]s is not connected; do not request the connection again.", args.Server)
 		if llmContext.ToolCatalog.MCPDynamicToolLoading {
-			result.Message += " Load a tool with " + LoadToolName + " before calling it."
+			result.Message += fmt.Sprintf(" Its tools are not loaded yet: call %s with one of the exact names below (or %s to find others) before calling a tool.", LoadToolName, SearchToolsName)
 		}
 	} else {
 		result.Message = fmt.Sprintf("%s is still not connected for the user, so its tools are unavailable. Continue without it and do not request the connection again unless the user asks.", args.Server)
