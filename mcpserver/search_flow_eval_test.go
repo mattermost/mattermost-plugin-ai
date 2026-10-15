@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -170,9 +171,11 @@ func TestSearchBarFlowEval(t *testing.T) {
 	}
 }
 
-// lookupChannelIDs returns the channel_id of each search_posts or read_channel
-// call in order; an empty ID means the lookup was not limited to a channel.
-func lookupChannelIDs(t *testing.T, calls []llm.ToolCall) []string {
+// lookupChannelIDs returns the channel each search_posts or read_channel call
+// was limited to, in order; an empty ID means the lookup was not limited to a
+// channel. search_posts may also be limited with its in filter, which takes a
+// channel name or ID; names are resolved against channels.
+func lookupChannelIDs(t *testing.T, calls []llm.ToolCall, channels ...*model.Channel) []string {
 	t.Helper()
 	var ids []string
 	for _, call := range calls {
@@ -183,9 +186,19 @@ func lookupChannelIDs(t *testing.T, calls []llm.ToolCall) []string {
 		}
 		var args struct {
 			ChannelID string `json:"channel_id"`
+			In        string `json:"in"`
 		}
 		require.NoError(t, json.Unmarshal(call.Arguments, &args))
-		ids = append(ids, args.ChannelID)
+		id := args.ChannelID
+		if in := strings.TrimPrefix(strings.TrimSpace(args.In), "~"); id == "" && in != "" {
+			id = in
+			for _, channel := range channels {
+				if in == channel.Id || strings.EqualFold(in, channel.Name) || strings.EqualFold(in, channel.DisplayName) {
+					id = channel.Id
+				}
+			}
+		}
+		ids = append(ids, id)
 	}
 	return ids
 }
@@ -231,7 +244,7 @@ func TestAskChannelSearchFlowEval(t *testing.T) {
 		evals.Run(t, "ask-channel "+tt.name, func(e *evals.EvalT) {
 			result := runSearchFlowEval(e, suite, data, tt.query, data.designChannel)
 
-			channelIDs := lookupChannelIDs(e.T, result.toolCalls)
+			channelIDs := lookupChannelIDs(e.T, result.toolCalls, data.channel, data.designChannel)
 			require.NotEmpty(e, channelIDs, "the agent must search or read Mattermost")
 			assert.Equal(e, data.designChannel.Id, channelIDs[0], "the first lookup must start in the requested channel (lookups: %v)", channelIDs)
 
