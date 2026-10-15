@@ -710,7 +710,10 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
     // generation) restarts or cancels the timer.
     // An empty message with persisted rounds is a tool-only post (finished, or
     // waiting on the requester's approval), not a stalled generation.
-    const believesGenerating = !interrupted && (isGenerationInProgress || (precontent && message === '' && renderedRounds.length === 0));
+    // A persisted turn still marked streaming means generation is unfinished
+    // even though heartbeats already flushed partial text onto the post.
+    const turnStillStreaming = Boolean(knownConversation?.turns.some((turn) => turn.post_id === props.post.id && turn.status === 'streaming'));
+    const believesGenerating = !interrupted && (isGenerationInProgress || turnStillStreaming || (precontent && message === '' && renderedRounds.length === 0));
     const awaitingUserDecision = awaitingDecision;
     useEffect(() => {
         setStreamStale(false);

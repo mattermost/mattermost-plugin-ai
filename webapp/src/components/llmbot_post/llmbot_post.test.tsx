@@ -1478,6 +1478,24 @@ describe('LLMBotPost interrupted and stale generation notices', () => {
         expect(screen.queryByText(STALE_TEXT)).toBeNull();
     });
 
+    test.each([
+        ['streaming', true],
+        ['complete', false],
+    ] as const)('stale notice for a remounted partial post whose turn is %s', (status, expectStale) => {
+        jest.useFakeTimers();
+        mockUseConversation.mockReturnValue({
+            conversation: makeConversation([makeTurn({post_id: 'post_1', status, content: [{type: 'text', text: 'Partial'}]})]),
+            loading: false,
+            error: null,
+        });
+        renderPost(makePost('Partial'));
+
+        act(() => {
+            jest.advanceTimersByTime(60000);
+        });
+        expect(Boolean(screen.queryByText(STALE_TEXT))).toBe(expectStale);
+    });
+
     test('does not show the stale notice for a completed post', () => {
         jest.useFakeTimers();
         renderPost(makePost('Done'));
