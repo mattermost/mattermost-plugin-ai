@@ -14,6 +14,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise"
 	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise/enterprisetest"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
+	"github.com/mattermost/mattermost-plugin-agents/v2/mcpserver/auth"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmapi/mocks"
 	"github.com/mattermost/mattermost-plugin-agents/v2/store"
 	"github.com/mattermost/mattermost-plugin-agents/v2/streaming"
@@ -48,6 +49,7 @@ func TestHandleRegenerateSingleShotConversations(t *testing.T) {
 		botID       = "bot-id"
 		regenPostID = "regen-post-id"
 		threadID    = "thread-root-id"
+		sessionID   = "session-id"
 		systemText  = "stored system prompt"
 		userText    = "stored formatted source"
 	)
@@ -65,8 +67,34 @@ func TestHandleRegenerateSingleShotConversations(t *testing.T) {
 			name:        "meeting summary reuses stored transcription turn",
 			operation:   llm.OperationMeetingSummary,
 			convOwner:   userID,
-			postProps:   map[string]any{"referenced_transcript_post_id": "transcript-post"},
+			postProps:   map[string]any{meetingTranscriptPostIDProp: "transcript-post"},
 			expectRegen: true,
+			setupMM: func(mm *mocks.MockClient) {
+				mm.On("GetPost", "transcript-post").Return(transcriptPostWithCaptions("captions-file"), nil)
+				mm.On("HasPermissionToFileAction", sessionID, "captions-file", model.AccessControlPolicyActionDownloadFileAttachment).Return(true)
+				mm.On("GetFileInfo", "captions-file").Return(&model.FileInfo{Id: "captions-file"}, nil)
+			},
+		},
+		{
+			name:      "meeting summary from captions denied by file policy",
+			operation: llm.OperationMeetingSummary,
+			convOwner: userID,
+			postProps: map[string]any{meetingTranscriptPostIDProp: "transcript-post"},
+			expectErr: "meeting source file",
+			setupMM: func(mm *mocks.MockClient) {
+				mm.On("GetPost", "transcript-post").Return(transcriptPostWithCaptions("captions-file"), nil)
+				mm.On("HasPermissionToFileAction", sessionID, "captions-file", model.AccessControlPolicyActionDownloadFileAttachment).Return(false)
+			},
+		},
+		{
+			name:      "meeting summary from recording denied by file policy",
+			operation: llm.OperationMeetingSummary,
+			convOwner: userID,
+			postProps: map[string]any{meetingRecordingFileIDProp: "recording-file"},
+			expectErr: "meeting source file",
+			setupMM: func(mm *mocks.MockClient) {
+				mm.On("HasPermissionToFileAction", sessionID, "recording-file", model.AccessControlPolicyActionDownloadFileAttachment).Return(false)
+			},
 		},
 		{
 			name:        "thread analysis reuses conversation after permission check",
@@ -156,7 +184,7 @@ func TestHandleRegenerateSingleShotConversations(t *testing.T) {
 			}
 			channel := &model.Channel{Id: "dm-channel", Type: model.ChannelTypeDirect, Name: botID + "__" + userID}
 
-			err = c.HandleRegenerate(t.Context(), userID, post, channel)
+			err = c.HandleRegenerate(auth.WithSessionID(t.Context(), sessionID), userID, post, channel)
 
 			turns, turnsErr := convStore.GetTurnsForConversation(conv.ID)
 			require.NoError(t, turnsErr)
@@ -236,4 +264,10 @@ func TestIsInitialResponse(t *testing.T) {
 			require.Equal(t, tt.want, isInitialResponse(turns, tt.postID))
 		})
 	}
+}
+
+func transcriptPostWithCaptions(fileID string) *model.Post {
+	post := &model.Post{Id: "transcript-post"}
+	post.AddProp("captions", []any{map[string]any{"file_id": fileID}})
+	return post
 }
