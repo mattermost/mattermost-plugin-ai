@@ -85,6 +85,9 @@ const SearchHints = () => {
                     activeBot={activeBot}
                     setActiveBot={setActiveBot}
                     container={SelectorContainer}
+
+                    // The host search box closes on clicks outside its DOM subtree, so the menu must not be portaled.
+                    portal={false}
                 >
                     {currentBotName}
                     <ChevronDownIcon/>

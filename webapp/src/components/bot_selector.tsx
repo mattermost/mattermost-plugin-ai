@@ -87,11 +87,13 @@ type BotDropdownProps = {
     container: React.ReactNode
     children: React.ReactNode
     testId?: string
+    portal?: boolean
 }
 
 export const BotDropdown = (props: BotDropdownProps) => {
     return (
         <DotMenu
+            portal={props.portal}
             icon={props.children}
             title={props.activeBot?.displayName}
             dotMenuButton={props.container}
