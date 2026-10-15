@@ -110,7 +110,7 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 	case llm.OperationMeetingSummary:
 		// The stored user turn is derived from a recording or captions file;
 		// the requester must still be allowed to download that source.
-		if accessErr := CheckMeetingSourceAccess(ctx, c.mmClient, post); accessErr != nil {
+		if accessErr := CheckMeetingSourceAccess(ctx, c.mmClient, userID, post); accessErr != nil {
 			return accessErr
 		}
 		post.Message = ""
@@ -169,9 +169,18 @@ const (
 	meetingTranscriptPostIDProp = "referenced_transcript_post_id"
 )
 
-// CheckMeetingSourceAccess fails closed unless the session in ctx may download
-// the recording or captions file the meeting summary post was built from.
-func CheckMeetingSourceAccess(ctx stdcontext.Context, mmClient mmapi.Client, post *model.Post) error {
+// HasMeetingSourceReference reports whether post carries the reference to the
+// recording or captions a meeting summary was built from.
+func HasMeetingSourceReference(post *model.Post) bool {
+	recording, _ := post.GetProp(meetingRecordingFileIDProp).(string)
+	transcript, _ := post.GetProp(meetingTranscriptPostIDProp).(string)
+	return recording != "" || transcript != ""
+}
+
+// CheckMeetingSourceAccess fails closed unless userID can read the channel of
+// the recording or captions file the meeting summary post was built from and
+// the session in ctx may download it.
+func CheckMeetingSourceAccess(ctx stdcontext.Context, mmClient mmapi.Client, userID string, post *model.Post) error {
 	fileID, _ := post.GetProp(meetingRecordingFileIDProp).(string)
 	if fileID == "" {
 		transcriptPostID, _ := post.GetProp(meetingTranscriptPostIDProp).(string)
@@ -189,8 +198,12 @@ func CheckMeetingSourceAccess(ctx stdcontext.Context, mmClient mmapi.Client, pos
 	}
 
 	mm := mmapi.WithFilePolicy(mmClient, auth.SessionIDFromContext(ctx))
-	if _, err := mm.GetFileInfo(fileID); err != nil {
+	fileInfo, err := mm.GetFileInfo(fileID)
+	if err != nil {
 		return fmt.Errorf("could not access meeting source file: %w", err)
+	}
+	if !mmClient.HasPermissionToChannel(userID, fileInfo.ChannelId, model.PermissionReadChannel) {
+		return errors.New("user can't read the meeting source file's channel")
 	}
 	return nil
 }

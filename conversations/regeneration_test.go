@@ -72,7 +72,8 @@ func TestHandleRegenerateSingleShotConversations(t *testing.T) {
 			setupMM: func(mm *mocks.MockClient) {
 				mm.On("GetPost", "transcript-post").Return(transcriptPostWithCaptions("captions-file"), nil)
 				mm.On("HasPermissionToFileAction", sessionID, "captions-file", model.AccessControlPolicyActionDownloadFileAttachment).Return(true)
-				mm.On("GetFileInfo", "captions-file").Return(&model.FileInfo{Id: "captions-file"}, nil)
+				mm.On("GetFileInfo", "captions-file").Return(&model.FileInfo{Id: "captions-file", ChannelId: "meeting-channel"}, nil)
+				mm.On("HasPermissionToChannel", userID, "meeting-channel", model.PermissionReadChannel).Return(true)
 			},
 		},
 		{

@@ -436,12 +436,16 @@ func TestHandleGetConversationMeetingSourceAccess(t *testing.T) {
 	summary := mustMarshalBlocks(t, []conversation.ContentBlock{{Type: conversation.BlockTypeText, Text: "summary"}})
 
 	tests := []struct {
-		name          string
-		allowed       bool
-		wantUserTurns int
+		name            string
+		allowed         bool
+		channelReadable bool
+		followUpFirst   bool
+		wantUserTurns   int
 	}{
-		{name: "download allowed returns the transcript turn", allowed: true, wantUserTurns: 1},
-		{name: "download denied omits the transcript turn", allowed: false, wantUserTurns: 0},
+		{name: "download allowed returns the transcript turn", allowed: true, channelReadable: true, wantUserTurns: 1},
+		{name: "download denied omits the transcript turn", allowed: false, channelReadable: true, wantUserTurns: 0},
+		{name: "source channel unreadable omits the transcript turn", allowed: true, channelReadable: false, wantUserTurns: 0},
+		{name: "an earlier follow-up post without the source reference is skipped", allowed: true, channelReadable: true, followUpFirst: true, wantUserTurns: 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -460,7 +464,16 @@ func TestHandleGetConversationMeetingSourceAccess(t *testing.T) {
 			summaryPost := &model.Post{Id: summaryPostID}
 			summaryPost.AddProp("referenced_recording_file_id", recordingFileID)
 			e.mockAPI.On("GetPost", summaryPostID).Return(summaryPost, nil)
-			e.mockAPI.On("GetFileInfo", recordingFileID).Return(&model.FileInfo{Id: recordingFileID}, nil).Maybe()
+			if tt.followUpFirst {
+				followUpID := "followuppost0123456789012"
+				e.conversationStore.turns[convID] = append([]store.Turn{
+					e.conversationStore.turns[convID][0],
+					{ID: "turn-0", ConversationID: convID, PostID: &followUpID, Role: "assistant", Content: summary, Sequence: 2},
+				}, e.conversationStore.turns[convID][1:]...)
+				e.mockAPI.On("GetPost", followUpID).Return(&model.Post{Id: followUpID}, nil)
+			}
+			e.mockAPI.On("GetFileInfo", recordingFileID).Return(&model.FileInfo{Id: recordingFileID, ChannelId: "meetingchannel0123456789"}, nil).Maybe()
+			e.mockAPI.On("HasPermissionToChannel", testUserID, "meetingchannel0123456789", model.PermissionReadChannel).Return(tt.channelReadable).Maybe()
 			e.mockAPI.On("LogError", mock.Anything).Maybe()
 
 			request := httptest.NewRequest(http.MethodGet, "/conversations/"+convID, nil)
@@ -479,7 +492,7 @@ func TestHandleGetConversationMeetingSourceAccess(t *testing.T) {
 				}
 			}
 			assert.Equal(t, tt.wantUserTurns, userTurns)
-			assert.Equal(t, 1, len(response.Turns)-userTurns, "the summary itself is always returned")
+			assert.NotZero(t, len(response.Turns)-userTurns, "the summary itself is always returned")
 		})
 	}
 }
