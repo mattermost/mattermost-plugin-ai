@@ -86,7 +86,7 @@ func (a *API) handleGetConversation(c *gin.Context) {
 
 	// A meeting summary's user turn is the transcript; only return it while
 	// the caller may still download the source recording or captions file.
-	if conv.Operation == llm.OperationMeetingSummary && !a.canReadMeetingSource(c, turns) {
+	if conv.Operation == llm.OperationMeetingSummary && !a.canReadMeetingSource(c, userID, turns) {
 		turns = withoutUserTurns(turns)
 	}
 
@@ -112,7 +112,7 @@ func (a *API) handleGetConversation(c *gin.Context) {
 
 // canReadMeetingSource reports whether the caller's session may download the
 // file the conversation's meeting summary post was built from.
-func (a *API) canReadMeetingSource(c *gin.Context, turns []store.Turn) bool {
+func (a *API) canReadMeetingSource(c *gin.Context, userID string, turns []store.Turn) bool {
 	if a.mmClient == nil {
 		return false
 	}
@@ -121,10 +121,10 @@ func (a *API) canReadMeetingSource(c *gin.Context, turns []store.Turn) bool {
 			continue
 		}
 		post, err := a.mmClient.GetPost(*turn.PostID)
-		if err != nil {
-			return false
+		if err != nil || !conversations.HasMeetingSourceReference(post) {
+			continue
 		}
-		return conversations.CheckMeetingSourceAccess(c.Request.Context(), a.mmClient, post) == nil
+		return conversations.CheckMeetingSourceAccess(c.Request.Context(), a.mmClient, userID, post) == nil
 	}
 	return false
 }
