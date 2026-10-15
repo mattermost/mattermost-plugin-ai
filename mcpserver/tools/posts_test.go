@@ -750,3 +750,71 @@ func TestUserLookupAcceptsUserID(t *testing.T) {
 		}
 	}
 }
+
+// TestCreatePostAcceptsGetChannelInfoNames pins that the display name
+// get_channel_info reports is one create_post accepts on the first try,
+// including for DMs and group messages whose stored display name is empty.
+func TestCreatePostAcceptsGetChannelInfoNames(t *testing.T) {
+	teamID := model.NewId()
+
+	tests := []struct {
+		name     string
+		channel  model.Channel
+		teamName string
+		wantName string
+	}{
+		{name: "team channel", channel: model.Channel{Name: "town-square", DisplayName: "Town Square", Type: model.ChannelTypeOpen, TeamId: teamID}, teamName: "Staff", wantName: "Town Square"},
+		{name: "direct message with empty display name", channel: model.Channel{Name: "a__b", Type: model.ChannelTypeDirect}, wantName: "Direct Message"},
+		{name: "group message with empty display name", channel: model.Channel{Name: "abc", Type: model.ChannelTypeGroup}, wantName: "Group Message"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			channelID := model.NewId()
+			tt.channel.Id = channelID
+
+			writeJSON := func(w http.ResponseWriter, v any) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(v)
+			}
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v4/channels/"+channelID, func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, &tt.channel) })
+			mux.HandleFunc("/api/v4/channels/"+channelID+"/stats", func(w http.ResponseWriter, _ *http.Request) {
+				writeJSON(w, &model.ChannelStats{ChannelId: channelID, MemberCount: 2})
+			})
+			mux.HandleFunc("/api/v4/teams/"+teamID, func(w http.ResponseWriter, _ *http.Request) {
+				writeJSON(w, &model.Team{Id: teamID, DisplayName: "Staff"})
+			})
+			mux.HandleFunc("/api/v4/posts", func(w http.ResponseWriter, r *http.Request) {
+				var post model.Post
+				require.NoError(t, json.NewDecoder(r.Body).Decode(&post))
+				post.Id = model.NewId()
+				writeJSON(w, &post)
+			})
+			ts := httptest.NewServer(mux)
+			defer ts.Close()
+
+			provider := newTestProvider(t, ts.URL)
+			mcpCtx := &MCPToolContext{Ctx: t.Context(), Client: newTestClient(ts.URL), AccessMode: AccessModeRemote}
+
+			info, err := provider.toolGetChannelInfo(mcpCtx, GetChannelInfoArgs{ChannelID: channelID})
+			require.NoError(t, err)
+
+			var reported string
+			for line := range strings.SplitSeq(info, "\n") {
+				if name, ok := strings.CutPrefix(line, "Display Name: "); ok {
+					reported = name
+				}
+			}
+			require.Equal(t, tt.wantName, reported)
+
+			_, err = provider.toolCreatePost(mcpCtx, CreatePostArgs{
+				ChannelID:          channelID,
+				ChannelDisplayName: reported,
+				TeamDisplayName:    tt.teamName,
+				Message:            "hello",
+			})
+			require.NoError(t, err)
+		})
+	}
+}
