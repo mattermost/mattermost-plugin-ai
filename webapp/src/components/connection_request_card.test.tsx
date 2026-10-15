@@ -81,7 +81,7 @@ describe('parseConnectionRequestArgs', () => {
 });
 
 describe('ConnectionRequestCard', () => {
-    test('offers Connect for an unconnected server and Continue once the window is opened', async () => {
+    test('offers Skip and Connect, and keeps only those after the sign-in window closes unfinished', async () => {
         mockGetUserMCPTools.mockResolvedValue({servers: [jiraServer()]});
         const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
         const {onContinue} = renderCard();
@@ -90,59 +90,63 @@ describe('ConnectionRequestCard', () => {
         expect(screen.getByText('To look up your open issues.')).toBeTruthy();
 
         const connect = await screen.findByRole('button', {name: /^connect$/i});
-        expect(screen.queryByRole('button', {name: /^continue$/i})).toBeNull();
-
         fireEvent.click(connect);
         expect(openSpy).toHaveBeenCalledWith(authURL, '_blank', 'noopener,noreferrer');
 
-        fireEvent.click(await screen.findByRole('button', {name: /^continue$/i}));
+        act(() => {
+            window.dispatchEvent(new Event('focus'));
+        });
+        await waitFor(() => expect(mockGetUserMCPTools).toHaveBeenCalledTimes(2));
+
+        expect(screen.getByText(/Finish signing in in the new window/)).toBeTruthy();
+        expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual(['Skip', 'Connect']);
+        expect(onContinue).not.toHaveBeenCalled();
+        openSpy.mockRestore();
+    });
+
+    test.each([
+        ['the server reports the new connection', () => notifyMCPConnectionUpdated({status: 'connected', serverName: 'Jira'})],
+        ['the user returns from the sign-in window', () => window.dispatchEvent(new Event('focus'))],
+    ])('continues automatically once connected when %s', async (_name, signal) => {
+        mockGetUserMCPTools.mockResolvedValueOnce({servers: [jiraServer()]});
+        const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
+        const {onContinue} = renderCard();
+        fireEvent.click(await screen.findByRole('button', {name: /^connect$/i}));
+
+        mockGetUserMCPTools.mockResolvedValue({servers: [jiraServer({authenticated: true, authURL: undefined})]}); // eslint-disable-line no-undefined
+        act(() => {
+            signal();
+        });
+
+        await waitFor(() => expect(onContinue).toHaveBeenCalledTimes(1));
+        expect(screen.getByText('Connected. Continuing…')).toBeTruthy();
+        expect(screen.queryByRole('button')).toBeNull();
+
+        act(() => {
+            window.dispatchEvent(new Event('focus'));
+        });
+        await waitFor(() => expect(mockGetUserMCPTools).toHaveBeenCalledTimes(3));
         expect(onContinue).toHaveBeenCalledTimes(1);
         openSpy.mockRestore();
     });
 
-    test('offers Continue without Connect when the server is already connected', async () => {
+    test('continues automatically when the user is already connected', async () => {
         mockGetUserMCPTools.mockResolvedValue({servers: [jiraServer({authenticated: true, authURL: undefined})]}); // eslint-disable-line no-undefined
-        renderCard();
+        const {onContinue} = renderCard();
 
-        expect(await screen.findByText('Connected. Continue to let the agent use it.')).toBeTruthy();
-        expect(screen.getByRole('button', {name: /^continue$/i})).toBeTruthy();
-        expect(screen.queryByRole('button', {name: /^connect$/i})).toBeNull();
+        await waitFor(() => expect(onContinue).toHaveBeenCalledTimes(1));
+        expect(screen.queryByRole('button')).toBeNull();
     });
 
-    test('refreshes when the server reports a new connection', async () => {
-        mockGetUserMCPTools.mockResolvedValueOnce({servers: [jiraServer()]});
+    test('does not re-check on focus before the sign-in window was opened', async () => {
+        mockGetUserMCPTools.mockResolvedValue({servers: [jiraServer()]});
         renderCard();
         await screen.findByRole('button', {name: /^connect$/i});
-
-        mockGetUserMCPTools.mockResolvedValueOnce({servers: [jiraServer({authenticated: true, authURL: undefined})]}); // eslint-disable-line no-undefined
-        act(() => {
-            notifyMCPConnectionUpdated({status: 'connected', serverName: 'Jira'});
-        });
-
-        expect(await screen.findByRole('button', {name: /^continue$/i})).toBeTruthy();
-        expect(mockGetUserMCPTools).toHaveBeenCalledTimes(2);
-    });
-
-    test('re-checks the connection when the user returns from the sign-in window', async () => {
-        mockGetUserMCPTools.mockResolvedValue({servers: [jiraServer()]});
-        const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
-        renderCard();
-        const connect = await screen.findByRole('button', {name: /^connect$/i});
 
         act(() => {
             window.dispatchEvent(new Event('focus'));
         });
         expect(mockGetUserMCPTools).toHaveBeenCalledTimes(1);
-
-        fireEvent.click(connect);
-        mockGetUserMCPTools.mockResolvedValue({servers: [jiraServer({authenticated: true, authURL: undefined})]}); // eslint-disable-line no-undefined
-        act(() => {
-            window.dispatchEvent(new Event('focus'));
-        });
-
-        expect(await screen.findByText('Connected. Continue to let the agent use it.')).toBeTruthy();
-        expect(screen.queryByRole('button', {name: /^connect$/i})).toBeNull();
-        openSpy.mockRestore();
     });
 
     test('ignores connection events for other servers', async () => {
@@ -161,19 +165,24 @@ describe('ConnectionRequestCard', () => {
         const {onSkip} = renderCard();
 
         expect(await screen.findByText(/can't be connected from here/)).toBeTruthy();
-        expect(screen.queryByRole('button', {name: /^connect$/i})).toBeNull();
-        expect(screen.queryByRole('button', {name: /^continue$/i})).toBeNull();
+        expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual(['Skip']);
 
         fireEvent.click(screen.getByRole('button', {name: /^skip$/i}));
         expect(onSkip).toHaveBeenCalledTimes(1);
     });
 
-    test('still lets the user continue when the connection lookup fails', async () => {
-        mockGetUserMCPTools.mockRejectedValue(new Error('network'));
+    test('offers to try again when the connection lookup fails', async () => {
+        mockGetUserMCPTools.mockRejectedValueOnce(new Error('network'));
         renderCard();
 
-        expect(await screen.findByRole('button', {name: /^continue$/i})).toBeTruthy();
-        expect(screen.getByRole('button', {name: /^skip$/i})).toBeTruthy();
+        expect(await screen.findByText("Couldn't check your connection.")).toBeTruthy();
+        expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual(['Skip', 'Try again']);
+
+        mockGetUserMCPTools.mockResolvedValueOnce({servers: [jiraServer()]});
+        fireEvent.click(screen.getByRole('button', {name: /^try again$/i}));
+
+        expect(await screen.findByRole('button', {name: /^connect$/i})).toBeTruthy();
+        expect(screen.queryByText("Couldn't check your connection.")).toBeNull();
     });
 
     test.each([

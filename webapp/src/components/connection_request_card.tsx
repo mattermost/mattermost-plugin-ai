@@ -85,9 +85,11 @@ const ConnectionRequestCard: React.FC<ConnectionRequestCardProps> = ({
     const [lookup, setLookup] = useState<Lookup>({state: 'loading'});
     const [connectOpened, setConnectOpened] = useState(false);
     const latestFetchRef = useRef(0);
+    const autoContinuedRef = useRef(false);
 
     const fetchServer = useCallback(async () => {
         const fetchID = ++latestFetchRef.current;
+        setLookup((current) => (current.state === 'failed' ? {state: 'loading'} : current));
         try {
             const response = await getUserMCPTools();
             if (fetchID === latestFetchRef.current) {
@@ -130,44 +132,58 @@ const ConnectionRequestCard: React.FC<ConnectionRequestCardProps> = ({
 
     const answeredConnected = useMemo(() => connectedFromResult(tool.result), [tool.result]);
 
+    // Once the user is seen as connected there is nothing left to decide, so
+    // the request resolves without a click.
+    const connectedNow = interactive && lookup.state === 'loaded' && Boolean(lookup.server?.authenticated);
+    useEffect(() => {
+        if (connectedNow && !autoContinuedRef.current) {
+            autoContinuedRef.current = true;
+            onContinue?.();
+        }
+    }, [connectedNow, onContinue]);
+
     const handleConnect = (authURL: string) => {
         window.open(authURL, '_blank', 'noopener,noreferrer');
         setConnectOpened(true);
     };
 
     const renderInteractiveFooter = () => {
-        if (lookup.state === 'loading') {
+        if (lookup.state === 'loading' || connectedNow) {
             return (
                 <StatusLine>
                     <Spinner
                         size='12'
                         aria-hidden={true}
                     />
-                    <FormattedMessage
-                        id='ai.connection_request.checking'
-                        defaultMessage='Checking your connection…'
-                    />
+                    {connectedNow ? (
+                        <FormattedMessage
+                            id='ai.connection_request.connected_continuing'
+                            defaultMessage='Connected. Continuing…'
+                        />
+                    ) : (
+                        <FormattedMessage
+                            id='ai.connection_request.checking'
+                            defaultMessage='Checking your connection…'
+                        />
+                    )}
                 </StatusLine>
             );
         }
 
-        const server = lookup.state === 'loaded' ? lookup.server : undefined; // eslint-disable-line no-undefined
-        const connected = Boolean(server?.authenticated);
-        const authURL = server && !connected ? server.authURL : undefined; // eslint-disable-line no-undefined
-        const unavailable = lookup.state === 'loaded' && !connected && !authURL;
+        const failed = lookup.state === 'failed';
+        const authURL = lookup.state === 'loaded' ? lookup.server?.authURL : undefined; // eslint-disable-line no-undefined
 
         let status: React.ReactNode = null;
-        if (connected) {
+        if (failed) {
             status = (
                 <StatusLine>
-                    <ConnectedIcon size={16}/>
                     <FormattedMessage
-                        id='ai.connection_request.connected_continue'
-                        defaultMessage='Connected. Continue to let the agent use it.'
+                        id='ai.connection_request.check_failed'
+                        defaultMessage="Couldn't check your connection."
                     />
                 </StatusLine>
             );
-        } else if (unavailable) {
+        } else if (!authURL) {
             status = (
                 <StatusLine>
                     <FormattedMessage
@@ -181,16 +197,11 @@ const ConnectionRequestCard: React.FC<ConnectionRequestCardProps> = ({
                 <StatusLine>
                     <FormattedMessage
                         id='ai.connection_request.finish_in_window'
-                        defaultMessage='Finish connecting in the new window, then continue.'
+                        defaultMessage='Finish signing in in the new window. The agent continues automatically once you are connected.'
                     />
                 </StatusLine>
             );
         }
-
-        // Continue is offered whenever connecting may have happened, but only
-        // emphasized once the connection is seen: continuing early resolves the
-        // request as not connected. The server re-checks either way.
-        const showContinue = connected || connectOpened || lookup.state === 'failed';
 
         return (
             <>
@@ -206,6 +217,18 @@ const ConnectionRequestCard: React.FC<ConnectionRequestCardProps> = ({
                             defaultMessage='Skip'
                         />
                     </Button>
+                    {failed && (
+                        <Button
+                            emphasis='secondary'
+                            size='small'
+                            onClick={fetchServer}
+                        >
+                            <FormattedMessage
+                                id='ai.connection_request.try_again'
+                                defaultMessage='Try again'
+                            />
+                        </Button>
+                    )}
                     {authURL && (
                         <Button
                             emphasis='primary'
@@ -216,18 +239,6 @@ const ConnectionRequestCard: React.FC<ConnectionRequestCardProps> = ({
                             <FormattedMessage
                                 id='ai.connection_request.connect'
                                 defaultMessage='Connect'
-                            />
-                        </Button>
-                    )}
-                    {showContinue && (
-                        <Button
-                            emphasis={connected ? 'primary' : 'secondary'}
-                            size='small'
-                            onClick={onContinue}
-                        >
-                            <FormattedMessage
-                                id='ai.connection_request.continue'
-                                defaultMessage='Continue'
                             />
                         </Button>
                     )}
