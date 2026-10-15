@@ -712,7 +712,13 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
     // waiting on the requester's approval), not a stalled generation.
     // A persisted turn still marked streaming means generation is unfinished
     // even though heartbeats already flushed partial text onto the post.
-    const turnStillStreaming = Boolean(knownConversation?.turns.some((turn) => turn.post_id === props.post.id && turn.status === 'streaming'));
+    // Read the fresh conversation (not the last-known copy) so a refetch that
+    // lands with the turn complete clears this.
+    const turnStillStreaming = Boolean(conversation?.turns.some((turn) => turn.post_id === props.post.id && turn.status === 'streaming'));
+    const staleRefetchedRef = useRef(false);
+    useEffect(() => {
+        staleRefetchedRef.current = false;
+    }, [streamEventCount]);
     const believesGenerating = !interrupted && (isGenerationInProgress || turnStillStreaming || (precontent && message === '' && renderedRounds.length === 0));
     const awaitingUserDecision = awaitingDecision;
     useEffect(() => {
@@ -720,9 +726,18 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
         if (!believesGenerating || awaitingUserDecision) {
             return undefined; // eslint-disable-line no-undefined
         }
-        const timer = setTimeout(() => setStreamStale(true), STALE_STREAM_TIMEOUT_MS);
+        const timer = setTimeout(() => {
+            // The cached conversation may predate the stream finishing while
+            // this post was unmounted; refetch once before calling it stalled.
+            if (turnStillStreaming && !isGenerationInProgress && !staleRefetchedRef.current && conversationId) {
+                staleRefetchedRef.current = true;
+                invalidateConversation(conversationId);
+                return;
+            }
+            setStreamStale(true);
+        }, STALE_STREAM_TIMEOUT_MS);
         return () => clearTimeout(timer);
-    }, [believesGenerating, awaitingUserDecision, streamEventCount]);
+    }, [believesGenerating, awaitingUserDecision, streamEventCount, turnStillStreaming, isGenerationInProgress, conversationId]);
 
     const canRegenerateFromNotice = requesterIsCurrentUser && !isNoShowRegen;
     let interruptedNotice: React.ReactNode = null;

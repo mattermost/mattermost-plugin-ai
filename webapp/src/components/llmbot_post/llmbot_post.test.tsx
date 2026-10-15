@@ -7,7 +7,7 @@ import {IntlProvider} from 'react-intl';
 import {useSelector} from 'react-redux';
 
 import {doRegenerate} from '@/client';
-import {useConversation} from '@/hooks/use_conversation';
+import {invalidateConversation, useConversation} from '@/hooks/use_conversation';
 import manifest from '@/manifest';
 import {PluginWebSocketMessage} from '@/types';
 import type {ConversationResponse, Turn} from '@/types/conversation';
@@ -1479,21 +1479,44 @@ describe('LLMBotPost interrupted and stale generation notices', () => {
     });
 
     test.each([
-        ['streaming', true],
-        ['complete', false],
-    ] as const)('stale notice for a remounted partial post whose turn is %s', (status, expectStale) => {
+        ['still streaming', 'streaming', true],
+        ['finished while unmounted', 'complete', false],
+    ] as const)('remounted partial post whose turn is %s refetches once before the stale notice', (_label, refetchedStatus, expectStale) => {
         jest.useFakeTimers();
-        mockUseConversation.mockReturnValue({
+        (invalidateConversation as jest.Mock).mockClear();
+        const withStatus = (status: 'streaming' | 'complete') => ({
             conversation: makeConversation([makeTurn({post_id: 'post_1', status, content: [{type: 'text', text: 'Partial'}]})]),
             loading: false,
             error: null,
         });
-        renderPost(makePost('Partial'));
+        const ui = () => (
+            <IntlProvider locale='en'>
+                <LLMBotPost
+                    post={makePost('Partial')}
+                    websocketUnregister={jest.fn()}
+                />
+            </IntlProvider>
+        );
+        mockUseConversation.mockReturnValue(withStatus('streaming'));
+        const {rerender} = render(ui());
+
+        act(() => {
+            jest.advanceTimersByTime(60000);
+        });
+        expect(invalidateConversation).toHaveBeenCalledTimes(1);
+        expect(screen.queryByText(STALE_TEXT)).toBeNull();
+
+        // The refetch empties the cache, then lands with the server's status.
+        mockUseConversation.mockReturnValue({conversation: null, loading: true, error: null});
+        rerender(ui());
+        mockUseConversation.mockReturnValue(withStatus(refetchedStatus));
+        rerender(ui());
 
         act(() => {
             jest.advanceTimersByTime(60000);
         });
         expect(Boolean(screen.queryByText(STALE_TEXT))).toBe(expectStale);
+        expect(invalidateConversation).toHaveBeenCalledTimes(1);
     });
 
     test('does not show the stale notice for a completed post', () => {
