@@ -37,9 +37,11 @@ func promptSafeText(s string, maxRunes int) string {
 // recordServerProfile stores how the server identified itself during
 // initialize. initialize instructions are never stored: they can be written
 // for the connected identity and would reach every unconnected user.
-// Service-account handshakes never write the user-facing profile.
+// Service-account handshakes never write the user-facing profile, and neither
+// do servers whose responses are treated as identity-specific (static OAuth
+// credentials, which also keep their tool catalogs out of the shared cache).
 func (c *Client) recordServerProfile(session *mcp.ClientSession) {
-	if c.toolsCache == nil || session == nil || c.serviceAccount {
+	if c.toolsCache == nil || session == nil || c.serviceAccount || !sharedToolsCacheAllowedForServer(c.config) {
 		return
 	}
 	result := session.InitializeResult()
@@ -61,7 +63,8 @@ func (c *Client) recordServerProfile(session *mcp.ClientSession) {
 
 // DescribeUnconnectedMCPServers returns what is known about each remote server
 // named in authErrors: the admin-configured name, what the server reported
-// about itself on an earlier connection, and the tools it is known to offer.
+// about itself on an earlier connection (only where its responses are shared
+// across users), and the tools it is known to offer.
 func (m *ClientManager) DescribeUnconnectedMCPServers(authErrors []llm.ToolAuthError) []llm.UnconnectedMCPServer {
 	if len(authErrors) == 0 {
 		return nil
@@ -118,7 +121,7 @@ func describeUnconnectedServer(server *ServerConfig, cache *ToolsCache) llm.Unco
 		ServerOrigin: server.BaseURL,
 	}
 
-	if cache != nil {
+	if cache != nil && sharedToolsCacheAllowedForServer(*server) {
 		if profile := cache.GetServerProfile(server.Name, server.BaseURL); profile != nil {
 			title := cmp.Or(profile.Title, profile.Name)
 			if !strings.EqualFold(title, server.Name) {

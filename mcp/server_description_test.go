@@ -31,7 +31,7 @@ func TestNewClientRecordsServerProfile(t *testing.T) {
 		wantProfile     bool
 	}{
 		{name: "shared catalog server records its identity", wantProfile: true},
-		{name: "static credentials server records its identity", clientID: "static-client", wantProfile: true},
+		{name: "static credentials server records nothing", clientID: "static-client"},
 		{name: "service account connection records nothing", serviceAccount: true},
 		{name: "unauthenticated initialize rejected at tools/list records nothing", rejectToolsList: true},
 	}
@@ -185,8 +185,9 @@ func TestDescribeUnconnectedMCPServers(t *testing.T) {
 			}},
 		},
 		{
-			name:     "static credentials servers list admin-configured tools, not the shared catalog",
+			name:     "static credentials servers list admin-configured tools and ignore any stored profile or catalog",
 			server:   ServerConfig{Name: "Jira", BaseURL: jiraURL, Enabled: true, ClientID: "static", ToolConfigs: toolConfigs},
+			profile:  &profile,
 			cacheURL: jiraURL,
 			want: []llm.UnconnectedMCPServer{{
 				Name:         "Jira",
