@@ -1559,6 +1559,40 @@ describe('LLMBotPost interrupted and stale generation notices', () => {
         expect(screen.getByText('Partial answer so far')).toBeTruthy();
     });
 
+    test.each([
+        ['the requester stops it', true],
+        ['the server cancels it', false],
+    ] as const)('keeps live text when %s before the stream ends', (_label, clickStop) => {
+        mockUseConversation.mockReturnValue({
+            conversation: makeConversation([
+                makeTurn({id: 'turn_0', post_id: null, sequence: 1, status: 'complete', content: [{type: 'text', text: 'Earlier round'}]}),
+                makeTurn({id: 'turn_1', post_id: 'post_1', sequence: 2, status: 'streaming', content: [{type: 'text', text: 'Stale snapshot'}]}),
+            ]),
+            loading: false,
+            error: null,
+        });
+        let listener: PostUpdateHandler | undefined;
+        renderPost(makePost(''), (postID, listenerID, handler) => {
+            listener = handler;
+        });
+
+        act(() => {
+            listener?.(postUpdateMessage({post_id: 'post_1', control: 'start'}));
+            listener?.(postUpdateMessage({post_id: 'post_1', next: 'Newer live text'}));
+        });
+        expect(screen.getByText('Newer live text')).toBeTruthy();
+
+        act(() => {
+            if (clickStop) {
+                fireEvent.click(screen.getByText('Stop Generating'));
+            } else {
+                listener?.(postUpdateMessage({post_id: 'post_1', control: 'cancel'}));
+            }
+        });
+        expect(screen.getByText('Newer live text')).toBeTruthy();
+        expect(screen.queryByText('Stale snapshot')).toBeNull();
+    });
+
     test('does not show the stale notice for a completed post', () => {
         jest.useFakeTimers();
         renderPost(makePost('Done'));

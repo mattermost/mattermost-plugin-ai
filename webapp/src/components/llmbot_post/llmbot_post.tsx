@@ -158,6 +158,10 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
 
     const [pendingRefetch, setPendingRefetch] = useState(false);
 
+    // Stop and cancel arrive before the server finalizes the turn and sends
+    // end; until then the live round is newer than any cached snapshot.
+    const [awaitingEnd, setAwaitingEnd] = useState(false);
+
     // Suppresses persistedRounds while regenerating so the prior generation
     // doesn't render alongside the new stream.
     const [regenerating, setRegenerating] = useState(false);
@@ -170,6 +174,7 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
 
     // An interrupted post is not generating, whatever the local stream state says.
     const generating = generatingState && !interrupted;
+    const liveStreamOpen = generating || awaitingEnd;
 
     // Lets the WebSocket handler snapshot the live round without re-subscribing.
     const liveRef = useRef({message, toolCalls, reasoningSummary, annotations, serverTools});
@@ -212,8 +217,8 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
 
         // A still-streaming turn is shown from its persisted snapshot until live
         // events resume; then the live round replaces it.
-        return buildRoundsFromTurns(conversation, props.post.id, {includeStreaming: !generating});
-    }, [conversation, props.post.id, generating]);
+        return buildRoundsFromTurns(conversation, props.post.id, {includeStreaming: !liveStreamOpen});
+    }, [conversation, props.post.id, liveStreamOpen]);
 
     // Keep prior rounds visible during the refetch window after invalidate.
     const lastPersistedRef = useRef<Round[]>([]);
@@ -457,6 +462,7 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
                 setPrecontent(false);
                 setStopped(false);
                 setIsReasoningLoading(false);
+                setAwaitingEnd(false);
                 setPendingRefetch(true);
                 regeneratingRef.current = false;
                 if (conversationId) {
@@ -472,6 +478,7 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
                 setPrecontent(false);
                 setStopped(false);
                 setIsReasoningLoading(false);
+                setAwaitingEnd(true);
                 regeneratingRef.current = false;
                 setRegenerating(false);
                 return;
@@ -483,6 +490,7 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
                 }
                 reasoningSeenRef.current = false;
                 setGenerating(true);
+                setAwaitingEnd(false);
                 setPrecontent(true);
                 setStopped(false);
                 setReasoningSummary('');
@@ -505,6 +513,7 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
                 // Tool-approval resume: prior round comes from refetched
                 // persistedRounds, so reset all local state.
                 setGenerating(true);
+                setAwaitingEnd(false);
                 setPrecontent(true);
                 setStopped(false);
                 setMessage('');
@@ -551,10 +560,10 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
         hasConversation: Boolean(conversationId),
         persistedRounds: stablePersisted,
         liveRounds,
-        generating,
+        generating: liveStreamOpen,
         pendingRefetch,
         currentRound,
-    }), [regenerating, conversationId, stablePersisted, liveRounds, generating, pendingRefetch, currentRound]);
+    }), [regenerating, conversationId, stablePersisted, liveRounds, liveStreamOpen, pendingRefetch, currentRound]);
 
     const regnerate = () => {
         setStreamEventCount((count) => count + 1);
@@ -563,6 +572,7 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
         reasoningSeenRef.current = false;
         setMessage('');
         setGenerating(false);
+        setAwaitingEnd(false);
         setPrecontent(true);
         setStopped(false);
         setReasoningSummary('');
@@ -580,6 +590,7 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
     const stopGenerating = () => {
         setStopped(true);
         setGenerating(false);
+        setAwaitingEnd(true);
         setIsReasoningLoading(false);
         doStopGenerating(props.post.id);
     };
