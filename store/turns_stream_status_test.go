@@ -223,3 +223,22 @@ func TestReleaseStreamingTurnClaim(t *testing.T) {
 	require.NoError(t, s.ReleaseStreamingTurnClaim(done.ID))
 	assert.Equal(t, TurnStatusComplete, getTurn(t, s, done.ID).Status)
 }
+
+func TestClaimStaleStreamingTurnMovesAfterToolRounds(t *testing.T) {
+	s, convID := setupStreamStore(t)
+	turn := createTurnWithStatus(t, s, convID, TurnStatusStreaming)
+	// Tool rounds persisted while the response was still streaming.
+	for range 2 {
+		require.NoError(t, s.CreateTurnAutoSequence(makeTurn(convID, 0, func(tu *Turn) { tu.Role = "tool_result" })))
+	}
+	ageTurn(t, s, turn.ID, 2*testStaleMillis)
+
+	claimed, err := s.ClaimStaleStreamingTurn(turn.ID, testStaleMillis)
+	require.NoError(t, err)
+	require.True(t, claimed)
+
+	turns, err := s.GetTurnsForConversation(convID)
+	require.NoError(t, err)
+	require.Equal(t, turn.ID, turns[len(turns)-1].ID, "the interrupted response stays after its tool rounds")
+	assert.Equal(t, TurnStatusInterrupted, turns[len(turns)-1].Status)
+}

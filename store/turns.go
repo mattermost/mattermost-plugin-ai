@@ -286,21 +286,38 @@ func (s *Store) GetStaleStreamingTurns(staleAfterMillis int64, limit uint64) ([]
 // won, so concurrent sweeps on several HA nodes never both repair the same
 // post. A turn that heartbeated since it was read is not claimed.
 func (s *Store) ClaimStaleStreamingTurn(id string, staleAfterMillis int64) (bool, error) {
+	// Like FinalizeStreamingTurn, move the turn after any tool-round turns
+	// persisted while it streamed so it stays the last turn of its response.
 	query := `
-UPDATE LLM_Turns
-SET Status = $2, UpdatedAt = ` + dbNowMillis + `
-WHERE ID = $1
-  AND Status = $3
-  AND UpdatedAt < ` + dbNowMillis + ` - $4`
-	res, err := s.db.Exec(query, id, TurnStatusInterrupted, TurnStatusStreaming, staleAfterMillis)
-	if err != nil {
-		return false, fmt.Errorf("failed to claim stale streaming turn: %w", err)
+UPDATE LLM_Turns AS t
+SET Status = $2,
+    UpdatedAt = ` + dbNowMillis + `,
+    Sequence = CASE
+        WHEN t.Sequence < (SELECT MAX(o.Sequence) FROM LLM_Turns o WHERE o.ConversationID = t.ConversationID)
+        THEN (SELECT MAX(o.Sequence) FROM LLM_Turns o WHERE o.ConversationID = t.ConversationID) + 1
+        ELSE t.Sequence
+    END
+WHERE t.ID = $1
+  AND t.Status = $3
+  AND t.UpdatedAt < ` + dbNowMillis + ` - $4`
+
+	var lastErr error
+	for range maxAutoSequenceRetries {
+		res, err := s.db.Exec(query, id, TurnStatusInterrupted, TurnStatusStreaming, staleAfterMillis)
+		if err != nil {
+			lastErr = err
+			if isUniqueViolation(err) {
+				continue
+			}
+			return false, fmt.Errorf("failed to claim stale streaming turn: %w", err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return false, fmt.Errorf("failed to read claimed rows: %w", err)
+		}
+		return n == 1, nil
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("failed to read claimed rows: %w", err)
-	}
-	return n == 1, nil
+	return false, fmt.Errorf("failed to claim stale streaming turn after %d retries: %w", maxAutoSequenceRetries, lastErr)
 }
 
 // ReleaseStreamingTurnClaim returns a claimed turn to the streaming state

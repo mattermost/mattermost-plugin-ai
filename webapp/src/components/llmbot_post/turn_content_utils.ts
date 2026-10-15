@@ -416,7 +416,9 @@ export function buildRoundsFromTurns(
     const resultMap = buildToolResultMap(conversation);
     const rounds: Round[] = [];
     for (const turn of turns) {
-        if (turn.role !== 'assistant') {
+        // A still-streaming turn is the live round: the stream (or, if it
+        // died, the flushed post message) renders it, so don't duplicate it.
+        if (turn.role !== 'assistant' || turn.status === 'streaming') {
             continue;
         }
         rounds.push(...splitTurnIntoRounds(turn, resultMap));

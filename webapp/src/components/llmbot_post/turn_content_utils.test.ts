@@ -694,6 +694,15 @@ describe('computeRenderedRounds', () => {
 });
 
 describe('buildRoundsFromTurns', () => {
+    test.each([
+        ['streaming', 0],
+        ['interrupted', 1],
+        ['complete', 1],
+    ] as const)('a %s turn yields %d persisted rounds', (status, expected) => {
+        const turn = makeTurn({id: 'r1', post_id: 'post_1', sequence: 1, status, content: [{type: 'text', text: 'Partial'}]});
+        expect(buildRoundsFromTurns(makeConversation([turn]), 'post_1')).toHaveLength(expected);
+    });
+
     test('extracts server_tool_use blocks into the round serverTools', () => {
         const turn = makeTurn({
             id: 'r1',
