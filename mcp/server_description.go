@@ -17,11 +17,10 @@ import (
 // Server-supplied text is rendered into the system prompt for users who have
 // not connected yet, so every field is flattened to one line and capped.
 const (
-	maxServerNameRunes         = 100
-	maxServerDescriptionRunes  = 300
-	maxServerInstructionsRunes = 1000
-	maxKnownToolDescRunes      = 200
-	maxKnownToolsPerServer     = 30
+	maxServerNameRunes        = 100
+	maxServerDescriptionRunes = 300
+	maxKnownToolDescRunes     = 200
+	maxKnownToolsPerServer    = 30
 )
 
 // promptSafeText escapes invisible characters, collapses all whitespace
@@ -35,10 +34,10 @@ func promptSafeText(s string, maxRunes int) string {
 	return strings.TrimSpace(string(runes[:maxRunes-1])) + "…"
 }
 
-// recordServerProfile stores what the server reported about itself during
-// initialize. Instructions can be written for the connected identity, so they
-// are only kept where the user-mode tool catalog is already shared across
-// users. Service-account handshakes never write the user-facing profile.
+// recordServerProfile stores how the server identified itself during
+// initialize. initialize instructions are never stored: they can be written
+// for the connected identity and would reach every unconnected user.
+// Service-account handshakes never write the user-facing profile.
 func (c *Client) recordServerProfile(session *mcp.ClientSession) {
 	if c.toolsCache == nil || session == nil || c.serviceAccount {
 		return
@@ -53,9 +52,6 @@ func (c *Client) recordServerProfile(session *mcp.ClientSession) {
 		profile.Name = promptSafeText(info.Name, maxServerNameRunes)
 		profile.Title = promptSafeText(info.Title, maxServerNameRunes)
 		profile.Description = promptSafeText(info.Description, maxServerDescriptionRunes)
-	}
-	if sharedToolsCacheAllowedForServer(c.config) {
-		profile.Instructions = promptSafeText(result.Instructions, maxServerInstructionsRunes)
 	}
 
 	if err := c.toolsCache.SetServerProfile(c.config.Name, profile, time.Now()); err != nil {
@@ -129,7 +125,6 @@ func describeUnconnectedServer(server *ServerConfig, cache *ToolsCache) llm.Unco
 				described.Title = title
 			}
 			described.Description = profile.Description
-			described.Instructions = profile.Instructions
 		}
 	}
 

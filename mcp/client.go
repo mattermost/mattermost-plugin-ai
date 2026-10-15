@@ -417,7 +417,6 @@ func (c *Client) connectAndDiscover(ctx context.Context, serverConfig ServerConf
 	if err != nil {
 		return nil, fmt.Errorf("failed to create MCP session for server %s: %w", serverConfig.Name, err)
 	}
-	c.recordServerProfile(session)
 
 	sharedToolsCache := c.useSharedToolsCache()
 	maybeInvalidateSharedToolsBeforeOAuthListTools(c.userID, serverConfig, c.log, c.toolsCache, c.oauthManager)
@@ -446,6 +445,9 @@ func (c *Client) connectAndDiscover(ctx context.Context, serverConfig ServerConf
 		}
 		return nil, err
 	}
+	// Recorded only once tools/list succeeded: some servers accept an
+	// unauthenticated initialize and only reject later requests.
+	c.recordServerProfile(session)
 
 	// Update the global cache with fetched tools.
 	if c.toolsCache != nil && sharedToolsCache {

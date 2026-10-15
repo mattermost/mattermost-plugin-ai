@@ -30,11 +30,10 @@ type UnconnectedMCPServer struct {
 	Name         string
 	ServerOrigin string
 
-	// Title, Description, and Instructions are what the server reported about
-	// itself when it was last connected.
-	Title        string
-	Description  string
-	Instructions string
+	// Title and Description are how the server identified itself when it was
+	// last connected.
+	Title       string
+	Description string
 
 	Tools []ToolInfo
 }

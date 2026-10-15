@@ -4,7 +4,11 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -17,20 +21,19 @@ import (
 )
 
 func TestNewClientRecordsServerProfile(t *testing.T) {
+	const instructions = "Connected as alice@example.com; default project SECRET."
+
 	tests := []struct {
-		name             string
-		clientID         string
-		wantInstructions string
+		name            string
+		clientID        string
+		serviceAccount  bool
+		rejectToolsList bool
+		wantProfile     bool
 	}{
-		{
-			name:             "shared catalog server keeps instructions",
-			wantInstructions: "Use search_issues before create_issue.",
-		},
-		{
-			name:             "static credentials server drops instructions",
-			clientID:         "static-client",
-			wantInstructions: "",
-		},
+		{name: "shared catalog server records its identity", wantProfile: true},
+		{name: "static credentials server records its identity", clientID: "static-client", wantProfile: true},
+		{name: "service account connection records nothing", serviceAccount: true},
+		{name: "unauthenticated initialize rejected at tools/list records nothing", rejectToolsList: true},
 	}
 
 	for _, tt := range tests {
@@ -40,29 +43,100 @@ func TestNewClientRecordsServerProfile(t *testing.T) {
 				Title:       "Jira\nCloud",
 				Description: "Issues and sprints",
 				Version:     "1.0.0",
-			}, &mcp.ServerOptions{Instructions: "Use search_issues\nbefore create_issue."})
+			}, &mcp.ServerOptions{Instructions: instructions})
 			addTestMCPTool(server, "search_issues")
-			httpServer := startStreamableMCPServer(t, server)
-			cache := newTestToolsCache()
+			streamable := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
+			httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, err := io.ReadAll(r.Body)
+				require.NoError(t, err)
+				if tt.rejectToolsList && bytes.Contains(body, []byte(`"method":"`+listToolsMethod+`"`)) {
+					w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+				r.Body = io.NopCloser(bytes.NewReader(body))
+				streamable.ServeHTTP(w, r)
+			}))
+			t.Cleanup(httpServer.Close)
 
-			client, err := NewClient(context.Background(), "user-id", ServerConfig{
+			kv := newMockKVService()
+			cache := NewToolsCache(kv, &mockLogService{})
+			params := clientParams{
+				log:            newTestLogService(),
+				httpClient:     httpServer.Client(),
+				toolsCache:     cache,
+				serviceAccount: tt.serviceAccount,
+			}
+			if !tt.serviceAccount {
+				params.oauthManager = newTestOAuthManager()
+			}
+			client, err := newClient(context.Background(), "user-id", ServerConfig{
 				Name:     "Jira",
 				BaseURL:  httpServer.URL,
 				Enabled:  true,
 				ClientID: tt.clientID,
-			}, newTestLogService(), newTestOAuthManager(), httpServer.Client(), cache, false)
-			require.NoError(t, err)
-			t.Cleanup(func() { _ = client.Close() })
+			}, params)
+			if tt.rejectToolsList {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = client.Close() })
+			}
+
+			for key, raw := range kv.store {
+				assert.NotContains(t, string(raw), "alice@example.com", "initialize instructions must never be stored (key %s)", key)
+			}
 
 			profile := cache.GetServerProfile("Jira", httpServer.URL)
+			if !tt.wantProfile {
+				assert.Nil(t, profile)
+				return
+			}
 			require.NotNil(t, profile)
 			assert.Equal(t, "jira-mcp", profile.Name)
 			assert.Equal(t, "Jira Cloud", profile.Title)
 			assert.Equal(t, "Issues and sprints", profile.Description)
-			assert.Equal(t, tt.wantInstructions, profile.Instructions)
-
 			assert.Nil(t, cache.GetServerProfile("Jira", "https://elsewhere.example.com"),
 				"a profile recorded for another URL must not describe this server")
+		})
+	}
+}
+
+func TestServerProfileInvalidation(t *testing.T) {
+	const url = "https://jira.example.com/mcp"
+	tests := []struct {
+		name       string
+		invalidate func(t *testing.T, cache *ToolsCache, manager *ClientManager)
+	}{
+		{
+			name: "refreshing tool providers drops profiles",
+			invalidate: func(t *testing.T, _ *ToolsCache, manager *ClientManager) {
+				require.NoError(t, manager.invalidateSharedToolsCacheForRefresh())
+			},
+		},
+		{
+			name: "clearing the tools cache drops profiles",
+			invalidate: func(t *testing.T, cache *ToolsCache, _ *ClientManager) {
+				_, err := cache.ClearAll()
+				require.NoError(t, err)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			kv := newMockKVService()
+			cache := NewToolsCache(kv, &mockLogService{})
+			require.NoError(t, cache.SetServerProfile("Jira", ServerProfile{ServerURL: url, Title: "Jira Cloud"}, time.Now()))
+			_, err := kv.Set("unrelated_key", "keep")
+			require.NoError(t, err)
+			manager := &ClientManager{
+				config:     Config{Enabled: true, Servers: []ServerConfig{{Name: "Jira", BaseURL: url, Enabled: true, ClientID: "static"}}},
+				toolsCache: cache,
+			}
+
+			tt.invalidate(t, cache, manager)
+			assert.Nil(t, cache.GetServerProfile("Jira", url))
+			assert.Contains(t, kv.store, "unrelated_key")
 		})
 	}
 }
@@ -76,11 +150,10 @@ func TestDescribeUnconnectedMCPServers(t *testing.T) {
 		"search":       {Name: "search", Description: "Search\nissues"},
 	}
 	profile := ServerProfile{
-		ServerURL:    jiraURL,
-		Name:         "jira-mcp",
-		Title:        "Jira Cloud",
-		Description:  "Issues and sprints",
-		Instructions: "Search before creating.",
+		ServerURL:   jiraURL,
+		Name:        "jira-mcp",
+		Title:       "Jira Cloud",
+		Description: "Issues and sprints",
 	}
 	toolConfigs := []ToolConfig{
 		{Name: "delete_issue", Policy: ToolPolicyAsk, Enabled: false},
@@ -105,7 +178,6 @@ func TestDescribeUnconnectedMCPServers(t *testing.T) {
 				ServerOrigin: jiraURL,
 				Title:        "Jira Cloud",
 				Description:  "Issues and sprints",
-				Instructions: "Search before creating.",
 				Tools: []llm.ToolInfo{
 					{Name: "create_issue", Description: "Create an issue", ServerOrigin: jiraURL},
 					{Name: "search", Description: "Find Jira issues", ServerOrigin: jiraURL},

@@ -5,6 +5,7 @@ package mcp
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/mattermost/mattermost/server/public/pluginapi"
@@ -21,17 +22,17 @@ const (
 	serverProfileRefreshAge = 24 * time.Hour
 )
 
-// ServerProfile is what a remote MCP server reported about itself when a
-// session was initialized. It lets users who have not connected yet be told
-// what the server is for. Fields are sanitized and length-capped before they
-// are stored.
+// ServerProfile is how a remote MCP server identified itself when a session
+// was initialized. It lets users who have not connected yet be told what the
+// server is for, so it holds only server-wide identity, never text that may be
+// written for the connected user (such as initialize instructions). Fields are
+// sanitized and length-capped before they are stored.
 type ServerProfile struct {
-	ServerURL    string    `json:"server_url"`
-	Name         string    `json:"name,omitempty"`
-	Title        string    `json:"title,omitempty"`
-	Description  string    `json:"description,omitempty"`
-	Instructions string    `json:"instructions,omitempty"`
-	Timestamp    time.Time `json:"timestamp"`
+	ServerURL   string    `json:"server_url"`
+	Name        string    `json:"name,omitempty"`
+	Title       string    `json:"title,omitempty"`
+	Description string    `json:"description,omitempty"`
+	Timestamp   time.Time `json:"timestamp"`
 }
 
 func (p ServerProfile) sameContent(other ServerProfile) bool {
@@ -193,33 +194,41 @@ func (tc *ToolsCache) InvalidateServer(serverID string) error {
 	return nil
 }
 
-// ClearAll removes all cached tools from KV store
+// InvalidateServerProfile removes a server's stored profile from KV store.
+func (tc *ToolsCache) InvalidateServerProfile(serverID string) error {
+	if err := tc.kvAPI.Delete(serverProfileKeyPrefix + serverID); err != nil {
+		return fmt.Errorf("failed to delete MCP server profile: %w", err)
+	}
+	return nil
+}
+
+// ClearAll removes all cached tools and server profiles from KV store. The
+// returned count covers cached tool lists only.
 func (tc *ToolsCache) ClearAll() (int, error) {
 	tc.log.Info("Clearing all MCP tools cache entries")
 
-	// List all keys with the cache prefix
-	keys, err := tc.kvAPI.ListKeys(0, 1000, pluginapi.WithPrefix(cacheKeyPrefix))
+	keys, err := tc.kvAPI.ListKeys(0, 1000)
 	if err != nil {
 		tc.log.Error("Failed to list cache keys from KV store", "error", err)
 		return 0, fmt.Errorf("failed to list cache keys: %w", err)
 	}
 
-	if len(keys) == 0 {
-		tc.log.Debug("No cache entries found to clear")
-		return 0, nil
-	}
-
-	// Delete each key
 	clearedCount := 0
 	for _, key := range keys {
+		isToolsEntry := strings.HasPrefix(key, cacheKeyPrefix)
+		if !isToolsEntry && !strings.HasPrefix(key, serverProfileKeyPrefix) {
+			continue
+		}
 		if err := tc.kvAPI.Delete(key); err != nil {
 			tc.log.Warn("Failed to delete cache key", "key", key, "error", err)
 			continue
 		}
-		clearedCount++
+		if isToolsEntry {
+			clearedCount++
+		}
 	}
 
-	tc.log.Info("Cleared MCP tools cache", "clearedCount", clearedCount, "totalKeys", len(keys))
+	tc.log.Info("Cleared MCP tools cache", "clearedCount", clearedCount)
 	return clearedCount, nil
 }
 
