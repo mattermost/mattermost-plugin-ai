@@ -97,13 +97,15 @@ func TestThreadsActionItemsFromExportedDataEval(t *testing.T) {
 		{
 			filename: "eval_timed_dnd.json",
 			rubrics: []string{
-				"does not list any committed action items with specific owners and deadlines",
+				// @harrison offers to "change my code" for DndEndTime, which is a
+				// borderline commitment, so listing only that is accepted.
+				"Either states that there are no action items, or lists only @harrison updating his timed DND code or documenting that DndEndTime is in seconds",
 			},
 		},
 		{
 			filename: "eval_announcement.json",
 			rubrics: []string{
-				"does not list any committed action items with specific owners and deadlines",
+				"States that there are no action items in the thread",
 			},
 		},
 	}
@@ -135,13 +137,13 @@ func TestThreadsOpenQuestionsFromExportedDataEval(t *testing.T) {
 		{
 			filename: "eval_timed_dnd.json",
 			rubrics: []string{
-				"does not list any questions that went completely unanswered",
+				"States that there are no open questions in the thread",
 			},
 		},
 		{
 			filename: "eval_announcement.json",
 			rubrics: []string{
-				"does not list any questions that went completely unanswered",
+				"States that there are no open questions in the thread",
 			},
 		},
 	}

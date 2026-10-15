@@ -45,10 +45,12 @@ func TestConversationMentionHandlingEval(t *testing.T) {
 
 			response := respondAsAgent(t, evalScenario{
 				bot: llm.BotConfig{
-					ID:                 botUser.Id,
-					Name:               botUser.Username,
-					DisplayName:        "Matty",
-					EnableVision:       true,
+					ID:          botUser.Id,
+					Name:        botUser.Username,
+					DisplayName: "Matty",
+					// The fixture has animated GIFs, which some providers reject, and no
+					// rubric depends on them.
+					EnableVision:       false,
 					ChannelAccessLevel: llm.ChannelAccessLevelAll,
 					UserAccessLevel:    llm.UserAccessLevelAll,
 				},

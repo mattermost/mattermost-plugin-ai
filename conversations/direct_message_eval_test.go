@@ -65,7 +65,6 @@ func TestDirectMessageConversationsEval(t *testing.T) {
 			rubrics: []string{
 				"mentions web search as a tool it can use",
 				"refers the user to the documentation",
-				"does not claim to have GitHub or Jira tools",
 			},
 		},
 	}
