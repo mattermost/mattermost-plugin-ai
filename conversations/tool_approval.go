@@ -791,6 +791,11 @@ func findPendingToolTurn(turns []store.Turn, clickedPostID string) (*store.Turn,
 		if turns[i].PostID == nil || *turns[i].PostID != clickedPostID {
 			continue
 		}
+		// A turn still streaming (possibly on another node) or interrupted
+		// mid-generation is not a settled pending tool batch.
+		if turns[i].Status != "" && turns[i].Status != store.TurnStatusComplete {
+			continue
+		}
 
 		blocks, err := conversation.UnmarshalBlocks(turns[i].Content)
 		if err != nil {
