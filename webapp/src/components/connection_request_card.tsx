@@ -112,6 +112,22 @@ const ConnectionRequestCard: React.FC<ConnectionRequestCardProps> = ({
         }
     }, [interactive, request.server, fetchServer]));
 
+    // The websocket event can be missed (e.g. during a reconnect), so also
+    // re-check when the user comes back from the sign-in window.
+    useEffect(() => {
+        const refreshOnReturn = () => {
+            if (interactive && connectOpened && document.visibilityState === 'visible') {
+                fetchServer();
+            }
+        };
+        window.addEventListener('focus', refreshOnReturn);
+        document.addEventListener('visibilitychange', refreshOnReturn);
+        return () => {
+            window.removeEventListener('focus', refreshOnReturn);
+            document.removeEventListener('visibilitychange', refreshOnReturn);
+        };
+    }, [interactive, connectOpened, fetchServer]);
+
     const answeredConnected = useMemo(() => connectedFromResult(tool.result), [tool.result]);
 
     const handleConnect = (authURL: string) => {
@@ -171,8 +187,9 @@ const ConnectionRequestCard: React.FC<ConnectionRequestCardProps> = ({
             );
         }
 
-        // Continue is offered whenever connecting may have happened; the
-        // server re-checks the connection before the agent resumes.
+        // Continue is offered whenever connecting may have happened, but only
+        // emphasized once the connection is seen: continuing early resolves the
+        // request as not connected. The server re-checks either way.
         const showContinue = connected || connectOpened || lookup.state === 'failed';
 
         return (
@@ -191,7 +208,7 @@ const ConnectionRequestCard: React.FC<ConnectionRequestCardProps> = ({
                     </Button>
                     {authURL && (
                         <Button
-                            emphasis={connectOpened ? 'secondary' : 'primary'}
+                            emphasis='primary'
                             size='small'
                             trailingIcon={<Icon glyph={<OpenInNewIcon/>}/>}
                             onClick={() => handleConnect(authURL)}
@@ -204,7 +221,7 @@ const ConnectionRequestCard: React.FC<ConnectionRequestCardProps> = ({
                     )}
                     {showContinue && (
                         <Button
-                            emphasis='primary'
+                            emphasis={connected ? 'primary' : 'secondary'}
                             size='small'
                             onClick={onContinue}
                         >

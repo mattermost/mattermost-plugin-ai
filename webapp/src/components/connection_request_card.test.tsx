@@ -123,6 +123,28 @@ describe('ConnectionRequestCard', () => {
         expect(mockGetUserMCPTools).toHaveBeenCalledTimes(2);
     });
 
+    test('re-checks the connection when the user returns from the sign-in window', async () => {
+        mockGetUserMCPTools.mockResolvedValue({servers: [jiraServer()]});
+        const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
+        renderCard();
+        const connect = await screen.findByRole('button', {name: /^connect$/i});
+
+        act(() => {
+            window.dispatchEvent(new Event('focus'));
+        });
+        expect(mockGetUserMCPTools).toHaveBeenCalledTimes(1);
+
+        fireEvent.click(connect);
+        mockGetUserMCPTools.mockResolvedValue({servers: [jiraServer({authenticated: true, authURL: undefined})]}); // eslint-disable-line no-undefined
+        act(() => {
+            window.dispatchEvent(new Event('focus'));
+        });
+
+        expect(await screen.findByText('Connected. Continue to let the agent use it.')).toBeTruthy();
+        expect(screen.queryByRole('button', {name: /^connect$/i})).toBeNull();
+        openSpy.mockRestore();
+    });
+
     test('ignores connection events for other servers', async () => {
         mockGetUserMCPTools.mockResolvedValue({servers: [jiraServer()]});
         renderCard();
