@@ -20,6 +20,8 @@ const (
 	// serverProfileRefreshAge bounds how long an unchanged profile goes
 	// without being rewritten, so active servers never reach cacheTTL.
 	serverProfileRefreshAge = 24 * time.Hour
+
+	listKeysPageSize = 1000
 )
 
 // ServerProfile is how a remote MCP server identified itself when a session
@@ -207,18 +209,28 @@ func (tc *ToolsCache) InvalidateServerProfile(serverID string) error {
 func (tc *ToolsCache) ClearAll() (int, error) {
 	tc.log.Info("Clearing all MCP tools cache entries")
 
-	keys, err := tc.kvAPI.ListKeys(0, 1000)
-	if err != nil {
-		tc.log.Error("Failed to list cache keys from KV store", "error", err)
-		return 0, fmt.Errorf("failed to list cache keys: %w", err)
+	// The KV store has no server-side prefix filter, so every page is listed.
+	// Keys are collected before deleting so deletions do not shift later pages.
+	var keys []string
+	for page := 0; ; page++ {
+		pageKeys, err := tc.kvAPI.ListKeys(page, listKeysPageSize)
+		if err != nil {
+			tc.log.Error("Failed to list cache keys from KV store", "error", err)
+			return 0, fmt.Errorf("failed to list cache keys: %w", err)
+		}
+		for _, key := range pageKeys {
+			if strings.HasPrefix(key, cacheKeyPrefix) || strings.HasPrefix(key, serverProfileKeyPrefix) {
+				keys = append(keys, key)
+			}
+		}
+		if len(pageKeys) < listKeysPageSize {
+			break
+		}
 	}
 
 	clearedCount := 0
 	for _, key := range keys {
 		isToolsEntry := strings.HasPrefix(key, cacheKeyPrefix)
-		if !isToolsEntry && !strings.HasPrefix(key, serverProfileKeyPrefix) {
-			continue
-		}
 		if err := tc.kvAPI.Delete(key); err != nil {
 			tc.log.Warn("Failed to delete cache key", "key", key, "error", err)
 			continue
