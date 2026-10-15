@@ -74,10 +74,14 @@ func LLMRubricT(e *EvalT, rubric, output string) {
 		Output:    output,
 		Reasoning: result.Reasoning,
 		Score:     result.Score,
-		Pass:      result.Pass,
+		Pass:      result.Pass && result.Score >= minPassingScore,
 	})
 	// The verdict is already recorded above, so it bypasses EvalT's capture of
 	// assertion failures.
 	assert.True(e.T, result.Pass, "LLM Rubric Failed")
-	assert.GreaterOrEqual(e.T, result.Score, 0.6, "LLM Rubric Score is too low")
+	assert.GreaterOrEqual(e.T, result.Score, minPassingScore, "LLM Rubric Score is too low")
 }
+
+// minPassingScore is the grader score below which a rubric fails even when
+// the grader says it passes.
+const minPassingScore = 0.6
