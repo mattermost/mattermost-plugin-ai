@@ -257,13 +257,17 @@ func TestIsInitialResponse(t *testing.T) {
 	}{
 		{name: "operation's first response", postID: "summary-post", want: true},
 		{name: "follow-up reply in the same conversation", postID: "follow-up-post", want: false},
-		{name: "post without a persisted turn", postID: "unknown-post", want: true},
+		{name: "follow-up without a persisted turn", postID: "unknown-post", want: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			require.Equal(t, tt.want, isInitialResponse(turns, tt.postID))
 		})
 	}
+
+	t.Run("operation post without a persisted turn", func(t *testing.T) {
+		require.True(t, isInitialResponse(turns[:1], "summary-post"))
+	})
 }
 
 func transcriptPostWithCaptions(fileID string) *model.Post {
