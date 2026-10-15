@@ -236,8 +236,7 @@ func TestChannelApprovalsOutOfOrderKeepThreadReplayable(t *testing.T) {
 		defer threadMu.Unlock()
 		list := model.NewPostList()
 		for _, id := range threadPosts.Order {
-			p := *threadPosts.Posts[id]
-			list.AddPost(&p)
+			list.AddPost(threadPosts.Posts[id].Clone())
 			list.AddOrder(id)
 		}
 		return list, nil
@@ -292,7 +291,7 @@ func TestChannelApprovalsOutOfOrderKeepThreadReplayable(t *testing.T) {
 
 	userMessage := func(postID, text string) *store.Conversation {
 		addThreadPost(postID, userID, text)
-		result, err := convService.GetOrCreateConversation(conversation.GetOrCreateParams{
+		result, createErr := convService.GetOrCreateConversation(conversation.GetOrCreateParams{
 			UserID:       userID,
 			BotID:        botID,
 			ChannelID:    channelID,
@@ -302,7 +301,7 @@ func TestChannelApprovalsOutOfOrderKeepThreadReplayable(t *testing.T) {
 			UserMessage:  text,
 			UserPostID:   new(postID),
 		})
-		require.NoError(t, err)
+		require.NoError(t, createErr)
 		return result.Conversation
 	}
 
@@ -323,8 +322,8 @@ func TestChannelApprovalsOutOfOrderKeepThreadReplayable(t *testing.T) {
 				Shared:       new(false),
 			})
 		}
-		content, err := json.Marshal(blocks)
-		require.NoError(t, err)
+		content, marshalErr := json.Marshal(blocks)
+		require.NoError(t, marshalErr)
 		require.NoError(t, s.CreateTurnAutoSequence(&store.Turn{
 			ID:             model.NewId(),
 			ConversationID: conv.ID,
@@ -337,13 +336,13 @@ func TestChannelApprovalsOutOfOrderKeepThreadReplayable(t *testing.T) {
 
 	channel := &model.Channel{Id: channelID, TeamId: "team-id", Type: model.ChannelTypeOpen}
 	approveAndShare := func(post *model.Post, toolIDs ...string) {
-		anchor, err := s.GetTurnByPostID(post.Id)
-		require.NoError(t, err)
+		anchor, anchorErr := s.GetTurnByPostID(post.Id)
+		require.NoError(t, anchorErr)
 		require.NoError(t, c.HandleToolCall(ctx, userID, post, channel, toolIDs, nil))
 		require.NoError(t, c.HandleToolResult(ctx, userID, post, channel, toolIDs))
 		require.Eventually(t, func() bool {
-			current, err := s.GetTurnByPostID(post.Id)
-			return err == nil && current != nil && current.ID != anchor.ID
+			current, lookupErr := s.GetTurnByPostID(post.Id)
+			return lookupErr == nil && current != nil && current.ID != anchor.ID
 		}, 10*time.Second, 20*time.Millisecond, "follow-up stream for %s must finalize", post.Id)
 	}
 
