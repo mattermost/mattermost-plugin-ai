@@ -307,15 +307,6 @@ func (a *API) handleRegenerate(c *gin.Context) {
 		return
 	}
 
-	// A stream for this post may still be running on another node; stop it
-	// there before the regenerate scrubs its turns (the local one is stopped
-	// inside HandleRegenerate).
-	if a.streamStopNotifier != nil {
-		if err := a.streamStopNotifier.PublishStreamStop(post.Id); err != nil {
-			a.pluginAPI.Log.Warn("Failed to publish stream stop cluster event before regenerate", "post_id", post.Id, "error", err.Error())
-		}
-	}
-
 	err := a.conversationsService.HandleRegenerate(c.Request.Context(), userID, post, channel)
 	if err != nil {
 		var licErr *enterprise.LicenseError

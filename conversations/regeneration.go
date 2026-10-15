@@ -82,10 +82,6 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 		return fmt.Errorf("unable to get user to regen post: %w", err)
 	}
 
-	// Stop any stream still writing this post on this node (other nodes are
-	// stopped via the stop cluster event) before its turns are scrubbed.
-	c.streamingService.StopStreaming(post.Id)
-
 	ctx, err = c.streamingService.GetStreamingContext(ctx, post.Id)
 	if err != nil {
 		return fmt.Errorf("unable to get post streaming context: %w", err)
