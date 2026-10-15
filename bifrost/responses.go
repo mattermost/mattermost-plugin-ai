@@ -22,6 +22,9 @@ func (b *LLM) convertToResponsesMessages(posts []llm.Post) []schemas.ResponsesMe
 	for _, post := range posts {
 		switch post.Role {
 		case llm.PostRoleSystem:
+			if isBlank(post.Message) {
+				continue
+			}
 			msg := schemas.ResponsesMessage{
 				Role: new(schemas.ResponsesInputMessageRoleSystem),
 				Content: &schemas.ResponsesMessageContent{
@@ -34,6 +37,9 @@ func (b *LLM) convertToResponsesMessages(posts []llm.Post) []schemas.ResponsesMe
 			if len(post.Files) > 0 {
 				// Multimodal message with images
 				parts := b.createResponsesMultimodalContent(post, maxDim)
+				if len(parts) == 0 {
+					continue
+				}
 				msg := schemas.ResponsesMessage{
 					Role: new(schemas.ResponsesInputMessageRoleUser),
 					Content: &schemas.ResponsesMessageContent{
@@ -41,7 +47,7 @@ func (b *LLM) convertToResponsesMessages(posts []llm.Post) []schemas.ResponsesMe
 					},
 				}
 				messages = append(messages, msg)
-			} else {
+			} else if !isBlank(post.Message) {
 				msg := schemas.ResponsesMessage{
 					Role: new(schemas.ResponsesInputMessageRoleUser),
 					Content: &schemas.ResponsesMessageContent{
@@ -53,7 +59,7 @@ func (b *LLM) convertToResponsesMessages(posts []llm.Post) []schemas.ResponsesMe
 
 		case llm.PostRoleBot:
 			messages = append(messages, assistantReplayMessages(post)...)
-			for _, tc := range post.ToolUse {
+			for _, tc := range replayableToolCalls(post.ToolUse) {
 				funcCallMsg := schemas.ResponsesMessage{
 					Type: new(schemas.ResponsesMessageTypeFunctionCall),
 					ResponsesToolMessage: &schemas.ResponsesToolMessage{
@@ -99,7 +105,7 @@ func assistantReplayMessages(post llm.Post) []schemas.ResponsesMessage {
 		if record := serverToolActivityRecord(post.ServerTools); record != "" {
 			messages = append(messages, newTextMessage(record))
 		}
-		if post.Message != "" {
+		if !isBlank(post.Message) {
 			messages = append(messages, newTextMessage(post.Message))
 		}
 		return messages
@@ -115,7 +121,7 @@ func assistantReplayMessages(post llm.Post) []schemas.ResponsesMessage {
 	for _, segment := range post.AssistantSegments {
 		switch segment.Kind {
 		case llm.TurnSegmentText:
-			if segment.Text != "" {
+			if !isBlank(segment.Text) {
 				messages = append(messages, newTextMessage(segment.Text))
 			}
 		case llm.TurnSegmentServerTool:
