@@ -103,7 +103,7 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 				return fmt.Errorf("could not get thread post on regen: %w", getPostErr)
 			}
 			if !c.mmClient.HasPermissionToChannel(userID, threadPost.ChannelId, model.PermissionReadChannel) {
-				return errors.New("user doesn't have permission to read channel original thread in in")
+				return errors.New("user doesn't have permission to read the channel of the original thread")
 			}
 		}
 		result, err = c.regenerateSingleShot(ctx, bot, user, channel, conv, post)
@@ -114,7 +114,7 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 	case llm.OperationMeetingSummary:
 		// The stored user turn is derived from a recording or captions file;
 		// the requester must still be allowed to download that source.
-		if accessErr := c.checkMeetingSourceAccess(ctx, post); accessErr != nil {
+		if accessErr := CheckMeetingSourceAccess(ctx, c.mmClient, post); accessErr != nil {
 			return accessErr
 		}
 		post.Message = ""
@@ -173,18 +173,18 @@ const (
 	meetingTranscriptPostIDProp = "referenced_transcript_post_id"
 )
 
-// checkMeetingSourceAccess fails closed unless the requesting session may
-// download the recording or captions file a meeting summary was built from.
-func (c *Conversations) checkMeetingSourceAccess(ctx stdcontext.Context, post *model.Post) error {
+// CheckMeetingSourceAccess fails closed unless the session in ctx may download
+// the recording or captions file the meeting summary post was built from.
+func CheckMeetingSourceAccess(ctx stdcontext.Context, mmClient mmapi.Client, post *model.Post) error {
 	fileID, _ := post.GetProp(meetingRecordingFileIDProp).(string)
 	if fileID == "" {
 		transcriptPostID, _ := post.GetProp(meetingTranscriptPostIDProp).(string)
 		if transcriptPostID == "" {
 			return errors.New("meeting summary post missing its source reference")
 		}
-		transcriptPost, err := c.mmClient.GetPost(transcriptPostID)
+		transcriptPost, err := mmClient.GetPost(transcriptPostID)
 		if err != nil {
-			return fmt.Errorf("could not get transcription post on regen: %w", err)
+			return fmt.Errorf("could not get transcription post: %w", err)
 		}
 		fileID = captionsFileID(transcriptPost)
 		if fileID == "" {
@@ -192,9 +192,9 @@ func (c *Conversations) checkMeetingSourceAccess(ctx stdcontext.Context, post *m
 		}
 	}
 
-	mm := mmapi.WithFilePolicy(c.mmClient, auth.SessionIDFromContext(ctx))
+	mm := mmapi.WithFilePolicy(mmClient, auth.SessionIDFromContext(ctx))
 	if _, err := mm.GetFileInfo(fileID); err != nil {
-		return fmt.Errorf("could not access meeting source file on regen: %w", err)
+		return fmt.Errorf("could not access meeting source file: %w", err)
 	}
 	return nil
 }
@@ -213,8 +213,8 @@ func captionsFileID(post *model.Post) string {
 
 // isInitialResponse reports whether the assistant turn anchored to postID
 // answers the conversation's first user turn. A post with no anchored turn is
-// treated as initial so operation posts whose turn was never persisted keep
-// their operation-specific regenerate path.
+// treated as initial only while the conversation has a single user turn, so an
+// unpersisted follow-up still uses ordinary conversation regeneration.
 func isInitialResponse(turns []store.Turn, postID string) bool {
 	userTurns := 0
 	for _, turn := range turns {
@@ -225,7 +225,7 @@ func isInitialResponse(turns []store.Turn, postID string) bool {
 			userTurns++
 		}
 	}
-	return true
+	return userTurns <= 1
 }
 
 // checkRegenerateLicense gates regenerating a post by the capability of the
