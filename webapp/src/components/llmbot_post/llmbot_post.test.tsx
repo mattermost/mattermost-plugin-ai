@@ -1593,6 +1593,42 @@ describe('LLMBotPost interrupted and stale generation notices', () => {
         expect(screen.queryByText('Stale snapshot')).toBeNull();
     });
 
+    test('renders a stopped response once when its end event is missed', () => {
+        const conv = (status: 'streaming' | 'complete', text: string) => ({
+            conversation: makeConversation([
+                makeTurn({id: 'turn_0', post_id: null, sequence: 1, status: 'complete', content: [{type: 'text', text: 'Earlier round'}]}),
+                makeTurn({id: 'turn_1', post_id: 'post_1', sequence: 2, status, content: [{type: 'text', text}]}),
+            ]),
+            loading: false,
+            error: null,
+        });
+        let listener: PostUpdateHandler | undefined;
+        const ui = () => (
+            <IntlProvider locale='en'>
+                <LLMBotPost
+                    post={makePost('')}
+                    websocketRegister={(postID: string, listenerID: string, handler: PostUpdateHandler) => {
+                        listener = handler;
+                    }}
+                    websocketUnregister={jest.fn()}
+                />
+            </IntlProvider>
+        );
+        mockUseConversation.mockReturnValue(conv('streaming', 'Stale snapshot'));
+        const {rerender} = render(ui());
+
+        act(() => {
+            listener?.(postUpdateMessage({post_id: 'post_1', control: 'start'}));
+            listener?.(postUpdateMessage({post_id: 'post_1', next: 'Final text'}));
+            listener?.(postUpdateMessage({post_id: 'post_1', control: 'cancel'}));
+        });
+
+        // No end event; a later refetch lands with the finalized turn.
+        mockUseConversation.mockReturnValue(conv('complete', 'Final text'));
+        rerender(ui());
+        expect(screen.getAllByText('Final text')).toHaveLength(1);
+    });
+
     test('does not show the stale notice for a completed post', () => {
         jest.useFakeTimers();
         renderPost(makePost('Done'));

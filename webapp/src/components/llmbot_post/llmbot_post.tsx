@@ -174,7 +174,11 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
 
     // An interrupted post is not generating, whatever the local stream state says.
     const generating = generatingState && !interrupted;
-    const liveStreamOpen = generating || awaitingEnd;
+
+    // A settled turn means the end was missed (e.g. a dropped socket); the
+    // persisted turn is then authoritative.
+    const postTurnSettled = Boolean(conversation?.turns.some((turn) => turn.post_id === props.post.id && turn.status !== 'streaming'));
+    const liveStreamOpen = generating || (awaitingEnd && !postTurnSettled);
 
     // Lets the WebSocket handler snapshot the live round without re-subscribing.
     const liveRef = useRef({message, toolCalls, reasoningSummary, annotations, serverTools});
