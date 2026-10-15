@@ -59,7 +59,21 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 		return errors.New("tagged no regen")
 	}
 
-	if err = c.checkRegenerateLicense(conv.Operation); err != nil {
+	// Follow-up replies share the analysis/meeting conversation but are
+	// ordinary conversation responses; only the operation's initial response
+	// is regenerated through the operation-specific path.
+	operation := conv.Operation
+	if operation != "" {
+		turns, turnsErr := c.convService.GetTurns(conv.ID)
+		if turnsErr != nil {
+			return fmt.Errorf("failed to get turns for regeneration: %w", turnsErr)
+		}
+		if !isInitialResponse(turns, post.Id) {
+			operation = ""
+		}
+	}
+
+	if err = c.checkRegenerateLicense(operation); err != nil {
 		return err
 	}
 
@@ -79,7 +93,7 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 	defer c.streamingService.FinishStreaming(post.Id)
 
 	var result *llm.TextStreamResult
-	switch conv.Operation {
+	switch operation {
 	case llm.OperationThreadAnalysis:
 		// The stored user turn holds the thread content; re-check the
 		// requester can still read the analyzed thread.
@@ -138,6 +152,23 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 	c.streamingService.StreamToPost(ctx, result, post, *config.LocalizationSettings.DefaultServerLocale, user.Id)
 
 	return nil
+}
+
+// isInitialResponse reports whether the assistant turn anchored to postID
+// answers the conversation's first user turn. A post with no anchored turn is
+// treated as initial so operation posts whose turn was never persisted keep
+// their operation-specific regenerate path.
+func isInitialResponse(turns []store.Turn, postID string) bool {
+	userTurns := 0
+	for _, turn := range turns {
+		if turn.Role == "assistant" && turn.PostID != nil && *turn.PostID == postID {
+			return userTurns <= 1
+		}
+		if turn.Role == "user" {
+			userTurns++
+		}
+	}
+	return true
 }
 
 // checkRegenerateLicense gates regenerating a post by the capability of the

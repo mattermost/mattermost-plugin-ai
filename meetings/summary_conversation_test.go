@@ -114,11 +114,15 @@ func TestSummarizeTranscriptionCreatesConversation(t *testing.T) {
 		vtt           string
 		inputLimit    int
 		expectChunked bool
+		// threadTaken simulates the user replying in the summary thread
+		// before transcription finished, which claims the thread first.
+		threadTaken bool
 	}{
 		{name: "short transcription is stored verbatim", vtt: vtt, inputLimit: 0},
 		// A tiny limit forces the chunked path; the stored user turn holds
 		// the joined chunk summaries rather than the raw transcription.
 		{name: "long transcription stores chunk summaries", vtt: long.String(), inputLimit: 1, expectChunked: true},
+		{name: "thread already has a conversation", vtt: vtt, inputLimit: 0, threadTaken: true},
 	}
 
 	for _, tt := range tests {
@@ -126,6 +130,12 @@ func TestSummarizeTranscriptionCreatesConversation(t *testing.T) {
 			rootPostID := model.NewId()
 			transcription, err := subtitles.NewSubtitlesFromVTT(strings.NewReader(tt.vtt))
 			require.NoError(t, err)
+
+			if tt.threadTaken {
+				require.NoError(t, convStore.CreateConversation(&store.Conversation{
+					ID: model.NewId(), UserID: userID, BotID: botID, RootPostID: &rootPostID,
+				}))
+			}
 
 			mockAPI := &plugintest.API{}
 			mockAPI.On("LogDebug", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Maybe()
@@ -154,8 +164,12 @@ func TestSummarizeTranscriptionCreatesConversation(t *testing.T) {
 			require.Equal(t, botID, conv.BotID)
 			require.Equal(t, llm.OperationMeetingSummary, conv.Operation)
 			require.Equal(t, TitleMeetingSummary, conv.Title)
-			require.NotNil(t, conv.RootPostID)
-			require.Equal(t, rootPostID, *conv.RootPostID)
+			if tt.threadTaken {
+				require.Nil(t, conv.RootPostID, "summary must not collide with the thread's existing conversation")
+			} else {
+				require.NotNil(t, conv.RootPostID)
+				require.Equal(t, rootPostID, *conv.RootPostID)
+			}
 
 			turns, err := convStore.GetTurnsForConversation(result.ConversationID)
 			require.NoError(t, err)

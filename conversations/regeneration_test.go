@@ -212,3 +212,28 @@ func TestHandleRegenerateRequiresConversation(t *testing.T) {
 	err := c.HandleRegenerate(t.Context(), userID, post, &model.Channel{Id: "dm-channel"})
 	require.ErrorContains(t, err, "missing conversation_id")
 }
+
+func TestIsInitialResponse(t *testing.T) {
+	strPtr := func(s string) *string { return &s }
+	turns := []store.Turn{
+		{ID: "u1", Role: "user", Sequence: 1},
+		{ID: "a1", Role: "assistant", PostID: strPtr("summary-post"), Sequence: 2},
+		{ID: "u2", Role: "user", Sequence: 3},
+		{ID: "a2", Role: "assistant", PostID: strPtr("follow-up-post"), Sequence: 4},
+	}
+
+	tests := []struct {
+		name   string
+		postID string
+		want   bool
+	}{
+		{name: "operation's first response", postID: "summary-post", want: true},
+		{name: "follow-up reply in the same conversation", postID: "follow-up-post", want: false},
+		{name: "post without a persisted turn", postID: "unknown-post", want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, isInitialResponse(turns, tt.postID))
+		})
+	}
+}

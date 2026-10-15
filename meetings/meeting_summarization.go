@@ -20,6 +20,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmapi"
 	"github.com/mattermost/mattermost-plugin-agents/v2/prompts"
+	"github.com/mattermost/mattermost-plugin-agents/v2/store"
 	"github.com/mattermost/mattermost-plugin-agents/v2/streaming"
 	"github.com/mattermost/mattermost-plugin-agents/v2/subtitles"
 	"github.com/mattermost/mattermost/server/public/model"
@@ -380,14 +381,22 @@ func (s *Service) SummarizeTranscription(ctx stdcontext.Context, bot *bots.Bot, 
 		operationSubType = llm.SubTypeChunkedTrue
 	}
 
-	convResult, err := s.convService.CreateConversation(conversation.CreateConversationParams{
+	convParams := conversation.CreateConversationParams{
 		UserID:       userID,
 		BotID:        bot.GetMMBot().UserId,
 		RootPostID:   &rootPostID,
 		Operation:    llm.OperationMeetingSummary,
 		SystemPrompt: systemPrompt,
 		UserMessage:  llmFormattedTranscription,
-	})
+	}
+	convResult, err := s.convService.CreateConversation(convParams)
+	if errors.Is(err, store.ErrConversationConflict) {
+		// The user replied in the thread while the transcript was being
+		// processed, which created a regular conversation for it first.
+		// Keep the summary in its own unthreaded conversation rather than failing.
+		convParams.RootPostID = nil
+		convResult, err = s.convService.CreateConversation(convParams)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("unable to create meeting summary conversation: %w", err)
 	}
