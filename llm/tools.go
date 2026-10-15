@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"slices"
 	"strings"
 	"unicode"
 
@@ -627,23 +626,21 @@ func (s *ToolStore) lookupUnloadedMCPTool(name string) (Tool, bool) {
 	return matched, true
 }
 
-// MCPToolNamesFromOrigin returns the sorted names of every MCP tool from
-// origin in the store, loaded or not.
-func (s *ToolStore) MCPToolNamesFromOrigin(origin string) []string {
+// HasMCPToolsFromOrigin reports whether the store holds any MCP tool from
+// origin, loaded or not.
+func (s *ToolStore) HasMCPToolsFromOrigin(origin string) bool {
 	origin = NormalizeMCPServerOrigin(origin)
 	if s == nil || origin == "" {
-		return nil
+		return false
 	}
-	var names []string
 	for _, tools := range []map[string]Tool{s.tools, s.unloadedMCPTools} {
-		for name, tool := range tools {
+		for _, tool := range tools {
 			if NormalizeMCPServerOrigin(tool.ServerOrigin) == origin {
-				names = append(names, name)
+				return true
 			}
 		}
 	}
-	slices.Sort(names)
-	return slices.Compact(names)
+	return false
 }
 
 // GetServerOrigin returns the ServerOrigin for a tool by name.

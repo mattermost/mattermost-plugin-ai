@@ -83,36 +83,17 @@ func TestResolveConnectionRequest(t *testing.T) {
 		unloaded      []llm.Tool
 		authErrors    []llm.ToolAuthError
 		dynamic       bool
-		listToolNames bool
 		wantConnected bool
-		wantTools     []string
 		wantInMessage string
 	}{
 		{
-			name:          "connected server reports its tools",
+			name:          "connected server overrides the earlier unconnected note",
 			loaded:        append(append([]llm.Tool{}, jiraTools...), githubTools...),
-			listToolNames: true,
-			wantConnected: true,
-			wantTools:     []string{"jira__create_issue", "jira__search"},
-			wantInMessage: "This replaces any earlier note that Jira is not connected",
-		},
-		{
-			name:          "dynamic loading counts unloaded tools and points at load_tool",
-			unloaded:      jiraTools,
-			dynamic:       true,
-			listToolNames: true,
-			wantConnected: true,
-			wantTools:     []string{"jira__create_issue", "jira__search"},
-			wantInMessage: "call load_tool with one of the exact names below",
-		},
-		{
-			name:          "connected server without tool names still reports the connection",
-			loaded:        jiraTools,
 			wantConnected: true,
 			wantInMessage: "This replaces any earlier note that Jira is not connected",
 		},
 		{
-			name:          "dynamic loading without tool names points at search_tools",
+			name:          "dynamic loading counts unloaded tools and points at search_tools",
 			unloaded:      jiraTools,
 			dynamic:       true,
 			wantConnected: true,
@@ -122,13 +103,11 @@ func TestResolveConnectionRequest(t *testing.T) {
 			name:          "server still needing OAuth is not connected",
 			loaded:        githubTools,
 			authErrors:    []llm.ToolAuthError{{ServerName: "Jira", ServerOrigin: jiraTestOrigin}},
-			listToolNames: true,
 			wantInMessage: "Jira is still not connected",
 		},
 		{
 			name:          "server with no tools in the catalog is not connected",
 			loaded:        githubTools,
-			listToolNames: true,
 			wantInMessage: "Jira is still not connected",
 		},
 	}
@@ -149,19 +128,16 @@ func TestResolveConnectionRequest(t *testing.T) {
 				},
 			}
 
-			raw, err := ResolveConnectionRequest(json.RawMessage(`{"server":"Jira","reason":"Find issues"}`), llmContext, tt.listToolNames)
+			raw, err := ResolveConnectionRequest(json.RawMessage(`{"server":"Jira","reason":"Find issues"}`), llmContext)
 			require.NoError(t, err)
 
 			var result RequestConnectionResult
 			require.NoError(t, json.Unmarshal([]byte(raw), &result))
 			assert.Equal(t, "Jira", result.Server)
 			assert.Equal(t, tt.wantConnected, result.Connected)
-			assert.Equal(t, tt.wantTools, result.Tools)
 			assert.Contains(t, result.Message, tt.wantInMessage)
-			if !tt.listToolNames {
-				for _, tool := range jiraTools {
-					assert.NotContains(t, raw, tool.Name)
-				}
+			for _, tool := range jiraTools {
+				assert.NotContains(t, raw, tool.Name, "channel members can read the result, so it must not name the user's tools")
 			}
 		})
 	}

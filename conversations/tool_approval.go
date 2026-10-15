@@ -243,7 +243,7 @@ func (c *Conversations) HandleToolCall(ctx context.Context, userID string, post 
 	// Validate answers for accepted interaction blocks before mutating any
 	// state, so a malformed or missing answer leaves the question pending and
 	// answerable instead of burning it as an error result.
-	interactionResults, err := resolveInteractionAnswers(pendingBlocks, acceptedToolIDs, toolAnswers, llmContext, isDM)
+	interactionResults, err := resolveInteractionAnswers(pendingBlocks, acceptedToolIDs, toolAnswers, llmContext)
 	if err != nil {
 		return err
 	}
@@ -459,9 +459,8 @@ func (c *Conversations) HandleToolCall(ctx context.Context, userID string, post 
 // block ID. Any invalid or missing answer fails the whole request with
 // ErrInvalidToolAnswer before any state is mutated. Connection requests carry
 // no answer: their result reports whether llmContext, built after the user's
-// decision, has the requested server's tools. Interaction results are shared
-// with the channel, so connection results name those tools only in DMs.
-func resolveInteractionAnswers(blocks []conversation.ContentBlock, acceptedToolIDs []string, toolAnswers map[string]mmtools.UserInteractionAnswer, llmContext *llm.Context, isDM bool) (map[string]string, error) {
+// decision, has the requested server's tools.
+func resolveInteractionAnswers(blocks []conversation.ContentBlock, acceptedToolIDs []string, toolAnswers map[string]mmtools.UserInteractionAnswer, llmContext *llm.Context) (map[string]string, error) {
 	results := make(map[string]string)
 	for _, b := range blocks {
 		if b.Type != conversation.BlockTypeToolUse || b.UserInteraction == "" {
@@ -476,7 +475,7 @@ func resolveInteractionAnswers(blocks []conversation.ContentBlock, acceptedToolI
 		var result string
 		var err error
 		if b.UserInteraction == llm.UserInteractionConnect {
-			result, err = mcp.ResolveConnectionRequest(b.Input, llmContext, isDM)
+			result, err = mcp.ResolveConnectionRequest(b.Input, llmContext)
 		} else {
 			result, err = mmtools.ResolveUserInteractionAnswer(b.UserInteraction, b.Input, toolAnswers[b.ID])
 		}
