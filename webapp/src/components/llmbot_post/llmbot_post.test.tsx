@@ -1460,6 +1460,24 @@ describe('LLMBotPost interrupted and stale generation notices', () => {
         expect(screen.queryByText(STALE_TEXT)).toBeNull();
     });
 
+    test.each([
+        ['a finished tool-only post', 'done' as const, 'rejected' as const, 'user_1'],
+        ['a pending approval seen by an onlooker', 'call' as const, 'pending' as const, 'other_user'],
+    ])('does not show the stale notice for %s', (_label, approvalState, toolStatus, userId) => {
+        jest.useFakeTimers();
+        mockUseConversation.mockReturnValue({
+            conversation: makeToolOnlyConversation(approvalState, toolStatus, userId),
+            loading: false,
+            error: null,
+        });
+        renderPost(makePost(''));
+
+        act(() => {
+            jest.advanceTimersByTime(120000);
+        });
+        expect(screen.queryByText(STALE_TEXT)).toBeNull();
+    });
+
     test('does not show the stale notice for a completed post', () => {
         jest.useFakeTimers();
         renderPost(makePost('Done'));

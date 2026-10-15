@@ -199,3 +199,27 @@ func TestFinalizeStreamingTurn(t *testing.T) {
 		})
 	}
 }
+
+func TestReleaseStreamingTurnClaim(t *testing.T) {
+	s, convID := setupStreamStore(t)
+	turn := createTurnWithStatus(t, s, convID, TurnStatusStreaming)
+	ageTurn(t, s, turn.ID, 2*testStaleMillis)
+
+	claimed, err := s.ClaimStaleStreamingTurn(turn.ID, testStaleMillis)
+	require.NoError(t, err)
+	require.True(t, claimed)
+
+	require.NoError(t, s.ReleaseStreamingTurnClaim(turn.ID))
+	assert.Equal(t, TurnStatusStreaming, getTurn(t, s, turn.ID).Status)
+
+	// Released turns are claimable again once stale.
+	ageTurn(t, s, turn.ID, 2*testStaleMillis)
+	claimed, err = s.ClaimStaleStreamingTurn(turn.ID, testStaleMillis)
+	require.NoError(t, err)
+	assert.True(t, claimed)
+
+	// Completed turns are never reverted.
+	done := createTurnWithStatus(t, s, convID, TurnStatusComplete)
+	require.NoError(t, s.ReleaseStreamingTurnClaim(done.ID))
+	assert.Equal(t, TurnStatusComplete, getTurn(t, s, done.ID).Status)
+}

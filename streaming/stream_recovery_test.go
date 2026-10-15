@@ -206,8 +206,19 @@ type fakeRecoveryStore struct {
 	listErr error
 }
 
-func (f *fakeRecoveryStore) GetStaleStreamingTurns(_ int64, _ uint64) ([]store.Turn, error) {
-	return f.stale, f.listErr
+func (f *fakeRecoveryStore) GetStaleStreamingTurns(_ int64, limit uint64) ([]store.Turn, error) {
+	var out []store.Turn
+	for _, turn := range f.stale {
+		if !f.claimed[turn.ID] && uint64(len(out)) < limit {
+			out = append(out, turn)
+		}
+	}
+	return out, f.listErr
+}
+
+func (f *fakeRecoveryStore) ReleaseStreamingTurnClaim(id string) error {
+	f.claimed[id] = false
+	return nil
 }
 
 func (f *fakeRecoveryStore) ClaimStaleStreamingTurn(id string, _ int64) (bool, error) {
@@ -219,8 +230,9 @@ func (f *fakeRecoveryStore) ClaimStaleStreamingTurn(id string, _ int64) (bool, e
 }
 
 type fakeRecoveryClient struct {
-	posts   map[string]*model.Post
-	updated []*model.Post
+	posts     map[string]*model.Post
+	updated   []*model.Post
+	updateErr error
 }
 
 func (c *fakeRecoveryClient) GetPost(id string) (*model.Post, error) {
@@ -232,6 +244,9 @@ func (c *fakeRecoveryClient) GetPost(id string) (*model.Post, error) {
 }
 
 func (c *fakeRecoveryClient) UpdatePost(post *model.Post) error {
+	if c.updateErr != nil {
+		return c.updateErr
+	}
 	c.updated = append(c.updated, post.Clone())
 	c.posts[post.Id] = post.Clone()
 	return nil
@@ -282,9 +297,56 @@ func TestRecoverAbandonedStreams(t *testing.T) {
 		})
 	}
 
+	t.Run("failed post update releases the claim for a later retry", func(t *testing.T) {
+		rs := &fakeRecoveryStore{
+			stale:   []store.Turn{{ID: "turn-1", PostID: strp("post-1"), Role: "assistant", Content: textContent("Hello")}},
+			claimed: map[string]bool{},
+		}
+		client := &fakeRecoveryClient{posts: map[string]*model.Post{"post-1": {Id: "post-1"}}, updateErr: errors.New("api down")}
+
+		recovered, err := RecoverAbandonedStreams(context.Background(), rs, client, 10)
+		require.NoError(t, err)
+		require.Empty(t, recovered)
+		require.False(t, rs.claimed["turn-1"], "the turn must stay retryable")
+	})
+
+	t.Run("drains more stale turns than one batch", func(t *testing.T) {
+		rs := &fakeRecoveryStore{claimed: map[string]bool{}}
+		client := &fakeRecoveryClient{posts: map[string]*model.Post{}}
+		for i := range 5 {
+			id := fmt.Sprintf("post-%d", i)
+			rs.stale = append(rs.stale, store.Turn{ID: fmt.Sprintf("turn-%d", i), PostID: strp(id), Role: "assistant", Content: textContent("x")})
+			client.posts[id] = &model.Post{Id: id}
+		}
+
+		recovered, err := RecoverAbandonedStreams(context.Background(), rs, client, 2)
+		require.NoError(t, err)
+		require.Len(t, recovered, 5)
+	})
+
 	t.Run("list error is returned", func(t *testing.T) {
 		rs := &fakeRecoveryStore{listErr: errors.New("db down"), claimed: map[string]bool{}}
 		_, err := RecoverAbandonedStreams(context.Background(), rs, &fakeRecoveryClient{posts: map[string]*model.Post{}}, 10)
 		require.Error(t, err)
 	})
+}
+
+// A stream that ignores cancellation past the stop timeout must keep the post
+// reserved; otherwise its late FinishStreaming would cancel the next stream.
+func TestStopStreamingTimeoutKeepsPostReserved(t *testing.T) {
+	service, _, _ := newRecoveryTestService(t)
+	postID := newStreamPost().Id
+
+	_, err := service.GetStreamingContext(context.Background(), postID)
+	require.NoError(t, err)
+
+	service.StopStreaming(postID) // nothing finishes the stream, so this times out
+
+	_, err = service.GetStreamingContext(context.Background(), postID)
+	require.ErrorIs(t, err, ErrAlreadyStreamingToPost)
+
+	service.FinishStreaming(postID) // the stuck stream eventually exits
+	nextCtx, err := service.GetStreamingContext(context.Background(), postID)
+	require.NoError(t, err)
+	require.NoError(t, nextCtx.Err())
 }

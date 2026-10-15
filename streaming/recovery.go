@@ -19,6 +19,7 @@ import (
 type RecoveryStore interface {
 	GetStaleStreamingTurns(staleAfterMillis int64, limit uint64) ([]store.Turn, error)
 	ClaimStaleStreamingTurn(id string, staleAfterMillis int64) (bool, error)
+	ReleaseStreamingTurnClaim(id string) error
 }
 
 // RecoveryClient is the Mattermost API subset used by the sweep.
@@ -50,44 +51,69 @@ func RecoverAbandonedStreams(ctx context.Context, rs RecoveryStore, client Recov
 	defer span.End()
 
 	staleMillis := StaleStreamThreshold.Milliseconds()
-	turns, err := rs.GetStaleStreamingTurns(staleMillis, limit)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "list stale streaming turns")
-		return nil, fmt.Errorf("failed to list stale streaming turns: %w", err)
-	}
-
 	var recovered []RecoveredStream
-	for _, turn := range turns {
-		claimed, claimErr := rs.ClaimStaleStreamingTurn(turn.ID, staleMillis)
-		if claimErr != nil {
-			client.LogWarn("Failed to claim abandoned streaming turn", "error", claimErr, "turn_id", turn.ID)
-			continue
-		}
-		if !claimed || turn.PostID == nil || *turn.PostID == "" {
-			continue
+	// Drain the backlog in batches. Stop when a batch is short, or when a
+	// full batch repaired nothing (released claims would be listed again).
+	for {
+		turns, err := rs.GetStaleStreamingTurns(staleMillis, limit)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "list stale streaming turns")
+			return recovered, fmt.Errorf("failed to list stale streaming turns: %w", err)
 		}
 
-		post, getErr := client.GetPost(*turn.PostID)
-		if getErr != nil {
-			client.LogWarn("Failed to load post for abandoned stream", "error", getErr, "post_id", *turn.PostID)
-			continue
+		repairedInBatch := 0
+		for _, turn := range turns {
+			if r, ok := recoverTurn(rs, client, turn, staleMillis); ok {
+				recovered = append(recovered, r)
+				repairedInBatch++
+			}
 		}
-		if partial := partialTextFromTurn(turn); len(partial) > len(post.Message) {
-			post.Message = partial
+		if uint64(len(turns)) < limit || repairedInBatch == 0 {
+			break
 		}
-		MarkInterrupted(post, InterruptedReasonLost, model.GetMillis())
-		if updErr := client.UpdatePost(post); updErr != nil {
-			client.LogWarn("Failed to mark abandoned stream post interrupted", "error", updErr, "post_id", post.Id)
-			continue
-		}
-		recovered = append(recovered, RecoveredStream{PostID: post.Id, ChannelID: post.ChannelId, TurnID: turn.ID})
 	}
 
 	if len(recovered) > 0 {
 		client.LogInfo("Marked abandoned LLM streams as interrupted", "count", len(recovered))
 	}
 	return recovered, nil
+}
+
+// recoverTurn claims one stale turn and marks its post interrupted. When the
+// post cannot be updated the claim is released so a later sweep retries it.
+func recoverTurn(rs RecoveryStore, client RecoveryClient, turn store.Turn, staleMillis int64) (RecoveredStream, bool) {
+	claimed, claimErr := rs.ClaimStaleStreamingTurn(turn.ID, staleMillis)
+	if claimErr != nil {
+		client.LogWarn("Failed to claim abandoned streaming turn", "error", claimErr, "turn_id", turn.ID)
+		return RecoveredStream{}, false
+	}
+	if !claimed || turn.PostID == nil || *turn.PostID == "" {
+		return RecoveredStream{}, false
+	}
+
+	release := func() {
+		if relErr := rs.ReleaseStreamingTurnClaim(turn.ID); relErr != nil {
+			client.LogWarn("Failed to release abandoned streaming turn claim", "error", relErr, "turn_id", turn.ID)
+		}
+	}
+
+	post, getErr := client.GetPost(*turn.PostID)
+	if getErr != nil {
+		client.LogWarn("Failed to load post for abandoned stream", "error", getErr, "post_id", *turn.PostID)
+		release()
+		return RecoveredStream{}, false
+	}
+	if partial := partialTextFromTurn(turn); len(partial) > len(post.Message) {
+		post.Message = partial
+	}
+	MarkInterrupted(post, InterruptedReasonLost, model.GetMillis())
+	if updErr := client.UpdatePost(post); updErr != nil {
+		client.LogWarn("Failed to mark abandoned stream post interrupted", "error", updErr, "post_id", post.Id)
+		release()
+		return RecoveredStream{}, false
+	}
+	return RecoveredStream{PostID: post.Id, ChannelID: post.ChannelId, TurnID: turn.ID}, true
 }
 
 // partialTextFromTurn concatenates the text blocks of a turn's content.

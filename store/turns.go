@@ -302,3 +302,13 @@ WHERE ID = $1
 	}
 	return n == 1, nil
 }
+
+// ReleaseStreamingTurnClaim returns a claimed turn to the streaming state
+// without refreshing its heartbeat, so a later sweep can retry the repair.
+func (s *Store) ReleaseStreamingTurnClaim(id string) error {
+	query := `UPDATE LLM_Turns SET Status = $2 WHERE ID = $1 AND Status = $3`
+	if _, err := s.db.Exec(query, id, TurnStatusStreaming, TurnStatusInterrupted); err != nil {
+		return fmt.Errorf("failed to release streaming turn claim: %w", err)
+	}
+	return nil
+}

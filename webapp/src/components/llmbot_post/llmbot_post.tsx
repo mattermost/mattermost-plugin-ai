@@ -708,7 +708,9 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
     // Staleness: the component believes a generation is running but no stream
     // event has arrived for a while. Every event (and the end of the
     // generation) restarts or cancels the timer.
-    const believesGenerating = !interrupted && (isGenerationInProgress || (precontent && message === ''));
+    // An empty message with persisted rounds is a tool-only post (finished, or
+    // waiting on the requester's approval), not a stalled generation.
+    const believesGenerating = !interrupted && (isGenerationInProgress || (precontent && message === '' && renderedRounds.length === 0));
     const awaitingUserDecision = awaitingDecision;
     useEffect(() => {
         setStreamStale(false);

@@ -327,7 +327,10 @@ func (p *MMPostStreamService) StopStreaming(postID string) {
 	select {
 	case <-sc.done:
 	case <-time.After(stopWaitTimeout):
-		p.FinishStreaming(postID)
+		// Keep the registration: the old goroutine's deferred FinishStreaming
+		// would otherwise cancel whichever stream registers next for this
+		// post. A new stream gets ErrAlreadyStreamingToPost until it exits.
+		p.mmClient.LogWarn("Stopped stream did not finish in time; post stays reserved", "post_id", postID)
 	}
 }
 
