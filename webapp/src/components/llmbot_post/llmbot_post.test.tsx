@@ -1629,6 +1629,44 @@ describe('LLMBotPost interrupted and stale generation notices', () => {
         expect(screen.getAllByText('Final text')).toHaveLength(1);
     });
 
+    test('a stopped regenerate keeps its live text instead of the prior generation', () => {
+        const conv = (text: string) => ({
+            conversation: makeConversation([
+                makeTurn({id: 'turn_1', post_id: 'post_1', sequence: 2, status: 'complete', content: [{type: 'text', text}]}),
+            ], 'user_1'),
+            loading: false,
+            error: null,
+        });
+        let listener: PostUpdateHandler | undefined;
+        const ui = () => (
+            <IntlProvider locale='en'>
+                <LLMBotPost
+                    post={makePost('Old answer')}
+                    websocketRegister={(postID: string, listenerID: string, handler: PostUpdateHandler) => {
+                        listener = handler;
+                    }}
+                    websocketUnregister={jest.fn()}
+                />
+            </IntlProvider>
+        );
+        mockUseConversation.mockReturnValue(conv('Old answer'));
+        const {rerender} = render(ui());
+
+        fireEvent.click(screen.getByText('Regenerate'));
+        act(() => {
+            listener?.(postUpdateMessage({post_id: 'post_1', control: 'start'}));
+            listener?.(postUpdateMessage({post_id: 'post_1', next: 'New answer'}));
+            listener?.(postUpdateMessage({post_id: 'post_1', control: 'cancel'}));
+        });
+        expect(screen.getByText('New answer')).toBeTruthy();
+        expect(screen.queryByText('Old answer')).toBeNull();
+
+        // No end event; a later refetch lands with the new finalized turn.
+        mockUseConversation.mockReturnValue(conv('New answer'));
+        rerender(ui());
+        expect(screen.getAllByText('New answer')).toHaveLength(1);
+    });
+
     test('does not show the stale notice for a completed post', () => {
         jest.useFakeTimers();
         renderPost(makePost('Done'));

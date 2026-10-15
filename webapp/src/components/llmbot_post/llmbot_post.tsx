@@ -483,8 +483,9 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
                 setStopped(false);
                 setIsReasoningLoading(false);
                 setAwaitingEnd(true);
-                regeneratingRef.current = false;
-                setRegenerating(false);
+
+                // A stopped regenerate keeps hiding the prior generation until
+                // the end refetch clears regenerating.
                 return;
             }
 
