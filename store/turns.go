@@ -232,7 +232,9 @@ func (s *Store) HeartbeatStreamingTurn(id string, content json.RawMessage) error
 // a turn created in the streaming state. If other turns (e.g. tool rounds
 // persisted by the tool runner) were appended to the conversation after the
 // turn reserved its sequence at stream start, the turn is moved to the end so
-// it stays the last turn of its run.
+// it stays the last turn of its run. It is a no-op once a recovery sweep has
+// claimed the turn, so a stalled stream that resumes cannot overwrite the
+// sweep's interrupted verdict.
 func (s *Store) FinalizeStreamingTurn(id string, content json.RawMessage, tokensIn, tokensOut int64, status string) error {
 	const query = `
 UPDATE LLM_Turns AS t
@@ -246,11 +248,12 @@ SET Content = $2,
         THEN (SELECT MAX(o.Sequence) FROM LLM_Turns o WHERE o.ConversationID = t.ConversationID) + 1
         ELSE t.Sequence
     END
-WHERE t.ID = $1`
+WHERE t.ID = $1
+  AND t.Status = $6`
 
 	var lastErr error
 	for range maxAutoSequenceRetries {
-		_, lastErr = s.db.Exec(query, id, string(content), tokensIn, tokensOut, status)
+		_, lastErr = s.db.Exec(query, id, string(content), tokensIn, tokensOut, status, TurnStatusStreaming)
 		if lastErr == nil {
 			return nil
 		}

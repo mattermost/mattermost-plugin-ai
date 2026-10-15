@@ -162,6 +162,13 @@ func TestHeartbeatStreamingTurn(t *testing.T) {
 	final := getTurn(t, s, turn.ID)
 	assert.Equal(t, TurnStatusInterrupted, final.Status)
 	assert.JSONEq(t, string(content), string(final.Content))
+
+	// Nor does a late finalize: the turn must not become complete (and its
+	// tool calls approvable) after the sweep reported it lost.
+	require.NoError(t, s.FinalizeStreamingTurn(turn.ID, json.RawMessage(`[{"type":"text","text":"late"}]`), 1, 1, TurnStatusComplete))
+	final = getTurn(t, s, turn.ID)
+	assert.Equal(t, TurnStatusInterrupted, final.Status)
+	assert.JSONEq(t, string(content), string(final.Content))
 }
 
 func TestFinalizeStreamingTurn(t *testing.T) {
