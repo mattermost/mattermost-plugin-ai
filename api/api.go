@@ -14,6 +14,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/accesscontrol"
 	"github.com/mattermost/mattermost-plugin-agents/v2/autoreply"
@@ -39,6 +41,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/search"
 	"github.com/mattermost/mattermost-plugin-agents/v2/store"
 	"github.com/mattermost/mattermost-plugin-agents/v2/streaming"
+	"github.com/mattermost/mattermost-plugin-agents/v2/telemetry"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
@@ -293,7 +296,7 @@ func (a *API) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Reques
 	}
 
 	router := gin.Default()
-	router.Use(otelgin.Middleware("mattermost-ai-agents"))
+	router.Use(httpTracingMiddleware())
 	router.Use(a.ginlogger)
 	router.Use(a.metricsMiddleware)
 	router.Use(a.auditMiddleware(c))
@@ -525,9 +528,49 @@ func (a *API) MattermostAuthorizationRequired(c *gin.Context) {
 func (a *API) interPluginAuthorizationRequired(c *gin.Context) {
 	pluginID := c.GetHeader("Mattermost-Plugin-ID")
 	if pluginID != "" {
+		// Identify the caller on the bridge request's span. The header is
+		// set by the server for inter-plugin requests, never by clients.
+		attrs := []attribute.KeyValue{telemetry.BridgePluginID.String(pluginID)}
+		if agent := c.Param("agent"); agent != "" {
+			attrs = append(attrs, telemetry.AgentID.String(agent))
+		}
+		if service := c.Param("service"); service != "" {
+			attrs = append(attrs, telemetry.ServiceID.String(service))
+		}
+		trace.SpanFromContext(c.Request.Context()).SetAttributes(attrs...)
 		return
 	}
 	c.AbortWithStatus(http.StatusUnauthorized)
+}
+
+// mcpServerStreamPath is the MCP Streamable HTTP endpoint. A GET on it holds
+// a server-to-client event stream open for as long as the client stays
+// connected.
+const mcpServerStreamPath = "/mcp-server/mcp"
+
+// httpTracingMiddleware starts an HTTP span per traced request.
+func httpTracingMiddleware() gin.HandlerFunc {
+	return otelgin.Middleware("mattermost-ai-agents",
+		otelgin.WithGinFilter(traceHTTPRequest),
+		otelgin.WithSpanNameFormatter(httpSpanName),
+	)
+}
+
+// traceHTTPRequest decides which requests get an HTTP span. Requests that
+// match no route are 404 noise, and the MCP stream GET would produce a span
+// lasting the whole connection; the MCP POSTs that carry tool calls are kept.
+func traceHTTPRequest(c *gin.Context) bool {
+	route := c.FullPath()
+	if route == "" {
+		return false
+	}
+	return route != mcpServerStreamPath || c.Request.Method != http.MethodGet
+}
+
+// httpSpanName names an HTTP span by method and route template, so requests
+// to the same handler group together without embedding IDs.
+func httpSpanName(c *gin.Context) string {
+	return c.Request.Method + " " + c.FullPath()
 }
 
 // enforceEmptyBody checks if the request body is empty returning an error if not

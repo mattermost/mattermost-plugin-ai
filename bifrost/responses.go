@@ -647,19 +647,8 @@ func (b *LLM) streamResponses(ctx context.Context, request llm.CompletionRequest
 					}
 				}
 
-				// Response completed - emit tool calls if any, in sorted key order
-				if len(toolCallsBuffer) > 0 {
-					toolCalls = flushToolCallBuffers(toolCallsBuffer, true)
-					if len(toolCalls) > 0 {
-						output <- llm.TextStreamEvent{
-							Type:  llm.EventTypeToolCalls,
-							Value: toolCalls,
-						}
-						return
-					}
-				}
-
-				// Handle usage data from completed response
+				// Usage comes before the tool calls: a round that ends in
+				// tool calls returns below, and it must still be counted.
 				if resp.Response != nil && resp.Response.Usage != nil {
 					usage := convertResponsesUsage(resp.Response.Usage)
 					if usage.InputTokens > 0 || usage.OutputTokens > 0 {
@@ -670,6 +659,21 @@ func (b *LLM) streamResponses(ctx context.Context, request llm.CompletionRequest
 							Value: usage,
 						}
 					}
+				}
+
+				// Response completed - emit tool calls if any, in sorted key order
+				if len(toolCallsBuffer) > 0 {
+					toolCalls = flushToolCallBuffers(toolCallsBuffer, true)
+				}
+				if reason := responsesFinishReason(resp.Response, len(toolCalls) > 0); reason != "" {
+					span.SetAttributes(telemetry.LLMFinishReason.String(reason))
+				}
+				if len(toolCalls) > 0 {
+					output <- llm.TextStreamEvent{
+						Type:  llm.EventTypeToolCalls,
+						Value: toolCalls,
+					}
+					return
 				}
 			}
 		}
@@ -691,4 +695,23 @@ func (b *LLM) streamResponses(ctx context.Context, request llm.CompletionRequest
 		Type:  llm.EventTypeEnd,
 		Value: nil,
 	}
+}
+
+// responsesFinishReason reports why a Responses API turn ended: the
+// provider's stop reason when it sends one, else the incomplete reason,
+// else "tool_calls" or the response status.
+func responsesFinishReason(resp *schemas.BifrostResponsesResponse, hasToolCalls bool) string {
+	if resp != nil && resp.StopReason != nil && *resp.StopReason != "" {
+		return *resp.StopReason
+	}
+	if resp != nil && resp.IncompleteDetails != nil && resp.IncompleteDetails.Reason != "" {
+		return resp.IncompleteDetails.Reason
+	}
+	if hasToolCalls {
+		return "tool_calls"
+	}
+	if resp != nil && resp.Status != nil {
+		return *resp.Status
+	}
+	return ""
 }
