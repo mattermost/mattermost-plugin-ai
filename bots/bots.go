@@ -601,6 +601,7 @@ var errBotAccountSync = errors.New("bot account sync failed")
 // the bot's service as configured. bot must not be in the registry yet.
 func (b *MMBots) syncBot(bot *Bot, existing *model.Bot, configuredService llm.ServiceConfig) error {
 	description := poweredByDescription(bot.service.Type, bot.service.DefaultModel)
+	var user *model.User
 	if existing != nil {
 		patch := &model.BotPatch{
 			DisplayName: &bot.cfg.DisplayName,
@@ -616,8 +617,10 @@ func (b *MMBots) syncBot(bot *Bot, existing *model.Bot, configuredService llm.Se
 			return fmt.Errorf("%w: %s: %w", errBotAccountSync, bot.cfg.Name, patchErr)
 		}
 		// The server rewrites the user and broadcasts user_updated on every
-		// call, even when the bot is already active.
-		if existing.DeleteAt != 0 {
+		// call, even when the bot is already active. The user API deactivates
+		// only the user, leaving the bot's DeleteAt at zero.
+		user = b.getBotUser(bot)
+		if existing.DeleteAt != 0 || user == nil || user.DeleteAt != 0 {
 			if _, activeErr := b.pluginAPI.Bot.UpdateActive(existing.UserId, true); activeErr != nil {
 				b.pluginAPI.Log.Error("Failed to update bot active", "bot_name", bot.cfg.Name, "error", activeErr.Error())
 				return fmt.Errorf("%w: %s: %w", errBotAccountSync, bot.cfg.Name, activeErr)
@@ -635,7 +638,10 @@ func (b *MMBots) syncBot(bot *Bot, existing *model.Bot, configuredService llm.Se
 		}
 	}
 
-	b.ensureDefaultProfileImage(bot)
+	if user == nil {
+		user = b.getBotUser(bot)
+	}
+	b.ensureDefaultProfileImage(bot, user)
 
 	// Fallback chains are available at Enterprise Advanced.
 	var fallbackServices []llm.ServiceConfig
@@ -743,14 +749,19 @@ func (b *MMBots) replaceAgentBot(agentID string, bot *Bot) {
 	b.forceRefresh = true
 }
 
-func (b *MMBots) ensureDefaultProfileImage(bot *Bot) {
+// getBotUser returns bot's user account, or nil after logging when it cannot
+// be read.
+func (b *MMBots) getBotUser(bot *Bot) *model.User {
 	user, err := b.pluginAPI.User.Get(bot.mmBot.UserId)
 	if err != nil {
-		b.pluginAPI.Log.Error("Failed to get bot user for profile image check", "bot_name", bot.cfg.Name, "error", err.Error())
-		return
+		b.pluginAPI.Log.Error("Failed to get bot user", "bot_name", bot.cfg.Name, "error", err.Error())
+		return nil
 	}
+	return user
+}
 
-	if user.LastPictureUpdate != 0 {
+func (b *MMBots) ensureDefaultProfileImage(bot *Bot, user *model.User) {
+	if user == nil || user.LastPictureUpdate != 0 {
 		return
 	}
 

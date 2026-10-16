@@ -1025,11 +1025,13 @@ func TestEnsureBotsReusesExistingBotAccounts(t *testing.T) {
 func TestEnsureBotsReactivatesOnlyDeactivatedAccounts(t *testing.T) {
 	tests := []struct {
 		name             string
-		deleteAt         int64
+		botDeleteAt      int64
+		userDeleteAt     int64
 		expectReactivate bool
 	}{
-		{name: "active account is left alone", deleteAt: 0, expectReactivate: false},
-		{name: "deactivated account is reactivated", deleteAt: 1234, expectReactivate: true},
+		{name: "active account is left alone", expectReactivate: false},
+		{name: "deactivated bot is reactivated", botDeleteAt: 1234, userDeleteAt: 1234, expectReactivate: true},
+		{name: "user deactivated through the user API is reactivated", userDeleteAt: 1234, expectReactivate: true},
 	}
 
 	for _, tc := range tests {
@@ -1039,9 +1041,9 @@ func TestEnsureBotsReactivatesOnlyDeactivatedAccounts(t *testing.T) {
 			enterprisetest.StubLicense(mockAPI, enterprise.LevelEnterprise)
 			allowBotsLogging(mockAPI)
 			mockAPI.On("GetBots", mock.AnythingOfType("*model.BotGetOptions")).Return([]*model.Bot{
-				{UserId: "mm-1", Username: "bot1", DeleteAt: tc.deleteAt},
+				{UserId: "mm-1", Username: "bot1", DeleteAt: tc.botDeleteAt},
 			}, nil)
-			mockAPI.On("GetUser", mock.AnythingOfType("string")).Return(&model.User{LastPictureUpdate: 1}, nil).Maybe()
+			mockAPI.On("GetUser", "mm-1").Return(&model.User{Id: "mm-1", LastPictureUpdate: 1, DeleteAt: tc.userDeleteAt}, nil).Once()
 			mockAPI.On("PatchBot", "mm-1", mock.AnythingOfType("*model.BotPatch")).Return(&model.Bot{UserId: "mm-1", Username: "bot1"}, nil)
 			mockAPI.On("UpdateBotActive", "mm-1", true).Return(&model.Bot{UserId: "mm-1"}, nil).Maybe()
 			mockAPI.On("KVSetWithOptions", mock.AnythingOfType("string"), mock.AnythingOfType("[]uint8"), mock.AnythingOfType("model.PluginKVSetOptions")).Return(true, nil).Maybe()
