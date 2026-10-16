@@ -157,7 +157,6 @@ func TestToolRunnerDropsRoundCanceledDuringTool(t *testing.T) {
 	}, alwaysExecute, func(turns []ToolTurn) { persisted = append(persisted, turns...) })
 	require.NoError(t, err)
 
-	for range run.Stream.Stream { // read until the loop exits
-	}
+	_, _ = run.Stream.ReadAll() // read until the loop exits
 	require.Empty(t, persisted, "a canceled round must not be persisted")
 }
