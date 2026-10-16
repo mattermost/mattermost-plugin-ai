@@ -401,12 +401,21 @@ func (a *API) renameAgentConfigReferences(oldName, newName string) (updated, def
 }
 
 // refreshBotsAndNotify applies a change to agentID on this node, notifies the cluster, and broadcasts so clients
-// refresh bot lists. The agent is refreshed on its own, here and on peers, and every bot is reloaded only when that
-// refresh reports it cannot finish applying the change. It reports whether the bot registry applied the change,
-// which is false when a.bots is nil; cluster and websocket steps always run regardless.
-func (a *API) refreshBotsAndNotify(agentID string) (applied bool) {
+// refresh bot lists. The agent is refreshed on its own before every bot is reloaded, here and on peers, because the
+// full reload keeps the whole previous registry when any agent fails to build.
+// It returns the error from EnsureBots when a.bots is non-nil, or nil when a.bots is nil; cluster and websocket
+// steps always run regardless.
+func (a *API) refreshBotsAndNotify(agentID string) error {
+	var ensureErr error
 	if a.bots != nil {
-		applied = a.refreshBots(agentID)
+		if err := a.bots.RefreshAgent(agentID); err != nil {
+			a.pluginAPI.Log.Error("Failed to refresh changed agent", "agent_id", agentID, "error", err.Error())
+		}
+		a.bots.ForceRefreshOnNextEnsure()
+		ensureErr = a.bots.EnsureBots()
+		if ensureErr != nil {
+			a.pluginAPI.Log.Error("Failed to refresh bots after agent change", "error", ensureErr.Error())
+		}
 	}
 	if a.clusterAgentNotifier != nil {
 		if err := a.clusterAgentNotifier.PublishAgentUpdate(agentID); err != nil {
@@ -417,23 +426,7 @@ func (a *API) refreshBotsAndNotify(agentID string) (applied bool) {
 		// PublishWebSocketEvent requires a non-nil broadcast (server dereferences it).
 		a.mmClient.PublishWebSocketEvent(WebsocketEventBotsInvalidate, map[string]any{}, &model.WebsocketBroadcast{})
 	}
-	return applied
-}
-
-func (a *API) refreshBots(agentID string) bool {
-	fullRefreshNeeded, err := a.bots.RefreshAgent(agentID)
-	if err != nil {
-		a.pluginAPI.Log.Error("Failed to refresh changed agent", "agent_id", agentID, "error", err.Error())
-	}
-	if !fullRefreshNeeded {
-		return true
-	}
-	a.bots.ForceRefreshOnNextEnsure()
-	if err := a.bots.EnsureBots(); err != nil {
-		a.pluginAPI.Log.Error("Failed to refresh bots after agent change", "error", err.Error())
-		return false
-	}
-	return true
+	return ensureErr
 }
 
 // handleCreateAgent handles POST /agents: creates the bot user and persisted agent config.
@@ -800,9 +793,10 @@ func (a *API) handleUpdateAgent(c *gin.Context) {
 		audit.AddParam(auditRec(c), "default_agent_renamed", true)
 	}
 
-	// The bot registry patches the display name when it applies the change; when it did not (no bot registry, or
-	// the refresh failed), sync explicitly.
-	if !a.refreshBotsAndNotify(cfg.ID) && displayNameChanged {
+	ensureErr := a.refreshBotsAndNotify(cfg.ID)
+
+	// EnsureBots patches display name on success; when it did not run (no bot registry) or failed, sync explicitly.
+	if displayNameChanged && (ensureErr != nil || a.bots == nil) {
 		if _, err := a.pluginAPI.Bot.Patch(cfg.BotUserID, &model.BotPatch{
 			DisplayName: &cfg.DisplayName,
 		}); err != nil {
@@ -845,9 +839,10 @@ func (a *API) handleDeleteAgent(c *gin.Context) {
 		a.pluginAPI.Log.Error("Failed to delete access policy for deleted agent", "agent_id", cfg.ID, "error", err.Error())
 	}
 
-	// A deleted agent always takes a full EnsureBots, which deactivates its bot account; when that did not run or
-	// failed, deactivate explicitly.
-	if !a.refreshBotsAndNotify(cfg.ID) {
+	ensureErr := a.refreshBotsAndNotify(cfg.ID)
+
+	// EnsureBots deactivates removed bots on success; when it did not run or failed, deactivate explicitly.
+	if ensureErr != nil || a.bots == nil {
 		if _, err := a.pluginAPI.Bot.UpdateActive(cfg.BotUserID, false); err != nil {
 			_ = c.Error(fmt.Errorf("failed to deactivate bot: %w", err))
 		}

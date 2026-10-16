@@ -104,10 +104,6 @@ type MMBots struct {
 	// forceRefresh bypasses the optimistic config-equality check in EnsureBots.
 	// Set to true by the cluster event handler or API handlers after agent CRUD.
 	forceRefresh bool
-	// lastEnsureFailed records that the last EnsureBots returned an error, so
-	// the registry may still hold bots it should have rebuilt. RefreshAgent
-	// reports a full refresh as needed while it is set.
-	lastEnsureFailed bool
 }
 
 // SetBaseLLMBuilderForTest installs a test-only provider client builder. The
@@ -440,7 +436,7 @@ func (b *MMBots) snapshotForEnsure() (botCfgs []llm.BotConfig, activeDBBots dbAg
 	return botCfgs, activeDBBots, serviceCfgs, unchanged, nil
 }
 
-func (b *MMBots) EnsureBots() (err error) {
+func (b *MMBots) EnsureBots() error {
 	if b.config == nil {
 		return nil
 	}
@@ -450,7 +446,6 @@ func (b *MMBots) EnsureBots() (err error) {
 	// when multiple nodes all try to acquire the mutex simultaneously on config changes.
 	_, _, _, unchanged, err := b.snapshotForEnsure()
 	if err != nil {
-		b.setLastEnsureFailed(true)
 		return err
 	}
 	if unchanged {
@@ -460,16 +455,12 @@ func (b *MMBots) EnsureBots() (err error) {
 
 	mtx, err := cluster.NewMutex(b.ensureBotsClusterMutex, "ai_ensure_bots")
 	if err != nil {
-		b.setLastEnsureFailed(true)
 		return fmt.Errorf("failed to create mutex: %w", err)
 	}
 	mtx.Lock()
 	defer mtx.Unlock()
 	b.ensureMu.Lock()
 	defer b.ensureMu.Unlock()
-	// Recorded before ensureMu is released, so a RefreshAgent that runs next
-	// sees this rebuild's outcome.
-	defer func() { b.setLastEnsureFailed(err != nil) }()
 
 	// Re-check after acquiring lock - another node may have already handled this
 	currentBotCfgs, activeDBBots, currentServiceCfgs, unchanged, err := b.snapshotForEnsure()
@@ -658,65 +649,35 @@ func (b *MMBots) syncBot(bot *Bot, existing *model.Bot, configuredService llm.Se
 }
 
 // RefreshAgent rebuilds the registry entry of one DB-backed agent from the
-// store and swaps in just that entry, so the change is served without waiting
-// for a full rebuild. When the agent cannot be rebuilt, or is no longer
-// active, its entry is removed instead. Name-based lookups do not depend on it
-// having run: they check the live account. It never creates bot accounts
-// (EnsureBots does, under the cluster mutex), and it leaves every other bot
-// untouched.
-//
-// fullRefreshNeeded reports that only a full EnsureBots can finish applying
-// the change: the agent was removed (its bot account may need deactivating,
-// or a failed rebuild retrying), the registry no longer holds exactly the
-// active lineup, for instance because the change moved another agent across
-// the license agent limit, or the last full EnsureBots failed and left other
-// bots stale.
-func (b *MMBots) RefreshAgent(agentID string) (fullRefreshNeeded bool, err error) {
+// store and swaps in just that entry, so a renamed agent is listed under its
+// new name and account without waiting for a full rebuild. When the agent
+// cannot be rebuilt, or is no longer active, its entry is removed instead.
+// Name-based lookups do not depend on it having run: they check the live
+// account. It never creates bot accounts (EnsureBots does, under the cluster
+// mutex), and it leaves the next EnsureBots to reconcile every other bot.
+func (b *MMBots) RefreshAgent(agentID string) error {
 	if agentID == "" {
-		return true, errors.New("refresh agent: empty agent ID")
+		return errors.New("refresh agent: empty agent ID")
 	}
 
 	b.ensureMu.Lock()
 	defer b.ensureMu.Unlock()
 
-	bot, lineup, err := b.rebuildAgentBot(agentID)
-	registry, lastEnsureFailed := b.replaceAgentBot(agentID, bot)
-	if err != nil || bot == nil {
-		return true, err
-	}
-	return lastEnsureFailed || !servesLineup(registry, lineup), nil
-}
-
-// servesLineup reports whether registry holds one bot for each config in
-// lineup, matched by config ID.
-func servesLineup(registry []*Bot, lineup []llm.BotConfig) bool {
-	if len(registry) != len(lineup) {
-		return false
-	}
-	pending := make(map[string]int, len(lineup))
-	for _, cfg := range lineup {
-		pending[cfg.ID]++
-	}
-	for _, bot := range registry {
-		if pending[bot.cfg.ID] == 0 {
-			return false
-		}
-		pending[bot.cfg.ID]--
-	}
-	return true
+	bot, err := b.rebuildAgentBot(agentID)
+	b.replaceAgentBot(agentID, bot)
+	return err
 }
 
 // rebuildAgentBot returns agentID's freshly synced bot, or nil when the agent
-// is not an active DB-backed agent, along with the active lineup it was
-// selected from.
-func (b *MMBots) rebuildAgentBot(agentID string) (*Bot, []llm.BotConfig, error) {
+// is not an active DB-backed agent.
+func (b *MMBots) rebuildAgentBot(agentID string) (*Bot, error) {
 	if b.config == nil {
-		return nil, nil, fmt.Errorf("refresh agent %s: bots are not configured", agentID)
+		return nil, fmt.Errorf("refresh agent %s: bots are not configured", agentID)
 	}
 
 	botCfgs, activeDBBots, _, err := b.snapshotBotsAndServices()
 	if err != nil {
-		return nil, nil, fmt.Errorf("refresh agent %s: %w", agentID, err)
+		return nil, fmt.Errorf("refresh agent %s: %w", agentID, err)
 	}
 	idx := slices.IndexFunc(botCfgs, func(cfg llm.BotConfig) bool {
 		if cfg.ID != agentID || cfg.BotUserID == "" {
@@ -726,37 +687,37 @@ func (b *MMBots) rebuildAgentBot(agentID string) (*Bot, []llm.BotConfig, error) 
 		return isDB
 	})
 	if idx < 0 {
-		return nil, botCfgs, nil
+		return nil, nil
 	}
 	botCfg := botCfgs[idx]
 
 	bot, configuredService, ok := b.newUnsyncedBot(botCfg)
 	if !ok {
-		return nil, botCfgs, fmt.Errorf("refresh agent %s: agent cannot be served with its current configuration", agentID)
+		return nil, fmt.Errorf("refresh agent %s: agent cannot be served with its current configuration", agentID)
 	}
 	if b.findBot(func(other *Bot) bool {
 		return other.cfg.ID != agentID && other.cfg.Name == botCfg.Name
 	}) != nil {
-		return nil, botCfgs, fmt.Errorf("refresh agent %s: duplicate bot name: %s", agentID, botCfg.Name)
+		return nil, fmt.Errorf("refresh agent %s: duplicate bot name: %s", agentID, botCfg.Name)
 	}
 
 	account, err := b.pluginAPI.Bot.Get(botCfg.BotUserID, true)
 	if err != nil {
-		return nil, botCfgs, fmt.Errorf("refresh agent %s: failed to get bot account: %w", agentID, err)
+		return nil, fmt.Errorf("refresh agent %s: failed to get bot account: %w", agentID, err)
 	}
 	if account.OwnerId != botOwnerID {
-		return nil, botCfgs, fmt.Errorf("refresh agent %s: bot account is not owned by this plugin", agentID)
+		return nil, fmt.Errorf("refresh agent %s: bot account is not owned by this plugin", agentID)
 	}
 
 	if err := b.syncBot(bot, account, configuredService); err != nil {
-		return nil, botCfgs, fmt.Errorf("refresh agent %s: %w", agentID, err)
+		return nil, fmt.Errorf("refresh agent %s: %w", agentID, err)
 	}
-	return bot, botCfgs, nil
+	return bot, nil
 }
 
-// replaceAgentBot swaps in, and returns, a new registry where agentID's entry
-// is bot, or is absent when bot is nil, along with lastEnsureFailed.
-func (b *MMBots) replaceAgentBot(agentID string, bot *Bot) ([]*Bot, bool) {
+// replaceAgentBot swaps in a new registry where agentID's entry is bot, or is
+// absent when bot is nil.
+func (b *MMBots) replaceAgentBot(agentID string, bot *Bot) {
 	b.botsLock.Lock()
 	defer b.botsLock.Unlock()
 
@@ -776,13 +737,6 @@ func (b *MMBots) replaceAgentBot(agentID string, bot *Bot) ([]*Bot, bool) {
 	}
 	b.bots = next
 	b.forceRefresh = true
-	return next, b.lastEnsureFailed
-}
-
-func (b *MMBots) setLastEnsureFailed(failed bool) {
-	b.botsLock.Lock()
-	defer b.botsLock.Unlock()
-	b.lastEnsureFailed = failed
 }
 
 func (b *MMBots) ensureDefaultProfileImage(bot *Bot) {
