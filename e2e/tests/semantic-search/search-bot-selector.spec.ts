@@ -64,8 +64,13 @@ test.describe('Bot Selector in Search', () => {
         const selector = await openAgentsSearch(page, aiPlugin);
         const target = (await selector.textContent())?.includes('Second Bot') ? 'Mock Bot' : 'Second Bot';
 
+        const selectorBox = await selector.boundingBox();
         await selector.click();
-        await page.getByTestId('dropdownmenu').getByRole('button', { name: target }).click();
+        const menu = page.getByTestId('dropdownmenu');
+        const menuBox = await menu.boundingBox();
+        expect(menuBox!.y).toBeGreaterThanOrEqual(selectorBox!.y + selectorBox!.height);
+
+        await menu.getByRole('button', { name: target }).click();
 
         await expect(page.getByRole('button', { name: target, exact: true })).toBeVisible();
         await expect(page.getByRole('radio', { name: /Agents/i })).toBeVisible();
