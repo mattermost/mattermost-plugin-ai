@@ -55,6 +55,15 @@ type ToolDecision = {
     [toolId: string]: boolean; // true = approved, false = rejected
 };
 
+// Only onlookers get redacted calls; ownership can still be loading for the
+// requester, so canApprove alone does not identify one. Judged per call: a
+// shared result elsewhere in the batch says nothing about this one. Live
+// calls carry an empty result even when redacted, so only a non-empty
+// result counts as a visible payload.
+function isRedactedCall(call: ToolCall): boolean {
+    return call.arguments == null && !call.result;
+}
+
 const ToolApprovalSet: React.FC<ToolApprovalSetProps> = (props) => {
     const {formatMessage} = useIntl();
 
@@ -80,12 +89,6 @@ const ToolApprovalSet: React.FC<ToolApprovalSetProps> = (props) => {
     const showArguments = props.toolCalls.some((call) => call.arguments != null);
     const showResults = props.toolCalls.some((call) => call.result != null);
 
-    // Only onlookers get redacted calls. Ownership can still be loading for
-    // the requester, so canApprove alone does not identify an onlooker.
-    // Live calls carry an empty result even when redacted, so only a
-    // non-empty result counts as a visible payload.
-    const isRedacted = !showArguments && !props.toolCalls.some((call) => Boolean(call.result));
-
     // Approval is per pending tool. Earlier auto-approved tools in the same
     // response should not suppress controls for later manual ones.
     const effectiveCanApprove = props.canApprove;
@@ -98,14 +101,14 @@ const ToolApprovalSet: React.FC<ToolApprovalSetProps> = (props) => {
     // Calls the requester still owes a decision on, flagged for onlookers
     // so a pending card reads as waiting rather than running.
     const awaitingRequesterIDSet = useMemo(() => {
-        if (props.canApprove || !isRedacted) {
+        if (props.canApprove) {
             return new Set<string>();
         }
         const awaiting = isInterruptedAutoRound ?
             props.toolCalls.filter((call) => call.status === ToolCallStatus.Pending) :
             selectDecisionToolCalls(props.toolCalls, props.approvalStage, true);
-        return new Set(awaiting.map((call) => call.id));
-    }, [props.toolCalls, props.approvalStage, props.canApprove, isRedacted, isInterruptedAutoRound]);
+        return new Set(awaiting.filter(isRedactedCall).map((call) => call.id));
+    }, [props.toolCalls, props.approvalStage, props.canApprove, isInterruptedAutoRound]);
 
     const decisionToolIDSet = useMemo(() => {
         return new Set(decisionToolCalls.map((call) => call.id));
@@ -265,7 +268,7 @@ const ToolApprovalSet: React.FC<ToolApprovalSetProps> = (props) => {
         // stage also expand so the output is visible during the share
         // decision. Otherwise collapse.
         // Redacted calls have nothing to expand into.
-        const defaultExpanded = !isRedacted && (isCallStage ?
+        const defaultExpanded = !isRedactedCall(tool) && (isCallStage ?
             tool.status === ToolCallStatus.Pending :
             isResultStage && (tool.status === ToolCallStatus.Success ||
                 tool.status === ToolCallStatus.Error));

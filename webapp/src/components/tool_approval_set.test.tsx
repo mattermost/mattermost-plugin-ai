@@ -137,6 +137,17 @@ describe('ToolApprovalSet', () => {
         expect(getToolCardProps('tool_done').awaitingRequester).toBe(false);
     });
 
+    test('flags a private result awaiting the share decision next to a shared auto-run result', () => {
+        renderComponent([
+            makeTool({id: 'tool_auto', status: ToolCallStatus.AutoApproved, result: 'shared output', decided: true}),
+            makeTool({id: 'tool_manual', status: ToolCallStatus.Success, result: ''}),
+        ], 'result', false);
+
+        expect(getToolCardProps('tool_manual').awaitingRequester).toBe(true);
+        expect(getToolCardProps('tool_manual').isCollapsed).toBe(true);
+        expect(getToolCardProps('tool_auto').awaitingRequester).toBe(false);
+    });
+
     test('flags an interrupted auto-run round as awaiting the requester for an onlooker', () => {
         renderComponent([makeTool({id: 'tool_auto_pending', status: ToolCallStatus.Pending, would_auto_execute: true})], 'call', false);
 
