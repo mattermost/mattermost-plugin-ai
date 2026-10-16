@@ -21,21 +21,15 @@ type ToolInfo struct {
 }
 
 // UnconnectedMCPServer describes an MCP server the requesting user could use
-// after connecting their own account to it. Name and ServerOrigin come from
-// admin configuration; the rest is best-effort, gathered from earlier
-// connections by any user or from the admin's tool configuration.
+// after connecting their own account to it. Every field comes from admin
+// configuration.
 type UnconnectedMCPServer struct {
 	// Name is the admin-configured server name, the identifier a connection
 	// request must use.
 	Name         string
 	ServerOrigin string
-
-	// Title and Description are how the server identified itself when it was
-	// last connected.
-	Title       string
-	Description string
-
-	Tools []ToolInfo
+	Description  string
+	Tools        []ToolInfo
 }
 
 // Context represents the per-turn data necessary to build the context of the LLM.

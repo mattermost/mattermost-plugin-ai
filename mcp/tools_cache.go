@@ -16,31 +16,8 @@ const (
 	cacheKeyPrefix = "mcp_tools_cache_v1_"
 	cacheTTL       = 8 * 24 * time.Hour // 8 days
 
-	serverProfileKeyPrefix = "mcp_server_profile_v1_"
-	// serverProfileRefreshAge bounds how long an unchanged profile goes
-	// without being rewritten, so active servers never reach cacheTTL.
-	serverProfileRefreshAge = 24 * time.Hour
-
 	listKeysPageSize = 1000
 )
-
-// ServerProfile is how a remote MCP server identified itself when a session
-// was initialized. It lets users who have not connected yet be told what the
-// server is for, so it holds only server-wide identity, never text that may be
-// written for the connected user (such as initialize instructions). Fields are
-// sanitized and length-capped before they are stored.
-type ServerProfile struct {
-	ServerURL   string    `json:"server_url"`
-	Name        string    `json:"name,omitempty"`
-	Title       string    `json:"title,omitempty"`
-	Description string    `json:"description,omitempty"`
-	Timestamp   time.Time `json:"timestamp"`
-}
-
-func (p ServerProfile) sameContent(other ServerProfile) bool {
-	p.Timestamp, other.Timestamp = time.Time{}, time.Time{}
-	return p == other
-}
 
 // CachedTools represents a cached set of tools for a specific MCP server
 type CachedTools struct {
@@ -83,24 +60,6 @@ func NewToolsCache(kvAPI KVStore, log Logger) *ToolsCache {
 
 // GetTools retrieves cached tools for a server, returns nil if missing
 func (tc *ToolsCache) GetTools(serverID string) map[string]*mcp.Tool {
-	cached := tc.getEntry(serverID)
-	if cached == nil {
-		return nil
-	}
-	return cached.Tools
-}
-
-// GetToolsForURL is GetTools restricted to an entry recorded for serverURL, so
-// a server renamed onto a different URL never reports the old URL's tools.
-func (tc *ToolsCache) GetToolsForURL(serverID, serverURL string) map[string]*mcp.Tool {
-	cached := tc.getEntry(serverID)
-	if cached == nil || cached.ServerURL != serverURL {
-		return nil
-	}
-	return cached.Tools
-}
-
-func (tc *ToolsCache) getEntry(serverID string) *CachedTools {
 	key := tc.buildCacheKey(serverID)
 
 	var cached CachedTools
@@ -118,40 +77,7 @@ func (tc *ToolsCache) getEntry(serverID string) *CachedTools {
 	}
 
 	tc.log.Debug("Cache hit for server", "serverID", serverID, "tools", len(cached.Tools))
-	return &cached
-}
-
-// GetServerProfile returns the stored profile for a server recorded at
-// serverURL, or nil when none is stored.
-func (tc *ToolsCache) GetServerProfile(serverID, serverURL string) *ServerProfile {
-	var profile ServerProfile
-	if err := tc.kvAPI.Get(serverProfileKeyPrefix+serverID, &profile); err != nil {
-		tc.log.Warn("Failed to retrieve MCP server profile from KV store", "serverID", serverID, "error", err)
-		return nil
-	}
-	if profile.Timestamp.IsZero() || profile.ServerURL != serverURL {
-		return nil
-	}
-	return &profile
-}
-
-// SetServerProfile stores profile for a server unless an identical profile was
-// stored recently.
-func (tc *ToolsCache) SetServerProfile(serverID string, profile ServerProfile, now time.Time) error {
-	if existing := tc.GetServerProfile(serverID, profile.ServerURL); existing != nil &&
-		existing.sameContent(profile) && now.Sub(existing.Timestamp) < serverProfileRefreshAge {
-		return nil
-	}
-
-	profile.Timestamp = now
-	success, err := tc.kvAPI.Set(serverProfileKeyPrefix+serverID, profile, pluginapi.SetExpiry(cacheTTL))
-	if err != nil {
-		return fmt.Errorf("failed to persist MCP server profile: %w", err)
-	}
-	if !success {
-		return fmt.Errorf("MCP server profile was not persisted for server %s", serverID)
-	}
-	return nil
+	return cached.Tools
 }
 
 // SetTools updates the cache for a server and persists to KV store
@@ -196,16 +122,7 @@ func (tc *ToolsCache) InvalidateServer(serverID string) error {
 	return nil
 }
 
-// InvalidateServerProfile removes a server's stored profile from KV store.
-func (tc *ToolsCache) InvalidateServerProfile(serverID string) error {
-	if err := tc.kvAPI.Delete(serverProfileKeyPrefix + serverID); err != nil {
-		return fmt.Errorf("failed to delete MCP server profile: %w", err)
-	}
-	return nil
-}
-
-// ClearAll removes all cached tools and server profiles from KV store. The
-// returned count covers cached tool lists only.
+// ClearAll removes all cached tools from KV store.
 func (tc *ToolsCache) ClearAll() (int, error) {
 	tc.log.Info("Clearing all MCP tools cache entries")
 
@@ -219,7 +136,7 @@ func (tc *ToolsCache) ClearAll() (int, error) {
 			return 0, fmt.Errorf("failed to list cache keys: %w", err)
 		}
 		for _, key := range pageKeys {
-			if strings.HasPrefix(key, cacheKeyPrefix) || strings.HasPrefix(key, serverProfileKeyPrefix) {
+			if strings.HasPrefix(key, cacheKeyPrefix) {
 				keys = append(keys, key)
 			}
 		}
@@ -230,14 +147,11 @@ func (tc *ToolsCache) ClearAll() (int, error) {
 
 	clearedCount := 0
 	for _, key := range keys {
-		isToolsEntry := strings.HasPrefix(key, cacheKeyPrefix)
 		if err := tc.kvAPI.Delete(key); err != nil {
 			tc.log.Warn("Failed to delete cache key", "key", key, "error", err)
 			continue
 		}
-		if isToolsEntry {
-			clearedCount++
-		}
+		clearedCount++
 	}
 
 	tc.log.Info("Cleared MCP tools cache", "clearedCount", clearedCount)

@@ -445,9 +445,6 @@ func (c *Client) connectAndDiscover(ctx context.Context, serverConfig ServerConf
 		}
 		return nil, err
 	}
-	// Recorded only once tools/list succeeded: some servers accept an
-	// unauthenticated initialize and only reject later requests.
-	c.recordServerProfile(session)
 
 	// Update the global cache with fetched tools.
 	if c.toolsCache != nil && sharedToolsCache {

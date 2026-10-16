@@ -7,20 +7,18 @@ import (
 	"cmp"
 	"slices"
 	"strings"
-	"time"
 	"unicode/utf8"
 
+	"github.com/mattermost/mattermost-plugin-agents/v2/config"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Server-supplied text is rendered into the system prompt for users who have
-// not connected yet, so every field is flattened to one line and capped.
+// Descriptions of unconnected servers are rendered into the system prompt, so
+// every field is flattened to one line and capped.
 const (
-	maxServerNameRunes        = 100
-	maxServerDescriptionRunes = 300
-	maxKnownToolDescRunes     = 200
-	maxKnownToolsPerServer    = 30
+	maxServerNameRunes     = 100
+	maxKnownToolDescRunes  = 200
+	maxKnownToolsPerServer = 30
 )
 
 // promptSafeText escapes invisible characters, collapses all whitespace
@@ -34,37 +32,9 @@ func promptSafeText(s string, maxRunes int) string {
 	return strings.TrimSpace(string(runes[:maxRunes-1])) + "…"
 }
 
-// recordServerProfile stores how the server identified itself during
-// initialize. initialize instructions are never stored: they can be written
-// for the connected identity and would reach every unconnected user.
-// Service-account handshakes never write the user-facing profile, and neither
-// do servers whose responses are treated as identity-specific (static OAuth
-// credentials, which also keep their tool catalogs out of the shared cache).
-func (c *Client) recordServerProfile(session *mcp.ClientSession) {
-	if c.toolsCache == nil || session == nil || c.serviceAccount || !sharedToolsCacheAllowedForServer(c.config) {
-		return
-	}
-	result := session.InitializeResult()
-	if result == nil {
-		return
-	}
-
-	profile := ServerProfile{ServerURL: c.config.BaseURL}
-	if info := result.ServerInfo; info != nil {
-		profile.Name = promptSafeText(info.Name, maxServerNameRunes)
-		profile.Title = promptSafeText(info.Title, maxServerNameRunes)
-		profile.Description = promptSafeText(info.Description, maxServerDescriptionRunes)
-	}
-
-	if err := c.toolsCache.SetServerProfile(c.config.Name, profile, time.Now()); err != nil {
-		c.log.Warn("Failed to store MCP server profile", "server", c.config.Name, "error", err)
-	}
-}
-
-// DescribeUnconnectedMCPServers returns what is known about each remote server
-// named in authErrors: the admin-configured name, what the server reported
-// about itself on an earlier connection (only where its responses are shared
-// across users), and the tools it is known to offer.
+// DescribeUnconnectedMCPServers returns what admins configured about each
+// remote server named in authErrors: its name, description, and tools. Nothing
+// a server reported to another user's connection is included.
 func (m *ClientManager) DescribeUnconnectedMCPServers(authErrors []llm.ToolAuthError) []llm.UnconnectedMCPServer {
 	if len(authErrors) == 0 {
 		return nil
@@ -87,7 +57,12 @@ func (m *ClientManager) DescribeUnconnectedMCPServers(authErrors []llm.ToolAuthE
 			})
 			continue
 		}
-		described = append(described, describeUnconnectedServer(server, m.toolsCache))
+		described = append(described, llm.UnconnectedMCPServer{
+			Name:         server.Name,
+			ServerOrigin: server.BaseURL,
+			Description:  promptSafeText(server.Description, config.MaxMCPServerDescriptionRunes),
+			Tools:        configuredServerTools(server),
+		})
 	}
 	return described
 }
@@ -115,60 +90,19 @@ func findRemoteServer(cfg Config, name, origin string) *ServerConfig {
 	return nil
 }
 
-func describeUnconnectedServer(server *ServerConfig, cache *ToolsCache) llm.UnconnectedMCPServer {
-	described := llm.UnconnectedMCPServer{
-		Name:         server.Name,
-		ServerOrigin: server.BaseURL,
-	}
-
-	if cache != nil && sharedToolsCacheAllowedForServer(*server) {
-		if profile := cache.GetServerProfile(server.Name, server.BaseURL); profile != nil {
-			title := cmp.Or(profile.Title, profile.Name)
-			if !strings.EqualFold(title, server.Name) {
-				described.Title = title
-			}
-			described.Description = profile.Description
-		}
-	}
-
-	described.Tools = knownServerTools(server, cache)
-	return described
-}
-
-// knownServerTools lists the tools a server is known to offer: the shared
-// catalog discovered by earlier connections where catalogs are shared, else
-// the tools the admin configured. Admin-disabled tools are left out.
-func knownServerTools(server *ServerConfig, cache *ToolsCache) []llm.ToolInfo {
-	overrides := make(map[string]string, len(server.ToolConfigs))
-	for _, toolConfig := range server.ToolConfigs {
-		if toolConfig.RetrievalDescriptionOverride != "" {
-			overrides[toolConfig.Name] = toolConfig.RetrievalDescriptionOverride
-		}
-	}
-
+// configuredServerTools lists the tools the admin configured on a server,
+// with their admin-written descriptions. Admin-disabled tools are left out.
+func configuredServerTools(server *ServerConfig) []llm.ToolInfo {
 	var tools []llm.ToolInfo
-	add := func(name, description string) {
-		if _, enabled := server.GetToolPolicy(name); !enabled {
-			return
+	for _, toolConfig := range server.ToolConfigs {
+		if _, enabled := server.GetToolPolicy(toolConfig.Name); !enabled {
+			continue
 		}
 		tools = append(tools, llm.ToolInfo{
-			Name:         promptSafeText(name, maxServerNameRunes),
-			Description:  promptSafeText(cmp.Or(overrides[name], description), maxKnownToolDescRunes),
+			Name:         promptSafeText(toolConfig.Name, maxServerNameRunes),
+			Description:  promptSafeText(toolConfig.RetrievalDescriptionOverride, maxKnownToolDescRunes),
 			ServerOrigin: server.BaseURL,
 		})
-	}
-
-	if cache != nil && sharedToolsCacheAllowedForServer(*server) {
-		for name, tool := range cache.GetToolsForURL(server.Name, server.BaseURL) {
-			if tool != nil {
-				add(name, tool.Description)
-			}
-		}
-	}
-	if len(tools) == 0 {
-		for _, toolConfig := range server.ToolConfigs {
-			add(toolConfig.Name, "")
-		}
 	}
 
 	slices.SortFunc(tools, func(a, b llm.ToolInfo) int { return cmp.Compare(a.Name, b.Name) })

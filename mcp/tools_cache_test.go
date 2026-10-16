@@ -313,7 +313,7 @@ func TestClearAllBeyondFirstKeyPage(t *testing.T) {
 		unrelatedKeys int
 	}{
 		{name: "cache keys sort after more than a page of other keys", unrelatedKeys: 2500},
-		{name: "total key count is an exact multiple of the page size", unrelatedKeys: 2*listKeysPageSize - 4},
+		{name: "total key count is an exact multiple of the page size", unrelatedKeys: 2*listKeysPageSize - 2},
 	}
 
 	for _, tc := range tests {
@@ -329,7 +329,6 @@ func TestClearAllBeyondFirstKeyPage(t *testing.T) {
 			servers := []string{"server1", "server2"}
 			for _, serverID := range servers {
 				require.NoError(t, cache.SetTools(serverID, serverID, "http://test.com", createTestTools(), time.Now()))
-				require.NoError(t, cache.SetServerProfile(serverID, ServerProfile{ServerURL: "http://test.com", Name: serverID}, time.Now()))
 			}
 
 			clearedCount, err := cache.ClearAll()
@@ -338,7 +337,6 @@ func TestClearAllBeyondFirstKeyPage(t *testing.T) {
 
 			for _, serverID := range servers {
 				require.Nil(t, cache.GetTools(serverID))
-				require.Nil(t, cache.GetServerProfile(serverID, "http://test.com"))
 			}
 			require.Len(t, kvAPI.store, tc.unrelatedKeys)
 		})

@@ -45,7 +45,7 @@ func TestGetToolsStoreOffersMCPConnections(t *testing.T) {
 	jira := llm.UnconnectedMCPServer{
 		Name:         "Jira",
 		ServerOrigin: jiraOrigin,
-		Title:        "Jira Cloud",
+		Description:  "Issues and sprints",
 		Tools: []llm.ToolInfo{
 			{Name: "create_issue", ServerOrigin: jiraOrigin},
 			{Name: "search", ServerOrigin: jiraOrigin},
@@ -151,7 +151,7 @@ func TestGetToolsStoreOffersMCPConnections(t *testing.T) {
 				require.Len(t, context.UnconnectedMCPServers, 1)
 				described := context.UnconnectedMCPServers[0]
 				assert.Equal(t, "Jira", described.Name)
-				assert.Equal(t, "Jira Cloud", described.Title)
+				assert.Equal(t, "Issues and sprints", described.Description)
 				var toolNames []string
 				for _, info := range described.Tools {
 					toolNames = append(toolNames, info.Name)

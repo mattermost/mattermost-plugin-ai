@@ -644,9 +644,6 @@ func (m *ClientManager) invalidateSharedToolsCacheForRefresh() error {
 		if !serverConfig.Enabled || serverConfig.BaseURL == "" {
 			continue
 		}
-		if err := m.toolsCache.InvalidateServerProfile(serverConfig.Name); err != nil {
-			refreshErr = errors.Join(refreshErr, fmt.Errorf("failed to invalidate server profile for server %s: %w", serverConfig.Name, err))
-		}
 		if sharedToolsCacheAllowedForServer(serverConfig) {
 			invalidate(serverConfig.Name)
 		}
