@@ -1569,23 +1569,35 @@ func TestUpdateAgentRenameFailureStopsRoutingReleasedName(t *testing.T) {
 	}
 }
 
-func TestUpdateAgentRefreshesRenamedAgent(t *testing.T) {
+func TestUpdateAgentRefreshesChangedAgent(t *testing.T) {
 	tests := []struct {
-		name             string
-		change           map[string]any
-		expectPublished  []string
-		expectStaleEntry bool
+		name            string
+		change          map[string]any
+		expectName      string
+		expectDisplay   string
+		expectOldRoutes bool
+		fullRefreshFail bool
 	}{
 		{
-			name:            "rename refreshes the agent here and on peers",
-			change:          map[string]any{"username": "new-name"},
-			expectPublished: []string{"agent-1"},
+			name:          "rename",
+			change:        map[string]any{"username": "new-name"},
+			expectName:    "new-name",
+			expectDisplay: "Agent",
 		},
 		{
-			name:             "other changes leave the agent to the full refresh",
-			change:           map[string]any{"displayName": "Renamed"},
-			expectPublished:  []string{""},
-			expectStaleEntry: true,
+			name:            "display name change",
+			change:          map[string]any{"displayName": "Renamed"},
+			expectName:      "old-name",
+			expectDisplay:   "Renamed",
+			expectOldRoutes: true,
+		},
+		{
+			name:            "edit is applied when the full refresh fails",
+			change:          map[string]any{"displayName": "Renamed"},
+			expectName:      "old-name",
+			expectDisplay:   "Renamed",
+			expectOldRoutes: true,
+			fullRefreshFail: true,
 		},
 	}
 
@@ -1597,22 +1609,35 @@ func TestUpdateAgentRefreshesRenamedAgent(t *testing.T) {
 			mockLicensed(e.mockAPI)
 			e.mockAPI.On("GetUserByUsername", mock.Anything).
 				Return(nil, model.NewAppError("GetUserByUsername", "app.user.missing", nil, "", http.StatusNotFound)).Maybe()
-			e.mockAPI.On("PatchBot", "bot-1", mock.AnythingOfType("*model.BotPatch")).Return(&model.Bot{UserId: "bot-1"}, nil).Maybe()
-			liveName := "old-name"
-			if username, ok := tc.change["username"].(string); ok {
-				liveName = username
+			e.mockAPI.On("PatchBot", "bot-1", mock.AnythingOfType("*model.BotPatch")).
+				Return(&model.Bot{UserId: "bot-1", Username: tc.expectName, DisplayName: tc.expectDisplay, OwnerId: "mattermost-ai"}, nil).Maybe()
+			e.mockAPI.On("GetBot", "bot-1", true).
+				Return(&model.Bot{UserId: "bot-1", Username: tc.expectName, OwnerId: "mattermost-ai"}, nil).Maybe()
+			e.mockAPI.On("GetUser", "bot-1").
+				Return(&model.User{Id: "bot-1", Username: tc.expectName, IsBot: true, LastPictureUpdate: 1}, nil).Maybe()
+			if tc.fullRefreshFail {
+				e.mockAPI.On("GetBots", mock.AnythingOfType("*model.BotGetOptions")).
+					Return(nil, model.NewAppError("GetBots", "app.bot.get_bots.internal_error", nil, "", http.StatusInternalServerError)).Maybe()
+			} else {
+				e.mockAPI.On("GetBots", mock.AnythingOfType("*model.BotGetOptions")).
+					Return([]*model.Bot{{UserId: "bot-1", Username: tc.expectName, OwnerId: "mattermost-ai"}}, nil).Maybe()
 			}
-			e.mockAPI.On("GetUser", "bot-1").Return(&model.User{Id: "bot-1", Username: liveName, IsBot: true}, nil).Maybe()
+			e.mockAPI.On("KVSetWithOptions", mock.AnythingOfType("string"), mock.AnythingOfType("[]uint8"), mock.AnythingOfType("model.PluginKVSetOptions")).Return(true, nil).Maybe()
+			e.mockAPI.On("KVDelete", mock.AnythingOfType("string")).Return(nil).Maybe()
 			notifier := &recordingAgentNotifier{}
 			e.api.clusterAgentNotifier = notifier
+
+			botsCfg := &config.Container{}
+			botsCfg.Update(e.api.configStore.(*mockConfigStore).cfg)
+			e.bots = bots.New(e.mockAPI, e.client, enterprise.NewLicenseChecker(e.client), botsCfg, e.agentStore, newPassthroughAccessChecker(), &http.Client{}, nil)
+			e.api.bots = e.bots
+			e.installServiceLLM(&FakeLLM{})
 
 			stored := &llm.BotConfig{
 				ID: "agent-1", CreatorID: testUserID, BotUserID: "bot-1",
 				DisplayName: "Agent", Name: "old-name", ServiceID: "svc-1",
 			}
 			e.agentStore.agents["agent-1"] = stored
-			// The test registry cannot rebuild agents, so a refreshed agent is
-			// dropped rather than replaced.
 			e.bots.SetBotsForTesting([]*bots.Bot{
 				bots.NewBot(*stored, llm.ServiceConfig{}, &model.Bot{UserId: "bot-1", Username: "old-name"}, nil),
 			})
@@ -1621,10 +1646,12 @@ func TestUpdateAgentRefreshesRenamedAgent(t *testing.T) {
 			recorder := doRequest(e.api, http.MethodPut, "/agents/agent-1", body, testUserID)
 
 			require.Equal(t, http.StatusOK, recorder.Result().StatusCode, recorder.Body.String())
-			assert.Equal(t, tc.expectPublished, notifier.published)
-			if tc.expectStaleEntry {
-				assert.NotNil(t, e.bots.GetBotMentioned("@old-name hi"))
-			} else {
+			assert.Equal(t, []string{"agent-1"}, notifier.published, "peers must refresh the agent too")
+
+			bot := e.bots.GetBotMentioned("@" + tc.expectName + " hi")
+			require.NotNil(t, bot, "the edited agent must stay available")
+			assert.Equal(t, tc.expectDisplay, bot.GetConfig().DisplayName)
+			if !tc.expectOldRoutes {
 				assert.Nil(t, e.bots.GetBotMentioned("@old-name hi"), "a renamed agent must not keep answering to its old name")
 			}
 		})

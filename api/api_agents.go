@@ -400,13 +400,17 @@ func (a *API) renameAgentConfigReferences(oldName, newName string) (updated, def
 	return true, defaultRenamed, nil
 }
 
-// refreshBotsAndNotify reloads bots on this node, notifies the cluster, and broadcasts so clients refresh bot lists.
-// renamedAgentID, when set, tells peers to refresh that agent individually before their full reload.
+// refreshBotsAndNotify applies a change to agentID on this node, notifies the cluster, and broadcasts so clients
+// refresh bot lists. The agent is refreshed on its own before every bot is reloaded, here and on peers, because the
+// full reload keeps the whole previous registry when any agent fails to build.
 // It returns the error from EnsureBots when a.bots is non-nil, or nil when a.bots is nil; cluster and websocket
 // steps always run regardless.
-func (a *API) refreshBotsAndNotify(renamedAgentID string) error {
+func (a *API) refreshBotsAndNotify(agentID string) error {
 	var ensureErr error
 	if a.bots != nil {
+		if err := a.bots.RefreshAgent(agentID); err != nil {
+			a.pluginAPI.Log.Error("Failed to refresh changed agent", "agent_id", agentID, "error", err.Error())
+		}
 		a.bots.ForceRefreshOnNextEnsure()
 		ensureErr = a.bots.EnsureBots()
 		if ensureErr != nil {
@@ -414,7 +418,7 @@ func (a *API) refreshBotsAndNotify(renamedAgentID string) error {
 		}
 	}
 	if a.clusterAgentNotifier != nil {
-		if err := a.clusterAgentNotifier.PublishAgentUpdate(renamedAgentID); err != nil {
+		if err := a.clusterAgentNotifier.PublishAgentUpdate(agentID); err != nil {
 			a.pluginAPI.Log.Error("Failed to publish agent update cluster event", "error", err.Error())
 		}
 	}
@@ -423,21 +427,6 @@ func (a *API) refreshBotsAndNotify(renamedAgentID string) error {
 		a.mmClient.PublishWebSocketEvent(WebsocketEventBotsInvalidate, map[string]any{}, &model.WebsocketBroadcast{})
 	}
 	return ensureErr
-}
-
-// refreshAfterRename refreshes a renamed agent from the store on this node,
-// then reloads every bot and tells peers to refresh it too. The agent is
-// refreshed on its own first because the full reload can fail and keep the
-// whole previous registry, which would keep listing the agent under its
-// previous name. Routing by the previous name is refused regardless, since
-// name-based lookups check the live bot account.
-func (a *API) refreshAfterRename(agentID string) error {
-	if a.bots != nil {
-		if err := a.bots.RefreshAgent(agentID); err != nil {
-			a.pluginAPI.Log.Error("Failed to refresh renamed agent", "agent_id", agentID, "error", err.Error())
-		}
-	}
-	return a.refreshBotsAndNotify(agentID)
 }
 
 // handleCreateAgent handles POST /agents: creates the bot user and persisted agent config.
@@ -531,7 +520,7 @@ func (a *API) handleCreateAgent(c *gin.Context) {
 	audit.AddParam(auditRec(c), audit.KeyAgentID, agent.ID)
 	audit.AddParam(auditRec(c), "bot_user_id", mmBot.UserId)
 
-	_ = a.refreshBotsAndNotify("")
+	_ = a.refreshBotsAndNotify(agent.ID)
 	c.JSON(http.StatusCreated, agent)
 }
 
@@ -730,7 +719,7 @@ func (a *API) handleUpdateAgent(c *gin.Context) {
 		// rename was fully reverted and they already agree.
 		defer func() {
 			if c.IsAborted() && !renameReverted {
-				_ = a.refreshAfterRename(cfg.ID)
+				_ = a.refreshBotsAndNotify(cfg.ID)
 			}
 		}()
 		if renamed {
@@ -804,12 +793,7 @@ func (a *API) handleUpdateAgent(c *gin.Context) {
 		audit.AddParam(auditRec(c), "default_agent_renamed", true)
 	}
 
-	var ensureErr error
-	if usernameChanged {
-		ensureErr = a.refreshAfterRename(cfg.ID)
-	} else {
-		ensureErr = a.refreshBotsAndNotify("")
-	}
+	ensureErr := a.refreshBotsAndNotify(cfg.ID)
 
 	// EnsureBots patches display name on success; when it did not run (no bot registry) or failed, sync explicitly.
 	if displayNameChanged && (ensureErr != nil || a.bots == nil) {
@@ -855,7 +839,7 @@ func (a *API) handleDeleteAgent(c *gin.Context) {
 		a.pluginAPI.Log.Error("Failed to delete access policy for deleted agent", "agent_id", cfg.ID, "error", err.Error())
 	}
 
-	ensureErr := a.refreshBotsAndNotify("")
+	ensureErr := a.refreshBotsAndNotify(cfg.ID)
 
 	// EnsureBots deactivates removed bots on success; when it did not run or failed, deactivate explicitly.
 	if ensureErr != nil || a.bots == nil {

@@ -1022,6 +1022,49 @@ func TestEnsureBotsReusesExistingBotAccounts(t *testing.T) {
 	}
 }
 
+func TestEnsureBotsReactivatesOnlyDeactivatedAccounts(t *testing.T) {
+	tests := []struct {
+		name             string
+		botDeleteAt      int64
+		userDeleteAt     int64
+		expectReactivate bool
+	}{
+		{name: "active account is left alone", expectReactivate: false},
+		{name: "deactivated bot is reactivated", botDeleteAt: 1234, userDeleteAt: 1234, expectReactivate: true},
+		{name: "user deactivated through the user API is reactivated", userDeleteAt: 1234, expectReactivate: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mockAPI := &plugintest.API{}
+			client := pluginapi.NewClient(mockAPI, nil)
+			enterprisetest.StubLicense(mockAPI, enterprise.LevelEnterprise)
+			allowBotsLogging(mockAPI)
+			mockAPI.On("GetBots", mock.AnythingOfType("*model.BotGetOptions")).Return([]*model.Bot{
+				{UserId: "mm-1", Username: "bot1", DeleteAt: tc.botDeleteAt},
+			}, nil)
+			mockAPI.On("GetUser", "mm-1").Return(&model.User{Id: "mm-1", LastPictureUpdate: 1, DeleteAt: tc.userDeleteAt}, nil).Once()
+			mockAPI.On("PatchBot", "mm-1", mock.AnythingOfType("*model.BotPatch")).Return(&model.Bot{UserId: "mm-1", Username: "bot1"}, nil)
+			mockAPI.On("UpdateBotActive", "mm-1", true).Return(&model.Bot{UserId: "mm-1"}, nil).Maybe()
+			mockAPI.On("KVSetWithOptions", mock.AnythingOfType("string"), mock.AnythingOfType("[]uint8"), mock.AnythingOfType("model.PluginKVSetOptions")).Return(true, nil).Maybe()
+			mockAPI.On("KVDelete", mock.AnythingOfType("string")).Return(nil).Maybe()
+
+			cfg := &mockConfig{
+				bots:     []llm.BotConfig{validBot("file-1", "bot1", "svc1")},
+				services: []llm.ServiceConfig{validOpenAIService("svc1")},
+			}
+			mmBots := New(mockAPI, client, enterprise.NewLicenseChecker(client), cfg, &stubAgentStore{}, newPassthroughAccessChecker(), &http.Client{}, nil)
+
+			require.NoError(t, mmBots.EnsureBots())
+			if tc.expectReactivate {
+				mockAPI.AssertCalled(t, "UpdateBotActive", "mm-1", true)
+			} else {
+				mockAPI.AssertNotCalled(t, "UpdateBotActive", "mm-1", true)
+			}
+		})
+	}
+}
+
 func TestEnsureBotsRetriesBotWhoseAccountSyncFailed(t *testing.T) {
 	mockAPI := &plugintest.API{}
 	client := pluginapi.NewClient(mockAPI, nil)
