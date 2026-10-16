@@ -178,7 +178,6 @@ func TestEnsureBotsDeactivatesCapInactiveDBAgents(t *testing.T) {
 	mockAPI.On("CreateBot", mock.AnythingOfType("*model.Bot")).Return(func(bot *model.Bot) *model.Bot { return bot }, nil).Maybe()
 	mockAPI.On("GetUser", mock.AnythingOfType("string")).Return(&model.User{LastPictureUpdate: 1}, nil).Maybe()
 	mockAPI.On("PatchBot", mock.AnythingOfType("string"), mock.AnythingOfType("*model.BotPatch")).Return(&model.Bot{}, nil).Maybe()
-	mockAPI.On("UpdateBotActive", "mm-file", true).Return(&model.Bot{}, nil).Once()
 	mockAPI.On("UpdateBotActive", "mm-db", false).Return(&model.Bot{}, nil).Once()
 	mockAPI.On("KVSetWithOptions", mock.AnythingOfType("string"), mock.AnythingOfType("[]uint8"), mock.AnythingOfType("model.PluginKVSetOptions")).Return(true, nil).Maybe()
 	mockAPI.On("KVDelete", mock.AnythingOfType("string")).Return(nil).Maybe()

@@ -615,9 +615,13 @@ func (b *MMBots) syncBot(bot *Bot, existing *model.Bot, configuredService llm.Se
 			b.pluginAPI.Log.Error("Failed to patch bot", "bot_name", bot.cfg.Name, "error", patchErr.Error())
 			return fmt.Errorf("%w: %s: %w", errBotAccountSync, bot.cfg.Name, patchErr)
 		}
-		if _, activeErr := b.pluginAPI.Bot.UpdateActive(existing.UserId, true); activeErr != nil {
-			b.pluginAPI.Log.Error("Failed to update bot active", "bot_name", bot.cfg.Name, "error", activeErr.Error())
-			return fmt.Errorf("%w: %s: %w", errBotAccountSync, bot.cfg.Name, activeErr)
+		// The server rewrites the user and broadcasts user_updated on every
+		// call, even when the bot is already active.
+		if existing.DeleteAt != 0 {
+			if _, activeErr := b.pluginAPI.Bot.UpdateActive(existing.UserId, true); activeErr != nil {
+				b.pluginAPI.Log.Error("Failed to update bot active", "bot_name", bot.cfg.Name, "error", activeErr.Error())
+				return fmt.Errorf("%w: %s: %w", errBotAccountSync, bot.cfg.Name, activeErr)
+			}
 		}
 	} else {
 		bot.mmBot = &model.Bot{
