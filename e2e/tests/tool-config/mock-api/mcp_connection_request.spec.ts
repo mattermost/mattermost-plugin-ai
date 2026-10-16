@@ -23,8 +23,8 @@ import {
  * Test Suite: Agents ask users to connect MCP servers they have not connected
  *
  * The mock MCP server answers 401 until the user finishes OAuth. The agent must
- * still learn the server exists (the tool-call mock only matches requests whose
- * system prompt lists it) and can ask for a connection, which renders a Connect
+ * still learn the server exists (the tool-call mock only matches requests that
+ * describe it) and can ask for a connection, which renders a Connect
  * card instead of a refusal. The card offers only Connect and Skip; once the
  * user is connected, the conversation continues without another click.
  */
@@ -36,8 +36,9 @@ const reason = 'I need it to look up your open tickets.';
 const requestArgs = JSON.stringify({ server: MOCK_OAUTH_SERVER_NAME, reason });
 const oauthStartPath = `/plugins/mattermost-ai/mcp/oauth/${encodeURIComponent(MOCK_OAUTH_SERVER_NAME)}/start`;
 
-// The admin's description only reaches the system prompt when the server is
-// offered for connection, so matching on it also proves it is shown.
+// The admin's description only reaches the model, in the connection request
+// tool's schema, when the server is offered for connection, so matching on it
+// also proves it is shown.
 const adminDescription = 'Help desk tickets for the support team.';
 const unconnectedPromptMatch = adminDescription;
 

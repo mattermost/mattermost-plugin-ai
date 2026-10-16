@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"strconv"
 	"strings"
 	"text/template"
 
@@ -32,9 +31,6 @@ func NewPrompts(input fs.FS) (*Prompts, error) {
 	funcMap := template.FuncMap{
 		"escapeContent": EscapePromptContent,
 		"formatTime":    format.TimeFromMillis,
-		// quote renders free text as a double-quoted string with embedded
-		// quotes and backslashes escaped, so it cannot end the quotation early.
-		"quote": strconv.Quote,
 	}
 	templates, err := template.New("").Funcs(funcMap).ParseFS(input, "*.tmpl")
 	if err != nil {
