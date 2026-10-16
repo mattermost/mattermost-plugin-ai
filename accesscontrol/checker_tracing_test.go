@@ -6,11 +6,14 @@ package accesscontrol
 import (
 	"context"
 	"errors"
+	"net/http"
 	"testing"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 	"github.com/mattermost/mattermost-plugin-agents/v2/telemetry"
 	"github.com/mattermost/mattermost/server/public/model"
+	"github.com/mattermost/mattermost/server/public/plugin/plugintest"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
@@ -112,4 +115,65 @@ func TestCheckerSpanCarriesResourceName(t *testing.T) {
 	name, ok := spanAttr(spans[0], string(telemetry.ABACResourceName))
 	require.True(t, ok)
 	require.Equal(t, "jira", name)
+}
+
+// A legacy allow/block-list denial must mark the span as a denial so it is
+// visible (and survives export filtering) like a policy denial.
+func TestCanUseAgentLegacyDenialMarksSpan(t *testing.T) {
+	exporter := installTestTracer(t)
+	c := New(&stubDecisionClient{decision: noPolicyDecision()}, nil, NoMCPServerIDs, nil)
+	legacyErr := errors.New("user not allowed")
+
+	err := c.CanUseAgent(context.Background(), testUserID, &llm.BotConfig{ID: model.NewId()}, func() error { return legacyErr })
+	require.ErrorIs(t, err, legacyErr)
+
+	spans := exporter.GetSpans()
+	require.Len(t, spans, 1)
+	require.Equal(t, codes.Unset, spans[0].Status.Code)
+	denied, _ := spanAttr(spans[0], string(telemetry.ABACDenied))
+	require.Equal(t, true, denied)
+	source, _ := spanAttr(spans[0], string(telemetry.ABACDecisionSource))
+	require.Equal(t, "legacy", source)
+}
+
+func TestIsAvailableSpanRecordsProbeResult(t *testing.T) {
+	tests := []struct {
+		name          string
+		appErr        *model.AppError
+		wantAvailable bool
+	}{
+		{name: "available", wantAvailable: true},
+		{
+			name:   "unlicensed",
+			appErr: model.NewAppError("Init", "app.pap.init.app_error", nil, "enterprise advanced license required", http.StatusNotImplemented),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			exporter := installTestTracer(t)
+			api := &plugintest.API{}
+			var ast *model.VisualExpression
+			if tc.appErr == nil {
+				ast = &model.VisualExpression{}
+			}
+			api.On("GetAccessControlVisualAST", mock.Anything, ResourceTypeAgent, availabilityProbeExpression).Return(ast, tc.appErr).Once()
+
+			c := New(PassthroughClient{}, api, NoMCPServerIDs, nil)
+			require.Equal(t, tc.wantAvailable, c.IsAvailable(context.Background(), model.NewId()))
+
+			spans := exporter.GetSpans()
+			require.Len(t, spans, 1)
+			require.Equal(t, codes.Unset, spans[0].Status.Code, "an unavailable ABAC is an answer, not a failure")
+			available, _ := spanAttr(spans[0], string(telemetry.ABACAvailable))
+			require.Equal(t, tc.wantAvailable, available)
+			status, hasStatus := spanAttr(spans[0], string(telemetry.ABACProbeStatusCode))
+			errID, _ := spanAttr(spans[0], string(telemetry.ABACProbeErrorID))
+			if tc.appErr == nil {
+				require.False(t, hasStatus)
+				return
+			}
+			require.Equal(t, int64(tc.appErr.StatusCode), status)
+			require.Equal(t, tc.appErr.Id, errID)
+		})
+	}
 }

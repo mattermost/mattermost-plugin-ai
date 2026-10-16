@@ -11,12 +11,13 @@ import (
 )
 
 // abacDecisionSpans are the per-request access decisions. Policy
-// administration spans (abac save_policy, …) are rare and always kept.
+// administration spans (abac save_policy, …) are rare and always kept, as is
+// abac is_available, which only gets a span on an uncached probe (at most
+// one per cache TTL).
 var abacDecisionSpans = map[string]bool{
 	"abac can_use_agent":      true,
 	"abac can_use_service":    true,
 	"abac can_use_mcp_server": true,
-	"abac is_available":       true,
 }
 
 // keepSpan reports whether a finished span is worth exporting. Access

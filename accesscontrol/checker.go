@@ -19,6 +19,10 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// decisionSourceLegacy marks a denial made by an agent's legacy allow/block
+// lists rather than by an access policy.
+const decisionSourceLegacy = "legacy"
+
 // ErrAccessDenied is wrapped by every deny return.
 var ErrAccessDenied = errors.New("access denied by policy")
 
@@ -139,7 +143,17 @@ func (c *Checker) CanUseAgent(ctx context.Context, userID string, cfg *llm.BotCo
 		}
 		return nil
 	}
-	return runLegacy()
+	if err := runLegacy(); err != nil {
+		// The legacy allow/block lists denied the user. Record it like a
+		// policy denial (an expected decision, not an Error) so the span
+		// survives export filtering; the error text stays out of the span.
+		span.SetAttributes(
+			telemetry.ABACDenied.Bool(true),
+			telemetry.ABACDecisionSource.String(decisionSourceLegacy),
+		)
+		return err
+	}
+	return nil
 }
 
 type resourceNameKey struct{}
@@ -228,7 +242,16 @@ func (c *Checker) IsAvailable(ctx context.Context, actingUserID string) bool {
 	if c.papi != nil {
 		ast, appErr := c.papi.GetAccessControlVisualAST(actingUserID, ResourceTypeAgent, availabilityProbeExpression)
 		available = appErr == nil && ast != nil
+		if appErr != nil {
+			// An error is how an unlicensed or ABAC-disabled server answers,
+			// so it is recorded as identifiers, not as an Error status.
+			span.SetAttributes(
+				telemetry.ABACProbeStatusCode.Int(appErr.StatusCode),
+				telemetry.ABACProbeErrorID.String(appErr.Id),
+			)
+		}
 	}
+	span.SetAttributes(telemetry.ABACAvailable.Bool(available))
 
 	c.availabilityMu.Lock()
 	c.availabilityValue = available

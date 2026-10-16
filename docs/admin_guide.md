@@ -525,7 +525,7 @@ HTTP spans are named by method and route template (for example `POST /bridge/v1/
 
 #### Access control spans
 
-Per-request access decisions (`abac can_use_agent`, `abac can_use_service`, `abac can_use_mcp_server`, `abac is_available`) run on nearly every request and would otherwise outnumber all other spans. Both output modes drop decisions that allowed access. Policy administration spans are always kept. Denials (`agents.abac.denied=true`) and failed evaluations (status Error) are kept. Denied resources carry `agents.abac.resource_name` (the agent or MCP server name) next to `agents.abac.resource_id`.
+Per-request access decisions (`abac can_use_agent`, `abac can_use_service`, `abac can_use_mcp_server`) run on nearly every request and would otherwise outnumber all other spans. Both output modes drop decisions that allowed access. Policy administration spans and `abac is_available` (one span per uncached probe, recording `agents.abac.available`) are always kept. Denials (`agents.abac.denied=true`) and failed evaluations (status Error) are kept. Denied resources carry `agents.abac.resource_name` (the agent or MCP server name) next to `agents.abac.resource_id`.
 
 #### Local development with Grafana Tempo
 
@@ -605,6 +605,9 @@ Traces include these semantic attributes for filtering and analysis. Cached toke
 | `agents.agent.run.trace_id` | On the message hook span: the trace ID of the agent run | `8d5576c0…` |
 | `agents.abac.resource_name` | Name of the agent or MCP server an access check evaluated | `jira` |
 | `agents.abac.denied` | The access check denied access | `true` |
+| `agents.abac.decision_source` | Set when the agent's legacy allow/block lists, not an access policy, made the decision | `legacy` |
+| `agents.abac.available` | On `abac is_available`: whether ABAC is licensed and enabled | `false` |
+| `agents.abac.probe_status_code` / `agents.abac.probe_error_id` | On `abac is_available`: why the probe reported unavailable | `501` / `app.pap.init.app_error` |
 | `agents.bridge.plugin_id` | On LLM bridge HTTP spans: the calling plugin | `com.mattermost.calls` |
 | `agents.service.id` | On LLM bridge service-completion spans: the requested service | `abc123def456` |
 | `agents.mcp.server` | MCP server name | `github-server` |

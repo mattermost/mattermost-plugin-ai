@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 	"github.com/mattermost/mattermost-plugin-agents/v2/telemetry"
@@ -97,5 +98,35 @@ func TestToolRunnerTracing(t *testing.T) {
 		require.Equal(t, telemetry.ToolExecutionAuto, attrs[string(telemetry.ToolExecution)])
 		require.Equal(t, int64(len(result)), attrs[string(telemetry.ToolResultBytes)])
 		require.Contains(t, children, s.SpanContext.SpanID().String())
+	}
+}
+
+// A stopped reply stops reading the stream; canceling ctx must end the loop
+// rather than leave it blocked on a send nobody will receive.
+func TestToolRunnerStopsWhenCanceledWhileUnread(t *testing.T) {
+	events := make([]llm.TextStreamEvent, 0, 11)
+	for range 10 {
+		events = append(events, llm.TextStreamEvent{Type: llm.EventTypeText, Value: "chunk"})
+	}
+	events = append(events, llm.TextStreamEvent{Type: llm.EventTypeEnd})
+	lm := &testLLM{responses: []testResponse{{events: events}}}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	run, err := New(lm).Run(ctx, llm.CompletionRequest{
+		Posts:   []llm.Post{{Role: llm.PostRoleUser, Message: "hi"}},
+		Context: &llm.Context{Tools: llm.NewToolStore()},
+	}, alwaysExecute, nil)
+	require.NoError(t, err)
+
+	<-run.Stream.Stream // the reply reads one chunk, then is stopped
+	cancel()
+	// With nobody reading, the loop can only proceed by noticing the cancel.
+	time.Sleep(50 * time.Millisecond)
+
+	select {
+	case _, open := <-run.Stream.Stream:
+		require.False(t, open, "loop kept forwarding after cancel instead of stopping")
+	case <-time.After(time.Second):
+		t.Fatal("tool loop still blocked after cancel")
 	}
 }

@@ -201,8 +201,9 @@ func (c *Conversations) createOrGetDMConversation(
 // DMStreamResult is the return value of ProcessDMRequest.
 type DMStreamResult struct {
 	Stream *llm.TextStreamResult
-	// release ends the request's span and stops forwarding Stream. Call it
-	// once the consumer stops reading, including when it never starts.
+	// release ends the request's span, stops forwarding Stream and cancels
+	// the tool loop. Call it once the consumer stops reading, including when
+	// it never starts.
 	release func()
 }
 
@@ -236,9 +237,14 @@ func (c *Conversations) processDMRequest(
 	)
 	// The tool loop keeps running after this returns; on success the span
 	// ends when the returned stream closes so it covers that work.
+	// The tool loop gets its own cancel so a reply that stops reading (a
+	// stopped stream) also stops the loop and its in-flight LLM call,
+	// instead of leaving it blocked on a send nobody will receive.
+	loopCtx, cancelLoop := stdcontext.WithCancel(ctx)
 	spanHandedOff := false
 	defer func() {
 		if !spanHandedOff {
+			cancelLoop()
 			span.End()
 		}
 	}()
@@ -266,7 +272,7 @@ func (c *Conversations) processDMRequest(
 	if beforeProvider != nil {
 		beforeProvider()
 	}
-	runResult, err := c.runToolLoop(ctx, lm, maxToolTurns, *completionReq,
+	runResult, err := c.runToolLoop(loopCtx, lm, maxToolTurns, *completionReq,
 		c.shouldAutoExecuteTool(llmCtx, true),
 		convID,
 		func([]toolrunner.ToolTurn) bool { return true },
@@ -281,7 +287,11 @@ func (c *Conversations) processDMRequest(
 	}
 
 	spanHandedOff = true
-	wrapped, release := endSpanOnStreamClose(stream, span)
+	wrapped, releaseSpan := endSpanOnStreamClose(stream, span)
+	release := func() {
+		releaseSpan()
+		cancelLoop()
+	}
 	return &DMStreamResult{Stream: wrapped, release: release}, nil
 }
 

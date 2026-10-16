@@ -145,6 +145,14 @@ var (
 	// ABACDenied is true when the check denied access. A denial is an
 	// expected decision, so it does not set the span status to Error.
 	ABACDenied = attribute.Key("agents.abac.denied")
+	// ABACDecisionSource is set when something other than an access policy
+	// made the decision ("legacy": the agent's allow/block lists).
+	ABACDecisionSource = attribute.Key("agents.abac.decision_source")
+	// ABACAvailable is the result of the ABAC availability probe; on failure
+	// ABACProbeStatusCode and ABACProbeErrorID say why.
+	ABACAvailable       = attribute.Key("agents.abac.available")
+	ABACProbeStatusCode = attribute.Key("agents.abac.probe_status_code")
+	ABACProbeErrorID    = attribute.Key("agents.abac.probe_error_id")
 )
 
 // WithLLMAttributes returns a SpanStartOption with standard LLM attributes.

@@ -189,6 +189,19 @@ func (r *ToolRunner) runLoop(
 ) {
 	stream := firstStream
 
+	// send forwards an event unless ctx is canceled: once the consumer has
+	// stopped reading (a stopped reply), a plain send would block forever.
+	send := func(event llm.TextStreamEvent) bool {
+		select {
+		case output <- event:
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
+	// abandon persists the rounds completed so far and stops the loop.
+	abandon := func() { r.deliverToolTurns(result, onToolTurns) }
+
 	var synthesisForced bool
 
 	for round := 0; round < r.maxRounds; round++ {
@@ -198,17 +211,21 @@ func (r *ToolRunner) runLoop(
 			stream, err = r.llm.ChatCompletion(telemetry.WithLLMRound(ctx, round), request, currentOpts...)
 			if err != nil {
 				r.deliverToolTurns(result, onToolTurns)
-				output <- llm.TextStreamEvent{
+				send(llm.TextStreamEvent{
 					Type:  llm.EventTypeError,
 					Value: fmt.Errorf("llm completion failed: %w", err),
-				}
+				})
 				return
 			}
 		}
 
 		// Consume the stream, forwarding non-tool-call events in real-time.
-		resp := drainStream(stream, output, request.Context)
+		resp := drainStream(stream, send, request.Context)
 
+		if ctx.Err() != nil {
+			abandon()
+			return
+		}
 		if resp.err != nil {
 			r.deliverToolTurns(result, onToolTurns)
 			return
@@ -227,7 +244,7 @@ func (r *ToolRunner) runLoop(
 		if len(toolCalls) == 0 {
 			result.FinalText = finalAssistantText(resp.text, synthesisForced, droppedToolCalls)
 			r.deliverToolTurns(result, onToolTurns)
-			output <- llm.TextStreamEvent{Type: llm.EventTypeEnd}
+			send(llm.TextStreamEvent{Type: llm.EventTypeEnd})
 			return
 		}
 
@@ -236,7 +253,10 @@ func (r *ToolRunner) runLoop(
 			resolvedToolCalls := buildResolvedToolCalls(toolCalls, toolResults)
 			appendToolTurnAndPost(result, &request, resp.text, resp.reasoningData, resp.serverTools, resp.segments, resolvedToolCalls, toolResults, resp.usage)
 
-			output <- llm.TextStreamEvent{Type: llm.EventTypeToolCalls, Value: resolvedToolCalls}
+			if !send(llm.TextStreamEvent{Type: llm.EventTypeToolCalls, Value: resolvedToolCalls}) {
+				abandon()
+				return
+			}
 
 			if llm.CountTrailingFailedToolCalls(request.Posts) >= llm.MaxConsecutiveToolCallFailures {
 				request.Posts = llm.EnsureToolRetryLimitSystemMessage(request.Posts)
@@ -266,8 +286,9 @@ func (r *ToolRunner) runLoop(
 				toolCalls[i].WouldAutoExecute = approved[i]
 			}
 			r.deliverToolTurns(result, onToolTurns)
-			output <- llm.TextStreamEvent{Type: llm.EventTypeToolCalls, Value: toolCalls}
-			output <- llm.TextStreamEvent{Type: llm.EventTypeEnd}
+			if send(llm.TextStreamEvent{Type: llm.EventTypeToolCalls, Value: toolCalls}) {
+				send(llm.TextStreamEvent{Type: llm.EventTypeEnd})
+			}
 			return
 		}
 
@@ -278,7 +299,10 @@ func (r *ToolRunner) runLoop(
 		for i := range toolCalls {
 			toolCalls[i].WouldAutoExecute = true
 		}
-		output <- llm.TextStreamEvent{Type: llm.EventTypeToolCalls, Value: toolCalls}
+		if !send(llm.TextStreamEvent{Type: llm.EventTypeToolCalls, Value: toolCalls}) {
+			abandon()
+			return
+		}
 
 		// Execute each tool call.
 		toolResults := r.executeTools(ctx, toolCalls, request)
@@ -288,7 +312,10 @@ func (r *ToolRunner) runLoop(
 		appendToolTurnAndPost(result, &request, resp.text, resp.reasoningData, resp.serverTools, resp.segments, resolvedToolCalls, toolResults, resp.usage)
 
 		// Forward resolved tool calls so the UI can show success/error states.
-		output <- llm.TextStreamEvent{Type: llm.EventTypeToolCalls, Value: resolvedToolCalls}
+		if !send(llm.TextStreamEvent{Type: llm.EventTypeToolCalls, Value: resolvedToolCalls}) {
+			abandon()
+			return
+		}
 
 		// Check for consecutive tool call failures and disable tools if needed.
 		if llm.CountTrailingFailedToolCalls(request.Posts) >= llm.MaxConsecutiveToolCallFailures {
@@ -325,7 +352,10 @@ type assistantResponse struct {
 // events to output in real-time while buffering tool calls and accumulating
 // the round's text, reasoning, server tool activity, and usage. Sandbox files
 // reported by server tools are registered on llmCtx as they arrive.
-func drainStream(stream *llm.TextStreamResult, output chan<- llm.TextStreamEvent, llmCtx *llm.Context) assistantResponse {
+//
+// Once send fails (the consumer is gone) the rest of the stream is still
+// read so the provider's goroutine can finish, but nothing more is forwarded.
+func drainStream(stream *llm.TextStreamResult, send func(llm.TextStreamEvent) bool, llmCtx *llm.Context) assistantResponse {
 	var sequence llm.TurnSequence
 	var resp assistantResponse
 
@@ -353,38 +383,38 @@ func drainStream(stream *llm.TextStreamResult, output chan<- llm.TextStreamEvent
 					llmCtx.AddSandboxFiles(refs...)
 				}
 			}
-			output <- event
+			send(event)
 		case llm.EventTypeEnd:
 			// Don't forward yet — handle after consuming the full stream.
 		case llm.EventTypeText:
 			if t, ok := event.Value.(string); ok {
 				sequence.AppendText(t)
 			}
-			output <- event
+			send(event)
 		case llm.EventTypeReasoning:
 			if t, ok := event.Value.(string); ok {
 				sequence.AppendReasoning(t)
 			}
-			output <- event
+			send(event)
 		case llm.EventTypeReasoningEnd:
 			if data, ok := event.Value.(llm.ReasoningData); ok {
 				resp.reasoningData = data
 				sequence.FinishReasoning(data)
 			}
-			output <- event
+			send(event)
 		case llm.EventTypeUsage:
 			if u, ok := event.Value.(llm.TokenUsage); ok {
 				resp.usage.InputTokens += u.InputTokens
 				resp.usage.OutputTokens += u.OutputTokens
 			}
-			output <- event
+			send(event)
 		case llm.EventTypeError:
 			if e, ok := event.Value.(error); ok {
 				resp.err = e
 			}
-			output <- event
+			send(event)
 		default:
-			output <- event // annotations, etc.
+			send(event) // annotations, etc.
 		}
 	}
 
