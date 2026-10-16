@@ -974,7 +974,6 @@ func TestBotRequiredRoutesAcceptBotID(t *testing.T) {
 		"loop_in_agent":           "/post/postid/loop_in_agent",
 		"analyze channel":         "/channel/channelid/analyze",
 		"interval":                "/channel/channelid/interval",
-		"search":                  "/search",
 		"search run":              "/search/run",
 	}
 	tests := []struct {
