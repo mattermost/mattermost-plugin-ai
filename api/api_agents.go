@@ -29,6 +29,11 @@ import (
 
 var validUsernameRe = regexp.MustCompile(`^[a-z][a-z0-9._-]*$`)
 
+var errInvalidAgentUsername = errors.New("invalid username: must start with a lowercase letter and contain only lowercase letters, numbers, dots, hyphens, or underscores")
+
+// errAgentConfigReferencesUnaffected aborts the config update when no setting references the renamed agent.
+var errAgentConfigReferencesUnaffected = errors.New("no setting references the renamed agent")
+
 // errServiceAccountAuthRequiresAdmin is returned when a caller without
 // PermissionManageSystem tries to save an agent with the service account flag on.
 var errServiceAccountAuthRequiresAdmin = errors.New("only system administrators can save an agent with service account authentication enabled; turn the setting off to make other changes")
@@ -144,7 +149,7 @@ type CreateAgentRequest struct {
 }
 
 // UpdateAgentRequest is the JSON body for PUT /agents/:agentid (full document replace, same shape as create).
-// Username cannot change after create (enforced in the handler).
+// Omitting username keeps the current one.
 type UpdateAgentRequest struct {
 	AgentRequestFields
 	Username string `json:"username"`
@@ -328,10 +333,78 @@ func applyAgentUpdateRequest(cfg *llm.BotConfig, req UpdateAgentRequest) (displa
 	return displayNameChanged
 }
 
+// renameAgentBot renames the agent's Mattermost bot account in place and
+// reports whether it changed it; the account may already carry the name when
+// a concurrent save renamed it first. It writes the abort response and returns
+// ok=false when the rename is rejected.
+func (a *API) renameAgentBot(c *gin.Context, botUserID, username string) (renamed, ok bool) {
+	existing, err := a.pluginAPI.User.GetByUsername(username)
+	switch {
+	case err == nil && existing.Id == botUserID:
+		return false, true
+	case err == nil:
+		abortAgentRequest(c, http.StatusConflict, fmt.Errorf("username %q is already taken", username))
+		return false, false
+	case !errors.Is(err, pluginapi.ErrNotFound):
+		abortAgentRequest(c, http.StatusInternalServerError, fmt.Errorf("failed to check username availability: %w", err))
+		return false, false
+	}
+
+	if _, err := a.pluginAPI.Bot.Patch(botUserID, &model.BotPatch{Username: &username}); err != nil {
+		if appErr, ok := errors.AsType[*model.AppError](err); ok && appErr.StatusCode >= 400 && appErr.StatusCode < 500 {
+			abortAgentRequest(c, http.StatusBadRequest, fmt.Errorf("username %q cannot be used: %s", username, appErr.Message))
+			return false, false
+		}
+		abortAgentRequest(c, http.StatusInternalServerError, fmt.Errorf("failed to rename bot account: %w", err))
+		return false, false
+	}
+	return true, true
+}
+
+// renameAgentConfigReferences points DefaultBotName and TranscriptGenerator at
+// newName when they referenced oldName, or clears them when newName is empty.
+// It reports whether the config changed and whether DefaultBotName was among
+// the changes.
+func (a *API) renameAgentConfigReferences(oldName, newName string) (updated, defaultRenamed bool, err error) {
+	if a.configStore == nil {
+		return false, false, nil
+	}
+	saved, err := a.configStore.UpdateConfig(func(prev *config.Config) (config.Config, error) {
+		if prev == nil || (prev.DefaultBotName != oldName && prev.TranscriptGenerator != oldName) {
+			return config.Config{}, errAgentConfigReferencesUnaffected
+		}
+		next := prev.Clone()
+		defaultRenamed = prev.DefaultBotName == oldName
+		if defaultRenamed {
+			next.DefaultBotName = newName
+		}
+		if prev.TranscriptGenerator == oldName {
+			next.TranscriptGenerator = newName
+		}
+		return *next, nil
+	})
+	if errors.Is(err, errAgentConfigReferencesUnaffected) {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, err
+	}
+	if a.configUpdater != nil {
+		a.configUpdater.Update(&saved)
+	}
+	if a.clusterNotifier != nil {
+		if notifyErr := a.clusterNotifier.PublishConfigUpdate(); notifyErr != nil {
+			a.pluginAPI.Log.Warn("Failed to notify cluster of agent rename config update", "error", notifyErr.Error())
+		}
+	}
+	return true, defaultRenamed, nil
+}
+
 // refreshBotsAndNotify reloads bots on this node, notifies the cluster, and broadcasts so clients refresh bot lists.
+// renamedAgentID, when set, tells peers to refresh that agent individually before their full reload.
 // It returns the error from EnsureBots when a.bots is non-nil, or nil when a.bots is nil; cluster and websocket
 // steps always run regardless.
-func (a *API) refreshBotsAndNotify() error {
+func (a *API) refreshBotsAndNotify(renamedAgentID string) error {
 	var ensureErr error
 	if a.bots != nil {
 		a.bots.ForceRefreshOnNextEnsure()
@@ -341,7 +414,7 @@ func (a *API) refreshBotsAndNotify() error {
 		}
 	}
 	if a.clusterAgentNotifier != nil {
-		if err := a.clusterAgentNotifier.PublishAgentUpdate(); err != nil {
+		if err := a.clusterAgentNotifier.PublishAgentUpdate(renamedAgentID); err != nil {
 			a.pluginAPI.Log.Error("Failed to publish agent update cluster event", "error", err.Error())
 		}
 	}
@@ -350,6 +423,21 @@ func (a *API) refreshBotsAndNotify() error {
 		a.mmClient.PublishWebSocketEvent(WebsocketEventBotsInvalidate, map[string]any{}, &model.WebsocketBroadcast{})
 	}
 	return ensureErr
+}
+
+// refreshAfterRename refreshes a renamed agent from the store on this node,
+// then reloads every bot and tells peers to refresh it too. The agent is
+// refreshed on its own first because the full reload can fail and keep the
+// whole previous registry, which would keep listing the agent under its
+// previous name. Routing by the previous name is refused regardless, since
+// name-based lookups check the live bot account.
+func (a *API) refreshAfterRename(agentID string) error {
+	if a.bots != nil {
+		if err := a.bots.RefreshAgent(agentID); err != nil {
+			a.pluginAPI.Log.Error("Failed to refresh renamed agent", "agent_id", agentID, "error", err.Error())
+		}
+	}
+	return a.refreshBotsAndNotify(agentID)
 }
 
 // handleCreateAgent handles POST /agents: creates the bot user and persisted agent config.
@@ -389,7 +477,7 @@ func (a *API) handleCreateAgent(c *gin.Context) {
 	audit.AddParam(auditRec(c), "service_id", audit.TruncateID(req.ServiceID))
 
 	if !validUsernameRe.MatchString(req.Username) {
-		abortAgentRequest(c, http.StatusBadRequest, errors.New("invalid username: must start with a lowercase letter and contain only lowercase letters, numbers, dots, hyphens, or underscores"))
+		abortAgentRequest(c, http.StatusBadRequest, errInvalidAgentUsername)
 		return
 	}
 
@@ -443,7 +531,7 @@ func (a *API) handleCreateAgent(c *gin.Context) {
 	audit.AddParam(auditRec(c), audit.KeyAgentID, agent.ID)
 	audit.AddParam(auditRec(c), "bot_user_id", mmBot.UserId)
 
-	_ = a.refreshBotsAndNotify()
+	_ = a.refreshBotsAndNotify("")
 	c.JSON(http.StatusCreated, agent)
 }
 
@@ -575,15 +663,26 @@ func (a *API) handleUpdateAgent(c *gin.Context) {
 	// Shallow copy is safe: applyAgentUpdateRequest replaces slice headers rather than mutating elements.
 	proposed := *cfg
 	displayNameChanged := applyAgentUpdateRequest(&proposed, req)
+	usernameChanged := req.usernameProvided && req.Username != cfg.Name
+	if usernameChanged {
+		proposed.Name = req.Username
+	}
 
 	if serviceAccountChangeNeedsAdmin(*cfg, proposed) && !isSystemAdmin(a.pluginAPI, userID) {
 		abortAgentRequest(c, http.StatusForbidden, errServiceAccountAuthRequiresAdmin)
 		return
 	}
 
-	if req.usernameProvided && req.Username != cfg.Name {
-		abortAgentRequest(c, http.StatusBadRequest, errors.New("username cannot be changed after the agent is created"))
-		return
+	if usernameChanged {
+		audit.AddParam(auditRec(c), "new_agent_name", audit.TruncateID(req.Username))
+		if !validUsernameRe.MatchString(req.Username) {
+			abortAgentRequest(c, http.StatusBadRequest, errInvalidAgentUsername)
+			return
+		}
+		if cfg.BotUserID == "" {
+			abortAgentRequest(c, http.StatusBadRequest, errors.New("this agent has no bot account to rename"))
+			return
+		}
 	}
 	if _, ok := a.validateAgentServiceID(c, req.ServiceID); !ok {
 		return
@@ -614,9 +713,71 @@ func (a *API) handleUpdateAgent(c *gin.Context) {
 		return
 	}
 
+	// The bot account is renamed first so a taken username fails the request
+	// before anything is persisted. It keeps its user ID, so DMs, channel
+	// memberships, and history stay with the agent.
+	revertRename := func() {}
+	renameReverted := false
+	if usernameChanged {
+		renamed, ok := a.renameAgentBot(c, cfg.BotUserID, cfg.Name)
+		if !ok {
+			return
+		}
+		// From here a failure can leave the bot account, the stored agent, and
+		// the registries disagreeing on the name (a rollback or the revert can
+		// fail too), with the previous username already released. Bring all of
+		// them to the stored agent before the error is returned, unless the
+		// rename was fully reverted and they already agree.
+		defer func() {
+			if c.IsAborted() && !renameReverted {
+				_ = a.refreshAfterRename(cfg.ID)
+			}
+		}()
+		if renamed {
+			revertRename = func() {
+				if _, err := a.pluginAPI.Bot.Patch(cfg.BotUserID, &model.BotPatch{Username: &prev.Name}); err != nil {
+					a.pluginAPI.Log.Error("Failed to revert bot username after agent update failure", "agent_id", cfg.ID, "error", err.Error())
+					return
+				}
+				renameReverted = true
+			}
+		}
+	}
+
 	if err := a.agentStore.UpdateAgent(cfg); err != nil {
+		revertRename()
 		abortAgentRequest(c, http.StatusInternalServerError, fmt.Errorf("failed to update agent: %w", err))
 		return
+	}
+
+	// A stale DefaultBotName or TranscriptGenerator would silently misroute
+	// requests, so failing to update them fails the rename. The rename is only
+	// reverted once the stored agent is restored, so the agent and its bot
+	// account never disagree on the name.
+	defaultAgentRenamed := false
+	if usernameChanged {
+		updated, defaultRenamed, err := a.renameAgentConfigReferences(prev.Name, cfg.Name)
+		if err != nil {
+			if rollbackErr := a.agentStore.UpdateAgent(&prev); rollbackErr != nil {
+				a.pluginAPI.Log.Error("Failed to rollback agent after default agent rename failure", "agent_id", cfg.ID, "rollback_error", rollbackErr.Error(), "rename_error", err.Error())
+			} else {
+				revertRename()
+			}
+			abortAgentRequest(c, http.StatusInternalServerError, fmt.Errorf("failed to point settings at the renamed agent: %w", err))
+			return
+		}
+		defaultAgentRenamed = defaultRenamed
+		if updated {
+			revertBotRename := revertRename
+			revertRename = func() {
+				if _, _, err := a.renameAgentConfigReferences(cfg.Name, prev.Name); err != nil {
+					a.pluginAPI.Log.Error("Failed to revert default agent name after agent update failure", "agent_id", cfg.ID, "error", err.Error())
+				}
+				revertBotRename()
+				// The config update already rebuilt the registries under the new name.
+				renameReverted = false
+			}
+		}
 	}
 
 	// Switching away from attribute-based access: delete the agent policy.
@@ -631,13 +792,24 @@ func (a *API) handleUpdateAgent(c *gin.Context) {
 		if err := a.accessChecker.DeletePolicy(c.Request.Context(), userID, accesscontrol.ResourceTypeAgent, cfg.ID); err != nil && !errors.Is(err, accesscontrol.ErrPolicyNotFound) {
 			if rollbackErr := a.agentStore.UpdateAgent(&prev); rollbackErr != nil {
 				a.pluginAPI.Log.Error("Failed to rollback agent after access policy deletion failure", "agent_id", cfg.ID, "rollback_error", rollbackErr.Error(), "delete_error", err.Error())
+			} else {
+				revertRename()
 			}
 			abortPolicyRequest(c, fmt.Errorf("failed to delete access policy: %w", err))
 			return
 		}
 	}
 
-	ensureErr := a.refreshBotsAndNotify()
+	if defaultAgentRenamed {
+		audit.AddParam(auditRec(c), "default_agent_renamed", true)
+	}
+
+	var ensureErr error
+	if usernameChanged {
+		ensureErr = a.refreshAfterRename(cfg.ID)
+	} else {
+		ensureErr = a.refreshBotsAndNotify("")
+	}
 
 	// EnsureBots patches display name on success; when it did not run (no bot registry) or failed, sync explicitly.
 	if displayNameChanged && (ensureErr != nil || a.bots == nil) {
@@ -671,13 +843,19 @@ func (a *API) handleDeleteAgent(c *gin.Context) {
 		return
 	}
 
+	// A default naming a missing agent fails requests instead of falling back
+	// to the first agent, so the deleted agent must not stay the default.
+	if _, _, err := a.renameAgentConfigReferences(cfg.Name, ""); err != nil {
+		a.pluginAPI.Log.Error("Failed to clear settings that referenced the deleted agent", "agent_id", cfg.ID, "error", err.Error())
+	}
+
 	// Best-effort policy cleanup: agent deletion must not fail on it. A stale
 	// policy on a deleted agent gates nothing.
 	if err := a.accessChecker.DeletePolicy(c.Request.Context(), userID, accesscontrol.ResourceTypeAgent, cfg.ID); err != nil && !errors.Is(err, accesscontrol.ErrPolicyNotFound) {
 		a.pluginAPI.Log.Error("Failed to delete access policy for deleted agent", "agent_id", cfg.ID, "error", err.Error())
 	}
 
-	ensureErr := a.refreshBotsAndNotify()
+	ensureErr := a.refreshBotsAndNotify("")
 
 	// EnsureBots deactivates removed bots on success; when it did not run or failed, deactivate explicitly.
 	if ensureErr != nil || a.bots == nil {

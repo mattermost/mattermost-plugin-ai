@@ -235,7 +235,7 @@ func (p *Plugin) OnActivate() error {
 		}
 	}
 	if idsMigrated {
-		if pubErr := p.PublishAgentUpdate(); pubErr != nil {
+		if pubErr := p.PublishAgentUpdate(""); pubErr != nil {
 			pluginAPI.Log.Error("Failed to publish agent update after ID migration", "error", pubErr.Error())
 		}
 	}
@@ -283,7 +283,7 @@ func (p *Plugin) OnActivate() error {
 		bots.ForceRefreshOnNextEnsure()
 		if ensureErr := bots.EnsureBots(); ensureErr != nil {
 			pluginAPI.Log.Error("failed to ensure bots after legacy bot migration", "context", context, "error", ensureErr)
-		} else if pubErr := p.PublishAgentUpdate(); pubErr != nil {
+		} else if pubErr := p.PublishAgentUpdate(""); pubErr != nil {
 			pluginAPI.Log.Error("Failed to publish agent update cluster event", "error", pubErr.Error())
 		}
 	}

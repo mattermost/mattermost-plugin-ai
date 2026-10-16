@@ -205,6 +205,7 @@ type Props = {
 }
 
 const DISCARD_CHANGES_TITLE_ID = 'discard-agent-changes-title';
+const RENAME_AGENT_TITLE_ID = 'rename-agent-title';
 
 const AgentConfigView = (props: Props) => {
     const {mode, agent, services, onBack, onSaved} = props;
@@ -238,8 +239,12 @@ const AgentConfigView = (props: Props) => {
     const [saving, setSaving] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [showDiscardDialog, setShowDiscardDialog] = useState(false);
-    const showDiscardDialogRef = useRef(false);
-    showDiscardDialogRef.current = showDiscardDialog;
+    const [showRenameDialog, setShowRenameDialog] = useState(false);
+    const dialogOpenRef = useRef(false);
+    dialogOpenRef.current = showDiscardDialog || showRenameDialog;
+
+    const savedUsername = (mode === 'edit' && agent?.name) || '';
+    const isRenaming = savedUsername !== '' && draft.username !== savedUsername;
 
     // Soft-lock Access / MCP grants while SA stays on for non-admins.
     // Save stays enabled so managers can still edit day-to-day config (including
@@ -265,7 +270,7 @@ const AgentConfigView = (props: Props) => {
         if (saving) {
             return;
         }
-        if (showDiscardDialogRef.current) {
+        if (dialogOpenRef.current) {
             return;
         }
 
@@ -292,7 +297,7 @@ const AgentConfigView = (props: Props) => {
             if (e.key !== 'Escape' || e.defaultPrevented) {
                 return;
             }
-            if (showDiscardDialogRef.current) {
+            if (dialogOpenRef.current) {
                 return;
             }
             e.preventDefault();
@@ -352,14 +357,7 @@ const AgentConfigView = (props: Props) => {
         return errs;
     }, [draft, intl]);
 
-    const handleSave = useCallback(async () => {
-        const validationErrors = validate();
-        if (Object.keys(validationErrors).length > 0) {
-            setErrors(validationErrors);
-            setActiveTab('config');
-            return;
-        }
-        setErrors({});
+    const save = useCallback(async () => {
         setSaving(true);
 
         try {
@@ -402,7 +400,31 @@ const AgentConfigView = (props: Props) => {
         } finally {
             setSaving(false);
         }
-    }, [mode, agent, draft, avatarFile, intl, onSaved, validate]);
+    }, [mode, agent, draft, avatarFile, intl, onSaved]);
+
+    const handleSave = useCallback(() => {
+        const validationErrors = validate();
+        if (Object.keys(validationErrors).length > 0) {
+            setErrors(validationErrors);
+            setActiveTab('config');
+            return;
+        }
+        setErrors({});
+        if (isRenaming) {
+            setShowRenameDialog(true);
+            return;
+        }
+        save();
+    }, [validate, isRenaming, save]);
+
+    const handleRenameConfirm = useCallback(() => {
+        setShowRenameDialog(false);
+        save();
+    }, [save]);
+
+    const handleRenameCancel = useCallback(() => {
+        setShowRenameDialog(false);
+    }, []);
 
     const title = mode === 'create' ? intl.formatMessage({defaultMessage: 'New Agent'}) : draft.displayName || intl.formatMessage({defaultMessage: 'Edit Agent'});
 
@@ -492,7 +514,7 @@ const AgentConfigView = (props: Props) => {
                                 botUserId={agent?.botUserID}
                                 services={services}
                                 errors={errors}
-                                usernameLocked={mode === 'edit'}
+                                savedUsername={savedUsername}
                             />
                         </div>
                     )}
@@ -566,6 +588,50 @@ const AgentConfigView = (props: Props) => {
                 managedAccessibility={true}
                 zIndex={2100}
             />
+            <ConfirmationDialog
+                show={showRenameDialog}
+                titleId={RENAME_AGENT_TITLE_ID}
+                title={<FormattedMessage defaultMessage='Change agent username?'/>}
+                message={(
+                    <>
+                        <FormattedMessage
+                            defaultMessage='The agent will be renamed from <b>@{oldName}</b> to <b>@{newName}</b>. Its direct messages, channel memberships, and conversation history are kept. After the change:'
+                            values={{
+                                oldName: savedUsername,
+                                newName: draft.username,
+                                b: (chunks: React.ReactNode) => <strong>{chunks}</strong>,
+                            }}
+                        />
+                        <RenameConsequences>
+                            <li>
+                                <FormattedMessage
+                                    defaultMessage='Existing messages that mention @{oldName} will no longer link to the agent.'
+                                    values={{oldName: savedUsername}}
+                                />
+                            </li>
+                            <li>
+                                <FormattedMessage
+                                    defaultMessage='People must mention @{newName} to reach the agent, and slash commands, scripts, or integrations that use @{oldName} must be updated.'
+                                    values={{oldName: savedUsername, newName: draft.username}}
+                                />
+                            </li>
+                            <li>
+                                <FormattedMessage
+                                    defaultMessage='@{oldName} becomes available, so another user or bot could claim it.'
+                                    values={{oldName: savedUsername}}
+                                />
+                            </li>
+                        </RenameConsequences>
+                    </>
+                )}
+                confirmButtonText={<FormattedMessage defaultMessage='Change username'/>}
+                cancelButtonText={<FormattedMessage defaultMessage='Keep current username'/>}
+                onConfirm={handleRenameConfirm}
+                onCancel={handleRenameCancel}
+                confirmPending={saving}
+                managedAccessibility={true}
+                zIndex={2100}
+            />
         </>
     );
 };
@@ -624,6 +690,15 @@ const ViewBody = styled.div`
 
 const Notice = styled(SectionNotice)`
     margin-bottom: var(--spacing-l);
+`;
+
+const RenameConsequences = styled.ul`
+    margin: 12px 0 0;
+    padding-left: 20px;
+
+    li + li {
+        margin-top: 4px;
+    }
 `;
 
 const ViewFooter = styled.div`

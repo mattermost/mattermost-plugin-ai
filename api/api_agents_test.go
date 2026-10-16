@@ -17,6 +17,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/mattermost/mattermost-plugin-agents/v2/audit"
+	"github.com/mattermost/mattermost-plugin-agents/v2/bots"
 	"github.com/mattermost/mattermost-plugin-agents/v2/config"
 	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
@@ -51,8 +52,9 @@ func setupAgentTestEnvironment(t *testing.T) *TestEnvironment {
 
 // mockConfigStore is a minimal ConfigStore for agent tests.
 type mockConfigStore struct {
-	cfg    *config.Config
-	getErr error
+	cfg       *config.Config
+	getErr    error
+	updateErr error
 }
 
 func (m *mockConfigStore) GetConfig() (*config.Config, error) {
@@ -69,6 +71,9 @@ func (m *mockConfigStore) SaveConfig(cfg config.Config) error {
 func (m *mockConfigStore) UpdateConfig(transform func(prev *config.Config) (config.Config, error)) (config.Config, error) {
 	if m.getErr != nil {
 		return config.Config{}, m.getErr
+	}
+	if m.updateErr != nil {
+		return config.Config{}, m.updateErr
 	}
 	next, err := transform(m.cfg)
 	if err != nil {
@@ -768,6 +773,16 @@ func TestAgentServiceAccountAuthRequiresSystemAdmin(t *testing.T) {
 			expectStored:   true,
 		},
 		{
+			name:         "non-admin can keep service account auth and change username",
+			storedValue:  true,
+			requestValue: true,
+			extraOverrides: map[string]any{
+				"username": "manager-renamed",
+			},
+			expectedStatus: http.StatusOK,
+			expectStored:   true,
+		},
+		{
 			name:         "non-admin can keep service account auth and change model",
 			storedValue:  true,
 			requestValue: true,
@@ -926,6 +941,7 @@ func TestAgentServiceAccountAuthRequiresSystemAdmin(t *testing.T) {
 			}
 			e.agentStore.agents["agent-1"] = stored
 			e.mockAPI.On("PatchBot", "bot-1", mock.AnythingOfType("*model.BotPatch")).Return(&model.Bot{}, nil).Maybe()
+			e.mockAPI.On("GetUserByUsername", mock.Anything).Return(nil, model.NewAppError("GetUserByUsername", "app.user.missing", nil, "", http.StatusNotFound)).Maybe()
 
 			overrides := map[string]any{
 				"displayName":           "Updated",
@@ -956,6 +972,9 @@ func TestAgentServiceAccountAuthRequiresSystemAdmin(t *testing.T) {
 				}
 				if modelName, ok := tc.extraOverrides["model"]; ok {
 					assert.Equal(t, modelName, e.agentStore.agents["agent-1"].Model)
+				}
+				if username, ok := tc.extraOverrides["username"]; ok {
+					assert.Equal(t, username, e.agentStore.agents["agent-1"].Name)
 				}
 			}
 		})
@@ -991,6 +1010,52 @@ func TestDeleteAgentDeactivatesBot(t *testing.T) {
 	// Verify soft-deleted in store
 	agent := e.agentStore.agents["agent-1"]
 	assert.NotZero(t, agent.DeleteAt)
+}
+
+func TestDeleteAgentClearsSettingsThatReferencedIt(t *testing.T) {
+	tests := []struct {
+		name               string
+		defaultBotName     string
+		transcriptBotName  string
+		expectDefault      string
+		expectTranscriptBy string
+	}{
+		{
+			name:              "deleted agent was the default and the transcript generator",
+			defaultBotName:    "doomed",
+			transcriptBotName: "doomed",
+		},
+		{
+			name:               "settings name other agents",
+			defaultBotName:     "keeper",
+			transcriptBotName:  "keeper",
+			expectDefault:      "keeper",
+			expectTranscriptBy: "keeper",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			e := setupAgentTestEnvironment(t)
+			defer e.Cleanup(t)
+
+			mockLicensed(e.mockAPI)
+			e.mockAPI.On("UpdateBotActive", "bot-1", false).Return(&model.Bot{}, nil).Maybe()
+			store := e.api.configStore.(*mockConfigStore)
+			store.cfg.DefaultBotName = tc.defaultBotName
+			store.cfg.TranscriptGenerator = tc.transcriptBotName
+			e.agentStore.agents["agent-1"] = &llm.BotConfig{
+				ID: "agent-1", CreatorID: testUserID, BotUserID: "bot-1",
+				DisplayName: "Doomed", Name: "doomed", ServiceID: "svc-1",
+			}
+
+			recorder := doRequest(e.api, http.MethodDelete, "/agents/agent-1", nil, testUserID)
+			require.Equal(t, http.StatusOK, recorder.Result().StatusCode)
+
+			assert.Equal(t, tc.expectDefault, store.cfg.DefaultBotName)
+			assert.Equal(t, tc.expectTranscriptBy, store.cfg.TranscriptGenerator)
+		})
+	}
 }
 
 func TestListServicesNoSecrets(t *testing.T) {
@@ -1269,23 +1334,301 @@ func TestFetchModelsForServiceWithManageOthersPermission(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, recorder.Result().StatusCode)
 }
 
-func TestUpdateAgentUsernameChangeForbidden(t *testing.T) {
-	e := setupAgentTestEnvironment(t)
-	defer e.Cleanup(t)
+func TestUpdateAgentRename(t *testing.T) {
+	usernameNotFound := model.NewAppError("GetUserByUsername", "app.user.missing", nil, "", http.StatusNotFound)
 
-	mockLicensed(e.mockAPI)
-	e.mockAPI.On("LogError", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
-
-	stored := &llm.BotConfig{
-		ID: "agent-1", CreatorID: testUserID, BotUserID: "bot-1",
-		DisplayName: "Agent", Name: "same-user", ServiceID: "svc-1",
+	tests := []struct {
+		name           string
+		newUsername    string
+		defaultBotName string
+		// currentBotName is the bot account's username when the request
+		// arrives; empty means it still has the agent's stored name.
+		currentBotName     string
+		setup              func(e *TestEnvironment)
+		expectedStatus     int
+		expectedName       string
+		expectedBotName    string
+		expectedDefaultBot string
+	}{
+		{
+			name:               "renames the existing bot account in place",
+			newUsername:        "new-name",
+			defaultBotName:     "someone-else",
+			expectedStatus:     http.StatusOK,
+			expectedName:       "new-name",
+			expectedBotName:    "new-name",
+			expectedDefaultBot: "someone-else",
+		},
+		{
+			name:               "default agent setting follows the rename",
+			newUsername:        "new-name",
+			defaultBotName:     "old-name",
+			expectedStatus:     http.StatusOK,
+			expectedName:       "new-name",
+			expectedBotName:    "new-name",
+			expectedDefaultBot: "new-name",
+		},
+		{
+			name:               "taken username is rejected without touching the bot",
+			newUsername:        "taken-name",
+			defaultBotName:     "old-name",
+			expectedStatus:     http.StatusConflict,
+			expectedName:       "old-name",
+			expectedBotName:    "old-name",
+			expectedDefaultBot: "old-name",
+		},
+		{
+			name:               "invalid username is rejected without touching the bot",
+			newUsername:        "Not Valid",
+			defaultBotName:     "old-name",
+			expectedStatus:     http.StatusBadRequest,
+			expectedName:       "old-name",
+			expectedBotName:    "old-name",
+			expectedDefaultBot: "old-name",
+		},
+		{
+			name:           "bot rename is reverted when the agent cannot be saved",
+			newUsername:    "new-name",
+			defaultBotName: "old-name",
+			setup: func(e *TestEnvironment) {
+				e.agentStore.updateErr = errors.New("db down")
+			},
+			expectedStatus:     http.StatusInternalServerError,
+			expectedName:       "old-name",
+			expectedBotName:    "old-name",
+			expectedDefaultBot: "old-name",
+		},
+		{
+			name:           "rename is rolled back when the default agent setting cannot be updated",
+			newUsername:    "new-name",
+			defaultBotName: "old-name",
+			setup: func(e *TestEnvironment) {
+				e.api.configStore.(*mockConfigStore).updateErr = errors.New("db down")
+			},
+			expectedStatus:     http.StatusInternalServerError,
+			expectedName:       "old-name",
+			expectedBotName:    "old-name",
+			expectedDefaultBot: "old-name",
+		},
+		{
+			name:               "bot already renamed by a concurrent save is not treated as taken",
+			newUsername:        "new-name",
+			defaultBotName:     "old-name",
+			currentBotName:     "new-name",
+			expectedStatus:     http.StatusOK,
+			expectedName:       "new-name",
+			expectedBotName:    "new-name",
+			expectedDefaultBot: "new-name",
+		},
+		{
+			name:           "failed save does not revert a rename it did not make",
+			newUsername:    "new-name",
+			defaultBotName: "old-name",
+			currentBotName: "new-name",
+			setup: func(e *TestEnvironment) {
+				e.agentStore.updateErr = errors.New("db down")
+			},
+			expectedStatus:     http.StatusInternalServerError,
+			expectedName:       "old-name",
+			expectedBotName:    "new-name",
+			expectedDefaultBot: "old-name",
+		},
 	}
-	e.agentStore.agents["agent-1"] = stored
 
-	body := updateAgentBodyFromStored(stored, map[string]any{"username": "other-user"})
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			e := setupAgentTestEnvironment(t)
+			defer e.Cleanup(t)
 
-	recorder := doRequest(e.api, http.MethodPut, "/agents/agent-1", body, testUserID)
-	require.Equal(t, http.StatusBadRequest, recorder.Result().StatusCode)
+			mockLicensed(e.mockAPI)
+			e.mockAPI.On("LogError", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+
+			configStore := &mockConfigStore{cfg: &config.Config{
+				DefaultBotName:      tc.defaultBotName,
+				TranscriptGenerator: "old-name",
+				Services:            []llm.ServiceConfig{{ID: "svc-1", Name: "Test Service", Type: "openai"}},
+			}}
+			e.api.configStore = configStore
+
+			stored := &llm.BotConfig{
+				ID: "agent-1", CreatorID: testUserID, BotUserID: "bot-1",
+				DisplayName: "Agent", Name: "old-name", ServiceID: "svc-1",
+			}
+			e.agentStore.agents["agent-1"] = stored
+
+			botName := "old-name"
+			if tc.currentBotName != "" {
+				botName = tc.currentBotName
+				e.mockAPI.On("GetUserByUsername", botName).Return(&model.User{Id: "bot-1", Username: botName}, nil).Maybe()
+			}
+			e.mockAPI.On("GetUserByUsername", "taken-name").Return(&model.User{Id: "other-user", Username: "taken-name"}, nil).Maybe()
+			e.mockAPI.On("GetUserByUsername", mock.Anything).Return(nil, usernameNotFound).Maybe()
+			e.mockAPI.On("PatchBot", "bot-1", mock.AnythingOfType("*model.BotPatch")).Run(func(args mock.Arguments) {
+				if patch := args.Get(1).(*model.BotPatch); patch.Username != nil {
+					botName = *patch.Username
+				}
+			}).Return(&model.Bot{UserId: "bot-1"}, nil).Maybe()
+
+			if tc.setup != nil {
+				tc.setup(e)
+			}
+
+			body := updateAgentBodyFromStored(stored, map[string]any{"username": tc.newUsername})
+			recorder := doRequest(e.api, http.MethodPut, "/agents/agent-1", body, testUserID)
+
+			require.Equal(t, tc.expectedStatus, recorder.Result().StatusCode, recorder.Body.String())
+			assert.Equal(t, tc.expectedName, e.agentStore.agents["agent-1"].Name)
+			assert.Equal(t, "bot-1", e.agentStore.agents["agent-1"].BotUserID, "the agent must keep its bot account")
+			assert.Equal(t, tc.expectedBotName, botName)
+			assert.Equal(t, tc.expectedDefaultBot, configStore.cfg.DefaultBotName)
+			assert.Equal(t, tc.expectedName, configStore.cfg.TranscriptGenerator, "the transcript setting must follow the stored agent name")
+		})
+	}
+}
+
+type recordingAgentNotifier struct {
+	published []string
+}
+
+func (n *recordingAgentNotifier) PublishAgentUpdate(agentID string) error {
+	n.published = append(n.published, agentID)
+	return nil
+}
+
+// TestUpdateAgentRenameFailureStopsRoutingReleasedName covers failed renames
+// that cannot be fully undone, so the bot account keeps the new name and the
+// previous username is released.
+func TestUpdateAgentRenameFailureStopsRoutingReleasedName(t *testing.T) {
+	tests := []struct {
+		name          string
+		setup         func(e *TestEnvironment)
+		failBotRevert bool
+		expectedName  string
+	}{
+		{
+			name: "settings cannot be updated and the agent cannot be restored",
+			setup: func(e *TestEnvironment) {
+				e.api.configStore.(*mockConfigStore).updateErr = errors.New("db down")
+				e.agentStore.updateErrs = []error{nil, errors.New("rollback db down")}
+			},
+			expectedName: "new-name",
+		},
+		{
+			name: "agent cannot be saved and the bot rename cannot be reverted",
+			setup: func(e *TestEnvironment) {
+				e.agentStore.updateErr = errors.New("db down")
+			},
+			failBotRevert: true,
+			expectedName:  "old-name",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			e := setupAgentTestEnvironment(t)
+			defer e.Cleanup(t)
+
+			mockLicensed(e.mockAPI)
+			e.mockAPI.On("LogError", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+			e.mockAPI.On("GetUserByUsername", mock.Anything).
+				Return(nil, model.NewAppError("GetUserByUsername", "app.user.missing", nil, "", http.StatusNotFound)).Maybe()
+			e.api.configStore.(*mockConfigStore).cfg.DefaultBotName = "old-name"
+			notifier := &recordingAgentNotifier{}
+			e.api.clusterAgentNotifier = notifier
+
+			botName := "old-name"
+			e.mockAPI.On("PatchBot", "bot-1", mock.AnythingOfType("*model.BotPatch")).Return(func(_ string, patch *model.BotPatch) (*model.Bot, *model.AppError) {
+				if patch.Username != nil {
+					if tc.failBotRevert && *patch.Username == "old-name" {
+						return nil, model.NewAppError("PatchBot", "app.bot.patchbot.internal_error", nil, "", http.StatusInternalServerError)
+					}
+					botName = *patch.Username
+				}
+				return &model.Bot{UserId: "bot-1", Username: botName}, nil
+			}).Maybe()
+
+			stored := &llm.BotConfig{
+				ID: "agent-1", CreatorID: testUserID, BotUserID: "bot-1",
+				DisplayName: "Agent", Name: "old-name", ServiceID: "svc-1",
+			}
+			e.agentStore.agents["agent-1"] = stored
+			e.bots.SetBotsForTesting([]*bots.Bot{
+				bots.NewBot(*stored, llm.ServiceConfig{}, &model.Bot{UserId: "bot-1", Username: "old-name"}, nil),
+			})
+			tc.setup(e)
+
+			body := updateAgentBodyFromStored(stored, map[string]any{"username": "new-name"})
+			recorder := doRequest(e.api, http.MethodPut, "/agents/agent-1", body, testUserID)
+
+			require.Equal(t, http.StatusInternalServerError, recorder.Result().StatusCode, recorder.Body.String())
+			require.Equal(t, tc.expectedName, e.agentStore.agents["agent-1"].Name)
+			require.Equal(t, "new-name", botName, "precondition: the previous username stays released")
+			assert.Nil(t, e.bots.GetBotMentioned("@old-name hi"), "the released username must not keep routing to the agent")
+			assert.Equal(t, []string{"agent-1"}, notifier.published, "peers must refresh the agent too")
+		})
+	}
+}
+
+func TestUpdateAgentRefreshesRenamedAgent(t *testing.T) {
+	tests := []struct {
+		name             string
+		change           map[string]any
+		expectPublished  []string
+		expectStaleEntry bool
+	}{
+		{
+			name:            "rename refreshes the agent here and on peers",
+			change:          map[string]any{"username": "new-name"},
+			expectPublished: []string{"agent-1"},
+		},
+		{
+			name:             "other changes leave the agent to the full refresh",
+			change:           map[string]any{"displayName": "Renamed"},
+			expectPublished:  []string{""},
+			expectStaleEntry: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			e := setupAgentTestEnvironment(t)
+			defer e.Cleanup(t)
+
+			mockLicensed(e.mockAPI)
+			e.mockAPI.On("GetUserByUsername", mock.Anything).
+				Return(nil, model.NewAppError("GetUserByUsername", "app.user.missing", nil, "", http.StatusNotFound)).Maybe()
+			e.mockAPI.On("PatchBot", "bot-1", mock.AnythingOfType("*model.BotPatch")).Return(&model.Bot{UserId: "bot-1"}, nil).Maybe()
+			liveName := "old-name"
+			if username, ok := tc.change["username"].(string); ok {
+				liveName = username
+			}
+			e.mockAPI.On("GetUser", "bot-1").Return(&model.User{Id: "bot-1", Username: liveName, IsBot: true}, nil).Maybe()
+			notifier := &recordingAgentNotifier{}
+			e.api.clusterAgentNotifier = notifier
+
+			stored := &llm.BotConfig{
+				ID: "agent-1", CreatorID: testUserID, BotUserID: "bot-1",
+				DisplayName: "Agent", Name: "old-name", ServiceID: "svc-1",
+			}
+			e.agentStore.agents["agent-1"] = stored
+			// The test registry cannot rebuild agents, so a refreshed agent is
+			// dropped rather than replaced.
+			e.bots.SetBotsForTesting([]*bots.Bot{
+				bots.NewBot(*stored, llm.ServiceConfig{}, &model.Bot{UserId: "bot-1", Username: "old-name"}, nil),
+			})
+
+			body := updateAgentBodyFromStored(stored, tc.change)
+			recorder := doRequest(e.api, http.MethodPut, "/agents/agent-1", body, testUserID)
+
+			require.Equal(t, http.StatusOK, recorder.Result().StatusCode, recorder.Body.String())
+			assert.Equal(t, tc.expectPublished, notifier.published)
+			if tc.expectStaleEntry {
+				assert.NotNil(t, e.bots.GetBotMentioned("@old-name hi"))
+			} else {
+				assert.Nil(t, e.bots.GetBotMentioned("@old-name hi"), "a renamed agent must not keep answering to its old name")
+			}
+		})
+	}
 }
 
 func TestUpdateAgentInvalidServiceID(t *testing.T) {
@@ -1667,10 +2010,11 @@ func TestAgentSaveErrorsAreActionable(t *testing.T) {
 			errorContains:  "customInstructions exceeds maximum length",
 		},
 		{
-			name: "update rejects username change",
+			name: "update rejects rename to a taken username",
 			setup: func(_ *testing.T, e *TestEnvironment) (string, string, any) {
 				mockLicensed(e.mockAPI)
 				e.mockAPI.On("LogError", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+				e.mockAPI.On("GetUserByUsername", "different-user").Return(&model.User{Id: "someone", Username: "different-user"}, nil)
 
 				stored := &llm.BotConfig{
 					ID: "agent-1", CreatorID: testUserID, BotUserID: "bot-1",
@@ -1681,8 +2025,8 @@ func TestAgentSaveErrorsAreActionable(t *testing.T) {
 				body := updateAgentBodyFromStored(stored, map[string]any{"username": "different-user"})
 				return http.MethodPut, "/agents/agent-1", body
 			},
-			expectedStatus: http.StatusBadRequest,
-			errorContains:  "username cannot be changed",
+			expectedStatus: http.StatusConflict,
+			errorContains:  "already taken",
 		},
 		{
 			name: "create sanitizes internal server error responses",
@@ -2133,6 +2477,32 @@ func TestAuditUpdateAgent(t *testing.T) {
 			validateRecord: func(t *testing.T, rec *model.AuditRecord) {
 				assert.Equal(t, model.AuditStatusSuccess, rec.Status)
 				assert.Equal(t, []string{"channelIDs"}, rec.EventData.Parameters["changed_fields"])
+			},
+		},
+		{
+			name: "rename records the previous and new agent names",
+			setup: func(e *TestEnvironment) map[string]any {
+				mockLicensed(e.mockAPI)
+				stored := storedAgent()
+				e.agentStore.agents["agent-1"] = stored
+				e.mockAPI.On("GetUserByUsername", "renamed-agent").Return(nil, model.NewAppError("GetUserByUsername", "app.user.missing", nil, "", http.StatusNotFound))
+				e.mockAPI.On("PatchBot", "bot-1", mock.AnythingOfType("*model.BotPatch")).Return(&model.Bot{}, nil)
+				return updateAgentBodyFromStored(stored, map[string]any{
+					"username":           "renamed-agent",
+					"customInstructions": plantedInstructions,
+				})
+			},
+			expectedStatus: http.StatusOK,
+			validateRecord: func(t *testing.T, rec *model.AuditRecord) {
+				assert.Equal(t, model.AuditStatusSuccess, rec.Status)
+				assert.Equal(t, "my-agent", rec.EventData.Parameters[audit.KeyAgentName])
+				assert.Equal(t, "renamed-agent", rec.EventData.Parameters["new_agent_name"])
+				assert.Equal(t, []string{"customInstructions", "name"}, rec.EventData.Parameters["changed_fields"])
+
+				raw, err := json.Marshal(rec)
+				require.NoError(t, err)
+				assert.NotContains(t, string(raw), plantedInstructions,
+					"audit record must never carry custom instructions")
 			},
 		},
 		{

@@ -136,8 +136,10 @@ type ChannelAutoReplyStore interface {
 }
 
 // ClusterAgentNotifier broadcasts agent update events to other cluster nodes.
+// agentID names a renamed agent that peers refresh individually first; it is
+// empty when no single agent needs that.
 type ClusterAgentNotifier interface {
-	PublishAgentUpdate() error
+	PublishAgentUpdate(agentID string) error
 }
 
 // MCPOAuthClusterNotifier broadcasts MCP OAuth updates to other cluster nodes.
@@ -498,7 +500,7 @@ func (a *API) aiBotRequired(c *gin.Context) {
 
 	bot := a.bots.GetBotByUsernameOrFirst(botUsername)
 	if bot == nil {
-		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to get bot: %s", botUsername))
+		c.AbortWithError(http.StatusNotFound, fmt.Errorf("agent not available: %s", botUsername))
 		return
 	}
 	c.Set(ContextBotKey, bot)
@@ -610,6 +612,16 @@ func (a *API) usesServiceAccountAuth(bot *bots.Bot) bool {
 	return a.contextBuilder.UsesServiceAccountCatalog(bot)
 }
 
+// defaultBotUserID returns the bot user ID of the default agent, or "" when
+// it is not available. Registry usernames can lag a rename, so the default is
+// matched by user ID rather than by comparing them to DefaultBotName.
+func (a *API) defaultBotUserID() string {
+	if bot := a.bots.GetBotByUsername(a.config.GetDefaultBotName()); bot != nil {
+		return bot.BotUserID()
+	}
+	return ""
+}
+
 // getAIBotsForUser returns all AI bots available to a user
 func (a *API) getAIBotsForUser(ctx context.Context, userID string) []AIBotInfo {
 	allBots := a.bots.GetAllBots()
@@ -617,7 +629,7 @@ func (a *API) getAIBotsForUser(ctx context.Context, userID string) []AIBotInfo {
 	// Get the info from all the bots.
 	// Put the default bot first.
 	bots := make([]AIBotInfo, 0, len(allBots))
-	defaultBotName := a.config.GetDefaultBotName()
+	defaultBotID := a.defaultBotUserID()
 	for _, bot := range allBots {
 		// Don't return bots the user is excluded from using.
 		if a.bots.CheckUsageRestrictionsForUser(ctx, bot, userID) != nil {
@@ -633,7 +645,7 @@ func (a *API) getAIBotsForUser(ctx context.Context, userID string) []AIBotInfo {
 			dmChannelID = botDMChannel.Id
 		}
 
-		isDefault := bot.GetMMBot().Username == defaultBotName
+		isDefault := defaultBotID != "" && bot.BotUserID() == defaultBotID
 		bots = append(bots, AIBotInfo{
 			ID:                    bot.GetMMBot().UserId,
 			DisplayName:           bot.GetMMBot().DisplayName,

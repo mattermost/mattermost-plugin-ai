@@ -4,6 +4,7 @@
 package bots
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -913,13 +914,234 @@ func TestEnsureBots(t *testing.T) {
 	}
 }
 
+func TestEnsureBotsReusesExistingBotAccounts(t *testing.T) {
+	services := []llm.ServiceConfig{
+		{ID: "svc1", Type: llm.ServiceTypeOpenAI, APIKey: "k", DefaultModel: "gpt-4o"},
+	}
+
+	testCases := []struct {
+		name            string
+		cfgBots         []llm.BotConfig
+		dbAgents        []llm.BotConfig
+		previousMMBots  []*model.Bot
+		expectedRenames map[string]string
+		expectedPatched []string
+		expectedCreates []string
+		expectedRetired []string
+	}{
+		{
+			name:            "renamed DB agent renames its existing bot account",
+			dbAgents:        []llm.BotConfig{{ID: "a1", BotUserID: "bot-1", Name: "new-name", DisplayName: "Agent", ServiceID: "svc1"}},
+			previousMMBots:  []*model.Bot{{UserId: "bot-1", Username: "old-name"}},
+			expectedRenames: map[string]string{"bot-1": "new-name"},
+			expectedPatched: []string{"bot-1"},
+		},
+		{
+			name:            "unchanged DB agent keeps its username",
+			dbAgents:        []llm.BotConfig{{ID: "a1", BotUserID: "bot-1", Name: "same-name", DisplayName: "Agent", ServiceID: "svc1"}},
+			previousMMBots:  []*model.Bot{{UserId: "bot-1", Username: "same-name"}},
+			expectedPatched: []string{"bot-1"},
+		},
+		{
+			name:            "renamed DB agent does not take over a stale bot with its new name",
+			dbAgents:        []llm.BotConfig{{ID: "a1", BotUserID: "bot-1", Name: "new-name", DisplayName: "Agent", ServiceID: "svc1"}},
+			previousMMBots:  []*model.Bot{{UserId: "bot-1", Username: "old-name"}, {UserId: "bot-2", Username: "new-name"}},
+			expectedRenames: map[string]string{"bot-1": "new-name"},
+			expectedPatched: []string{"bot-1"},
+			expectedRetired: []string{"bot-2"},
+		},
+		{
+			name:            "config-defined bot is matched by username",
+			cfgBots:         []llm.BotConfig{{ID: "f1", Name: "filebot", DisplayName: "File Bot", ServiceID: "svc1"}},
+			previousMMBots:  []*model.Bot{{UserId: "file-bot-user", Username: "filebot"}},
+			expectedPatched: []string{"file-bot-user"},
+		},
+		{
+			name:            "DB agent whose bot account is missing gets a new one",
+			dbAgents:        []llm.BotConfig{{ID: "a1", BotUserID: "bot-gone", Name: "agent", DisplayName: "Agent", ServiceID: "svc1"}},
+			previousMMBots:  []*model.Bot{{UserId: "bot-other", Username: "other"}},
+			expectedCreates: []string{"agent"},
+			expectedRetired: []string{"bot-other"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockAPI := &plugintest.API{}
+			client := pluginapi.NewClient(mockAPI, nil)
+
+			mockAPI.On("GetConfig").Return(&model.Config{}).Maybe()
+			mockAPI.On("GetLicense").Return(&model.License{SkuShortName: model.LicenseShortSkuEnterprise, Features: &model.Features{}}).Maybe()
+			mockAPI.On("GetBots", mock.AnythingOfType("*model.BotGetOptions")).Return(tc.previousMMBots, nil)
+			mockAPI.On("GetUser", mock.AnythingOfType("string")).Return(&model.User{LastPictureUpdate: 1}, nil).Maybe()
+			mockAPI.On("KVSetWithOptions", mock.AnythingOfType("string"), mock.AnythingOfType("[]uint8"), mock.AnythingOfType("model.PluginKVSetOptions")).Return(true, nil).Maybe()
+			mockAPI.On("KVDelete", mock.AnythingOfType("string")).Return(nil).Maybe()
+			mockAPI.On("LogError", mock.Anything).Return(nil).Maybe()
+
+			renames := map[string]string{}
+			var patched, creates, retired []string
+			mockAPI.On("PatchBot", mock.AnythingOfType("string"), mock.AnythingOfType("*model.BotPatch")).Return(func(userID string, patch *model.BotPatch) *model.Bot {
+				patched = append(patched, userID)
+				username := ""
+				for _, prev := range tc.previousMMBots {
+					if prev.UserId == userID {
+						username = prev.Username
+					}
+				}
+				if patch.Username != nil {
+					renames[userID] = *patch.Username
+					username = *patch.Username
+				}
+				return &model.Bot{UserId: userID, Username: username}
+			}, nil).Maybe()
+			mockAPI.On("CreateBot", mock.AnythingOfType("*model.Bot")).Return(func(bot *model.Bot) *model.Bot {
+				creates = append(creates, bot.Username)
+				bot.UserId = "created-" + bot.Username
+				return bot
+			}, nil).Maybe()
+			mockAPI.On("UpdateBotActive", mock.AnythingOfType("string"), mock.AnythingOfType("bool")).Return(func(userID string, active bool) *model.Bot {
+				if !active {
+					retired = append(retired, userID)
+				}
+				return &model.Bot{UserId: userID}
+			}, nil).Maybe()
+
+			cfg := &mockConfig{bots: tc.cfgBots, services: services}
+			mmBots := New(mockAPI, client, enterprise.NewLicenseChecker(client), cfg, &stubAgentStore{agents: tc.dbAgents}, newPassthroughAccessChecker(), &http.Client{}, nil)
+
+			require.NoError(t, mmBots.EnsureBots())
+
+			if tc.expectedRenames == nil {
+				tc.expectedRenames = map[string]string{}
+			}
+			assert.Equal(t, tc.expectedRenames, renames)
+			assert.ElementsMatch(t, tc.expectedPatched, patched)
+			assert.ElementsMatch(t, tc.expectedCreates, creates)
+			assert.ElementsMatch(t, tc.expectedRetired, retired)
+		})
+	}
+}
+
+func TestEnsureBotsRetriesBotWhoseAccountSyncFailed(t *testing.T) {
+	mockAPI := &plugintest.API{}
+	client := pluginapi.NewClient(mockAPI, nil)
+	mockAPI.On("GetConfig").Return(&model.Config{}).Maybe()
+	mockAPI.On("GetLicense").Return(&model.License{SkuShortName: model.LicenseShortSkuEnterprise, Features: &model.Features{}}).Maybe()
+	mockAPI.On("GetBots", mock.AnythingOfType("*model.BotGetOptions")).Return([]*model.Bot{
+		{UserId: "bot-1", Username: "old-name"},
+		{UserId: "bot-2", Username: "steady"},
+	}, nil)
+	mockAPI.On("GetUser", mock.AnythingOfType("string")).Return(&model.User{LastPictureUpdate: 1}, nil).Maybe()
+	mockAPI.On("UpdateBotActive", mock.AnythingOfType("string"), true).Return(&model.Bot{}, nil).Maybe()
+	mockAPI.On("KVSetWithOptions", mock.AnythingOfType("string"), mock.AnythingOfType("[]uint8"), mock.AnythingOfType("model.PluginKVSetOptions")).Return(true, nil).Maybe()
+	mockAPI.On("KVDelete", mock.AnythingOfType("string")).Return(nil).Maybe()
+	allowBotsLogging(mockAPI)
+
+	mockAPI.On("PatchBot", "bot-1", mock.AnythingOfType("*model.BotPatch")).
+		Return(nil, model.NewAppError("PatchBot", "app.user.save.username_exists.app_error", nil, "", http.StatusBadRequest)).Once()
+	mockAPI.On("PatchBot", "bot-1", mock.AnythingOfType("*model.BotPatch")).
+		Return(&model.Bot{UserId: "bot-1", Username: "new-name"}, nil).Once()
+	mockAPI.On("PatchBot", "bot-2", mock.AnythingOfType("*model.BotPatch")).
+		Return(&model.Bot{UserId: "bot-2", Username: "steady"}, nil)
+
+	services := []llm.ServiceConfig{{ID: "svc1", Type: llm.ServiceTypeOpenAI, APIKey: "k", DefaultModel: "gpt-4o"}}
+	store := &stubAgentStore{agents: []llm.BotConfig{
+		{ID: "a1", BotUserID: "bot-1", Name: "new-name", DisplayName: "Renamed", ServiceID: "svc1"},
+		{ID: "a2", BotUserID: "bot-2", Name: "steady", DisplayName: "Steady", ServiceID: "svc1"},
+	}}
+	mmBots := New(mockAPI, client, enterprise.NewLicenseChecker(client), &mockConfig{services: services}, store, newPassthroughAccessChecker(), &http.Client{}, nil)
+	t.Cleanup(mmBots.ShutdownServiceLLMs)
+
+	require.NoError(t, mmBots.EnsureBots())
+	assert.Nil(t, mmBots.GetBotByID("bot-1"), "a bot whose account could not be synced must not be served")
+	require.NotNil(t, mmBots.GetBotByID("bot-2"))
+
+	require.NoError(t, mmBots.EnsureBots())
+	renamed := mmBots.GetBotByID("bot-1")
+	require.NotNil(t, renamed, "an unchanged config must still retry the failed account sync")
+	assert.Equal(t, "new-name", renamed.GetMMBot().Username)
+
+	require.NoError(t, mmBots.EnsureBots())
+	mockAPI.AssertNumberOfCalls(t, "PatchBot", 4)
+}
+
+func TestGetBotByUsernameFindsRenamedBotAccount(t *testing.T) {
+	other := NewBot(llm.BotConfig{Name: "other"}, llm.ServiceConfig{}, &model.Bot{UserId: "bot-2", Username: "other"}, nil)
+	renamed := NewBot(llm.BotConfig{Name: "old-name"}, llm.ServiceConfig{}, &model.Bot{UserId: "bot-1", Username: "old-name"}, nil)
+	notFound := model.NewAppError("GetUserByUsername", "app.user.missing_account.const", nil, "", http.StatusNotFound)
+
+	testCases := []struct {
+		name       string
+		username   string
+		account    *model.User
+		accountErr *model.AppError
+		// renamedTo is the username bot-1's account holds now; empty means
+		// it still holds old-name.
+		renamedTo     string
+		expected      *Bot
+		expectedFirst *Bot
+	}{
+		{
+			name:          "name in the registry",
+			username:      "old-name",
+			expected:      renamed,
+			expectedFirst: renamed,
+		},
+		{
+			name:          "new name already held by the agent's bot account",
+			username:      "new-name",
+			account:       &model.User{Id: "bot-1", Username: "new-name", IsBot: true},
+			renamedTo:     "new-name",
+			expected:      renamed,
+			expectedFirst: renamed,
+		},
+		{
+			name:     "name held by a bot account outside the registry",
+			username: "unmanaged",
+			account:  &model.User{Id: "bot-3", Username: "unmanaged", IsBot: true},
+		},
+		{
+			name:       "name nobody holds",
+			username:   "missing",
+			accountErr: notFound,
+		},
+		{
+			name:          "no name given",
+			username:      "",
+			expectedFirst: other,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mmBots := newTestMMBots(t, &mockConfig{})
+			mockAPI := mmBots.ensureBotsClusterMutex.(*plugintest.API)
+			if tc.account != nil || tc.accountErr != nil {
+				mockAPI.On("GetUserByUsername", tc.username).Return(tc.account, tc.accountErr)
+			}
+			liveUsername := cmp.Or(tc.renamedTo, "old-name")
+			mockAPI.On("GetUser", "bot-1").Return(&model.User{Id: "bot-1", Username: liveUsername, IsBot: true}, nil).Maybe()
+			mockAPI.On("GetUser", "bot-2").Return(&model.User{Id: "bot-2", Username: "other", IsBot: true}, nil).Maybe()
+			mmBots.SetBotsForTesting([]*Bot{other, renamed})
+
+			assert.Same(t, tc.expected, mmBots.GetBotByUsername(tc.username))
+			assert.Same(t, tc.expectedFirst, mmBots.GetBotByUsernameOrFirst(tc.username))
+		})
+	}
+}
+
 // stubAgentStore returns a fixed slice. Tests can swap the slice between
-// EnsureBots calls to mimic a config save changing the DB-backed agent.
+// EnsureBots calls to mimic a config save changing the DB-backed agent, and
+// set listErr to make ListAgents fail.
 type stubAgentStore struct {
-	agents []llm.BotConfig
+	agents  []llm.BotConfig
+	listErr error
 }
 
 func (s *stubAgentStore) ListAgents() ([]*llm.BotConfig, error) {
+	if s.listErr != nil {
+		return nil, s.listErr
+	}
 	out := make([]*llm.BotConfig, len(s.agents))
 	for i := range s.agents {
 		cfg := s.agents[i]
@@ -934,13 +1156,14 @@ func (s *stubAgentStore) ListAgents() ([]*llm.BotConfig, error) {
 func newEnsureBotsHarness(t *testing.T, cfg *mockConfig, store AgentStore, license *model.License) *MMBots {
 	t.Helper()
 
+	accounts := &botAccounts{byUserID: map[string]*model.Bot{}}
 	mockAPI := &plugintest.API{}
 	client := pluginapi.NewClient(mockAPI, nil)
 	mockAPI.On("GetConfig").Return(&model.Config{}).Maybe()
 	mockAPI.On("GetLicense").Return(license).Maybe()
 	mockAPI.On("GetBots", mock.AnythingOfType("*model.BotGetOptions")).Return([]*model.Bot{}, nil).Maybe()
-	mockAPI.On("CreateBot", mock.AnythingOfType("*model.Bot")).Return(func(bot *model.Bot) *model.Bot { return bot }, nil).Maybe()
-	mockAPI.On("GetUser", mock.AnythingOfType("string")).Return(&model.User{LastPictureUpdate: 1}, nil).Maybe()
+	mockAPI.On("CreateBot", mock.AnythingOfType("*model.Bot")).Return(accounts.create).Maybe()
+	mockAPI.On("GetUser", mock.AnythingOfType("string")).Return(accounts.user).Maybe()
 	mockAPI.On("SetProfileImage", mock.AnythingOfType("string"), mock.AnythingOfType("[]uint8")).Return(nil).Maybe()
 	mockAPI.On("UpdateBotActive", mock.AnythingOfType("string"), mock.AnythingOfType("bool")).Return(&model.Bot{}, nil).Maybe()
 	mockAPI.On("PatchBot", mock.AnythingOfType("string"), mock.AnythingOfType("*model.BotPatch")).Return(&model.Bot{}, nil).Maybe()
