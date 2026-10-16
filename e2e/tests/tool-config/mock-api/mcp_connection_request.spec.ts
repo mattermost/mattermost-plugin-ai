@@ -36,8 +36,10 @@ const reason = 'I need it to look up your open tickets.';
 const requestArgs = JSON.stringify({ server: MOCK_OAUTH_SERVER_NAME, reason });
 const oauthStartPath = `/plugins/mattermost-ai/mcp/oauth/${encodeURIComponent(MOCK_OAUTH_SERVER_NAME)}/start`;
 
-// Only present in the system prompt when the server is offered for connection.
-const unconnectedPromptMatch = 'the user has not connected their own account to them yet';
+// The admin's description only reaches the system prompt when the server is
+// offered for connection, so matching on it also proves it is shown.
+const adminDescription = 'Help desk tickets for the support team.';
+const unconnectedPromptMatch = adminDescription;
 
 async function openBotReply(page: Page, userMessage: string): Promise<Locator> {
     const mmPage = new MattermostPage(page);
@@ -122,6 +124,7 @@ test.describe('MCP connection requests (Mocked LLM)', () => {
                         name: MOCK_OAUTH_SERVER_NAME,
                         enabled: true,
                         baseURL: MOCK_OAUTH_SERVER_URL,
+                        description: adminDescription,
                         clientID: 'test-client-id',
                         clientSecret: 'test-client-secret',
                     },

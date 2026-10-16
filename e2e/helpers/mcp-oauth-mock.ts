@@ -127,6 +127,7 @@ export function buildMCPOAuthMocks(completionResponse?: string): SmockerMock[] {
 export const MOCK_OAUTH_ACCESS_TOKEN = 'mock-mcp-access-token';
 export const MOCK_OAUTH_AUTHORIZE_URL = `${MOCK_MCP_BASE}/authorize`;
 export const MOCK_CONNECTED_TOOL_NAME = 'list_my_tickets';
+export const MOCK_SERVER_SELF_DESCRIPTION = 'Look up and update your support tickets.';
 
 type SmockerDynamicMock = {
     request: {
@@ -161,7 +162,9 @@ function jsonRPCResponse(payload: string): SmockerDynamicMock['dynamic_response'
 /**
  * Mocks that let the OAuth flow from buildMCPOAuthMocks complete: the token
  * endpoint issues MOCK_OAUTH_ACCESS_TOKEN, and MCP requests carrying it get a
- * working session with one tool. Register them after buildMCPOAuthMocks so they
+ * working session with one tool, from a server that describes itself as
+ * MOCK_SERVER_SELF_DESCRIPTION. Servers configured with that token as a static
+ * Authorization header reach the same session without OAuth. Register them after buildMCPOAuthMocks so they
  * take priority over its 401 responses. The authorization endpoint itself is
  * not mocked: it lives on the Docker network, so tests intercept
  * MOCK_OAUTH_AUTHORIZE_URL in the browser instead.
@@ -202,7 +205,7 @@ export function buildMCPOAuthConnectedMocks(): Array<SmockerMock | SmockerDynami
             request: authorizedMCPRequest('POST', 'initialize'),
             context: { times: 100 },
             dynamic_response: jsonRPCResponse(
-                '"result":{"protocolVersion":{{ toJson .Request.Body.params.protocolVersion }},"capabilities":{"tools":{}},"serverInfo":{"name":"mock-tickets","version":"1.0.0"}}',
+                `"result":{"protocolVersion":{{ toJson .Request.Body.params.protocolVersion }},"capabilities":{"tools":{}},"serverInfo":{"name":"mock-tickets","version":"1.0.0","description":"${MOCK_SERVER_SELF_DESCRIPTION}"}}`,
             ),
         },
         {
