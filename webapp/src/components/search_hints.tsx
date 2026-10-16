@@ -86,8 +86,9 @@ const SearchHints = () => {
                     setActiveBot={setActiveBot}
                     container={SelectorContainer}
 
-                    // The host search box closes on clicks outside its DOM subtree, so the menu must not be portaled.
-                    portal={false}
+                    // The host search box closes on clicks outside its DOM subtree but exempts clicks
+                    // inside a .MuiModal-root. Rendering the menu inline instead gets it clipped by the box.
+                    floatingClassName='MuiModal-root'
                 >
                     {currentBotName}
                     <ChevronDownIcon/>
