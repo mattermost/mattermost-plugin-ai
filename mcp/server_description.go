@@ -57,14 +57,20 @@ func (m *ClientManager) DescribeUnconnectedMCPServers(authErrors []llm.ToolAuthE
 			})
 			continue
 		}
-		described = append(described, llm.UnconnectedMCPServer{
-			Name:         server.Name,
-			ServerOrigin: server.BaseURL,
-			Description:  promptSafeText(server.Description, config.MaxMCPServerDescriptionRunes),
-			Tools:        configuredServerTools(server),
-		})
+		described = append(described, describeConfiguredServer(server))
 	}
 	return described
+}
+
+// describeConfiguredServer describes a server the user must connect from its
+// admin configuration alone.
+func describeConfiguredServer(server *ServerConfig) llm.UnconnectedMCPServer {
+	return llm.UnconnectedMCPServer{
+		Name:         server.Name,
+		ServerOrigin: server.BaseURL,
+		Description:  promptSafeText(server.Description, config.MaxMCPServerDescriptionRunes),
+		Tools:        configuredServerTools(server),
+	}
 }
 
 // MCPServerOriginsByName maps each enabled remote server's configured name to
