@@ -626,17 +626,17 @@ func (s *ToolStore) lookupUnloadedMCPTool(name string) (Tool, bool) {
 	return matched, true
 }
 
-// HasMCPToolFromOrigin reports whether the store holds an MCP tool from
-// origin, loaded or not, for which keep returns true. A nil keep accepts every
-// tool.
+// HasMCPToolFromOrigin reports whether the store holds an MCP tool whose
+// ServerOrigin is exactly origin, loaded or not, for which keep returns true.
+// A nil keep accepts every tool. Origins are compared verbatim: configured
+// servers may differ only by trailing slashes.
 func (s *ToolStore) HasMCPToolFromOrigin(origin string, keep func(Tool) bool) bool {
-	origin = NormalizeMCPServerOrigin(origin)
-	if s == nil || origin == "" {
+	if s == nil || strings.TrimSpace(origin) == "" {
 		return false
 	}
 	for _, tools := range []map[string]Tool{s.tools, s.unloadedMCPTools} {
 		for _, tool := range tools {
-			if NormalizeMCPServerOrigin(tool.ServerOrigin) == origin && (keep == nil || keep(tool)) {
+			if tool.ServerOrigin == origin && (keep == nil || keep(tool)) {
 				return true
 			}
 		}

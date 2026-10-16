@@ -82,6 +82,7 @@ func TestResolveConnectionRequest(t *testing.T) {
 		loaded        []llm.Tool
 		unloaded      []llm.Tool
 		authErrors    []llm.ToolAuthError
+		origins       map[string]string
 		dynamic       bool
 		usable        func(llm.Tool) bool
 		wantConnected bool
@@ -115,6 +116,12 @@ func TestResolveConnectionRequest(t *testing.T) {
 			wantInMessage: "Its tools are now available in this conversation",
 		},
 		{
+			name:          "tools from a server whose URL differs only by trailing slashes do not count",
+			origins:       map[string]string{"Jira": jiraTestOrigin, "Jira mirror": jiraTestOrigin + "//"},
+			loaded:        []llm.Tool{{Name: "mirror__search", ServerOrigin: jiraTestOrigin + "//"}},
+			wantInMessage: "Jira is still not connected",
+		},
+		{
 			name:          "server still needing OAuth is not connected",
 			loaded:        githubTools,
 			authErrors:    []llm.ToolAuthError{{ServerName: "Jira", ServerOrigin: jiraTestOrigin}},
@@ -135,11 +142,15 @@ func TestResolveConnectionRequest(t *testing.T) {
 			for _, authErr := range tt.authErrors {
 				store.AddAuthError(authErr)
 			}
+			serverOrigins := origins
+			if tt.origins != nil {
+				serverOrigins = tt.origins
+			}
 			llmContext := &llm.Context{
 				Tools: store,
 				ToolCatalog: llm.ToolCatalogContext{
 					MCPDynamicToolLoading: tt.dynamic,
-					MCPServerOrigins:      origins,
+					MCPServerOrigins:      serverOrigins,
 				},
 			}
 
