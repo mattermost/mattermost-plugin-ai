@@ -182,6 +182,45 @@ func TestStandardPersonalityWithoutLocaleListsAvailableToolsForGeminiAndVertexOn
 	assert.NotContains(t, openAIOutput, "When asked about capabilities or tool access, agent may mention the tools listed above.")
 }
 
+func TestStandardPersonalityPostPermalinkGuidance(t *testing.T) {
+	tests := []struct {
+		name        string
+		siteURL     string
+		contains    []string
+		notContains []string
+	}{
+		{
+			name:    "configured site URL",
+			siteURL: "https://mattermost.example.com",
+			contains: []string{
+				"The Mattermost site URL is https://mattermost.example.com.",
+				"https://mattermost.example.com/_redirect/pl/<post_id>",
+				"including posts in private channels and direct messages",
+			},
+		},
+		{
+			name:        "site URL unavailable",
+			notContains: []string{"The Mattermost site URL is", "/_redirect/pl/<post_id>"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			output := renderStandardPersonalityWithoutLocale(t, &llm.Context{
+				BotName:     "agent",
+				BotUsername: "agent",
+				SiteURL:     tt.siteURL,
+			})
+			for _, expected := range tt.contains {
+				assert.Contains(t, output, expected)
+			}
+			for _, unexpected := range tt.notContains {
+				assert.NotContains(t, output, unexpected)
+			}
+		})
+	}
+}
+
 func TestStandardPersonalityDynamicToolWorkflow(t *testing.T) {
 	dynamicWorkflowText := []string{
 		"You have access to a large set of MCP tools through two meta-tools.",

@@ -33,6 +33,7 @@ export interface ToolRenderContext {
     showResults: boolean;
     approvalStage: ToolApprovalStage;
     isAutoApproved: boolean;
+    awaitingRequester?: boolean;
 
     // User-interaction (question) wiring.
     canAnswer: boolean;

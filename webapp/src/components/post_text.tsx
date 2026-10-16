@@ -64,6 +64,23 @@ const TextContainer = styled.div<{$showCursor?: boolean}>`
 	`}
 `;
 
+// Core only routes data-link anchors in-app for posts it renders itself, so
+// without this handler internal links in agent posts reload the whole page.
+const handleInternalLinkClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.defaultPrevented || e.button !== 0 || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) {
+        return;
+    }
+
+    const path = (e.target as Element).closest('a[data-link]')?.getAttribute('data-link');
+    const history = window.WebappUtils?.browserHistory;
+    if (!path || !history) {
+        return;
+    }
+
+    e.preventDefault();
+    history.push(path);
+};
+
 const PostText = (props: Props) => {
     const channel = useSelector<GlobalState, Channel>((state) => state.entities.channels.channels[props.channelID]);
     const team = useSelector<GlobalState, Team>((state) => state.entities.teams.teams[channel?.team_id]);
@@ -114,6 +131,7 @@ const PostText = (props: Props) => {
         <TextContainer
             data-testid='posttext'
             $showCursor={props.showCursor}
+            onClick={handleInternalLinkClick}
         >
             {processedText}
         </TextContainer>

@@ -5,7 +5,7 @@ import React, {useEffect, useRef, useState} from 'react';
 import {FormattedMessage, useIntl} from 'react-intl';
 import styled, {css, keyframes} from 'styled-components';
 
-import {ChevronRightIcon} from '@mattermost/compass-icons/components';
+import {ChevronRightIcon, ClockOutlineIcon} from '@mattermost/compass-icons/components';
 
 import {Spinner} from '@mattermost/compass-ui/components/spinner';
 
@@ -57,6 +57,9 @@ interface ToolActivityDisplayProps {
     /** A setup phase such as "Connecting to provider...", shown in place of the latest item. */
     statusMessage?: string;
 
+    /** The status line is waiting on someone else, not on work in progress. */
+    statusWaiting?: boolean;
+
     renderRound: (round: Round) => React.ReactNode;
 }
 
@@ -101,7 +104,13 @@ const ToolActivityDisplay: React.FC<ToolActivityDisplayProps> = (props) => {
     let label: React.ReactNode;
     if (statusMessage) {
         lineKey = `status:${statusMessage}`;
-        indicator = <LineSpinner/>;
+        indicator = props.statusWaiting ? (
+            <ClockOutlineIcon
+                size={16}
+                aria-hidden={true}
+                data-testid='llm-bot-activity-waiting'
+            />
+        ) : <LineSpinner/>;
         label = statusMessage;
     } else if (current === null) {
         lineKey = SUMMARY_KEY;

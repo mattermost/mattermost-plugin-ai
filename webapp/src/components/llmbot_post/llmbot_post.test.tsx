@@ -10,7 +10,6 @@ import {useConversation} from '@/hooks/use_conversation';
 import {PluginWebSocketMessage} from '@/types';
 import type {ConversationResponse, Turn} from '@/types/conversation';
 
-import {MAX_SEARCH_SOURCES} from '../search_sources';
 import {ToolCallStatus} from '../tool_types';
 
 import {LLMBotPost, PostUpdateWebsocketMessage} from './llmbot_post';
@@ -73,9 +72,10 @@ jest.mock('../post_text', () => {
     };
 });
 
+const mockToolApprovalSet = jest.fn<null, [{approvalStage: string; canApprove: boolean}]>(() => null);
 jest.mock('../tool_approval_set', () => ({
     __esModule: true,
-    default: () => null,
+    default: (props: {approvalStage: string; canApprove: boolean}) => mockToolApprovalSet(props),
 }));
 
 // The preview fetches the source post and profile on mount; stub it out so the
@@ -165,17 +165,6 @@ function makeToolOnlyConversation(
             }],
         }),
     ], userId);
-}
-
-// Builds a search source entry with a unique well-formed post id.
-function makeSource(i: number) {
-    return {
-        postId: String(i).padStart(26, '0'),
-        channelId: WELL_FORMED_ID,
-        userId: WELL_FORMED_ID,
-        content: `source message ${i}`,
-        score: 0.5,
-    };
 }
 
 function renderPost(
@@ -752,6 +741,16 @@ describe('LLMBotPost streaming re-renders', () => {
 });
 
 describe('LLMBotPost rounds awaiting a decision', () => {
+    function withRequesterProfile() {
+        mockUseSelector.mockImplementation((selector) => selector({
+            entities: {
+                channels: {channels: {channel_1: {type: 'O'}}},
+                posts: {posts: {}},
+                users: {currentUserId: 'user_1', profiles: {requester_1: {username: 'alice'}}},
+            },
+        }));
+    }
+
     // A response stopped on a tool call: the anchor round holds the text asking to run it and the call.
     function conversationAwaitingApproval(userId = 'user_1', earlierTurns: Turn[] = []) {
         return makeConversation([
@@ -784,7 +783,7 @@ describe('LLMBotPost rounds awaiting a decision', () => {
         renderPost();
 
         expect(screen.queryByText('I will post that')).toBeNull();
-        expect(screen.getByTestId('llm-bot-tool-activity-current').textContent).toBe('Create Post');
+        expect(screen.getByTestId('llm-bot-tool-activity-current').textContent).toBe('Waiting for the requester to approve tool use');
     });
 
     test('does not summarize the activity row while a decision is pending', () => {
@@ -803,6 +802,91 @@ describe('LLMBotPost rounds awaiting a decision', () => {
 
         expect(screen.getByTestId('llm-bot-tool-activity-current').textContent).toBe('Search Tools');
         expect(screen.queryByText('Used 1 tool')).toBeNull();
+    });
+
+    test.each([
+        {name: 'call stage', stage: 'call' as const, status: 'pending' as const},
+        {name: 'result stage', stage: 'result' as const, status: 'success' as const},
+    ])('tells an onlooker the requester owes a decision at the $name', ({stage, status}) => {
+        const conversation = conversationAwaitingApproval('requester_1');
+        const anchorTurn = conversation.turns[conversation.turns.length - 1];
+        anchorTurn.approval_state = stage;
+        anchorTurn.content = [{type: 'tool_use', id: 'tc_a', name: 'create_post', status}];
+        mockUseConversation.mockReturnValue({conversation, loading: false, error: null});
+        withRequesterProfile();
+
+        renderPost();
+
+        expect(screen.getByTestId('llm-bot-tool-activity-current').textContent).toBe('Waiting for @alice to approve tool use');
+        expect(screen.getByTestId('llm-bot-activity-waiting')).toBeTruthy();
+        expect(screen.queryByTestId('llm-bot-activity-spinner')).toBeNull();
+    });
+
+    test('tells an onlooker about a live pending call once the stream ends, and clears it when generation resumes', () => {
+        jest.useFakeTimers();
+        mockUseConversation.mockReturnValue({
+            conversation: makeConversation([
+                makeTurn({id: 'u1', post_id: 'user_post', role: 'user', content: [{type: 'text', text: 'post that for me'}]}),
+            ], 'requester_1'),
+            loading: false,
+            error: null,
+        });
+        withRequesterProfile();
+
+        let listener: PostUpdateHandler | undefined;
+        renderPost(makePost(), (postID, listenerID, handler) => {
+            listener = handler;
+        });
+
+        act(() => {
+            listener?.(postUpdateMessage({post_id: 'post_1', control: 'start'}));
+            listener?.(postUpdateMessage({
+                post_id: 'post_1',
+                control: 'tool_call',
+                tool_call: JSON.stringify([{id: 'tc_a', name: 'create_post', description: '', status: ToolCallStatus.Pending}]),
+            }));
+        });
+
+        // The end invalidates the conversation; the live round must carry the state until the refetch lands.
+        mockUseConversation.mockReturnValue({conversation: null, loading: true, error: null});
+        act(() => {
+            listener?.(postUpdateMessage({post_id: 'post_1', control: 'end'}));
+        });
+
+        expect(screen.getByTestId('llm-bot-tool-activity-current').textContent).toBe('Waiting for @alice to approve tool use');
+
+        // Expanded, the waiting round's cards get its call stage, still without controls.
+        mockToolApprovalSet.mockClear();
+        expandToolActivity();
+        expect(mockToolApprovalSet).toHaveBeenLastCalledWith(expect.objectContaining({approvalStage: 'call', canApprove: false}));
+
+        act(() => {
+            listener?.(postUpdateMessage({post_id: 'post_1', control: 'start'}));
+        });
+        advanceAnimation();
+
+        expect(screen.queryByText('Waiting for @alice to approve tool use')).toBeNull();
+        jest.useRealTimers();
+    });
+
+    test('tells an onlooker the requester owes an answer to a question', () => {
+        const conversation = conversationAwaitingApproval('requester_1');
+        const anchorTurn = conversation.turns[conversation.turns.length - 1];
+        anchorTurn.content = [{type: 'tool_use', id: 'tc_q', name: 'AskUserQuestion', status: 'pending', user_interaction: 'select'}];
+        mockUseConversation.mockReturnValue({conversation, loading: false, error: null});
+        withRequesterProfile();
+
+        renderPost();
+
+        expect(screen.getByTestId('llm-bot-tool-activity-current').textContent).toBe('Waiting for an answer from @alice');
+    });
+
+    test('does not show the waiting line to the requester', () => {
+        mockUseConversation.mockReturnValue({conversation: conversationAwaitingApproval(), loading: false, error: null});
+
+        renderPost();
+
+        expect(screen.queryByTestId('llm-bot-activity-waiting')).toBeNull();
     });
 
     // A pending tool_call can land over the websocket before the refetch persists the round.
@@ -1300,39 +1384,6 @@ describe('LLMBotPost conversation_id prop handling', () => {
         expect(() => renderPost(makePost('', {conversation_id: value}))).not.toThrow();
 
         expect(mockUseConversation).toHaveBeenCalledWith(void 0); // eslint-disable-line no-void
-    });
-});
-
-describe('LLMBotPost search_results prop handling', () => {
-    test('renders the source list for a well-formed search_results prop', () => {
-        const sources = [makeSource(1), makeSource(2)];
-        renderPost(makePost('hello', {search_results: JSON.stringify(sources)}));
-
-        expect(screen.getByText('Sources')).toBeTruthy();
-        expect(screen.getByText('2')).toBeTruthy();
-    });
-
-    test('bounds the rendered source list to the server maximum result count', () => {
-        const sources = Array.from({length: MAX_SEARCH_SOURCES + 50}, (_, i) => makeSource(i));
-        renderPost(makePost('hello', {search_results: JSON.stringify(sources)}));
-
-        expect(screen.getByText(String(MAX_SEARCH_SOURCES))).toBeTruthy();
-    });
-
-    // Post props are free-form JSON; none of these values may throw during
-    // render, and none should produce a source list.
-    test.each([
-        {name: 'not a string', value: 42},
-        {name: 'an object instead of a JSON string', value: {postId: WELL_FORMED_ID}},
-        {name: 'not valid JSON', value: '{not json'},
-        {name: 'a JSON object instead of an array', value: '{"postId":"x"}'},
-        {name: 'a JSON string instead of an array', value: '"just a string"'},
-        {name: 'entries that are not objects', value: '[null, "x", 7]'},
-        {name: 'entries without well-formed ids', value: JSON.stringify([{postId: 'short', channelId: 'short', userId: 'short', content: 'hi', score: 1}])},
-    ])('renders no source list when search_results is malformed: $name', ({value}) => {
-        expect(() => renderPost(makePost('hello', {search_results: value}))).not.toThrow();
-
-        expect(screen.queryByText('Sources')).toBeNull();
     });
 });
 

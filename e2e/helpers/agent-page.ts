@@ -167,8 +167,8 @@ export class AgentPageHelper {
         return this.page.getByRole('combobox', {name: 'Reasoning Effort', exact: true});
     }
 
-    getThinkingBudgetInput(): Locator {
-        return this.getExactLabel('Thinking Budget (tokens)').locator('xpath=following-sibling::input[1]');
+    getThinkingEffortSelect(): Locator {
+        return this.page.getByRole('combobox', {name: 'Thinking Effort', exact: true});
     }
 
     getAdvancedConfigurationToggle(): Locator {
