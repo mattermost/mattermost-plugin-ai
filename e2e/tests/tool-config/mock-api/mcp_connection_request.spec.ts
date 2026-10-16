@@ -12,6 +12,7 @@ import {
 } from 'helpers/openai-mock';
 import RunSystemConsoleContainer, { adminUsername, adminPassword } from 'helpers/system-console-container';
 import {
+    MOCK_CONNECTED_TOOL_NAME,
     MOCK_OAUTH_AUTHORIZE_URL,
     MOCK_OAUTH_SERVER_NAME,
     MOCK_OAUTH_SERVER_URL,
@@ -42,7 +43,7 @@ const oauthStartPath = `/plugins/mattermost-ai/mcp/oauth/${encodeURIComponent(MO
 const adminDescription = 'Help desk tickets for the support team.';
 const unconnectedPromptMatch = adminDescription;
 
-async function openBotReply(page: Page, userMessage: string): Promise<Locator> {
+async function openBotReply(page: Page, userMessage: string, beforeMessage?: () => Promise<void>): Promise<Locator> {
     const mmPage = new MattermostPage(page);
     await mmPage.login(mattermost.url(), adminUsername, adminPassword);
 
@@ -55,6 +56,7 @@ async function openBotReply(page: Page, userMessage: string): Promise<Locator> {
         return response.status;
     }, MOCK_OAUTH_SERVER_NAME);
     expect(disconnect).toBe(200);
+    await beforeMessage?.();
 
     await mmPage.createAndNavigateToDMWithBot(mattermost, adminUsername, adminPassword, 'toolbot');
     await mmPage.mentionBot('toolbot', userMessage);
@@ -66,6 +68,19 @@ async function openBotReply(page: Page, userMessage: string): Promise<Locator> {
     await post.getByText(/\d+ repl/i).click();
 
     return page.locator('#rhsContainer').locator('[data-testid="llm-bot-post"]').last();
+}
+
+// Connects the signed-in user to the mock server through the plugin's OAuth
+// routes, acting as a provider that approves immediately.
+async function connectMockServer(context: BrowserContext) {
+    const start = await context.request.get(`${mattermost.url()}${oauthStartPath}`, { maxRedirects: 0 });
+    expect(start.status()).toBe(302);
+    const authorizeURL = new URL(start.headers().location);
+    const callbackURL = new URL(authorizeURL.searchParams.get('redirect_uri') ?? '');
+    callbackURL.searchParams.set('code', 'mock-authorization-code');
+    callbackURL.searchParams.set('state', authorizeURL.searchParams.get('state') ?? '');
+    const callback = await context.request.get(callbackURL.toString());
+    expect(callback.status()).toBe(200);
 }
 
 async function expectButtons(card: Locator, labels: string[]) {
@@ -251,5 +266,45 @@ test.describe('MCP connection requests (Mocked LLM)', () => {
         await expect(page.locator('#rhsContainer').getByText(followUpText, { exact: false })).toBeVisible({ timeout: 30000 });
         const activityRounds = await expandToolActivity(botPost);
         await expect(activityRounds.getByText('Connected', { exact: true })).toBeVisible({ timeout: 30000 });
+    });
+
+    test('a connection whose authorization lapses mid-conversation is offered for reconnection', async ({ page, context }) => {
+        test.setTimeout(120000);
+
+        const userMessage = 'List my open tickets ' + Date.now();
+        const toolName = `mock_oauth_server__${MOCK_CONNECTED_TOOL_NAME}`;
+        const followUpText = 'Understood, I will continue without the ticket tracker for now.';
+
+        // The user is connected and the agent asks to run one of the server's tools.
+        await openAIMock.addMocks([
+            ...buildMCPOAuthMocks(),
+            ...buildMCPOAuthConnectedMocks(),
+            buildChatCompletionMockRule(buildToolCallResponse('call_list_tickets', toolName, '{}'), { bodyContains: userMessage }),
+            titleGenerationMockRule(),
+        ]);
+        const botPost = await openBotReply(page, userMessage, () => connectMockServer(context));
+        const accept = botPost.getByRole('button', { name: /^accept$/i });
+        await expect(accept).toBeVisible({ timeout: 30000 });
+
+        // The grant lapses before the call runs: the server now rejects the token.
+        await openAIMock.addMocks([
+            ...buildMCPOAuthMocks(),
+            buildChatCompletionMockRule(buildToolCallResponse('call_reconnect', 'RequestMCPConnection', requestArgs), {
+                bodyContains: 'has expired or was revoked',
+            }),
+            titleGenerationMockRule(),
+            buildChatCompletionMockRule(buildTextResponse(followUpText), {
+                bodyContains: `chose not to connect ${MOCK_OAUTH_SERVER_NAME}`,
+            }),
+        ]);
+        await accept.click();
+
+        // Without another message from the user, the agent offers to reconnect.
+        const card = page.locator('#rhsContainer').getByTestId('connection-request-card').last();
+        await expect(card.getByText(`Connect ${MOCK_OAUTH_SERVER_NAME}`, { exact: true })).toBeVisible({ timeout: 30000 });
+        await expectButtons(card, ['Skip', 'Connect']);
+
+        await card.getByRole('button', { name: /^skip$/i }).click();
+        await expect(page.locator('#rhsContainer').getByText(followUpText, { exact: false })).toBeVisible({ timeout: 30000 });
     });
 });
