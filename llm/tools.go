@@ -644,6 +644,21 @@ func (s *ToolStore) HasMCPToolFromOrigin(origin string, keep func(Tool) bool) bo
 	return false
 }
 
+// RemoveMCPToolsFromOrigin removes every MCP tool, loaded or not, whose
+// ServerOrigin is exactly origin.
+func (s *ToolStore) RemoveMCPToolsFromOrigin(origin string) {
+	if s == nil || strings.TrimSpace(origin) == "" {
+		return
+	}
+	for _, tools := range []map[string]Tool{s.tools, s.unloadedMCPTools} {
+		for name, tool := range tools {
+			if tool.ServerOrigin == origin {
+				delete(tools, name)
+			}
+		}
+	}
+}
+
 // GetServerOrigin returns the ServerOrigin for a tool by name.
 // Returns empty string if the tool is not found or has no server origin (built-in tools).
 func (s *ToolStore) GetServerOrigin(toolName string) string {

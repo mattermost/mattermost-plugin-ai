@@ -377,8 +377,16 @@ func (b *Builder) offerMCPConnections(store *llm.ToolStore, c *llm.Context, botC
 		return
 	}
 	// Set even when every server is connected: an answered request resolves
-	// against a context rebuilt after the user connected.
+	// against a context rebuilt after the user connected, and a server can
+	// still lapse mid-turn (MCPToolErrorResult).
 	c.ToolCatalog.MCPServerOrigins = describer.MCPServerOriginsByName()
+	admit := func(server llm.UnconnectedMCPServer) llm.UnconnectedMCPServer {
+		if !botCfg.AutoEnableNewMCPTools {
+			server.Tools = filterToolInfosForAllowlist(slices.Clone(server.Tools), botCfg.EnabledMCPTools)
+		}
+		return server
+	}
+	c.ToolCatalog.AdmitUnconnectedMCPServer = admit
 
 	authErrors := store.GetAuthErrors()
 	if len(authErrors) == 0 {
@@ -388,10 +396,8 @@ func (b *Builder) offerMCPConnections(store *llm.ToolStore, c *llm.Context, botC
 	if len(servers) == 0 {
 		return
 	}
-	if !botCfg.AutoEnableNewMCPTools {
-		for i := range servers {
-			servers[i].Tools = filterToolInfosForAllowlist(servers[i].Tools, botCfg.EnabledMCPTools)
-		}
+	for i := range servers {
+		servers[i] = admit(servers[i])
 	}
 
 	c.UnconnectedMCPServers = servers

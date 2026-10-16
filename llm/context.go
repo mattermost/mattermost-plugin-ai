@@ -102,6 +102,12 @@ type ToolCatalogContext struct {
 	// origins so an answered connection request can find the server's tools.
 	MCPServerOrigins map[string]string
 
+	// AdmitUnconnectedMCPServer applies the filtering servers the user must
+	// connect get when the catalog is built, such as the agent's tool
+	// allowlist, so a server whose authorization lapses mid-turn is offered
+	// the same way. It is set only where connection requests can be offered.
+	AdmitUnconnectedMCPServer func(UnconnectedMCPServer) UnconnectedMCPServer
+
 	// ResponseFilesSupported indicates the current flow attaches
 	// ToolRuntime.CreatedFiles to the bot's streamed response post, so
 	// file-creating response tools (CreateFile) may be cataloged. Only

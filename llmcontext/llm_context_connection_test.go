@@ -161,8 +161,19 @@ func TestGetToolsStoreOffersMCPConnections(t *testing.T) {
 
 			if tt.wantOrigins {
 				assert.Equal(t, origins, context.ToolCatalog.MCPServerOrigins)
+				// A server that lapses mid-turn is admitted with the same filtering.
+				admit := context.ToolCatalog.AdmitUnconnectedMCPServer
+				require.NotNil(t, admit)
+				if tt.wantTools != nil {
+					var admittedNames []string
+					for _, info := range admit(jira).Tools {
+						admittedNames = append(admittedNames, info.Name)
+					}
+					assert.Equal(t, tt.wantTools, admittedNames)
+				}
 			} else {
 				assert.Empty(t, context.ToolCatalog.MCPServerOrigins)
+				assert.Nil(t, context.ToolCatalog.AdmitUnconnectedMCPServer, "connection requests cannot be offered here")
 			}
 		})
 	}

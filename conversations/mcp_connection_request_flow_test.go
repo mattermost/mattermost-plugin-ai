@@ -6,6 +6,7 @@ package conversations
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"testing"
 
@@ -125,64 +126,19 @@ func TestHandleToolCallResolvesConnectionRequest(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			convStore, conv := loadedStateConversationStore()
-			blocks := []conversation.ContentBlock{{
-				Type:            conversation.BlockTypeToolUse,
-				ID:              "connect-1",
-				Name:            mcp.RequestConnectionToolName,
-				Input:           requestInput,
-				Status:          conversation.StatusPending,
-				UserInteraction: llm.UserInteractionConnect,
-				Shared:          new(false),
-			}}
-			content, err := json.Marshal(blocks)
-			require.NoError(t, err)
-			approvalPostID := "approval-post-id"
-			require.NoError(t, convStore.CreateTurn(&store.Turn{
-				ID:             "assistant-turn",
-				ConversationID: conv.ID,
-				PostID:         &approvalPostID,
-				Role:           "assistant",
-				Content:        content,
-				Sequence:       1,
-			}))
-
-			mockAPI := &plugintest.API{}
-			mockLicenseState(mockAPI, true)
-			mockAPI.On("GetTeam", "team-id").Return(&model.Team{Id: "team-id", Name: "team"}, nil).Maybe()
-			pluginAPI := pluginapi.NewClient(mockAPI, nil)
-			licenseChecker := enterprise.NewLicenseChecker(pluginAPI)
-			botsService := bots.New(mockAPI, pluginAPI, licenseChecker, nil, nil, newPassthroughAccessChecker(), &http.Client{}, nil)
-			lm := &loadedStateLLM{}
-			botsService.SetBotsForTesting([]*bots.Bot{loadedStateBot(lm)})
-
-			mmClient := mocks.NewMockClient(t)
-			mmClient.On("LogDebug", mock.Anything, mock.Anything).Maybe().Return()
-			mmClient.On("GetUser", "user-id").Maybe().Return(&model.User{Id: "user-id", Username: "user"}, nil)
-			mmClient.On("KVGet", mock.Anything, mock.Anything).Maybe().Return(nil)
-			mmClient.On("GetConfig").Maybe().Return(&model.Config{})
-			mmClient.On("GetPost", mock.Anything).Maybe().Return(nil, &model.AppError{Message: "not found"})
-			mmClient.On("GetPostThread", mock.Anything).Maybe().Return(nil, &model.AppError{Message: "not found"})
-
-			streamingService := &loadedStateStreamingService{}
-			config := &channelFollowUpTestConfig{enableChannelMentionToolCalling: tc.channelToolCalling}
-			c := &Conversations{
-				mmClient:       mmClient,
-				configProvider: config,
-				contextBuilder: llmcontext.NewLLMContextBuilder(
-					pluginAPI,
-					&channelFollowUpTestToolProvider{},
-					&connectionTestMCPProvider{connected: tc.connected},
-					config,
-				),
-				bots:             botsService,
-				convService:      conversation.NewService(convStore, nil, nil, nil),
-				streamingService: streamingService,
-				licenseChecker:   licenseChecker,
-			}
-
-			approvalPost := &model.Post{Id: approvalPostID, UserId: "bot-id"}
-			approvalPost.AddProp(streaming.ConversationIDProp, conv.ID)
+			c, convStore, conv, lm, streamingService, approvalPost := newConnectionTestConversations(t,
+				&connectionTestMCPProvider{connected: tc.connected},
+				&channelFollowUpTestConfig{enableChannelMentionToolCalling: tc.channelToolCalling},
+				false,
+				conversation.ContentBlock{
+					Type:            conversation.BlockTypeToolUse,
+					ID:              "connect-1",
+					Name:            mcp.RequestConnectionToolName,
+					Input:           requestInput,
+					Status:          conversation.StatusPending,
+					UserInteraction: llm.UserInteractionConnect,
+					Shared:          new(false),
+				})
 
 			var acceptedIDs []string
 			if tc.accepted {
@@ -236,4 +192,114 @@ func TestHandleToolCallResolvesConnectionRequest(t *testing.T) {
 			}
 		})
 	}
+}
+
+// newConnectionTestConversations wires Conversations against provider with a
+// pending assistant turn holding block, and returns the approval post that
+// answers it. The bot loads MCP tools dynamically unless loadToolsUpFront.
+func newConnectionTestConversations(t *testing.T, provider llmcontext.MCPToolProvider, config *channelFollowUpTestConfig, loadToolsUpFront bool, block conversation.ContentBlock) (*Conversations, *loadedStateFlowStore, *store.Conversation, *loadedStateLLM, *loadedStateStreamingService, *model.Post) {
+	t.Helper()
+
+	convStore, conv := loadedStateConversationStore()
+	content, err := json.Marshal([]conversation.ContentBlock{block})
+	require.NoError(t, err)
+	approvalPostID := "approval-post-id"
+	require.NoError(t, convStore.CreateTurn(&store.Turn{
+		ID:             "assistant-turn",
+		ConversationID: conv.ID,
+		PostID:         &approvalPostID,
+		Role:           "assistant",
+		Content:        content,
+		Sequence:       1,
+	}))
+
+	mockAPI := &plugintest.API{}
+	mockLicenseState(mockAPI, true)
+	mockAPI.On("GetTeam", "team-id").Return(&model.Team{Id: "team-id", Name: "team"}, nil).Maybe()
+	mockAPI.On("LogDebug", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Maybe()
+	pluginAPI := pluginapi.NewClient(mockAPI, nil)
+	licenseChecker := enterprise.NewLicenseChecker(pluginAPI)
+	botsService := bots.New(mockAPI, pluginAPI, licenseChecker, nil, nil, newPassthroughAccessChecker(), &http.Client{}, nil)
+	lm := &loadedStateLLM{}
+	bot := loadedStateBot(lm)
+	if loadToolsUpFront {
+		botConfig := bot.GetConfig()
+		botConfig.MCPDynamicToolLoading = false
+		bot = bots.NewBot(botConfig, bot.GetService(), bot.GetMMBot(), lm)
+	}
+	botsService.SetBotsForTesting([]*bots.Bot{bot})
+
+	mmClient := mocks.NewMockClient(t)
+	mmClient.On("LogDebug", mock.Anything, mock.Anything).Maybe().Return()
+	mmClient.On("GetUser", "user-id").Maybe().Return(&model.User{Id: "user-id", Username: "user"}, nil)
+	mmClient.On("KVGet", mock.Anything, mock.Anything).Maybe().Return(nil)
+	mmClient.On("GetConfig").Maybe().Return(&model.Config{})
+	mmClient.On("GetPost", mock.Anything).Maybe().Return(nil, &model.AppError{Message: "not found"})
+	mmClient.On("GetPostThread", mock.Anything).Maybe().Return(nil, &model.AppError{Message: "not found"})
+
+	streamingService := &loadedStateStreamingService{}
+	c := &Conversations{
+		mmClient:         mmClient,
+		configProvider:   config,
+		contextBuilder:   llmcontext.NewLLMContextBuilder(pluginAPI, &channelFollowUpTestToolProvider{}, provider, config),
+		bots:             botsService,
+		convService:      conversation.NewService(convStore, nil, nil, nil),
+		streamingService: streamingService,
+		licenseChecker:   licenseChecker,
+	}
+
+	approvalPost := &model.Post{Id: approvalPostID, UserId: "bot-id"}
+	approvalPost.AddProp(streaming.ConversationIDProp, conv.ID)
+	return c, convStore, conv, lm, streamingService, approvalPost
+}
+
+// lapsingMCPProvider serves a connected Jira tool whose calls fail because the
+// user's authorization lapsed.
+type lapsingMCPProvider struct {
+	connectionTestMCPProvider
+}
+
+func (p *lapsingMCPProvider) GetToolsWithSelection(context.Context, mcp.CatalogRequest, mcp.ToolSelection) ([]llm.Tool, *mcp.Errors) {
+	tool := loadedStateTool()
+	tool.Resolver = func(context.Context, *llm.Context, llm.ToolArgumentGetter) (string, error) {
+		return "", &mcp.ReconnectNeededError{
+			Server: llm.UnconnectedMCPServer{Name: "Jira", ServerOrigin: connectionTestJiraOrigin},
+			Err:    errors.New("401 Unauthorized"),
+		}
+	}
+	return []llm.Tool{tool}, nil
+}
+
+// Accepting a tool call whose server rejects the user's lapsed authorization
+// tells the model to ask the user to reconnect instead of returning the raw
+// failure.
+func TestHandleToolCallOffersReconnectWhenApprovedToolLapses(t *testing.T) {
+	tool := loadedStateTool()
+	c, convStore, conv, _, streamingService, approvalPost := newConnectionTestConversations(t,
+		&lapsingMCPProvider{connectionTestMCPProvider{connected: true}},
+		&channelFollowUpTestConfig{},
+		true,
+		conversation.ContentBlock{
+			Type:         conversation.BlockTypeToolUse,
+			ID:           "call-1",
+			Name:         tool.Name,
+			ServerOrigin: tool.ServerOrigin,
+			Input:        json.RawMessage(`{}`),
+			Status:       conversation.StatusPending,
+			Shared:       new(false),
+		})
+	dmChannel := &model.Channel{Id: "dm-channel", Type: model.ChannelTypeDirect, Name: "bot-id__user-id"}
+
+	require.NoError(t, c.HandleToolCall(context.Background(), "user-id", approvalPost, dmChannel, []string{"call-1"}, nil))
+	streamingService.waitForStreaming()
+
+	turns, err := convStore.GetTurnsForConversation(conv.ID)
+	require.NoError(t, err)
+	require.Len(t, turns, 2)
+	var resultBlocks []conversation.ContentBlock
+	require.NoError(t, json.Unmarshal(turns[1].Content, &resultBlocks))
+	require.Len(t, resultBlocks, 1)
+	assert.Equal(t, conversation.StatusError, resultBlocks[0].Status)
+	assert.Contains(t, resultBlocks[0].Content, `call RequestMCPConnection with server "Jira"`)
+	assert.NotContains(t, resultBlocks[0].Content, "401 Unauthorized")
 }
