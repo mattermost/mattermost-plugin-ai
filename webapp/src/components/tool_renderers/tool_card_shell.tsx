@@ -4,7 +4,7 @@
 import React, {useState} from 'react';
 import styled from 'styled-components';
 import {FormattedMessage, useIntl} from 'react-intl';
-import {ChevronDownIcon, ChevronRightIcon, CheckIcon, AlertCircleOutlineIcon, CloseCircleOutlineIcon, GlobeIcon, HelpCircleOutlineIcon, LockIcon} from '@mattermost/compass-icons/components';
+import {ChevronDownIcon, ChevronRightIcon, CheckIcon, AlertCircleOutlineIcon, ClockOutlineIcon, CloseCircleOutlineIcon, GlobeIcon, HelpCircleOutlineIcon, LockIcon} from '@mattermost/compass-icons/components';
 
 // eslint-disable-next-line import/no-unresolved -- react-bootstrap is external
 import {OverlayTrigger, Tooltip} from 'react-bootstrap';
@@ -86,6 +86,13 @@ const SmallRejectedIcon = styled(CloseCircleOutlineIcon)`
     color: var(--dnd-indicator);
     width: 12px;
     height: 12px;
+`;
+
+const WaitingIcon = styled(ClockOutlineIcon)`
+    color: rgba(var(--center-channel-color-rgb), 0.64);
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
 `;
 
 const ResponseSuccessIcon = styled(IconCheckCircle)`
@@ -211,6 +218,9 @@ export interface ToolCardShellProps {
     approvalStage?: ToolApprovalStage;
     isAutoApproved?: boolean;
 
+    // The call waits on a decision from the requester, who is not this viewer.
+    awaitingRequester?: boolean;
+
     // The arguments body: the generic field list or a rich card's rendering.
     children?: React.ReactNode;
 }
@@ -237,6 +247,7 @@ const ToolCardShell: React.FC<ToolCardShellProps> = ({
     showResults,
     approvalStage = 'call',
     isAutoApproved = false,
+    awaitingRequester = false,
     children,
 }) => {
     const {formatMessage} = useIntl();
@@ -389,11 +400,36 @@ const ToolCardShell: React.FC<ToolCardShellProps> = ({
                         {isCollapsed ? <ChevronRightIcon size={16}/> : <ChevronDownIcon size={16}/>}
                     </StyledChevronIcon>
                 )}
-                <ToolStatusIcon
-                    status={tool.status}
-                    isProcessing={isProcessing}
-                />
+                {awaitingRequester && isPending ? (
+                    <WaitingIcon
+                        size={12}
+                        data-testid='llm-bot-tool-status-waiting'
+                    />
+                ) : (
+                    <ToolStatusIcon
+                        status={tool.status}
+                        isProcessing={isProcessing}
+                    />
+                )}
                 <ToolName title={displayName}>{displayName}</ToolName>
+                {awaitingRequester && (
+                    <Tag
+                        type='warning'
+                        size='x-small'
+                        data-testid='llm-bot-tool-awaiting-approval'
+                        label={tool.user_interaction ? (
+                            <FormattedMessage
+                                id='ai.tool_call.awaiting_answer'
+                                defaultMessage='Awaiting answer'
+                            />
+                        ) : (
+                            <FormattedMessage
+                                id='ai.tool_call.awaiting_approval'
+                                defaultMessage='Awaiting approval'
+                            />
+                        )}
+                    />
+                )}
                 {(tool.status === ToolCallStatus.AutoApproved || isAutoApproved) && (
                     <Tag
                         type='success'
