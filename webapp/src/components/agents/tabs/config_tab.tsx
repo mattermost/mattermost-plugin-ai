@@ -33,7 +33,7 @@ import {
     NativeToolsItem,
 } from '@/components/system_console/bot';
 import {IntItem} from '@/components/system_console/number_items';
-import ReasoningConfigItem from '@/components/system_console/reasoning_config';
+import ReasoningConfigItem, {defaultReasoningEffort} from '@/components/system_console/reasoning_config';
 import {LLMService} from '@/components/system_console/service';
 
 import {LicenseLevel, useIsLicensedFor, useLicenseLevelName, useServiceLimit} from '@/license';
@@ -104,7 +104,7 @@ const ConfigTab = (props: Props) => {
                     {
                         enabledNativeTools: providerWebSearchLicensed ? ['web_search'] : [],
                         reasoningEnabled: true,
-                        reasoningEffort: 'medium',
+                        reasoningEffort: defaultReasoningEffort(nextSvc?.type),
                         thinkingBudget: 0,
                     }),
             });
@@ -267,7 +267,7 @@ const ConfigTab = (props: Props) => {
     const handleReasoningBotChange = (bot: LLMBotConfig) => {
         onChange({
             reasoningEnabled: bot.reasoningEnabled ?? true,
-            reasoningEffort: bot.reasoningEffort || 'medium',
+            reasoningEffort: bot.reasoningEffort || defaultReasoningEffort(selectedService?.type),
             thinkingBudget: bot.thinkingBudget ?? 0,
         });
     };

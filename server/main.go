@@ -404,10 +404,7 @@ func (p *Plugin) OnActivate() error {
 	searchService := search.New(
 		searchAvailability.QuerySearch,
 		mmClient,
-		prompts,
-		streamingService,
 		licenseChecker,
-		nil, // conversation service wired in a later step
 	)
 
 	// Reinitialize embedding search on config changes and license changes.
@@ -525,7 +522,6 @@ func (p *Plugin) OnActivate() error {
 	convService := conversation.NewService(p.store, prompts, mmClient, bots)
 	conversationsService.SetConversationService(convService)
 	conversationsService.SetAutoReplySettings(autoreplyService)
-	searchService.SetConversationService(convService)
 
 	meetingsService := meetings.NewService(
 		pluginAPI,
@@ -557,7 +553,7 @@ func (p *Plugin) OnActivate() error {
 	mcpHandlerLogger := NewPluginAPILoggerAdapter(pluginAPI.Log)
 	internalServerURL := deriveInternalServerURL(pluginAPI, *siteURL)
 	pluginServers := licensedPluginServers{registry: mcpClientManager, allowed: remoteMCPAllowed}
-	handlers, err := mcpserver.NewPluginMCPHandlers(*siteURL, internalServerURL, mcpHandlerLogger, pluginServers, mmClient, func() bool {
+	handlers, err := mcpserver.NewPluginMCPHandlers(*siteURL, internalServerURL, mcpHandlerLogger, pluginServers, mmClient, searchService, fileContentService, func() bool {
 		return licenseChecker.Allows(enterprise.CapStateChangingTools)
 	}, accessChecker, func() string {
 		return p.configuration.MCP().EmbeddedServer.ID
