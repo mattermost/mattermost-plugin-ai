@@ -130,3 +130,34 @@ func TestToolRunnerStopsWhenCanceledWhileUnread(t *testing.T) {
 		t.Fatal("tool loop still blocked after cancel")
 	}
 }
+
+// A reply stopped while a tool runs cancels the tool; its "context canceled"
+// error must not be persisted as a tool failure the next turn would read.
+func TestToolRunnerDropsRoundCanceledDuringTool(t *testing.T) {
+	lm := &testLLM{responses: []testResponse{{events: []llm.TextStreamEvent{
+		{Type: llm.EventTypeToolCalls, Value: []llm.ToolCall{{ID: "tc1", Name: "slow", Arguments: json.RawMessage(`{}`)}}},
+		{Type: llm.EventTypeEnd},
+	}}}}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	store := llm.NewToolStore()
+	store.AddTools([]llm.Tool{{
+		Name: "slow",
+		Resolver: func(toolCtx context.Context, _ *llm.Context, _ llm.ToolArgumentGetter) (string, error) {
+			cancel() // the user stops the reply while the tool runs
+			<-toolCtx.Done()
+			return "", toolCtx.Err()
+		},
+	}})
+
+	var persisted []ToolTurn
+	run, err := New(lm).Run(ctx, llm.CompletionRequest{
+		Posts:   []llm.Post{{Role: llm.PostRoleUser, Message: "hi"}},
+		Context: &llm.Context{Tools: store},
+	}, alwaysExecute, func(turns []ToolTurn) { persisted = append(persisted, turns...) })
+	require.NoError(t, err)
+
+	for range run.Stream.Stream { // read until the loop exits
+	}
+	require.Empty(t, persisted, "a canceled round must not be persisted")
+}

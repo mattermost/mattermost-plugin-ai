@@ -31,7 +31,8 @@ func TestEndSpanOnStreamCloseReleaseAfterAbandon(t *testing.T) {
 	upstream := make(chan llm.TextStreamEvent, 2)
 	upstream <- llm.TextStreamEvent{Type: llm.EventTypeText, Value: "a"}
 	upstream <- llm.TextStreamEvent{Type: llm.EventTypeText, Value: "b"}
-	// upstream is never closed and never ends: the producer keeps going.
+	// The producer keeps going until it notices the cancel that release
+	// triggers; it closes upstream below, after release.
 
 	_, span := telemetry.Tracer().Start(context.Background(), "process dm request")
 	wrapped, release := endSpanOnStreamClose(&llm.TextStreamResult{Stream: upstream}, span)
@@ -40,15 +41,12 @@ func TestEndSpanOnStreamCloseReleaseAfterAbandon(t *testing.T) {
 	require.Empty(t, exporter.GetSpans(), "span must stay open while the reply streams")
 
 	release()
+	require.Len(t, exporter.GetSpans(), 1, "release must export the span at once")
 
-	require.Eventually(t, func() bool { return len(exporter.GetSpans()) == 1 }, time.Second, 5*time.Millisecond)
+	close(upstream) // the canceled producer finishes
 	select {
 	case _, open := <-wrapped.Stream:
-		if open {
-			// At most the one event already in flight; then it must close.
-			_, open = <-wrapped.Stream
-		}
-		require.False(t, open, "forwarder must stop after release")
+		require.False(t, open, "nothing may be forwarded after release")
 	case <-time.After(time.Second):
 		t.Fatal("forwarder still blocked after release")
 	}
@@ -73,4 +71,44 @@ func TestEndSpanOnStreamCloseReleaseWhileUpstreamIdle(t *testing.T) {
 	release()
 
 	require.Len(t, exporter.GetSpans(), 1)
+}
+
+// After release the forwarder must keep draining upstream: an earlier stage
+// with a plain blocking send (the citation decorator) would otherwise hang
+// forever once the forwarder stops reading.
+func TestEndSpanOnStreamCloseReleaseDrainsUpstreamStage(t *testing.T) {
+	src := make(chan llm.TextStreamEvent)
+	mid := make(chan llm.TextStreamEvent)
+	stageDone := make(chan struct{})
+	go func() { // a decorator-like stage: blocking sends, no cancellation
+		defer close(stageDone)
+		defer close(mid)
+		for e := range src {
+			mid <- e
+		}
+	}()
+
+	_, span := telemetry.Tracer().Start(context.Background(), "process dm request")
+	wrapped, release := endSpanOnStreamClose(&llm.TextStreamResult{Stream: mid}, span)
+
+	src <- llm.TextStreamEvent{Type: llm.EventTypeText, Value: "a"}
+	<-wrapped.Stream // the reply reads one chunk, then is stopped
+	release()
+
+	// The producer still emits before it notices the cancel, then closes.
+	src <- llm.TextStreamEvent{Type: llm.EventTypeText, Value: "b"}
+	src <- llm.TextStreamEvent{Type: llm.EventTypeText, Value: "c"}
+	close(src)
+
+	select {
+	case <-stageDone:
+	case <-time.After(time.Second):
+		t.Fatal("upstream stage blocked: forwarder stopped reading after release")
+	}
+	select {
+	case _, open := <-wrapped.Stream:
+		require.False(t, open, "nothing may be forwarded after release")
+	case <-time.After(time.Second):
+		t.Fatal("forwarder did not close its output")
+	}
 }

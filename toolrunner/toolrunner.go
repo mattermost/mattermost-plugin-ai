@@ -306,6 +306,13 @@ func (r *ToolRunner) runLoop(
 
 		// Execute each tool call.
 		toolResults := r.executeTools(ctx, toolCalls, request)
+		if ctx.Err() != nil {
+			// Stopped mid-round: the tools' "context canceled" errors are
+			// not real failures, so drop this round rather than persist them
+			// as tool results the next turn would read as broken tools.
+			abandon()
+			return
+		}
 		recordMCPDynamicSearchLoadCallSuccess(request.Context, toolCalls, toolResults)
 
 		resolvedToolCalls := buildResolvedToolCalls(toolCalls, toolResults)
