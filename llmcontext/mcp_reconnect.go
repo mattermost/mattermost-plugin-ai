@@ -27,16 +27,24 @@ func MCPToolErrorResult(c *llm.Context, err error) string {
 	if c == nil || c.Tools == nil {
 		return needed.Error()
 	}
-	c.Tools.RemoveMCPToolsFromOrigin(needed.Server.ServerOrigin)
-	if c.ToolCatalog.AdmitUnconnectedMCPServer == nil {
+	// The store holds exactly the server's tools this agent may use here, so
+	// it filters the server's description the way catalog building would.
+	server := needed.Server
+	server.Tools = slices.DeleteFunc(slices.Clone(server.Tools), func(info llm.ToolInfo) bool {
+		return !c.Tools.HasMCPToolFromOrigin(server.ServerOrigin, func(tool llm.Tool) bool {
+			return llm.MCPToolNameMatches(tool.Name, info.Name)
+		})
+	})
+	c.Tools.RemoveMCPToolsFromOrigin(server.ServerOrigin)
+	if c.ToolCatalog.MCPServerOrigins == nil {
 		return needed.Error()
 	}
 
-	listed := slices.ContainsFunc(c.UnconnectedMCPServers, func(server llm.UnconnectedMCPServer) bool {
-		return server.Name == needed.Server.Name
+	listed := slices.ContainsFunc(c.UnconnectedMCPServers, func(listed llm.UnconnectedMCPServer) bool {
+		return listed.Name == server.Name
 	})
 	if !listed {
-		c.UnconnectedMCPServers = append(c.UnconnectedMCPServers, c.ToolCatalog.AdmitUnconnectedMCPServer(needed.Server))
+		c.UnconnectedMCPServers = append(c.UnconnectedMCPServers, server)
 	}
 	c.Tools.AddTools([]llm.Tool{mcp.NewRequestConnectionTool(c.UnconnectedMCPServers)})
 	return needed.ConnectGuidance()

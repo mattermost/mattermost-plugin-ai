@@ -26,20 +26,20 @@ func TestMCPToolErrorResult(t *testing.T) {
 			Name:         "Tickets",
 			ServerOrigin: ticketsOrigin,
 			Description:  "Support tickets",
-			Tools:        []llm.ToolInfo{{Name: "search", ServerOrigin: ticketsOrigin}, {Name: "close", ServerOrigin: ticketsOrigin}},
+			Tools: []llm.ToolInfo{
+				{Name: "search", ServerOrigin: ticketsOrigin},
+				{Name: "close", ServerOrigin: ticketsOrigin},
+				{Name: "delete", ServerOrigin: ticketsOrigin},
+			},
 		},
 		Err: errors.New("401"),
-	}
-	keepOnlySearch := func(server llm.UnconnectedMCPServer) llm.UnconnectedMCPServer {
-		server.Tools = slices.DeleteFunc(slices.Clone(server.Tools), func(tool llm.ToolInfo) bool { return tool.Name != "search" })
-		return server
 	}
 	alreadyListed := []llm.UnconnectedMCPServer{{Name: "GitHub", ServerOrigin: githubOrigin}}
 
 	tests := []struct {
 		name        string
 		err         error
-		admit       func(llm.UnconnectedMCPServer) llm.UnconnectedMCPServer
+		offer       bool
 		listed      []llm.UnconnectedMCPServer
 		wantResult  string
 		wantOffered []string
@@ -48,13 +48,13 @@ func TestMCPToolErrorResult(t *testing.T) {
 		{
 			name:       "other failures keep their text and the catalog",
 			err:        errors.New("tool exploded"),
-			admit:      keepOnlySearch,
+			offer:      true,
 			wantResult: "tool exploded",
 		},
 		{
 			name:        "lapsed authorization offers the server for the rest of the turn",
 			err:         lapsed,
-			admit:       keepOnlySearch,
+			offer:       true,
 			wantResult:  lapsed.ConnectGuidance(),
 			wantOffered: []string{"Tickets"},
 			wantRemoved: true,
@@ -62,7 +62,7 @@ func TestMCPToolErrorResult(t *testing.T) {
 		{
 			name:        "lapsed authorization joins servers already offered",
 			err:         lapsed,
-			admit:       keepOnlySearch,
+			offer:       true,
 			listed:      alreadyListed,
 			wantResult:  lapsed.ConnectGuidance(),
 			wantOffered: []string{"GitHub", "Tickets"},
@@ -87,7 +87,9 @@ func TestMCPToolErrorResult(t *testing.T) {
 			c := &llm.Context{
 				Tools:                 store,
 				UnconnectedMCPServers: slices.Clone(tt.listed),
-				ToolCatalog:           llm.ToolCatalogContext{AdmitUnconnectedMCPServer: tt.admit},
+			}
+			if tt.offer {
+				c.ToolCatalog.MCPServerOrigins = map[string]string{"Tickets": ticketsOrigin}
 			}
 
 			assert.Equal(t, tt.wantResult, MCPToolErrorResult(c, tt.err))
@@ -111,8 +113,8 @@ func TestMCPToolErrorResult(t *testing.T) {
 			}
 			assert.Equal(t, tt.wantOffered, offered)
 			tickets := c.UnconnectedMCPServers[len(c.UnconnectedMCPServers)-1]
-			assert.Equal(t, []llm.ToolInfo{{Name: "search", ServerOrigin: ticketsOrigin}}, tickets.Tools,
-				"the server is filtered the way it would be at catalog build")
+			assert.Equal(t, []llm.ToolInfo{{Name: "search", ServerOrigin: ticketsOrigin}, {Name: "close", ServerOrigin: ticketsOrigin}}, tickets.Tools,
+				"only tools the agent could use from the server are described")
 		})
 	}
 }

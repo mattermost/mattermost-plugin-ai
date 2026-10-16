@@ -100,13 +100,8 @@ type ToolCatalogContext struct {
 
 	// MCPServerOrigins maps configured remote MCP server names to their
 	// origins so an answered connection request can find the server's tools.
+	// It is nil where connection requests cannot be offered.
 	MCPServerOrigins map[string]string
-
-	// AdmitUnconnectedMCPServer applies the filtering servers the user must
-	// connect get when the catalog is built, such as the agent's tool
-	// allowlist, so a server whose authorization lapses mid-turn is offered
-	// the same way. It is set only where connection requests can be offered.
-	AdmitUnconnectedMCPServer func(UnconnectedMCPServer) UnconnectedMCPServer
 
 	// ResponseFilesSupported indicates the current flow attaches
 	// ToolRuntime.CreatedFiles to the bot's streamed response post, so
