@@ -702,6 +702,7 @@ func WriteUser(w *strings.Builder, entry UserEntry) {
 type ChannelEntry struct {
 	HeaderLabel string         // e.g. "Channel Information:", "1. **General**"; empty to omit
 	Channel     *model.Channel // the source channel
+	DisplayName string         // shown instead of Channel.DisplayName when set (e.g. a DM placeholder)
 	TeamName    string         // resolved team display name
 	TeamID      string         // team ID (shown when TeamName is empty but TeamID is set)
 	MemberCount int64          // -1 means don't show
@@ -716,7 +717,11 @@ func WriteChannel(w *strings.Builder, entry ChannelEntry) {
 
 	fmt.Fprintf(w, "ID: %s\n", entry.Channel.Id)
 	fmt.Fprintf(w, "Name: %s\n", entry.Channel.Name)
-	fmt.Fprintf(w, "Display Name: %s\n", entry.Channel.DisplayName)
+	displayName := entry.Channel.DisplayName
+	if entry.DisplayName != "" {
+		displayName = entry.DisplayName
+	}
+	fmt.Fprintf(w, "Display Name: %s\n", displayName)
 	fmt.Fprintf(w, "Type: %s\n", entry.Channel.Type)
 
 	if entry.TeamName != "" {
