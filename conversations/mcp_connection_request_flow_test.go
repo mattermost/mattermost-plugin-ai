@@ -67,14 +67,15 @@ func TestHandleToolCallResolvesConnectionRequest(t *testing.T) {
 	openChannel := &model.Channel{Id: "channel-id", TeamId: "team-id", Type: model.ChannelTypeOpen}
 
 	cases := []struct {
-		name              string
-		channel           *model.Channel
-		connected         bool
-		accepted          bool
-		wantStatus        string
-		wantResultErr     bool
-		wantConnected     bool
-		wantResultSnippet string
+		name               string
+		channel            *model.Channel
+		channelToolCalling bool
+		connected          bool
+		accepted           bool
+		wantStatus         string
+		wantResultErr      bool
+		wantConnected      bool
+		wantResultSnippet  string
 	}{
 		{
 			name:              "continue after connecting reports the connection",
@@ -93,6 +94,18 @@ func TestHandleToolCallResolvesConnectionRequest(t *testing.T) {
 			wantStatus:        conversation.StatusSuccess,
 			wantConnected:     true,
 			wantResultSnippet: "The user connected Jira.",
+		},
+		{
+			// The root post cannot be loaded, so the channel follow-up keeps
+			// only auto-run-everywhere tools and none of Jira's qualify.
+			name:               "continue after connecting in a channel whose follow-up cannot use the server's tools says so",
+			channel:            openChannel,
+			channelToolCalling: true,
+			connected:          true,
+			accepted:           true,
+			wantStatus:         conversation.StatusSuccess,
+			wantConnected:      true,
+			wantResultSnippet:  "none of its tools can be used in this conversation",
 		},
 		{
 			name:              "continue without connecting reports the server is still unavailable",
@@ -152,13 +165,15 @@ func TestHandleToolCallResolvesConnectionRequest(t *testing.T) {
 			mmClient.On("GetPostThread", mock.Anything).Maybe().Return(nil, &model.AppError{Message: "not found"})
 
 			streamingService := &loadedStateStreamingService{}
+			config := &channelFollowUpTestConfig{enableChannelMentionToolCalling: tc.channelToolCalling}
 			c := &Conversations{
-				mmClient: mmClient,
+				mmClient:       mmClient,
+				configProvider: config,
 				contextBuilder: llmcontext.NewLLMContextBuilder(
 					pluginAPI,
 					&channelFollowUpTestToolProvider{},
 					&connectionTestMCPProvider{connected: tc.connected},
-					&channelFollowUpTestConfig{},
+					config,
 				),
 				bots:             botsService,
 				convService:      conversation.NewService(convStore, nil, nil, nil),
@@ -211,8 +226,8 @@ func TestHandleToolCallResolvesConnectionRequest(t *testing.T) {
 
 			followUpTools := lm.requests[0].Context.Tools
 			if tc.connected {
-				assert.True(t, followUpTools.HasMCPToolsFromOrigin(connectionTestJiraOrigin),
-					"the follow-up carries the newly connected server's tools")
+				assert.Equal(t, !tc.channelToolCalling, followUpTools.HasMCPToolFromOrigin(connectionTestJiraOrigin, nil),
+					"the follow-up carries the newly connected server's tools unless it is limited to auto-run-everywhere tools")
 				assert.Nil(t, followUpTools.GetTool(mcp.RequestConnectionToolName),
 					"a connected server must not be offered again")
 			} else {

@@ -243,7 +243,7 @@ func (c *Conversations) HandleToolCall(ctx context.Context, userID string, post 
 	// Validate answers for accepted interaction blocks before mutating any
 	// state, so a malformed or missing answer leaves the question pending and
 	// answerable instead of burning it as an error result.
-	interactionResults, err := resolveInteractionAnswers(pendingBlocks, acceptedToolIDs, toolAnswers, llmContext)
+	interactionResults, err := resolveInteractionAnswers(pendingBlocks, acceptedToolIDs, toolAnswers, llmContext, c.connectionRequestToolFilter(isDM, conv, pendingBlocks, acceptedToolIDs))
 	if err != nil {
 		return err
 	}
@@ -459,8 +459,9 @@ func (c *Conversations) HandleToolCall(ctx context.Context, userID string, post 
 // block ID. Any invalid or missing answer fails the whole request with
 // ErrInvalidToolAnswer before any state is mutated. Connection requests carry
 // no answer: their result reports whether llmContext, built after the user's
-// decision, has the requested server's tools.
-func resolveInteractionAnswers(blocks []conversation.ContentBlock, acceptedToolIDs []string, toolAnswers map[string]mmtools.UserInteractionAnswer, llmContext *llm.Context) (map[string]string, error) {
+// decision, has the requested server's tools; connectionToolFilter, when set,
+// limits that check to the tools the follow-up request will carry.
+func resolveInteractionAnswers(blocks []conversation.ContentBlock, acceptedToolIDs []string, toolAnswers map[string]mmtools.UserInteractionAnswer, llmContext *llm.Context, connectionToolFilter func(llm.Tool) bool) (map[string]string, error) {
 	results := make(map[string]string)
 	for _, b := range blocks {
 		if b.Type != conversation.BlockTypeToolUse || b.UserInteraction == "" {
@@ -475,7 +476,7 @@ func resolveInteractionAnswers(blocks []conversation.ContentBlock, acceptedToolI
 		var result string
 		var err error
 		if b.UserInteraction == llm.UserInteractionConnect {
-			result, err = mcp.ResolveConnectionRequest(b.Input, llmContext)
+			result, err = mcp.ResolveConnectionRequest(b.Input, llmContext, connectionToolFilter)
 		} else {
 			result, err = mmtools.ResolveUserInteractionAnswer(b.UserInteraction, b.Input, toolAnswers[b.ID])
 		}
@@ -485,6 +486,25 @@ func resolveInteractionAnswers(blocks []conversation.ContentBlock, acceptedToolI
 		results[b.ID] = result
 	}
 	return results, nil
+}
+
+// connectionRequestToolFilter returns the tool filter the channel follow-up
+// will apply when this decision accepts a connection request, so its result
+// matches what the follow-up can call. It is nil in DMs, when no connection
+// request is accepted, and when the follow-up keeps every tool.
+func (c *Conversations) connectionRequestToolFilter(isDM bool, conv *store.Conversation, blocks []conversation.ContentBlock, acceptedToolIDs []string) func(llm.Tool) bool {
+	if isDM {
+		return nil
+	}
+	acceptsConnection := slices.ContainsFunc(blocks, func(b conversation.ContentBlock) bool {
+		return b.UserInteraction == llm.UserInteractionConnect && slices.Contains(acceptedToolIDs, b.ID)
+	})
+	if !acceptsConnection || !c.shouldConstrainChannelFollowUpToAutoEverywhere(isDM, conv) {
+		return nil
+	}
+	return func(tool llm.Tool) bool {
+		return botChannelAutoEverywhereKeepTool(c.toolPolicyChecker, tool)
+	}
 }
 
 func skippedInteractionResult(block conversation.ContentBlock) string {

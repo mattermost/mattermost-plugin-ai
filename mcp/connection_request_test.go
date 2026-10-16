@@ -83,6 +83,7 @@ func TestResolveConnectionRequest(t *testing.T) {
 		unloaded      []llm.Tool
 		authErrors    []llm.ToolAuthError
 		dynamic       bool
+		usable        func(llm.Tool) bool
 		wantConnected bool
 		wantInMessage string
 	}{
@@ -98,6 +99,20 @@ func TestResolveConnectionRequest(t *testing.T) {
 			dynamic:       true,
 			wantConnected: true,
 			wantInMessage: "call search_tools to find the ones you need, then load_tool",
+		},
+		{
+			name:          "connected server whose tools the conversation cannot use says so",
+			loaded:        append(append([]llm.Tool{}, jiraTools...), githubTools...),
+			usable:        func(tool llm.Tool) bool { return tool.ServerOrigin == githubTestOrigin },
+			wantConnected: true,
+			wantInMessage: "none of its tools can be used in this conversation",
+		},
+		{
+			name:          "connected server with one usable tool reports it available",
+			loaded:        jiraTools,
+			usable:        func(tool llm.Tool) bool { return tool.Name == "jira__search" },
+			wantConnected: true,
+			wantInMessage: "Its tools are now available in this conversation",
 		},
 		{
 			name:          "server still needing OAuth is not connected",
@@ -128,7 +143,7 @@ func TestResolveConnectionRequest(t *testing.T) {
 				},
 			}
 
-			raw, err := ResolveConnectionRequest(json.RawMessage(`{"server":"Jira","reason":"Find issues"}`), llmContext)
+			raw, err := ResolveConnectionRequest(json.RawMessage(`{"server":"Jira","reason":"Find issues"}`), llmContext, tt.usable)
 			require.NoError(t, err)
 
 			var result RequestConnectionResult
