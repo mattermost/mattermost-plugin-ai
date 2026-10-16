@@ -171,8 +171,8 @@ func (c MCPConfig) ServerConflicts() []MCPServerConflict {
 }
 
 // MaxMCPServerDescriptionRunes caps a remote MCP server's admin-written
-// description, which is added to the prompt of every user who has not
-// connected the server.
+// description, which is sent to the model on every request from a user who
+// has not connected the server.
 const MaxMCPServerDescriptionRunes = 500
 
 // Validate reports duplicate remote MCP server names and endpoint URLs, and

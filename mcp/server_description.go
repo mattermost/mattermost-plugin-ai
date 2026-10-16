@@ -13,10 +13,10 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 )
 
-// Descriptions of unconnected servers are rendered into the system prompt, so
-// every field is flattened to one line and capped.
+// Descriptions of unconnected servers are rendered into the connection request
+// tool's definition, so every field is flattened to one line and capped.
 const (
-	maxServerNameRunes     = 100
+	maxToolNameRunes       = 100
 	maxKnownToolDescRunes  = 200
 	maxKnownToolsPerServer = 30
 )
@@ -105,7 +105,7 @@ func configuredServerTools(server *ServerConfig) []llm.ToolInfo {
 			continue
 		}
 		tools = append(tools, llm.ToolInfo{
-			Name:         promptSafeText(toolConfig.Name, maxServerNameRunes),
+			Name:         promptSafeText(toolConfig.Name, maxToolNameRunes),
 			Description:  promptSafeText(toolConfig.RetrievalDescriptionOverride, maxKnownToolDescRunes),
 			ServerOrigin: server.BaseURL,
 		})

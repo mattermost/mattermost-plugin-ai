@@ -45,7 +45,7 @@ func (c *UserClients) toolCallError(client *Client, err error) error {
 	if client == nil || client.serviceAccount {
 		return err
 	}
-	if c.rememberOAuthNeededForToolCall(client, err) == "" {
+	if !c.rememberOAuthNeededForToolCall(client, err) {
 		return err
 	}
 	closeDetachedClients(c.log, c.detachOrigins(clientOrigin(client, client.config.Name)))

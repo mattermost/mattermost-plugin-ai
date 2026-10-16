@@ -501,15 +501,15 @@ func (a *API) handleGetMCPSuggestedDescription(c *gin.Context) {
 		return
 	}
 
-	serverID := c.Param("serverid")
-	index := slices.IndexFunc(a.config.MCP().Servers, func(server mcp.ServerConfig) bool {
-		return serverID != "" && server.ID == serverID
+	servers := a.config.MCP().Servers
+	index := slices.IndexFunc(servers, func(server mcp.ServerConfig) bool {
+		return server.ID == c.Param("serverid")
 	})
 	if index < 0 {
 		c.AbortWithError(http.StatusNotFound, errors.New("MCP server not found"))
 		return
 	}
-	serverConfig := a.config.MCP().Servers[index]
+	serverConfig := servers[index]
 
 	suggestion, err := mcp.SuggestRemoteServerDescription(c.Request.Context(), c.GetHeader("Mattermost-User-Id"), serverConfig,
 		a.pluginAPI.Log, a.mcpClientManager.GetOAuthManager(), a.mcpClientManager.GetHTTPClient())

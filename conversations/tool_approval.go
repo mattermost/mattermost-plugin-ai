@@ -494,9 +494,6 @@ func resolveInteractionAnswers(blocks []conversation.ContentBlock, acceptedToolI
 // matches what the follow-up can call. It is nil in DMs, when no connection
 // request is accepted, and when the follow-up keeps every tool.
 func (c *Conversations) connectionRequestToolFilter(isDM bool, conv *store.Conversation, blocks []conversation.ContentBlock, acceptedToolIDs []string) func(llm.Tool) bool {
-	if isDM {
-		return nil
-	}
 	acceptsConnection := slices.ContainsFunc(blocks, func(b conversation.ContentBlock) bool {
 		return b.UserInteraction == llm.UserInteractionConnect && slices.Contains(acceptedToolIDs, b.ID)
 	})

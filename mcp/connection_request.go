@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -50,21 +49,16 @@ type RequestConnectionResult struct {
 // (Conversations.HandleToolCall), so the resolver is only an error backstop.
 func NewRequestConnectionTool(servers []llm.UnconnectedMCPServer) llm.Tool {
 	names := make([]string, 0, len(servers))
+	enum := make([]any, 0, len(servers))
 	for _, server := range servers {
 		names = append(names, server.Name)
+		enum = append(enum, server.Name)
 	}
 
 	schema := llm.NewJSONSchemaFromStruct[RequestConnectionArgs]()
-	if serverProp := schema.Properties["server"]; serverProp != nil {
-		restricted := *serverProp
-		restricted.Description = serverParameterDescription(servers)
-		restricted.Enum = make([]any, 0, len(names))
-		for _, name := range names {
-			restricted.Enum = append(restricted.Enum, name)
-		}
-		schema.Properties = maps.Clone(schema.Properties)
-		schema.Properties["server"] = &restricted
-	}
+	serverProp := schema.Properties["server"]
+	serverProp.Description = serverParameterDescription(servers)
+	serverProp.Enum = enum
 
 	return llm.Tool{
 		Name:            RequestConnectionToolName,
@@ -109,8 +103,8 @@ func ResolveConnectionRequest(input json.RawMessage, llmContext *llm.Context, us
 		result.Message = fmt.Sprintf("The user connected %[1]s, but none of its tools can be used in this conversation. This replaces any earlier note that %[1]s is not connected; tell the user, and do not request the connection again.", args.Server)
 	default:
 		result.Connected = true
-		// The conversation's system prompt is fixed when it starts and still
-		// lists the server as unconnected, so the result must override it.
+		// Earlier tool definitions and results in the conversation still
+		// describe the server as unconnected, so the result must override them.
 		result.Message = fmt.Sprintf("The user connected %[1]s. Its tools are now available in this conversation. This replaces any earlier note that %[1]s is not connected; do not request the connection again.", args.Server)
 		if llmContext.ToolCatalog.MCPDynamicToolLoading {
 			result.Message += fmt.Sprintf(" Its tools are not loaded yet: call %s to find the ones you need, then %s, before calling a tool.", SearchToolsName, LoadToolName)
