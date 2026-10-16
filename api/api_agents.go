@@ -54,7 +54,22 @@ const MaxAgentRequestBodyBytes = 2 << 20 // 2 MiB
 // human-readable and actionable.
 type agentErrorResponse struct {
 	Error string `json:"error"`
+	// Code, when set, identifies the error so the webapp can show a translated
+	// message instead of Error.
+	Code agentErrorCode `json:"code,omitempty"`
 }
+
+// agentErrorCode identifies an agent request error the webapp localizes.
+type agentErrorCode string
+
+const (
+	// agentErrorUsernameTaken: another account holds the agent's username (or
+	// the email derived from it).
+	agentErrorUsernameTaken agentErrorCode = "username_taken"
+	// agentErrorUsernameHeldByDeactivatedBot: a deactivated bot holds the
+	// username; permanently deleting it frees the name.
+	agentErrorUsernameHeldByDeactivatedBot agentErrorCode = "username_held_by_deactivated_bot"
+)
 
 // statusForAccessErr: policy denials are 403; saving as attribute-based without ABAC is 400.
 func statusForAccessErr(err error) int {
@@ -79,6 +94,13 @@ func abortAgentRequest(c *gin.Context, status int, err error) {
 		publicMsg = "internal server error"
 	}
 	c.AbortWithStatusJSON(status, agentErrorResponse{Error: publicMsg})
+}
+
+// abortAgentRequestWithCode is abortAgentRequest for a client error the webapp
+// localizes by code.
+func abortAgentRequestWithCode(c *gin.Context, status int, code agentErrorCode, err error) {
+	_ = c.Error(err)
+	c.AbortWithStatusJSON(status, agentErrorResponse{Error: err.Error(), Code: code})
 }
 
 // AgentRequestFields are the request fields common to agent create and update.
@@ -498,8 +520,8 @@ func (a *API) handleCreateAgent(c *gin.Context) {
 	}
 	if err := a.pluginAPI.Bot.Create(mmBot); err != nil {
 		var appErr *model.AppError
-		if errors.As(err, &appErr) && appErr.Id == "app.user.save.username_exists.app_error" {
-			abortAgentRequest(c, http.StatusConflict, fmt.Errorf("username %q is already taken", req.Username))
+		if errors.As(err, &appErr) && (appErr.Id == "app.user.save.username_exists.app_error" || appErr.Id == "app.user.save.email_exists.app_error") {
+			abortAgentRequestWithCode(c, http.StatusConflict, a.agentUsernameConflictCode(userID, req.Username), fmt.Errorf("username %q is already taken", req.Username))
 			return
 		}
 		abortAgentRequest(c, http.StatusInternalServerError, fmt.Errorf("failed to create bot account: %w", err))
@@ -509,9 +531,7 @@ func (a *API) handleCreateAgent(c *gin.Context) {
 	agent := buildAgentConfigForCreate(req, userID, mmBot.UserId)
 
 	if err := a.agentStore.CreateAgent(agent); err != nil {
-		if _, deactivateErr := a.pluginAPI.Bot.UpdateActive(mmBot.UserId, false); deactivateErr != nil {
-			a.pluginAPI.Log.Error("Failed to deactivate bot after agent persist failure", "bot_user_id", mmBot.UserId, "error", deactivateErr.Error())
-		}
+		a.discardUnusedBot(mmBot.UserId)
 		abortAgentRequest(c, http.StatusInternalServerError, fmt.Errorf("failed to persist agent: %w", err))
 		return
 	}
@@ -522,6 +542,35 @@ func (a *API) handleCreateAgent(c *gin.Context) {
 
 	_ = a.refreshBotsAndNotify(agent.ID)
 	c.JSON(http.StatusCreated, agent)
+}
+
+// agentUsernameConflictCode reports whether a deactivated bot holds username, in
+// which case permanently deleting it makes the name available again. The lookup
+// bypasses the caller's user-visibility restrictions, so only system admins are
+// told what holds the name.
+func (a *API) agentUsernameConflictCode(userID, username string) agentErrorCode {
+	if !isSystemAdmin(a.pluginAPI, userID) {
+		return agentErrorUsernameTaken
+	}
+	holder, err := a.pluginAPI.User.GetByUsername(username)
+	if err == nil && holder.IsBot && holder.DeleteAt != 0 {
+		return agentErrorUsernameHeldByDeactivatedBot
+	}
+	return agentErrorUsernameTaken
+}
+
+// discardUnusedBot removes a bot created for an agent that failed to persist. The
+// bot has no history yet, so it is deleted rather than deactivated: a deactivated
+// bot would keep blocking the username on retry.
+func (a *API) discardUnusedBot(botUserID string) {
+	deleteErr := a.pluginAPI.Bot.DeletePermanently(botUserID)
+	if deleteErr == nil {
+		return
+	}
+	a.pluginAPI.Log.Error("Failed to delete bot after agent persist failure", "bot_user_id", botUserID, "error", deleteErr.Error())
+	if _, err := a.pluginAPI.Bot.UpdateActive(botUserID, false); err != nil {
+		a.pluginAPI.Log.Error("Failed to deactivate bot after agent persist failure", "bot_user_id", botUserID, "error", err.Error())
+	}
 }
 
 // agentListItem is an agent as listed on GET /agents, with the reason it is

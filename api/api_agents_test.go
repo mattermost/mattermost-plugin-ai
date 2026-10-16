@@ -496,6 +496,123 @@ func TestCreateAgentWithoutPermission(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, recorder.Result().StatusCode)
 }
 
+func TestCreateAgentUsernameConflict(t *testing.T) {
+	notFound := model.NewAppError("GetUser", "app.user.missing_account.const", nil, "", http.StatusNotFound)
+	usernameTaken := model.NewAppError("CreateBot", "app.user.save.username_exists.app_error", nil, "", http.StatusBadRequest)
+	emailTaken := model.NewAppError("CreateBot", "app.user.save.email_exists.app_error", nil, "", http.StatusBadRequest)
+
+	tests := []struct {
+		name          string
+		nonAdmin      bool
+		createBotErr  *model.AppError
+		usernameOwner *model.User
+		wantCode      agentErrorCode
+	}{
+		{
+			name:          "deactivated bot holds the username",
+			createBotErr:  usernameTaken,
+			usernameOwner: &model.User{Id: "oldbotid", Username: "my-agent", IsBot: true, DeleteAt: 1},
+			wantCode:      agentErrorUsernameHeldByDeactivatedBot,
+		},
+		{
+			// Postgres reports the email violation first when the Users indexes were
+			// recreated alphabetically (e.g. by pg_dump/restore).
+			name:          "deactivated bot holds the username, reported as an email conflict",
+			createBotErr:  emailTaken,
+			usernameOwner: &model.User{Id: "oldbotid", Username: "my-agent", IsBot: true, DeleteAt: 1},
+			wantCode:      agentErrorUsernameHeldByDeactivatedBot,
+		},
+		{
+			name:          "active bot holds the username",
+			createBotErr:  usernameTaken,
+			usernameOwner: &model.User{Id: "botid", Username: "my-agent", IsBot: true},
+			wantCode:      agentErrorUsernameTaken,
+		},
+		{
+			name:          "deactivated person holds the username",
+			createBotErr:  usernameTaken,
+			usernameOwner: &model.User{Id: "personid", Username: "my-agent", DeleteAt: 1},
+			wantCode:      agentErrorUsernameTaken,
+		},
+		{
+			name:          "non-admin is not told a deactivated bot holds the username",
+			nonAdmin:      true,
+			createBotErr:  usernameTaken,
+			usernameOwner: &model.User{Id: "oldbotid", Username: "my-agent", IsBot: true, DeleteAt: 1},
+			wantCode:      agentErrorUsernameTaken,
+		},
+		{
+			name:         "another account holds the derived email",
+			createBotErr: emailTaken,
+			wantCode:     agentErrorUsernameTaken,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := setupAgentTestEnvironment(t)
+			defer e.Cleanup(t)
+
+			mockLicensed(e.mockAPI)
+			e.mockAPI.On("HasPermissionTo", testUserID, model.PermissionManageOwnAgent).Return(true)
+			e.mockAPI.On("HasPermissionTo", testUserID, model.PermissionManageSystem).Return(!tt.nonAdmin)
+			e.mockAPI.On("CreateBot", mock.AnythingOfType("*model.Bot")).Return(nil, tt.createBotErr)
+			if tt.usernameOwner != nil {
+				e.mockAPI.On("GetUserByUsername", "my-agent").Return(tt.usernameOwner, nil).Maybe()
+			} else {
+				e.mockAPI.On("GetUserByUsername", "my-agent").Return(nil, notFound).Maybe()
+			}
+
+			recorder := doRequest(e.api, http.MethodPost, "/agents", createAgentBody(nil), testUserID)
+			require.Equal(t, http.StatusConflict, recorder.Code)
+			var resp agentErrorResponse
+			require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+			assert.Equal(t, tt.wantCode, resp.Code)
+			assert.NotEmpty(t, resp.Error)
+			assert.Empty(t, e.agentStore.agents)
+		})
+	}
+}
+
+func TestCreateAgentRemovesBotWhenPersistFails(t *testing.T) {
+	tests := []struct {
+		name           string
+		deleteErr      *model.AppError
+		wantDeactivate bool
+	}{
+		{name: "bot is permanently deleted"},
+		{
+			name:           "bot is deactivated when it cannot be deleted",
+			deleteErr:      model.NewAppError("PermanentDeleteBot", "app.bot.permanent_delete.internal_error", nil, "", http.StatusInternalServerError),
+			wantDeactivate: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := setupAgentTestEnvironment(t)
+			defer e.Cleanup(t)
+
+			mockLicensed(e.mockAPI)
+			e.mockAPI.On("HasPermissionTo", testUserID, model.PermissionManageOwnAgent).Return(true)
+			e.mockAPI.On("LogError", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+			e.mockAPI.On("CreateBot", mock.AnythingOfType("*model.Bot")).Return(&model.Bot{UserId: "newbotid", Username: "my-agent"}, nil)
+			e.mockAPI.On("PermanentDeleteBot", "newbotid").Return(tt.deleteErr)
+			e.mockAPI.On("UpdateBotActive", "newbotid", false).Return(&model.Bot{UserId: "newbotid"}, nil).Maybe()
+			e.agentStore.createErr = errors.New("database unavailable")
+
+			recorder := doRequest(e.api, http.MethodPost, "/agents", createAgentBody(nil), testUserID)
+			require.Equal(t, http.StatusInternalServerError, recorder.Code)
+			e.mockAPI.AssertCalled(t, "PermanentDeleteBot", "newbotid")
+			if tt.wantDeactivate {
+				e.mockAPI.AssertCalled(t, "UpdateBotActive", "newbotid", false)
+			} else {
+				e.mockAPI.AssertNotCalled(t, "UpdateBotActive", "newbotid", false)
+			}
+		})
+	}
+}
+
 func TestCreateAgentFreeTierAllowsFirstAgent(t *testing.T) {
 	e := setupAgentTestEnvironment(t)
 	defer e.Cleanup(t)
