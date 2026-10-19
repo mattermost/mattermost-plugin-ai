@@ -12,9 +12,9 @@ import (
 	"io"
 	"net/http"
 	"regexp"
-	"strings"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/mattermost/mattermost-plugin-agents/v2/accesscontrol"
