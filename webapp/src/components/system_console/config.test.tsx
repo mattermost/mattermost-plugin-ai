@@ -7,7 +7,7 @@ import {IntlProvider} from 'react-intl';
 
 import {getAIBots, getPluginConfig, savePluginConfig} from '@/client';
 
-import Config, {effectiveDefaultBotID, normalizeAgentReferences} from './config';
+import Config, {effectiveDefaultBotID} from './config';
 import {PluginConfig} from './plugin_config_types';
 
 jest.mock('react-intl', () => {
@@ -265,41 +265,6 @@ describe('effectiveDefaultBotID', () => {
     });
 });
 
-describe('normalizeAgentReferences', () => {
-    const cfg = (refs: Partial<PluginConfig>) => ({
-        defaultBotUserID: '',
-        transcriptBotUserID: '',
-        defaultBotName: '',
-        transcriptBackend: '',
-        ...refs,
-    } as PluginConfig);
-
-    it.each([
-        {
-            name: 'converts resolvable legacy names to IDs and clears the legacy fields',
-            input: {defaultBotName: 'second', transcriptBackend: 'scribe'},
-            expected: {defaultBotUserID: BOT_SECOND, defaultBotName: '', transcriptBotUserID: BOT_TRANSCRIPT, transcriptBackend: ''},
-        },
-        {
-            name: 'clears a stale legacy name when an ID is set',
-            input: {defaultBotUserID: BOT_FIRST, defaultBotName: 'second', transcriptBotUserID: BOT_TRANSCRIPT, transcriptBackend: 'first'},
-            expected: {defaultBotUserID: BOT_FIRST, defaultBotName: '', transcriptBotUserID: BOT_TRANSCRIPT, transcriptBackend: ''},
-        },
-        {
-            name: 'keeps both fields cleared when cleared',
-            input: {},
-            expected: {defaultBotUserID: '', defaultBotName: '', transcriptBotUserID: '', transcriptBackend: ''},
-        },
-        {
-            name: 'keeps an unresolvable legacy name so the server can still convert it',
-            input: {defaultBotName: 'gone', transcriptBackend: 'gone-too'},
-            expected: {defaultBotUserID: '', defaultBotName: 'gone', transcriptBotUserID: '', transcriptBackend: 'gone-too'},
-        },
-    ])('$name', ({input, expected}) => {
-        expect(normalizeAgentReferences(cfg(input), runtimeBots)).toMatchObject(expected);
-    });
-});
-
 describe('Config default agent selector', () => {
     beforeEach(() => {
         jest.clearAllMocks();
@@ -315,7 +280,7 @@ describe('Config default agent selector', () => {
         return (savePluginConfig as jest.Mock).mock.calls.at(-1)?.[0] as PluginConfig;
     }
 
-    it('shows the agent matching a legacy default name and saves its ID with the legacy field cleared', async () => {
+    it('shows the agent matching a legacy default name and saves it unchanged for the server to convert', async () => {
         (getPluginConfig as jest.Mock).mockResolvedValue({...loadedConfig, defaultBotName: 'second', defaultBotUserID: ''});
         const {registerSaveAction} = renderConfig();
 
@@ -323,11 +288,11 @@ describe('Config default agent selector', () => {
         expect(screen.queryByText('First')).toBeNull();
 
         const saved = await saveLastRegistered(registerSaveAction);
-        expect(saved.defaultBotUserID).toBe(BOT_SECOND);
-        expect(saved.defaultBotName).toBe('');
+        expect(saved.defaultBotUserID).toBe('');
+        expect(saved.defaultBotName).toBe('second');
     });
 
-    it('saves a selection by ID and clears the legacy fields', async () => {
+    it('saves a selection by ID and clears the legacy default name', async () => {
         (getPluginConfig as jest.Mock).mockResolvedValue({...loadedConfig, defaultBotName: 'second', transcriptBackend: 'scribe'});
         const {registerSaveAction} = renderConfig();
         await screen.findByText('Second');
@@ -338,8 +303,8 @@ describe('Config default agent selector', () => {
         const saved = await saveLastRegistered(registerSaveAction);
         expect(saved.defaultBotUserID).toBe(BOT_FIRST);
         expect(saved.defaultBotName).toBe('');
-        expect(saved.transcriptBotUserID).toBe(BOT_TRANSCRIPT);
-        expect(saved.transcriptBackend).toBe('');
+        expect(saved.transcriptBotUserID).toBe('');
+        expect(saved.transcriptBackend).toBe('scribe');
     });
 
     it('sends empty ID and legacy fields when nothing is configured', async () => {

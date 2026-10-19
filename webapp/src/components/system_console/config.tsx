@@ -51,28 +51,6 @@ export const effectiveDefaultBotID = (configuredID: string | undefined, legacyNa
     return resolveBotID(configuredID, legacyName, bots) || (bots[0]?.id ?? '');
 };
 
-// Builds the agent reference fields to save. A legacy username that resolves to
-// an agent is converted to its ID and the legacy field is cleared. A reference
-// that cannot be resolved (agent list unavailable or agent gone) is sent as
-// loaded so the server can still convert it instead of silently dropping it.
-export const normalizeAgentReferences = (cfg: Config, bots: RuntimeBotOption[]): Config => {
-    let {defaultBotUserID, defaultBotName, transcriptBotUserID, transcriptBackend} = cfg;
-
-    const defaultID = defaultBotUserID || resolveBotID('', defaultBotName, bots);
-    if (defaultID) {
-        defaultBotUserID = defaultID;
-        defaultBotName = '';
-    }
-
-    const transcriptID = transcriptBotUserID || resolveBotID('', transcriptBackend, bots);
-    if (transcriptID) {
-        transcriptBotUserID = transcriptID;
-        transcriptBackend = '';
-    }
-
-    return {...cfg, defaultBotUserID, defaultBotName, transcriptBotUserID, transcriptBackend};
-};
-
 type Props = {
     id: string
     label: string
@@ -255,7 +233,7 @@ const Config = (props: Props) => {
     useEffect(() => {
         const save = async () => {
             try {
-                const saved = await savePluginConfig(normalizeAgentReferences(localConfig, runtimeBots));
+                const saved = await savePluginConfig(localConfig);
 
                 // Adopt the normalized saved config so server-minted
                 // service/MCP IDs (and the UI gated on them) appear
@@ -270,7 +248,7 @@ const Config = (props: Props) => {
         return () => {
             props.unRegisterSaveAction(save);
         };
-    }, [localConfig, runtimeBots, intl, props.registerSaveAction, props.unRegisterSaveAction]);
+    }, [localConfig, intl, props.registerSaveAction, props.unRegisterSaveAction]);
 
     const updateConfig = useCallback((updates: Partial<Config>) => {
         setLocalConfig((prev) => ({...prev, ...updates}));
