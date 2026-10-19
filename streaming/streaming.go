@@ -22,6 +22,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/store"
 	"github.com/mattermost/mattermost-plugin-agents/v2/telemetry"
 	"github.com/mattermost/mattermost/server/public/model"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -547,9 +548,31 @@ func (p *MMPostStreamService) streamToPostImpl(ctx context.Context, stream *llm.
 			telemetry.PostID.String(post.Id),
 			telemetry.ChannelID.String(post.ChannelId),
 			telemetry.ThreadRootPostID.String(rootPostID),
+			telemetry.UserID.String(requesterUserID),
+			telemetry.StreamContinuation.Bool(isContinuation),
 		),
 	)
-	defer span.End()
+	if convID, ok := post.GetProp(ConversationIDProp).(string); ok && convID != "" {
+		span.SetAttributes(telemetry.ConversationID.String(convID))
+	}
+	// outcome is set at every exit so a blank or stuck reply can be told
+	// apart from a canceled or failed one. Only the length of the final
+	// message is recorded, never its content.
+	outcome := ""
+	defer func() {
+		if outcome == "" {
+			// Channel closed without an end event.
+			outcome = telemetry.StreamOutcomeCompleted
+			if strings.TrimSpace(post.Message) == "" {
+				outcome = telemetry.StreamOutcomeEmpty
+			}
+		}
+		span.SetAttributes(
+			telemetry.StreamOutcome.String(outcome),
+			telemetry.StreamMessageLength.Int(len(post.Message)),
+		)
+		span.End()
+	}()
 
 	p.activeStreams.Add(1)
 	defer p.activeStreams.Add(-1)
@@ -692,6 +715,7 @@ func (p *MMPostStreamService) streamToPostImpl(ctx context.Context, stream *llm.
 					T := i18n.LocalizerFunc(p.i18n, userLocale)
 					emptyText := T("agents.stream_to_post_llm_not_return", "Sorry! The LLM did not return a result.")
 					post.Message = emptyText
+					outcome = telemetry.StreamOutcomeEmpty
 					// Mirror into the accumulator so the turn carries the fallback.
 					if acc != nil {
 						acc.sequence.AppendText(emptyText)
@@ -699,6 +723,9 @@ func (p *MMPostStreamService) streamToPostImpl(ctx context.Context, stream *llm.
 					p.sendPostStreamingEvent(post, broadcast, map[string]any{"next": post.Message})
 				}
 
+				if outcome != telemetry.StreamOutcomeEmpty {
+					outcome = telemetry.StreamOutcomeCompleted
+				}
 				if err := p.mmClient.UpdatePost(post); err != nil {
 					p.mmClient.LogError("Streaming failed to update post", "error", err)
 					return
@@ -712,6 +739,9 @@ func (p *MMPostStreamService) streamToPostImpl(ctx context.Context, stream *llm.
 				} else {
 					err = fmt.Errorf("unknown error from LLM")
 				}
+				outcome = telemetry.StreamOutcomeErrored
+				span.RecordError(err)
+				span.SetStatus(codes.Error, "llm stream error")
 
 				// Handle partial results
 				var separator string
@@ -780,6 +810,10 @@ func (p *MMPostStreamService) streamToPostImpl(ctx context.Context, stream *llm.
 							acc.annotations = nil
 							acc.toolCalls = nil
 							acc.serverTools = nil
+							// The round's usage is persisted with its
+							// tool turn; the anchor counts only its own.
+							acc.tokensIn = 0
+							acc.tokensOut = 0
 							messageBuilder.Reset()
 							post.Message = ""
 						} else {
@@ -860,6 +894,7 @@ func (p *MMPostStreamService) streamToPostImpl(ctx context.Context, stream *llm.
 				}
 			}
 		case <-ctx.Done():
+			outcome = telemetry.StreamOutcomeCancelled
 			// A user stop is an intentional, complete response. Plugin
 			// shutdown is an interruption the user should be told about.
 			if lifecycle.IsShutdown(ctx) {

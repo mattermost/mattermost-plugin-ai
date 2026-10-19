@@ -1363,7 +1363,7 @@ func TestGenerateTitle(t *testing.T) {
 
 	mockLLM := &testLLM{noStreamResponse: `"Go Programming Language"`}
 
-	err = svc.GenerateTitle(result.ConversationID, mockLLM, "Tell me about Go", &llm.Context{})
+	err = svc.GenerateTitle(context.Background(), result.ConversationID, mockLLM, "Tell me about Go", &llm.Context{})
 	require.NoError(t, err)
 
 	conv, err := s.GetConversation(result.ConversationID)

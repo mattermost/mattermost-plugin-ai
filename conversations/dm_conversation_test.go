@@ -27,6 +27,7 @@ import (
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // --- In-memory fake conversation store ------------------------------------
@@ -282,16 +283,21 @@ type dmTestLLM struct {
 	callIdx   int
 	requests  []llm.CompletionRequest
 	onChat    func()
+	// callTraces records the trace each call ran under, in call order.
+	callTraces []trace.TraceID
+	// titleDone, when set, is signaled after each ChatCompletionNoStream.
+	titleDone chan struct{}
 }
 
 func newDMTestLLM(responses ...*llm.TextStreamResult) *dmTestLLM {
 	return &dmTestLLM{responses: responses}
 }
 
-func (f *dmTestLLM) ChatCompletion(_ context.Context, request llm.CompletionRequest, opts ...llm.LanguageModelOption) (*llm.TextStreamResult, error) {
+func (f *dmTestLLM) ChatCompletion(ctx context.Context, request llm.CompletionRequest, opts ...llm.LanguageModelOption) (*llm.TextStreamResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.requests = append(f.requests, request)
+	f.callTraces = append(f.callTraces, trace.SpanContextFromContext(ctx).TraceID())
 	if f.onChat != nil {
 		f.onChat()
 	}
@@ -303,7 +309,14 @@ func (f *dmTestLLM) ChatCompletion(_ context.Context, request llm.CompletionRequ
 	return resp, nil
 }
 
-func (f *dmTestLLM) ChatCompletionNoStream(_ context.Context, request llm.CompletionRequest, opts ...llm.LanguageModelOption) (string, error) {
+func (f *dmTestLLM) ChatCompletionNoStream(ctx context.Context, request llm.CompletionRequest, opts ...llm.LanguageModelOption) (string, error) {
+	f.mu.Lock()
+	f.callTraces = append(f.callTraces, trace.SpanContextFromContext(ctx).TraceID())
+	done := f.titleDone
+	f.mu.Unlock()
+	if done != nil {
+		done <- struct{}{}
+	}
 	return "Test Title", nil
 }
 

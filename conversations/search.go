@@ -96,6 +96,7 @@ func (c *Conversations) runSearch(ctx context.Context, bot *bots.Bot, user *mode
 		return fmt.Errorf("unable to create response placeholder: %w", placeholderErr)
 	}
 	progress := newResponseProgressReporter(ctx, c.mmClient, responsePost)
+	defer progress.Flush()
 	progress.Advance(responseProgressCheckingMCP)
 	defer func() {
 		switch {

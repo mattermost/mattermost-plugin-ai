@@ -186,18 +186,18 @@ func TestHandleSearchSystemPrompt(t *testing.T) {
 		{
 			name:        "search bar query without a team cites through the redirect route",
 			request:     conversations.SearchRequest{Query: "launch"},
-			contains:    []string{"/_redirect/pl/<post_id>"},
+			contains:    []string{"/_redirect/pl/<post_id>?view=citation"},
 			notContains: []string{startChannelID},
 		},
 		{
-			name: "ask-channel points the agent at the channel and cites with the team name",
+			name: "ask-channel points the agent at the channel and cites through the redirect route",
 			request: conversations.SearchRequest{
 				Query:   "launch",
 				Team:    &model.Team{Id: "teamid", Name: "eng"},
 				Channel: &model.Channel{Id: startChannelID, DisplayName: "Launch Planning"},
 			},
-			contains:    []string{"/eng/pl/<post_id>", startChannelID, "Launch Planning"},
-			notContains: []string{"/_redirect/pl/"},
+			contains:    []string{"/_redirect/pl/<post_id>?view=citation", startChannelID, "Launch Planning"},
+			notContains: []string{"/eng/pl/"},
 		},
 	}
 

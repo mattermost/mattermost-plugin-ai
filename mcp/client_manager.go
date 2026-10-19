@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mattermost/mattermost-plugin-agents/v2/accesscontrol"
 	"github.com/mattermost/mattermost-plugin-agents/v2/config"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmapi"
@@ -542,11 +543,11 @@ func (m *ClientManager) deniedMCPServerOrigins(ctx context.Context, userID strin
 	}
 
 	var denied map[string]bool
-	check := func(origin, serverID string) {
+	check := func(origin, serverID, name string) {
 		if serverID == "" {
 			return
 		}
-		if err := m.accessChecker.CanUseMCPServer(ctx, userID, serverID); err == nil {
+		if err := m.accessChecker.CanUseMCPServer(accesscontrol.WithResourceName(ctx, name), userID, serverID); err == nil {
 			return
 		}
 		if denied == nil {
@@ -558,14 +559,14 @@ func (m *ClientManager) deniedMCPServerOrigins(ctx context.Context, userID strin
 
 	for _, server := range cfg.Servers {
 		if server.Enabled && server.BaseURL != "" {
-			check(server.BaseURL, server.ID)
+			check(server.BaseURL, server.ID, server.Name)
 		}
 	}
 	if embeddedClient != nil {
-		check(EmbeddedClientKey, cfg.EmbeddedServer.ID)
+		check(EmbeddedClientKey, cfg.EmbeddedServer.ID, EmbeddedClientKey)
 	}
 	for _, server := range plugins {
-		check(pluginServerOriginKey(server.PluginID), server.ID)
+		check(pluginServerOriginKey(server.PluginID), server.ID, server.Name)
 	}
 	return denied
 }

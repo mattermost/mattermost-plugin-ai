@@ -4,13 +4,12 @@
 package conversation
 
 import (
+	stdcontext "context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
 	"strings"
-
-	"github.com/mattermost/mattermost-plugin-agents/v2/lifecycle"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/format"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
@@ -658,8 +657,10 @@ func (s *Service) writeToolRound(conversationID string, tt toolrunner.ToolTurn, 
 // GenerateTitle generates a short title for the conversation and saves it.
 // This should be called asynchronously (in a goroutine) after conversation creation.
 // The lm parameter provides the language model for title generation.
-// The context parameter provides bot/user context for the LLM call.
+// The context parameter provides bot/user context for the LLM call; ctx
+// carries the trace so the title call is recorded under the turn's agent run.
 func (s *Service) GenerateTitle(
+	ctx stdcontext.Context,
 	conversationID string,
 	lm llm.LanguageModel,
 	userMessage string,
@@ -676,7 +677,7 @@ func (s *Service) GenerateTitle(
 		OperationSubType: llm.SubTypeNoStream,
 	}
 
-	title, err := lm.ChatCompletionNoStream(lifecycle.Context(), req,
+	title, err := lm.ChatCompletionNoStream(ctx, req,
 		llm.WithMaxGeneratedTokens(25),
 		llm.WithReasoningDisabled(),
 		llm.WithToolsDisabled(),
