@@ -93,6 +93,8 @@ func respondAsAgent(t *evals.EvalT, scenario evalScenario, post *model.Post) str
 	mockAPI.On("GetLicense").Return(&model.License{SkuShortName: model.LicenseShortSkuEnterpriseAdvanced}).Maybe()
 	mockAPI.On("GetTeam", mock.Anything).Return(scenario.team, nil).Maybe()
 	mockAPI.On("GetBotUsers").Return(nil, nil).Maybe()
+	// A mention only counts when the bot's account still holds the username.
+	mockAPI.On("GetUser", scenario.botUser.Id).Return(scenario.botUser, nil).Maybe()
 	for i := 1; i <= 10; i++ {
 		args := make([]any, i)
 		for j := range args {
