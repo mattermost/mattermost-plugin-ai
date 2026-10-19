@@ -181,15 +181,19 @@ jobs:
         id: baseline
         env:
           GH_TOKEN: ${{ github.token }}
-        # A run whose eval job failed has partial results (a package did not
-        # finish), so only successful runs are used. Artifacts are newest first.
+        # The newest master push run whose eval jobs all succeeded (a failed
+        # eval job has partial results) and whose eval results are unexpired.
+        # Other jobs of the run may fail.
         run: |
           run_id=""
-          candidates=$(gh api "repos/${{ github.repository }}/actions/artifacts?name=eval-results-openai&per_page=100" \
-            --jq '.artifacts[] | select(.expired == false and .workflow_run.head_branch == "master" and .workflow_run.head_repository_id == .workflow_run.repository_id) | .workflow_run.id' \
-            | awk '!seen[$0]++' | head -n 10)
-          for id in $candidates; do
-            if [ "$(gh api "repos/${{ github.repository }}/actions/runs/$id" --jq .conclusion)" = success ]; then
+          repo="repos/${{ github.repository }}"
+          for id in $(gh api "$repo/actions/workflows/ci.yml/runs?branch=master&event=push&status=completed&per_page=20" --jq '.workflow_runs[].id'); do
+            evals_ok=$(gh api "$repo/actions/runs/$id/jobs?per_page=100" \
+              --jq '[.jobs[] | select(.name | startswith("evals / evals-"))] | length > 0 and all(.conclusion == "success")')
+            [ "$evals_ok" = true ] || continue
+            artifacts=$(gh api "$repo/actions/runs/$id/artifacts?per_page=100" \
+              --jq '[.artifacts[] | select(.expired == false and (.name | startswith("eval-results-")))] | length')
+            if [ "$artifacts" -gt 0 ]; then
               run_id=$id
               break
             fi
