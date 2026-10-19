@@ -24,6 +24,20 @@ function providersWithoutResults(existingBody, summaryPath) {
     return listed.filter((name) => !available.has(name));
 }
 
+// Keeps providers that stopped reporting in a new comment, so their earlier
+// failures still block resolving it, and says that they were not rechecked.
+function carryForward(body, missing) {
+    const match = body.match(PROVIDERS);
+    const current = match ? match[1].split(',').filter(Boolean) : [];
+    const providers = [...new Set([...current, ...missing])].sort();
+    const note = `No usable results for ${missing.join(', ')} in this run, so earlier failures there were not rechecked.\n\n`;
+    const line = `<!-- eval-providers: ${providers.join(',')} -->\n`;
+    if (match) {
+        return body.replace(`${match[0]}\n`, line + note);
+    }
+    return body.replace(`${MARKER}\n\n`, `${MARKER}\n\n${line}${note}`);
+}
+
 async function postEvalComment(github, context, commentPath, summaryPath) {
     const body = fs.existsSync(commentPath) ? fs.readFileSync(commentPath, 'utf8').trim() : '';
     const repo = {owner: context.repo.owner, repo: context.repo.repo};
@@ -34,20 +48,22 @@ async function postEvalComment(github, context, commentPath, summaryPath) {
         per_page: 100,
     });
     const existing = comments.find((comment) => comment.user.type === 'Bot' && comment.body.includes(MARKER));
+    const unresolved = existing && !existing.body.includes(RESOLVED);
+    const missing = unresolved ? providersWithoutResults(existing.body, summaryPath) : [];
 
     if (body) {
+        const newBody = missing.length > 0 ? carryForward(body, missing) : body;
         if (existing) {
-            await github.rest.issues.updateComment({...repo, comment_id: existing.id, body});
+            await github.rest.issues.updateComment({...repo, comment_id: existing.id, body: newBody});
             console.log(`Updated eval comment ${existing.id}`);
         } else {
-            const {data} = await github.rest.issues.createComment({...repo, issue_number: context.issue.number, body});
+            const {data} = await github.rest.issues.createComment({...repo, issue_number: context.issue.number, body: newBody});
             console.log(`Created eval comment ${data.id}`);
         }
         return;
     }
 
-    if (existing && !existing.body.includes(RESOLVED)) {
-        const missing = providersWithoutResults(existing.body, summaryPath);
+    if (unresolved) {
         if (missing.length > 0) {
             console.log(`Keeping eval comment ${existing.id}: no usable results for ${missing.join(', ')}`);
             return;
@@ -65,4 +81,4 @@ async function postEvalComment(github, context, commentPath, summaryPath) {
     console.log('Nothing actionable; no eval comment posted.');
 }
 
-module.exports = {postEvalComment, providersWithoutResults};
+module.exports = {postEvalComment, providersWithoutResults, carryForward};
