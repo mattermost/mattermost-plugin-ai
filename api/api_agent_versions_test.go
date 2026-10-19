@@ -125,6 +125,7 @@ func TestListAndGetAgentVersions(t *testing.T) {
 		{name: "unknown version", path: "/agents/agent-1/versions/3", expectedStatus: http.StatusNotFound},
 		{name: "non-integer version", path: "/agents/agent-1/versions/latest", expectedStatus: http.StatusBadRequest},
 		{name: "zero version", path: "/agents/agent-1/versions/0", expectedStatus: http.StatusBadRequest},
+		{name: "version beyond the 32-bit column range", path: "/agents/agent-1/versions/2147483648", expectedStatus: http.StatusBadRequest},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -169,6 +170,9 @@ func TestListAgentVersionsPaging(t *testing.T) {
 		{name: "zero before", query: "?before=0", expectedStatus: http.StatusBadRequest},
 		{name: "empty before", query: "?before=", expectedStatus: http.StatusBadRequest},
 		{name: "fractional before", query: "?before=1.5", expectedStatus: http.StatusBadRequest},
+		{name: "largest before the column holds", query: "?before=2147483647", expectedStatus: http.StatusOK, expectedVersions: versionRange(250, 201), expectedHasMore: true},
+		{name: "before beyond the 32-bit column range", query: "?before=2147483648", expectedStatus: http.StatusBadRequest},
+		{name: "limit beyond the 32-bit range", query: "?limit=2147483648", expectedStatus: http.StatusBadRequest},
 	}
 
 	for _, tt := range tests {
@@ -300,6 +304,14 @@ func TestRestoreAgentVersion(t *testing.T) {
 				seedVersionedAgent(t, e, versionTestAgent(), map[string]any{"customInstructions": "edited"})
 			},
 			path:           "/agents/agent-1/versions/one/restore",
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name: "version beyond the 32-bit column range",
+			setup: func(t *testing.T, e *TestEnvironment) {
+				seedVersionedAgent(t, e, versionTestAgent(), map[string]any{"customInstructions": "edited"})
+			},
+			path:           "/agents/agent-1/versions/2147483648/restore",
 			expectedStatus: http.StatusBadRequest,
 		},
 	}

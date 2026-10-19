@@ -19,6 +19,16 @@ const (
 	maxAgentVersionPageSize     = 200
 )
 
+// parseVersionNumber parses a positive version number. Versions are stored
+// as 32-bit INT, so larger values are rejected rather than sent to the database.
+func parseVersionNumber(raw string) (int, bool) {
+	value, err := strconv.ParseInt(raw, 10, 32)
+	if err != nil || value < 1 {
+		return 0, false
+	}
+	return int(value), true
+}
+
 // parsePositiveIntQuery reads an optional positive integer query parameter,
 // returning fallback when it is absent and aborting with 400 when it is invalid.
 func parsePositiveIntQuery(c *gin.Context, name string, fallback int) (int, bool) {
@@ -26,8 +36,8 @@ func parsePositiveIntQuery(c *gin.Context, name string, fallback int) (int, bool
 	if !present {
 		return fallback, true
 	}
-	value, err := strconv.Atoi(raw)
-	if err != nil || value < 1 {
+	value, ok := parseVersionNumber(raw)
+	if !ok {
 		abortAgentRequest(c, http.StatusBadRequest, fmt.Errorf("invalid %s %q: must be a positive integer", name, raw))
 		return 0, false
 	}
@@ -38,8 +48,8 @@ func parsePositiveIntQuery(c *gin.Context, name string, fallback int) (int, bool
 // 400 when it is not a positive integer.
 func parseAgentVersionParam(c *gin.Context) (int, bool) {
 	raw := c.Param("version")
-	version, err := strconv.Atoi(raw)
-	if err != nil || version < 1 {
+	version, ok := parseVersionNumber(raw)
+	if !ok {
 		abortAgentRequest(c, http.StatusBadRequest, fmt.Errorf("invalid version %q: must be a positive integer", raw))
 		return 0, false
 	}
