@@ -86,21 +86,27 @@ function conversationRoute(conversationId: string): string {
 // non-2xx responses so the UI can surface actionable validation feedback
 // (oversized prompt, taken username, etc.) instead of a generic retry hint.
 export async function readAgentErrorMessage(response: Response): Promise<string> {
+    return (await readAgentError(response)).message;
+}
+
+// readAgentError extracts the server-provided error message and, when the
+// server identifies the error, its code (as server_error_id) so the UI can
+// show a translated message.
+export async function readAgentError(response: Response): Promise<{message: string; server_error_id?: string}> {
     try {
         const data: unknown = await response.json();
-        if (
-            data !== null &&
-            typeof data === 'object' &&
-            'error' in data &&
-            typeof (data as {error?: unknown}).error === 'string'
-        ) {
-            return (data as {error: string}).error;
+        if (data !== null && typeof data === 'object') {
+            const {error, code} = data as {error?: unknown; code?: unknown};
+            return {
+                message: typeof error === 'string' ? error : '',
+                ...(typeof code === 'string' && code ? {server_error_id: code} : {}),
+            };
         }
     } catch {
-        // Body was empty or not JSON — fall through to empty string so the
+        // Body was empty or not JSON — fall through to an empty message so the
         // caller can apply a generic fallback.
     }
-    return '';
+    return {message: ''};
 }
 
 // readClientErrorMessage returns the server's error text for 403 responses,
@@ -1022,7 +1028,7 @@ export async function createAgent(agent: CreateAgentRequest): Promise<UserAgent>
     }
 
     throw new ClientError(Client4.url, {
-        message: await readAgentErrorMessage(response),
+        ...(await readAgentError(response)),
         status_code: response.status,
         url,
     });

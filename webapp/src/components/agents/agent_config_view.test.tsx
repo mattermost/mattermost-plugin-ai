@@ -88,6 +88,7 @@ jest.mock('./tabs/config_tab', () => ({
                 value={draft.username}
                 onChange={(e) => onChange({username: e.target.value})}
             />
+            {errors.username && <div>{errors.username}</div>}
             <input
                 aria-label='Max tool turns'
                 value={draft.maxToolTurns}
@@ -639,6 +640,122 @@ describe('AgentConfigView', () => {
         }));
     });
 
+    describe('renaming an agent', () => {
+        const renderEdit = (onSaved = jest.fn()) => {
+            render(
+                <IntlProvider locale='en'>
+                    <AgentConfigView
+                        mode='edit'
+                        agent={savedAgent}
+                        services={services}
+                        onBack={jest.fn()}
+                        onSaved={onSaved}
+                    />
+                </IntlProvider>,
+            );
+            return {onSaved};
+        };
+
+        test('asks for confirmation and saves the new username only after confirming', async () => {
+            mockUpdateAgent.mockResolvedValue({...savedAgent, name: 'renamed'});
+            const {onSaved} = renderEdit();
+
+            fireEvent.change(screen.getByLabelText('Username'), {target: {value: 'renamed'}});
+            fireEvent.click(screen.getByRole('button', {name: 'Save'}));
+
+            expect(screen.getByRole('dialog', {name: 'Change agent username?'})).not.toBeNull();
+            expect(mockUpdateAgent).not.toHaveBeenCalled();
+
+            fireEvent.click(screen.getByRole('button', {name: 'Change username'}));
+
+            await waitFor(() => expect(mockUpdateAgent).toHaveBeenCalledTimes(1));
+            expect(mockUpdateAgent).toHaveBeenCalledWith('agent_1', expect.objectContaining({username: 'renamed'}));
+            await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+        });
+
+        test('confirming twice while the dialog closes saves only once', async () => {
+            mockUpdateAgent.mockReturnValueOnce(new Promise(() => null));
+            renderEdit();
+
+            fireEvent.change(screen.getByLabelText('Username'), {target: {value: 'renamed'}});
+            fireEvent.click(screen.getByRole('button', {name: 'Save'}));
+            const confirm = screen.getByRole('button', {name: 'Change username'});
+            fireEvent.click(confirm);
+            fireEvent.click(confirm);
+
+            await waitFor(() => expect(mockUpdateAgent).toHaveBeenCalledTimes(1));
+            expect(mockUpdateAgent).toHaveBeenCalledTimes(1);
+        });
+
+        test('keeping the current username does not save', async () => {
+            renderEdit();
+
+            fireEvent.change(screen.getByLabelText('Username'), {target: {value: 'renamed'}});
+            fireEvent.click(screen.getByRole('button', {name: 'Save'}));
+            fireEvent.click(screen.getByRole('button', {name: 'Keep current username'}));
+
+            await waitForElementToBeRemoved(() => screen.queryByRole('dialog', {name: 'Change agent username?'}));
+            expect(mockUpdateAgent).not.toHaveBeenCalled();
+            expect((screen.getByLabelText('Username') as HTMLInputElement).value).toBe('renamed');
+        });
+
+        test('saves without confirmation when the username is unchanged', async () => {
+            mockUpdateAgent.mockResolvedValue(savedAgent);
+            renderEdit();
+
+            fireEvent.change(screen.getByLabelText('Display Name'), {target: {value: 'New Display Name'}});
+            fireEvent.click(screen.getByRole('button', {name: 'Save'}));
+
+            await waitFor(() => expect(mockUpdateAgent).toHaveBeenCalledTimes(1));
+            expect(screen.queryByRole('dialog', {name: 'Change agent username?'})).toBeNull();
+        });
+    });
+
+    test.each([
+        {serviceType: 'anthropic', expected: ''},
+        {serviceType: 'openai', expected: 'medium'},
+    ])('defaults reasoning effort for a new $serviceType agent to "$expected"', async ({serviceType, expected}) => {
+        mockCreateAgent.mockResolvedValue(savedAgent);
+        render(
+            <IntlProvider locale='en'>
+                <AgentConfigView
+                    mode='create'
+                    services={[{...services[0], type: serviceType}]}
+                    onBack={jest.fn()}
+                    onSaved={jest.fn()}
+                />
+            </IntlProvider>,
+        );
+
+        fireEvent.change(screen.getByLabelText('Display Name'), {target: {value: 'My Agent'}});
+        fireEvent.change(screen.getByLabelText('Username'), {target: {value: 'myagent'}});
+        fireEvent.click(screen.getByRole('button', {name: 'Save'}));
+
+        await waitFor(() => expect(mockCreateAgent).toHaveBeenCalledTimes(1));
+        expect(mockCreateAgent).toHaveBeenCalledWith(expect.objectContaining({reasoningEffort: expected}));
+    });
+
+    test('keeps an unset Anthropic effort at the model default when saving an existing agent', async () => {
+        mockUpdateAgent.mockResolvedValue(savedAgent);
+        render(
+            <IntlProvider locale='en'>
+                <AgentConfigView
+                    mode='edit'
+                    agent={{...savedAgent, reasoningEffort: ''}}
+                    services={[{...services[0], type: 'anthropic'}]}
+                    onBack={jest.fn()}
+                    onSaved={jest.fn()}
+                />
+            </IntlProvider>,
+        );
+
+        fireEvent.change(screen.getByLabelText('Display Name'), {target: {value: 'Renamed Agent'}});
+        fireEvent.click(screen.getByRole('button', {name: 'Save'}));
+
+        await waitFor(() => expect(mockUpdateAgent).toHaveBeenCalledTimes(1));
+        expect(mockUpdateAgent).toHaveBeenCalledWith('agent_1', expect.objectContaining({reasoningEffort: ''}));
+    });
+
     test('blocks saving when maxToolTurns exceeds the hard cap', () => {
         render(
             <IntlProvider locale='en'>
@@ -779,6 +896,21 @@ describe('AgentConfigView', () => {
 
         await waitFor(() => expect(mockCreateAgent).toHaveBeenCalledTimes(1));
         expect(screen.queryByText('Custom instructions must be 100,000 characters or fewer')).toBeNull();
+    });
+
+    test.each([
+        ['username_held_by_deactivated_bot', 'This username belongs to a deactivated bot account. Permanently delete that bot account to make the username available.'],
+        ['username_taken', 'This username is already taken'],
+        ['', 'This username is already taken'],
+    ])('shows a translated message on the username field for conflict code %s', async (code, expected) => {
+        mockCreateAgent.mockRejectedValue(Object.assign(new Error('username "myagent" is already taken'), {status_code: 409, server_error_id: code}));
+        renderView();
+
+        fireEvent.change(screen.getByLabelText('Display Name'), {target: {value: 'My Agent'}});
+        fireEvent.change(screen.getByLabelText('Username'), {target: {value: 'myagent'}});
+        fireEvent.click(screen.getByRole('button', {name: 'Save'}));
+
+        expect(await screen.findByText(expected)).not.toBeNull();
     });
 
     test.each([

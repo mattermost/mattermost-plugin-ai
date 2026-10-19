@@ -87,11 +87,13 @@ type BotDropdownProps = {
     container: React.ReactNode
     children: React.ReactNode
     testId?: string
+    floatingClassName?: string
 }
 
 export const BotDropdown = (props: BotDropdownProps) => {
     return (
         <DotMenu
+            floatingClassName={props.floatingClassName}
             icon={props.children}
             title={props.activeBot?.displayName}
             dotMenuButton={props.container}

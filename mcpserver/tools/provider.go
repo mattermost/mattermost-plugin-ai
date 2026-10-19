@@ -353,13 +353,25 @@ func (p *MattermostToolProvider) registerDynamicTool(server *mcp.Server, mcpTool
 	server.AddTool(tool, handler)
 }
 
-// createMCPToolContext creates an MCPToolContext from the Go context, authenticated client, and request metadata
-func (p *MattermostToolProvider) createMCPToolContext(ctx context.Context, metadata mcp.Meta) (*MCPToolContext, error) {
-	client, err := p.authProvider.GetAuthenticatedMattermostClient(ctx)
-	if err != nil {
-		return nil, err
+// authenticatedClientAndUserID returns the authenticated client and, when the
+// provider can tell, the user's ID. Providers that validate both at once are
+// asked once so a tool call costs a single session validation.
+func (p *MattermostToolProvider) authenticatedClientAndUserID(ctx context.Context) (*model.Client4, string, error) {
+	if both, ok := p.authProvider.(auth.ClientAndUserProvider); ok {
+		client, user, err := both.GetAuthenticatedClientAndUser(ctx)
+		if err != nil {
+			return nil, "", err
+		}
+		if user == nil {
+			return client, "", nil
+		}
+		return client, user.Id, nil
 	}
 
+	client, err := p.authProvider.GetAuthenticatedMattermostClient(ctx)
+	if err != nil {
+		return nil, "", err
+	}
 	var userID string
 	if identityProvider, ok := p.authProvider.(auth.UserIdentityProvider); ok {
 		if user, userErr := identityProvider.GetAuthenticatedUser(ctx); userErr == nil && user != nil {
@@ -367,6 +379,15 @@ func (p *MattermostToolProvider) createMCPToolContext(ctx context.Context, metad
 		} else if userErr != nil {
 			p.logger.Debug("failed to resolve authenticated user for tool-call context", "error", userErr.Error())
 		}
+	}
+	return client, userID, nil
+}
+
+// createMCPToolContext creates an MCPToolContext from the Go context, authenticated client, and request metadata
+func (p *MattermostToolProvider) createMCPToolContext(ctx context.Context, metadata mcp.Meta) (*MCPToolContext, error) {
+	client, userID, err := p.authenticatedClientAndUserID(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	mcpContext := &MCPToolContext{
