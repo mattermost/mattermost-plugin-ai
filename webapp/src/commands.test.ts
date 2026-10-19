@@ -36,6 +36,7 @@ describe('handleSummarizeChannelCommand', () => {
         {name: '--bot with a username', message: '--bot matty', botUsername: 'matty'},
         {name: '--bot with an @-prefixed username', message: '--bot @matty --period 3d', botUsername: 'matty'},
         {name: 'no --bot option (server default)', message: '--period 3d', botUsername: ''},
+        {name: 'a bare @ (rejected by the server, not the default agent)', message: '--bot @', botUsername: '@'},
     ])('passes $name to the server to resolve', async ({message, botUsername}) => {
         const result = await handleSummarizeChannelCommand(message, args, makeStore(), {showRHSPlugin: {type: 'show'}});
 

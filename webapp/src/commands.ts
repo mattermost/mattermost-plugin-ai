@@ -58,7 +58,7 @@ export async function handleSummarizeChannelCommand(
     const options = parseOptionsFromMessage(message);
 
     // A typed name is resolved by the server, which knows who holds it now.
-    const botUsername = options.bot?.replace(/^@/, '') || '';
+    const botUsername = options.bot?.replace(/^@(?=.)/, '') || '';
 
     // Default to summarize 24 hours (in milliseconds)
     const defaultTimePeriod = 24 * 60 * 60 * 1000;
