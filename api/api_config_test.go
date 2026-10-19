@@ -448,6 +448,20 @@ func TestHandleSaveConfig(t *testing.T) {
 			},
 		},
 		{
+			// The System Console hides the field while links are disabled, so
+			// a stale invalid value there must not block saving the toggle off.
+			name: "saves with an invalid link domain allowlist while links are disabled",
+			requestBody: config.Config{
+				AllowUnsafeLinks:   false,
+				AllowedLinkDomains: "example.com, not a host",
+			},
+			expectedStatus: http.StatusOK,
+			validateStore: func(t *testing.T, store *testConfigStore) {
+				require.NotNil(t, store.cfg)
+				assert.False(t, store.cfg.AllowUnsafeLinks)
+			},
+		},
+		{
 			name:           "rejects invalid JSON",
 			requestBody:    "not-json",
 			expectedStatus: http.StatusBadRequest,

@@ -134,11 +134,15 @@ func (a *API) handleSaveConfig(c *gin.Context) {
 	}
 
 	// Invalid entries would silently match nothing at runtime, so reject them
-	// with a code the System Console can show to the admin.
-	if _, invalid := config.ParseLinkDomains(cfg.AllowedLinkDomains); len(invalid) > 0 {
-		abortAgentRequestWithCode(c, http.StatusBadRequest, configErrorInvalidLinkDomains,
-			fmt.Errorf("allowedLinkDomains has entries that are not valid hostnames: %q", invalid))
-		return
+	// with a code the System Console can show to the admin. The allowlist is
+	// ignored (and its field hidden) while links are disabled, so it is only
+	// validated when it can take effect.
+	if cfg.AllowUnsafeLinks {
+		if _, invalid := config.ParseLinkDomains(cfg.AllowedLinkDomains); len(invalid) > 0 {
+			abortAgentRequestWithCode(c, http.StatusBadRequest, configErrorInvalidLinkDomains,
+				fmt.Errorf("allowedLinkDomains has entries that are not valid hostnames: %q", invalid))
+			return
+		}
 	}
 
 	// Read-previous → identity checks → mint empty IDs → save runs atomically
