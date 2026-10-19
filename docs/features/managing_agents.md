@@ -206,7 +206,7 @@ To roll back, select a version and choose **Restore this version**, then confirm
 
 - The version's AI service must still exist. If it has since been deleted, the restore is rejected; restore a different version or edit the agent instead.
 - License gates, access validation, and the service account rules in [What's editable vs locked](#whats-editable-vs-locked) apply as if you had made the same edit by hand.
-- The username never changes.
+- The username never changes. If the agent was renamed after the version was saved, it keeps its current username; use [Renaming an agent](#renaming-an-agent) to change it.
 - Versions do not store attribute-based access policies. Switching an agent away from attribute-based access deletes its policy, so restoring an earlier attribute-based version leaves the agent with no policy and nobody can use it. The confirmation warns about this, and after the restore the editor opens the **Access** tab so you can create a new policy.
 
 Only users who can manage the agent can see its history, because versions include the agent's custom instructions. Versions are kept when an agent is deleted and are never pruned. Restores are recorded in the server audit log as `restoreAgentVersion` (agent, version number, and changed setting names only).
