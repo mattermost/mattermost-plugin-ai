@@ -454,13 +454,13 @@ func (m *ClientManager) GetCatalogAccessWithSelection(ctx context.Context, req C
 // uses for userID's catalog, without contacting any server or listing tools.
 func (m *ClientManager) GetServerAccess(ctx context.Context, userID string) CatalogAccess {
 	if userID == "" {
-		return CatalogAccess{Errors: &Errors{Errors: []error{ErrCatalogInvokerRequired}}}
+		return unavailableAccess(ErrCatalogInvokerRequired)
 	}
 
 	m.lifecycleMu.RLock()
 	defer m.lifecycleMu.RUnlock()
 	if m.closed {
-		return CatalogAccess{}
+		return unavailableAccess(ErrClientManagerClosed)
 	}
 	plugins := m.snapshotEnabledPluginServers()
 	return CatalogAccess{
@@ -471,18 +471,19 @@ func (m *ClientManager) GetServerAccess(ctx context.Context, userID string) Cata
 
 func (m *ClientManager) getCatalogAccess(ctx context.Context, req CatalogRequest, selection ToolSelection, forceRefresh bool) CatalogAccess {
 	if err := req.validate(); err != nil {
-		return CatalogAccess{Errors: &Errors{Errors: []error{err}}}
+		return unavailableAccess(err)
 	}
 
+	// getOrCreateClient returns nil only once the manager is closed.
 	remoteClients := m.getOrCreateClient(req.remoteKey())
 	if remoteClients == nil {
-		return CatalogAccess{}
+		return unavailableAccess(ErrClientManagerClosed)
 	}
 
 	m.lifecycleMu.RLock()
 	if m.closed {
 		m.lifecycleMu.RUnlock()
-		return CatalogAccess{}
+		return unavailableAccess(ErrClientManagerClosed)
 	}
 	cfg := m.config
 	embeddedClient := m.embeddedClient

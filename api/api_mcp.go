@@ -168,7 +168,11 @@ func (a *API) buildUserMCPToolsResponse(userID string, access mcp.CatalogAccess,
 // origin the server's tools carry. access supplies the policy and plugin
 // snapshots; plugin servers come from access.PluginServers, never the live
 // registry, so the list matches the snapshot policy was evaluated against.
+// It is empty when policy could not be evaluated.
 func (a *API) userVisibleMCPServers(access mcp.CatalogAccess) []mcp.ServerConfig {
+	if access.Unavailable() {
+		return []mcp.ServerConfig{}
+	}
 	mcpCfg := a.config.MCP()
 	denied := access.DeniedOrigins
 	servers := make([]mcp.ServerConfig, 0, len(mcpCfg.Servers)+1+len(access.PluginServers))

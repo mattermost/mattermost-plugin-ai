@@ -5,6 +5,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -317,6 +318,45 @@ func TestGetServerAccessEvaluatesPolicyWithoutConnecting(t *testing.T) {
 	empty := m.GetServerAccess(context.Background(), "")
 	require.NotNil(t, empty.Errors, "a missing user must fail closed")
 	assert.Empty(t, empty.PluginServers)
+}
+
+// A closed manager or an invalid request cannot evaluate access policy, so
+// both read paths must report it instead of returning an empty denial set.
+func TestCatalogAccessUnavailableWhenPolicyNotEvaluated(t *testing.T) {
+	tests := []struct {
+		name            string
+		closed          bool
+		userID          string
+		wantUnavailable bool
+	}{
+		{name: "open manager evaluates policy", userID: "user-1", wantUnavailable: false},
+		{name: "closed manager", closed: true, userID: "user-1", wantUnavailable: true},
+		{name: "missing user", userID: "", wantUnavailable: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checker := &stubServerAccessChecker{denied: map[string]bool{accessDeniedID: true}}
+			m := newAccessTestManager(t, checker)
+			m.config.Servers = []ServerConfig{{ID: accessDeniedID, Name: "Denied", Enabled: true, BaseURL: accessDeniedOrigin}}
+			if tt.closed {
+				m.Close()
+			}
+
+			serverAccess := m.GetServerAccess(context.Background(), tt.userID)
+			assert.Equal(t, tt.wantUnavailable, serverAccess.Unavailable(), "GetServerAccess")
+			if !tt.wantUnavailable {
+				assert.True(t, serverAccess.DeniedOrigins[accessDeniedOrigin])
+			}
+
+			if tt.closed {
+				catalog := m.GetCatalogAccess(context.Background(), UserCatalogRequest(tt.userID))
+				assert.True(t, catalog.Unavailable(), "GetCatalogAccess")
+			}
+		})
+	}
+
+	assert.False(t, CatalogAccess{Errors: &Errors{Errors: []error{errors.New("dial failed")}}}.Unavailable(),
+		"server connection errors leave the evaluated policy usable")
 }
 
 func newRemoteAccessTestManager(t *testing.T, servers []ServerConfig, checker ServerAccessChecker, httpClient *http.Client) *ClientManager {

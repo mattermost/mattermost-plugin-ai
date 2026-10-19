@@ -14,6 +14,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/audit"
 	"github.com/mattermost/mattermost-plugin-agents/v2/config"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
+	"github.com/mattermost/mattermost-plugin-agents/v2/mcp"
 	"github.com/mattermost/mattermost-plugin-agents/v2/store"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/stretchr/testify/assert"
@@ -756,6 +757,14 @@ func TestPreviewAgentImportMCPServerVisibility(t *testing.T) {
 				{Origin: slashOrigin, Name: "Slash Tracker"},
 			},
 			wantAutoTargets: []string{"", slashOrigin, newTrackerOrigin, ""},
+		},
+		{
+			name: "other managers see no servers while the MCP client manager is closed",
+			setup: func(e *TestEnvironment) {
+				e.mcp.mcpErrors = &mcp.Errors{Errors: []error{mcp.ErrClientManagerClosed}}
+			},
+			wantAvailable:   []agentexport.Server{},
+			wantAutoTargets: []string{"", "", "", ""},
 		},
 	}
 

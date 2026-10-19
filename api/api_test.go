@@ -274,7 +274,9 @@ func (m *mockMCPClientManager) GetCatalogAccess(ctx context.Context, req mcp.Cat
 func (m *mockMCPClientManager) GetServerAccess(_ context.Context, userID string) mcp.CatalogAccess {
 	access := m.catalogAccess(mcp.UserCatalogRequest(userID))
 	access.Tools = nil
-	access.Errors = nil
+	if !access.Unavailable() {
+		access.Errors = nil
+	}
 	return access
 }
 

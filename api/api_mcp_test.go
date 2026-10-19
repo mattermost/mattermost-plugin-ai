@@ -105,6 +105,45 @@ func TestHandleGetUserMCPToolsIncludesZeroToolConfiguredServers(t *testing.T) {
 	require.False(t, response.Servers[1].NeedsOAuth)
 }
 
+func TestUserVisibleMCPServersEmptyWhenAccessUnavailable(t *testing.T) {
+	gin.SetMode(gin.ReleaseMode)
+	gin.DefaultWriter = io.Discard
+
+	denied := map[string]bool{"https://denied.example.com": true}
+	// A real manager reports no denied origins when it could not evaluate policy.
+	tests := []struct {
+		name      string
+		errs      *mcp.Errors
+		denied    map[string]bool
+		wantNames []string
+	}{
+		{name: "policy evaluated", denied: denied, wantNames: []string{"Allowed"}},
+		{name: "connection errors still list servers", errs: &mcp.Errors{Errors: []error{errors.New("dial failed")}}, denied: denied, wantNames: []string{"Allowed"}},
+		{name: "closed manager lists nothing", errs: &mcp.Errors{Errors: []error{mcp.ErrClientManagerClosed}}, wantNames: []string{}},
+		{name: "invalid request lists nothing", errs: &mcp.Errors{Errors: []error{mcp.ErrCatalogInvokerRequired}}, wantNames: []string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := SetupTestEnvironment(t)
+			defer e.Cleanup(t)
+			e.config.mcpConfig = mcp.Config{
+				Enabled: true,
+				Servers: []mcp.ServerConfig{
+					{Name: "Allowed", Enabled: true, BaseURL: "https://allowed.example.com"},
+					{Name: "Denied", Enabled: true, BaseURL: "https://denied.example.com"},
+				},
+			}
+			e.api.mcpClientManager = &mockMCPClientManager{mcpErrors: tt.errs, deniedOrigins: tt.denied}
+
+			names := []string{}
+			for _, s := range getUserMCPToolsResponse(t, e.api).Servers {
+				names = append(names, s.Name)
+			}
+			assert.Equal(t, tt.wantNames, names)
+		})
+	}
+}
+
 func TestHandleGetUserMCPToolsPassesRequestContext(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
 	gin.DefaultWriter = io.Discard

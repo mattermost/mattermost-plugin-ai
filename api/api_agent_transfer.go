@@ -259,11 +259,7 @@ func (a *API) importTargetMCPServers(c *gin.Context, userID string) []agentexpor
 	if a.mcpClientManager == nil {
 		return []agentexport.Server{}
 	}
-	access := a.mcpClientManager.GetServerAccess(c.Request.Context(), userID)
-	if access.Errors != nil {
-		return []agentexport.Server{}
-	}
-	visible := a.userVisibleMCPServers(access)
+	visible := a.userVisibleMCPServers(a.mcpClientManager.GetServerAccess(c.Request.Context(), userID))
 	servers := make([]agentexport.Server, 0, len(visible))
 	for _, s := range visible {
 		servers = append(servers, agentexport.Server{Origin: s.BaseURL, Name: s.Name})
