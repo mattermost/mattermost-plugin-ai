@@ -115,6 +115,7 @@ func fullyConfiguredAgent() *llm.BotConfig {
 func TestExportAgent(t *testing.T) {
 	e := setupTransferTestEnvironment(t)
 	defer e.Cleanup(t)
+	e.mockAPI.On("HasPermissionTo", testUserID, model.PermissionManageSystem).Return(false)
 	seedVersionedAgent(t, e, fullyConfiguredAgent(), map[string]any{"customInstructions": "exported instructions v2"})
 
 	recorder := doRequest(e.api, http.MethodGet, "/agents/agent-1/export", nil, testUserID)
@@ -161,6 +162,7 @@ func TestExportAgent(t *testing.T) {
 func TestExportAgentUsesOneVersionSnapshot(t *testing.T) {
 	e := setupTransferTestEnvironment(t)
 	defer e.Cleanup(t)
+	e.mockAPI.On("HasPermissionTo", testUserID, model.PermissionManageSystem).Return(false)
 	seedVersionedAgent(t, e, fullyConfiguredAgent(), map[string]any{"customInstructions": "version 2 instructions"})
 	// The stored row moves past the latest version, as if a save landed between the reads.
 	e.agentStore.agents["agent-1"].CustomInstructions = "unversioned instructions"
@@ -171,6 +173,42 @@ func TestExportAgentUsesOneVersionSnapshot(t *testing.T) {
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &doc))
 	assert.Equal(t, 2, doc.AgentVersion)
 	assert.Equal(t, "version 2 instructions", doc.Agent.CustomInstructions)
+}
+
+func TestExportAgentNamesOnlyVisibleServers(t *testing.T) {
+	tests := []struct {
+		name      string
+		sysadmin  bool
+		wantNames []string
+	}{
+		{name: "system admins see every configured server name", sysadmin: true, wantNames: []string{"Jira", "Disabled Tracker", "New Tracker"}},
+		{name: "other managers see names of the servers their MCPs tab shows", sysadmin: false, wantNames: []string{"Jira", "", ""}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := setupTransferTestEnvironment(t)
+			defer e.Cleanup(t)
+			e.mockAPI.On("HasPermissionTo", testUserID, model.PermissionManageSystem).Return(tt.sysadmin)
+			e.mcp.deniedOrigins = map[string]bool{newTrackerOrigin: true}
+			agent := fullyConfiguredAgent()
+			agent.EnabledMCPTools = []llm.EnabledMCPTool{
+				{ServerOrigin: jiraOrigin, ToolName: "create_issue"},
+				{ServerOrigin: disabledOrigin, ToolName: "d"},
+				{ServerOrigin: newTrackerOrigin, ToolName: "n"},
+			}
+			seedVersionedAgent(t, e, agent, map[string]any{"customInstructions": "v2"})
+
+			recorder := doRequest(e.api, http.MethodGet, "/agents/agent-1/export", nil, testUserID)
+			require.Equal(t, http.StatusOK, recorder.Result().StatusCode, recorder.Body.String())
+			var doc agentexport.Document
+			require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &doc))
+			names := make([]string, 0, len(doc.Agent.MCPTools))
+			for _, tool := range doc.Agent.MCPTools {
+				names = append(names, tool.ServerName)
+			}
+			assert.Equal(t, tt.wantNames, names)
+		})
+	}
 }
 
 func TestPreviewAgentImport(t *testing.T) {

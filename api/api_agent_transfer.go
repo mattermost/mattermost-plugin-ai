@@ -81,7 +81,9 @@ func (a *API) handleExportAgent(c *gin.Context) {
 		cfg, version = &latest.Config, latest.Version
 	}
 
-	doc := agentexport.New(cfg, version, agentexport.Servers(a.pluginConfigOrEmpty().MCP), model.GetMillis())
+	// Server names come from the servers the caller can see, so an export
+	// never names a server their MCPs tab hides.
+	doc := agentexport.New(cfg, version, a.importTargetMCPServers(c, userID), model.GetMillis())
 	// Usernames are limited to [a-z0-9._-]; dropping quote characters keeps
 	// the quoted form valid even for unexpected legacy values.
 	filename := strings.NewReplacer(`"`, "", `\`, "").Replace(fmt.Sprintf("%s-v%d.agent.json", cfg.Name, version))

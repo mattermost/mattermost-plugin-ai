@@ -329,6 +329,7 @@ func TestAgentVersionReadsAreNotAudited(t *testing.T) {
 	e := setupAgentTestEnvironment(t)
 	defer e.Cleanup(t)
 	mockLicensed(e.mockAPI)
+	e.mockAPI.On("HasPermissionTo", testUserID, model.PermissionManageSystem).Return(false).Maybe()
 	seedVersionedAgent(t, e, versionTestAgent(), map[string]any{"customInstructions": "edited"})
 	records := e.CaptureAuditRecords()
 
