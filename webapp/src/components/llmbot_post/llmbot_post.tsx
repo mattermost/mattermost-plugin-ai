@@ -591,15 +591,17 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
         regeneratingRef.current = true;
         setRegenerating(true);
 
-        // The server refuses while a stream still owns the post (e.g. this
-        // client stopped receiving its events); restore the post instead of
-        // leaving it blank.
-        doRegenerate(props.post.id).catch(() => {
+        // Restore the post instead of leaving it blank when the server
+        // refuses. A conflict means a stream still owns the post (e.g. this
+        // client stopped receiving its events), so offer Stop again.
+        doRegenerate(props.post.id).catch((e) => {
+            const stillGenerating = e?.status_code === 409;
             regeneratingRef.current = false;
             setRegenerating(false);
             setPrecontent(false);
             setMessage(props.post.message);
-            setError(intl.formatMessage({defaultMessage: 'Could not regenerate this response. If it is still being generated, stop it first.'}));
+            setGenerating(stillGenerating);
+            setError(stillGenerating ? intl.formatMessage({defaultMessage: 'This response is still being generated. Stop it before regenerating.'}) : intl.formatMessage({defaultMessage: 'Could not regenerate this response.'}));
             if (conversationId) {
                 invalidateConversation(conversationId);
             }

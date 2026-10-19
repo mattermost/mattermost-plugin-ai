@@ -1408,15 +1408,26 @@ describe('LLMBotPost interrupted and stale generation notices', () => {
     });
 
     test('restores the post when the server refuses to regenerate', async () => {
-        (doRegenerate as jest.Mock).mockImplementationOnce(() => Promise.reject(new Error('already streaming')));
+        (doRegenerate as jest.Mock).mockImplementationOnce(() => Promise.reject(new Error('boom')));
         mockUseConversation.mockReturnValue({conversation: makeConversation([], 'user_1'), loading: false, error: null});
         renderPost(interruptedPost('shutdown'));
 
         fireEvent.click(within(screen.getByTestId('llm-bot-post-interrupted')).getByText('Regenerate'));
 
-        expect(await screen.findByText(/Could not regenerate this response/)).toBeTruthy();
+        expect(await screen.findByText('Could not regenerate this response.')).toBeTruthy();
         expect(screen.getByText('Partial answer')).toBeTruthy();
         expect(screen.getByTestId('llm-bot-post-interrupted')).toBeTruthy();
+    });
+
+    test('offers Stop again when regenerate is refused because the response is still streaming', async () => {
+        (doRegenerate as jest.Mock).mockImplementationOnce(() => Promise.reject(Object.assign(new Error('conflict'), {status_code: 409})));
+        renderPost(makePost('Partial answer'));
+
+        fireEvent.click(screen.getByTestId('regenerate-button'));
+
+        expect(await screen.findByText(/still being generated/)).toBeTruthy();
+        expect(screen.getByText('Stop Generating')).toBeTruthy();
+        expect(screen.getByText('Partial answer')).toBeTruthy();
     });
 
     test('hides Regenerate for someone who is not the requester', () => {
