@@ -32,8 +32,8 @@ func TestTrendFromHistory(t *testing.T) {
 	day := func(d int) time.Time { return time.Date(2026, 10, d, 6, 0, 0, 0, time.UTC) }
 
 	healthy := buildReport(buildResultSet([]EvalLogLine{
-		graded(catOpenAI, "is a cat", 0, true), usageLine(catOpenAI, 0, 4000),
-		graded(sadOpenAI, "is sad", 0, false), usageLine(sadOpenAI, 0, 2000),
+		graded(catOpenAI, "is a cat", 0, true),
+		graded(sadOpenAI, "is sad", 0, false),
 	}), nil, []string{"openai"})
 	broken := buildReport(buildResultSet([]EvalLogLine{errored(catOpenAI, 0, "403 model_not_found")}), nil, []string{"openai"})
 
@@ -47,8 +47,8 @@ func TestTrendFromHistory(t *testing.T) {
 	}
 	trend := trendMarkdown(history, 2)
 
-	newest := "| [2026-10-14](https://example.com/run/3) | ccccccc | 1/2 | 3.0k / 100 | $0.01 | 1.5s |"
-	unavailable := "| 2026-10-13 | bbbbbbb | ⚪ Unavailable: 403 model_not_found | – | – | – |"
+	newest := "| [2026-10-14](https://example.com/run/3) | ccccccc | 1/2 |"
+	unavailable := "| 2026-10-13 | bbbbbbb | ⚪ Unavailable: 403 model_not_found |"
 	for _, want := range []string{"## Eval trend (last 2 runs)", "### OpenAI", newest, unavailable} {
 		if !strings.Contains(trend, want) {
 			t.Errorf("trend missing %q:\n%s", want, trend)

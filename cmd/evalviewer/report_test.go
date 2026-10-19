@@ -16,12 +16,6 @@ func errored(name string, run int, msg string) EvalLogLine {
 	return EvalLogLine{Name: name, Package: "react", RunNumber: run, Error: msg}
 }
 
-func usageLine(name string, run int, inputTokens int64) EvalLogLine {
-	return EvalLogLine{Name: name, RunNumber: run, Usage: &UsageRecord{
-		Agent: RunUsage{Model: "gpt-6.1-sol", Calls: 1, InputTokens: inputTokens, OutputTokens: 100, CostUSD: 0.01, LatencyMS: 1500},
-	}}
-}
-
 const (
 	catOpenAI    = "TestReactEval/[openai]_react_cat_message"
 	catAnthropic = "TestReactEval/[anthropic]_react_cat_message"
@@ -40,7 +34,6 @@ func TestBuildReport(t *testing.T) {
 		wantUnbaselined   []string
 		wantFlaky         []string
 		wantUnavailable   []string
-		wantTokenGrowth   []string
 	}{
 		{
 			name:            "all passing",
@@ -140,36 +133,6 @@ func TestBuildReport(t *testing.T) {
 			baseline:  []EvalLogLine{graded(catOpenAI, "is a cat", 0, true)},
 			wantFlaky: []string{"openai TestReactEval/react_cat_message "},
 		},
-		{
-			name:            "input token growth over both thresholds is reported",
-			results:         []EvalLogLine{graded(catOpenAI, "is a cat", 0, true), usageLine(catOpenAI, 0, 6000)},
-			baseline:        []EvalLogLine{graded(catOpenAI, "is a cat", 0, true), usageLine(catOpenAI, 0, 4000)},
-			wantTokenGrowth: []string{"openai TestReactEval/react_cat_message"},
-		},
-		{
-			name:     "large relative growth of a small prompt is not reported",
-			results:  []EvalLogLine{graded(catOpenAI, "is a cat", 0, true), usageLine(catOpenAI, 0, 900)},
-			baseline: []EvalLogLine{graded(catOpenAI, "is a cat", 0, true), usageLine(catOpenAI, 0, 300)},
-		},
-		{
-			name: "token growth is compared per run",
-			results: []EvalLogLine{
-				graded(catOpenAI, "is a cat", 0, true), usageLine(catOpenAI, 0, 4000),
-				graded(catOpenAI, "is a cat", 1, true), usageLine(catOpenAI, 1, 4000),
-			},
-			baseline: []EvalLogLine{graded(catOpenAI, "is a cat", 0, true), usageLine(catOpenAI, 0, 4000)},
-		},
-		{
-			name:       "token growth needs a baseline",
-			results:    []EvalLogLine{graded(catOpenAI, "is a cat", 0, true), usageLine(catOpenAI, 0, 6000)},
-			noBaseline: true,
-		},
-		{
-			name:            "usage lines are not counted as results",
-			results:         []EvalLogLine{usageLine(catOpenAI, 0, 1000), graded(catAnthropic, "is a cat", 0, true)},
-			baseline:        []EvalLogLine{graded(catAnthropic, "is a cat", 0, true)},
-			wantUnavailable: []string{"openai"},
-		},
 	}
 
 	for _, tc := range tests {
@@ -193,15 +156,9 @@ func TestBuildReport(t *testing.T) {
 			}
 			assertStrings(t, "unavailable", unavailable, tc.wantUnavailable)
 
-			var growth []string
-			for _, c := range r.tokenGrowth {
-				growth = append(growth, c.provider+" "+c.test)
-			}
-			assertStrings(t, "token growth", growth, tc.wantTokenGrowth)
-
 			comment := r.commentMarkdown()
-			if (comment != "") != (len(tc.wantRegressions)+len(tc.wantTokenGrowth) > 0) {
-				t.Errorf("comment should be written only for regressions or token growth; got %q", comment)
+			if (comment != "") != (len(tc.wantRegressions) > 0) {
+				t.Errorf("comment should be written only for regressions; got %q", comment)
 			}
 		})
 	}
@@ -303,24 +260,5 @@ func assertStrings(t *testing.T, label string, got, want []string) {
 	t.Helper()
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("%s = %q, want %q", label, got, want)
-	}
-}
-
-func TestSummaryIncludesCostAndLatency(t *testing.T) {
-	results := buildResultSet([]EvalLogLine{
-		graded(catOpenAI, "is a cat", 0, true), usageLine(catOpenAI, 0, 4000),
-		graded(catOpenAI, "is a cat", 1, true), usageLine(catOpenAI, 1, 6000),
-	})
-	baseline := buildResultSet([]EvalLogLine{graded(catOpenAI, "is a cat", 0, true), usageLine(catOpenAI, 0, 4000)})
-
-	summary := buildReport(results, baseline, nil).summaryMarkdown()
-
-	for _, want := range []string{
-		"| OpenAI | gpt-6.1-sol | 2 | 10k / 200 | $0.02 | – | 1.5s | +0% |",
-		"| TestReactEval › react cat message | OpenAI | 5.0k | 100 | $0.01 | 1.5s | +25% | +0% |",
-	} {
-		if !strings.Contains(summary, want) {
-			t.Errorf("summary missing %q:\n%s", want, summary)
-		}
 	}
 }

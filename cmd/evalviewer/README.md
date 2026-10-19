@@ -91,8 +91,6 @@ The report writes:
 
 Besides one check per rubric, every graded run records a "Passes the eval's code assertions" check for the eval's other assertions, such as required tool calls or valid citations, so they are reported even when the rubrics pass. Each run of an eval is its own subtest (`run_0`, `run_1`, ...), so a `require` failure in one run does not skip the others.
 
-The summary also has a cost and latency table per provider and per eval, compared with the baseline. Every run records the agent's and the grader's input, output, cached, and reasoning tokens, the cost (reported by the provider, or estimated from `modelPrices` in `evals/usage.go`), and the summed latency of the agent's calls. The pull request comment additionally lists evals whose mean input tokens per run grew by at least 20% and 1,000 tokens, which usually means a change sends more context or a longer prompt.
-
 Repeated runs (`GOEVALS=N`) are combined by majority vote, so a check that fails one run out of three is reported as flaky rather than failing. A run that errors before grading (for example, the provider rejects the request) is recorded with its error, with credential values redacted.
 
 ### How CI uses the evals
@@ -103,7 +101,7 @@ Repeated runs (`GOEVALS=N`) are combined by majority vote, so a check that fails
 - Set the `EVAL_RUNS` repository variable to run each eval several times per CI run.
 
 ### Nightly runs and history
-`.github/workflows/nightly-evals.yml` runs every eval against `master` at 06:00 UTC (and on manual dispatch), three times each by default (`NIGHTLY_EVAL_RUNS` repository variable). It compares the results with the previous night and stores them in S3 under `s3://$AWS_S3_BUCKET/mattermost-plugin-agents/evals/nightly/<date>/<run id>/`, along with `summary.json` (written by `report --json`). The run summary shows the report and a 14-night trend, and the run fails when a check newly fails or input tokens grow, so GitHub notifies the workflow's owner.
+`.github/workflows/nightly-evals.yml` runs every eval against `master` at 06:00 UTC (and on manual dispatch), three times each by default (`NIGHTLY_EVAL_RUNS` repository variable). It compares the results with the previous night and stores them in S3 under `s3://$AWS_S3_BUCKET/mattermost-plugin-agents/evals/nightly/<date>/<run id>/`, along with `summary.json` (written by `report --json`). The run summary shows the report and a 14-night trend, and the run fails when a check newly fails, so GitHub notifies the workflow's owner.
 
 To look at history locally, download the summaries and render the trend:
 

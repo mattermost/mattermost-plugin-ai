@@ -33,10 +33,6 @@ type providerSummary struct {
 	Error     string `json:"error,omitempty"`
 	Checks    int    `json:"checks"`
 	Passing   int    `json:"passing"`
-	// Runs counts eval runs with usage; Agent and Grader are summed over them.
-	Runs   int      `json:"runs"`
-	Agent  RunUsage `json:"agent"`
-	Grader RunUsage `json:"grader"`
 }
 
 type checkSummary struct {
@@ -68,8 +64,6 @@ func (r report) runSummary(now time.Time, commit, runURL string) runSummary {
 				ps.Passing++
 			}
 		}
-		total := p.usageTotals()
-		ps.Runs, ps.Agent, ps.Grader = total.runs, total.agent, total.grader
 		s.Providers = append(s.Providers, ps)
 	}
 	return s
@@ -141,8 +135,8 @@ func trendMarkdown(history []runSummary, limit int) string {
 	fmt.Fprintf(&sb, "## Eval trend (last %d %s)\n", len(history), plural(len(history), "run", "runs"))
 	for _, name := range names {
 		fmt.Fprintf(&sb, "\n### %s\n\n", providerDisplayName(name))
-		sb.WriteString("| Date | Commit | Checks passing | Input / output tokens per run | Cost per run | Latency per run |\n")
-		sb.WriteString("|------|--------|----------------|-------------------------------|--------------|-----------------|\n")
+		sb.WriteString("| Date | Commit | Checks passing |\n")
+		sb.WriteString("|------|--------|----------------|\n")
 		for _, s := range slices.Backward(history) {
 			i := slices.IndexFunc(s.Providers, func(p providerSummary) bool { return p.Name == name })
 			if i < 0 {
@@ -155,25 +149,13 @@ func trendMarkdown(history []runSummary, limit int) string {
 			}
 			commit := cmp.Or(shortCommit(s.Commit), "–")
 			if !p.Available {
-				fmt.Fprintf(&sb, "| %s | %s | ⚪ Unavailable: %s | – | – | – |\n", date, commit, tableCell(truncateString(oneLine(p.Error), 120)))
+				fmt.Fprintf(&sb, "| %s | %s | ⚪ Unavailable: %s |\n", date, commit, tableCell(truncateString(oneLine(p.Error), 120)))
 				continue
 			}
-			fmt.Fprintf(&sb, "| %s | %s | %d/%d | %s | %s | %s |\n", date, commit, p.Passing, p.Checks,
-				perRun(p, func(u RunUsage) string {
-					return formatTokens(float64(u.InputTokens)/float64(p.Runs)) + " / " + formatTokens(float64(u.OutputTokens)/float64(p.Runs))
-				}),
-				perRun(p, func(u RunUsage) string { return formatCost(u.CostUSD / float64(p.Runs)) }),
-				perRun(p, func(u RunUsage) string { return formatDuration(float64(u.LatencyMS) / float64(p.Runs)) }))
+			fmt.Fprintf(&sb, "| %s | %s | %d/%d |\n", date, commit, p.Passing, p.Checks)
 		}
 	}
 	return sb.String()
-}
-
-func perRun(p providerSummary, format func(RunUsage) string) string {
-	if p.Runs == 0 {
-		return "–"
-	}
-	return format(p.Agent)
 }
 
 func shortCommit(sha string) string {

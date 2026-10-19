@@ -19,8 +19,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/prompts"
 )
 
-// Default models for each provider. Update these when bumping model versions,
-// and add the model's price to modelPrices in usage.go.
+// Default models for each provider. Update these when bumping model versions.
 const (
 	DefaultOpenAIModel    = "gpt-5.6-terra"
 	DefaultAnthropicModel = "claude-sonnet-5-5"
@@ -65,14 +64,12 @@ type Eval struct {
 	Model       string
 	GraderModel string
 
-	agent       roleModel
-	grader      roleModel
-	agentMeter  *usageMeter
-	graderMeter *usageMeter
-	runNumber   int
+	agent     roleModel
+	grader    roleModel
+	runNumber int
 }
 
-// roleModel is the unmetered model behind one role, used for the preflight.
+// roleModel is the model behind one role, with the names the preflight reports.
 type roleModel struct {
 	role     string
 	provider string
@@ -238,19 +235,15 @@ func NewEvalWithProvider(providerName string) (*Eval, error) {
 	}
 	grader.role = "grader"
 
-	agentMeter := newUsageMeter(agent.model)
-	graderMeter := newUsageMeter(grader.model)
 	return &Eval{
 		Prompts:     prompts,
-		LLM:         &meteredLLM{LanguageModel: agent.llm, meter: agentMeter},
-		GraderLLM:   &meteredLLM{LanguageModel: grader.llm, meter: graderMeter},
+		LLM:         agent.llm,
+		GraderLLM:   grader.llm,
 		Provider:    agent.provider,
 		Model:       agent.model,
 		GraderModel: grader.model,
 		agent:       agent,
 		grader:      grader,
-		agentMeter:  agentMeter,
-		graderMeter: graderMeter,
 	}, nil
 }
 
@@ -320,13 +313,10 @@ func Run(t *testing.T, name string, f func(e *EvalT)) {
 func runOnce(e *EvalT, f func(e *EvalT)) {
 	e.recorded = 0
 	e.failures = nil
-	e.agentMeter.reset()
-	e.graderMeter.reset()
 	defer func() {
 		if line, ok := failureLine(e.recorded, e.failures, e.Failed()); ok {
 			writeLogLine(e, line)
 		}
-		recordUsage(e)
 	}()
 
 	for _, role := range []roleModel{e.agent, e.grader} {
