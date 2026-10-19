@@ -31,6 +31,11 @@ type EvalLogLine struct {
 	Score     float64 `json:"score"`
 	Pass      bool    `json:"pass"`
 	Error     string  `json:"error"`
+	// Complete is set only on the line `evalviewer check` appends once every
+	// eval package finished. loadLines drops that line and sets RunComplete
+	// on the file's other lines instead.
+	Complete    bool `json:"complete,omitempty"`
+	RunComplete bool `json:"-"`
 }
 
 var (
@@ -208,6 +213,10 @@ func runEvals(args []string) evalRun {
 
 	fmt.Println("Running evaluations...")
 
+	// Unfinished tests are detected from the `=== RUN` lines, which only -v prints.
+	if !slices.ContainsFunc(args, func(a string) bool { return a == "-v" || strings.HasPrefix(a, "-v=") || a == "-test.v" }) {
+		args = append([]string{"-v"}, args...)
+	}
 	cmd := exec.Command("go", append([]string{"test"}, args...)...)
 	cmd.Env = os.Environ()
 	if os.Getenv("GOEVALS") == "" {
@@ -219,12 +228,33 @@ func runEvals(args []string) evalRun {
 	run := evalRun{err: cmd.Run(), incomplete: watcher.incompletePackages()}
 
 	var records []EvalLogLine
-	if evalFile, err := findEvalsFile(); err == nil {
+	evalFile, findErr := findEvalsFile()
+	if findErr == nil {
 		records, _ = loadLines(evalFile)
 	}
 	run.incomplete = append(run.incomplete, watcher.unrecordedFailures(records, goModulePath())...)
 	reportIncomplete(run.incomplete)
+	if findErr == nil && !run.broken() {
+		if err := markComplete(evalFile); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: Failed to mark results complete: %v\n", err)
+		}
+	}
 	return run
+}
+
+// markComplete appends the line that says every eval package finished. The
+// report treats a check whose eval has no result as removed only in a
+// complete run; in any other run the eval may simply not have run.
+func markComplete(evalFile string) error {
+	f, err := os.OpenFile(evalFile, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	if err := json.NewEncoder(f).Encode(EvalLogLine{Complete: true}); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 func runCommand(args []string) {
@@ -542,7 +572,7 @@ func loadResults(filename string, showOnlyFailures bool) ([]EvalLogLine, error) 
 	return results, nil
 }
 
-// loadLines loads every line of an evals.jsonl file.
+// loadLines loads every result line of an evals.jsonl file.
 func loadLines(filename string) ([]EvalLogLine, error) {
 	file, err := os.Open(filename)
 	if err != nil {
@@ -551,6 +581,7 @@ func loadLines(filename string) ([]EvalLogLine, error) {
 	defer file.Close()
 
 	var results []EvalLogLine
+	complete := false
 	scanner := bufio.NewScanner(file)
 	// Lines carry full agent outputs, which can exceed the default 64KB limit.
 	scanner.Buffer(make([]byte, 0, 1024*1024), 64*1024*1024)
@@ -566,6 +597,10 @@ func loadLines(filename string) ([]EvalLogLine, error) {
 			fmt.Fprintf(os.Stderr, "Error parsing line: %v\n", err)
 			continue
 		}
+		if result.Complete {
+			complete = true
+			continue
+		}
 		results = append(results, result)
 	}
 
@@ -573,5 +608,8 @@ func loadLines(filename string) ([]EvalLogLine, error) {
 		return nil, fmt.Errorf("error reading file: %v", err)
 	}
 
+	for i := range results {
+		results[i].RunComplete = complete
+	}
 	return results, nil
 }

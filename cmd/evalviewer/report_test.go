@@ -205,11 +205,20 @@ func TestCommentLifecycle(t *testing.T) {
 	openaiFails := []EvalLogLine{graded(catOpenAI, "is a cat", 0, false), graded(catAnthropic, "is a cat", 0, true)}
 	openaiDown := []EvalLogLine{errored(catOpenAI, 0, "401 unauthorized"), graded(catAnthropic, "is a cat", 0, true)}
 	openaiPartialAnthropicFails := []EvalLogLine{graded(sadOpenAI, "is sad", 0, true), graded(catAnthropic, "is a cat", 0, false)}
+	catGone := []EvalLogLine{graded(sadOpenAI, "is sad", 0, true), graded(catAnthropic, "is a cat", 0, true)}
+	completed := func(lines []EvalLogLine) []EvalLogLine {
+		out := slices.Clone(lines)
+		for i := range out {
+			out[i].RunComplete = true
+		}
+		return out
+	}
 
 	tests := []struct {
 		name        string
 		previous    string
 		results     []EvalLogLine
+		baseline    []EvalLogLine
 		want        []string
 		wantNone    []string
 		wantNoop    bool
@@ -250,6 +259,26 @@ func TestCommentLifecycle(t *testing.T) {
 			want: []string{commentResolved}, wantNone: []string{"Not rechecked"},
 		},
 		{
+			name: "a check that still fails with no baseline for its provider stays listed", previous: unresolved(catCheck), results: openaiFails,
+			baseline: []EvalLogLine{graded(catAnthropic, "is a cat", 0, true)},
+			want:     []string{"### Still failing, with nothing to compare against", notRechecked}, wantNone: []string{commentResolved, "Not rechecked"},
+			wantTracked: []caseKey{catCheck},
+		},
+		{
+			name: "a check that also fails on the baseline resolves the comment", previous: unresolved(catCheck), results: openaiFails,
+			baseline: []EvalLogLine{graded(catOpenAI, "is a cat", 0, false), graded(catAnthropic, "is a cat", 0, true)},
+			want:     []string{commentResolved},
+		},
+		{
+			name: "a check whose eval was removed resolves the comment in a complete run", previous: unresolved(catCheck), results: completed(catGone),
+			want: []string{commentResolved}, wantNone: []string{"Not rechecked"},
+		},
+		{
+			name: "a check whose eval has no result stays listed in an incomplete run", previous: unresolved(catCheck), results: catGone,
+			want: []string{"### Not rechecked in this run", notRechecked}, wantNone: []string{commentResolved},
+			wantTracked: []caseKey{catCheck},
+		},
+		{
 			name: "a provider that is gone keeps its earlier checks", previous: unresolved(caseKey{provider: "cohere", test: "TestX", rubric: "r"}), results: allPass,
 			want: []string{"| TestX | r | Cohere |"}, wantTracked: []caseKey{{provider: "cohere", test: "TestX", rubric: "r"}},
 		},
@@ -257,7 +286,11 @@ func TestCommentLifecycle(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			r := buildReport(buildResultSet(tc.results), nil, []string{"anthropic", "openai"})
+			var baseline resultSet
+			if tc.baseline != nil {
+				baseline = buildResultSet(tc.baseline)
+			}
+			r := buildReport(buildResultSet(tc.results), baseline, []string{"anthropic", "openai"})
 			r.commit = sha
 			comment := r.commentMarkdown(tc.previous)
 

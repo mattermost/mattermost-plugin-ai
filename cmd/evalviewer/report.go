@@ -77,6 +77,8 @@ type providerResults struct {
 	records int
 	errors  int
 	cases   map[caseKey]*caseStats
+	// complete is set when every eval package of the provider's run finished.
+	complete bool
 }
 
 // unavailable reports a provider whose every run errored or that produced no
@@ -153,6 +155,7 @@ func buildResultSet(records []EvalLogLine) resultSet {
 	for _, record := range records {
 		provider, test, segments := splitEvalName(record.Name)
 		p := set.provider(provider)
+		p.complete = p.complete || record.RunComplete
 		p.records++
 
 		key := caseKey{provider: provider, test: test, rubric: record.Rubric}
@@ -313,14 +316,14 @@ var commentChecksPattern = regexp.MustCompile(`<!-- eval-checks: ([A-Za-z0-9+/=]
 // already on the pull request ("" if none). An empty result leaves that
 // comment as it is.
 //
-// An eval without a result this run (its provider was unavailable, or its
-// package crashed) hides its failures instead of fixing them. So a previous
-// comment's checks whose eval has no result stay listed as not rechecked, and the
-// comment is resolved only when nothing fails and nothing is left unchecked.
+// A previous comment's check is dropped only on evidence that it is not this
+// change's problem: its eval ran and the check passes or also fails on the
+// baseline, or the eval no longer exists. Every other check stays listed, and
+// the comment is resolved only when nothing is left.
 func (r report) commentMarkdown(previous string) string {
-	unchecked := r.notRechecked(previousChecks(previous))
+	unchecked, unbaselined := r.trackedChecks(previousChecks(previous))
 
-	if len(r.regressions) == 0 && len(unchecked) == 0 {
+	if len(r.regressions) == 0 && len(unchecked) == 0 && len(unbaselined) == 0 {
 		if previous == "" || strings.Contains(previous, commentResolved) {
 			return ""
 		}
@@ -337,14 +340,13 @@ func (r report) commentMarkdown(previous string) string {
 	for _, c := range r.regressions {
 		checks = append(checks, c.caseKey)
 	}
-	sb.WriteString(checksLine(append(checks, unchecked...)) + "\n")
+	sb.WriteString(checksLine(slices.Concat(checks, unchecked, unbaselined)) + "\n")
 	r.writeRunLink(&sb)
 	if len(r.regressions) > 0 {
 		r.writeRegressions(&sb)
 	}
-	if len(unchecked) > 0 {
-		writeNotRechecked(&sb, unchecked)
-	}
+	writeTrackedChecks(&sb, "Not rechecked in this run", "These checks failed in an earlier run and their eval has no result in this one (the provider was unavailable or the eval did not run), so they still count as failing.", unchecked)
+	writeTrackedChecks(&sb, "Still failing, with nothing to compare against", "These checks failed in an earlier run and still fail. The baseline has no results for their provider, so they cannot be compared with it.", unbaselined)
 	sb.WriteString("<sub>Only checks that newly fail are listed. Pre-existing failures, flaky checks, and unavailable providers are in the workflow run summary.</sub>\n")
 	return sb.String()
 }
@@ -380,26 +382,40 @@ func previousChecks(comment string) []caseKey {
 	return checks
 }
 
-// notRechecked returns the checks whose eval has no result in this run. Any
-// result for the eval counts, since a check's key changes when it errored
-// before or its rubric was edited.
-func (r report) notRechecked(checks []caseKey) []caseKey {
-	var missing []caseKey
+// trackedChecks sorts a previous comment's checks that stay open. unchecked
+// are those whose eval has no result in a run that may not have run it (the
+// provider was unavailable, or a package did not finish); in a complete run
+// the eval was removed, which closes them. unbaselined are this run's failures
+// of an eval that ran, for a provider the baseline has no results for. Any
+// result for the eval counts as rechecking it, since a check's key changes
+// when it errored before or its rubric was edited.
+func (r report) trackedChecks(checks []caseKey) (unchecked, unbaselined []caseKey) {
 	for _, key := range checks {
 		i := slices.IndexFunc(r.providers, func(p *providerResults) bool { return p.name == key.provider })
-		if i >= 0 && !r.providers[i].unavailable() && r.providers[i].ranEval(key.test) {
-			continue
+		var p *providerResults
+		if i >= 0 && !r.providers[i].unavailable() {
+			p = r.providers[i]
 		}
-		if !slices.Contains(missing, key) {
-			missing = append(missing, key)
+		switch {
+		case p != nil && p.ranEval(key.test):
+			for _, c := range r.unbaselined {
+				if c.provider == key.provider && c.test == key.test && !slices.Contains(unbaselined, c.caseKey) {
+					unbaselined = append(unbaselined, c.caseKey)
+				}
+			}
+		case p != nil && p.complete:
+		case !slices.Contains(unchecked, key):
+			unchecked = append(unchecked, key)
 		}
 	}
-	return missing
+	return unchecked, unbaselined
 }
 
-func writeNotRechecked(sb *strings.Builder, checks []caseKey) {
-	sb.WriteString("### Not rechecked in this run\n\n")
-	sb.WriteString("These checks failed in an earlier run and their eval has no result in this one (the provider was unavailable or the eval did not run), so they still count as failing.\n\n")
+func writeTrackedChecks(sb *strings.Builder, title, explanation string, checks []caseKey) {
+	if len(checks) == 0 {
+		return
+	}
+	fmt.Fprintf(sb, "### %s\n\n%s\n\n", title, explanation)
 	sb.WriteString("| Eval | Check | Provider |\n")
 	sb.WriteString("|------|-------|----------|\n")
 	for _, c := range checks {
