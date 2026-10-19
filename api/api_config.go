@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"slices"
 
 	"github.com/gin-gonic/gin"
 	"github.com/mattermost/mattermost-plugin-agents/v2/audit"
@@ -230,7 +229,7 @@ func (a *API) resolveAgentReferenceUsernames(cfg config.Config) map[string]strin
 	}
 	var usernames []string
 	for _, username := range []string{cfg.DefaultBotName, cfg.TranscriptGenerator} {
-		if username != "" && !slices.Contains(usernames, username) {
+		if username != "" {
 			usernames = append(usernames, username)
 		}
 	}
