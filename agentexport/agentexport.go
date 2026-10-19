@@ -56,7 +56,9 @@ type Agent struct {
 }
 
 // UnmarshalJSON defaults MCPDynamicToolLoading to true when the field is
-// absent, matching llm.BotConfig.
+// absent, matching llm.BotConfig. Export files written before a field was
+// added omit its key, so a new field whose zero value is not the previous
+// behavior must get its default here too.
 func (a *Agent) UnmarshalJSON(data []byte) error {
 	type agentAlias Agent
 	decoded := agentAlias{MCPDynamicToolLoading: true}
