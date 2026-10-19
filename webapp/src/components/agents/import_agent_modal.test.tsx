@@ -148,6 +148,25 @@ describe('ImportAgentModal', () => {
         expect(importButton().disabled).toBe(true);
     });
 
+    test('rejects a file larger than the server accepts without reading it', async () => {
+        renderModal();
+        const file = new File(['{}'], 'huge.json', {type: 'application/json'});
+        Object.defineProperty(file, 'size', {value: (2 * 1024 * 1024) + 1});
+        fireEvent.change(screen.getByTestId('import-agent-file-input'), {target: {files: [file]}});
+
+        expect(await screen.findByText('This file is too large to be an agent export document.')).not.toBeNull();
+        expect(mockPreview).not.toHaveBeenCalled();
+    });
+
+    test('shows the full custom instructions so nothing is applied unseen', async () => {
+        renderModal();
+        const instructions = `${'a'.repeat(500)} hidden tail`;
+
+        await loadPreview(makePreview({}, {customInstructions: instructions}));
+
+        expect(screen.getByTestId('import-instructions').textContent).toBe(instructions);
+    });
+
     test('summarizes the document after a successful preview', async () => {
         renderModal();
 

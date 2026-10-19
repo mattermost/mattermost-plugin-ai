@@ -493,6 +493,7 @@
   "c9vr6I5Z": "You do not have permission to perform this action.",
   "cAQb5tZd": "Use the new OpenAI Responses API with support for reasoning summaries and other advanced features. Disable for legacy Completions API compatibility.",
   "cGrlrTH+": "Collapse service",
+  "cIN8a6J/": "This file is too large to be an agent export document.",
   "cKCUTjvH": "Enable the Mattermost MCP server over HTTP to allow external MCP clients to access Mattermost channels, users, and posts through the MCP protocol. Note: Streaming support requires Mattermost v11.2+.",
   "cPJlt2hv": "Tool Providers",
   "cSa5FcRB": "Loading conversation context...",

@@ -30,7 +30,9 @@ import {agentUsernameError} from './agent_username';
 
 // Select value meaning "drop the tools of this MCP server" (sent as targetOrigin '').
 const REMOVE_TOOLS_VALUE = '__remove__';
-const INSTRUCTIONS_PREVIEW_CHARS = 240;
+
+// Matches the server's request body cap, so larger files are rejected before they are read.
+const MAX_IMPORT_FILE_BYTES = 2 * 1024 * 1024;
 
 export type ImportedAgentResult = {
     agent: UserAgent;
@@ -115,6 +117,10 @@ const ImportAgentModal = ({services, manageableAgents, canCreate, createDisabled
         setPreview(null);
         setFileError('');
         setSubmitError('');
+        if (file.size > MAX_IMPORT_FILE_BYTES) {
+            setFileError(intl.formatMessage({defaultMessage: 'This file is too large to be an agent export document.'}));
+            return;
+        }
 
         let parsed: unknown;
         try {
@@ -220,7 +226,6 @@ const ImportAgentModal = ({services, manageableAgents, canCreate, createDisabled
 
     const doc = preview?.document.agent;
     const instructionsLength = doc ? codePointLength(doc.customInstructions ?? '') : 0;
-    const instructionsPreview = doc ? Array.from(doc.customInstructions ?? '').slice(0, INSTRUCTIONS_PREVIEW_CHARS).join('') : '';
 
     return (
         <AnimatedModalShell
@@ -313,10 +318,13 @@ const ImportAgentModal = ({services, manageableAgents, canCreate, createDisabled
                                             {count: instructionsLength},
                                         )}
                                     </SummaryLine>
-                                    {instructionsPreview && (
-                                        <InstructionsPreview>
-                                            {instructionsPreview}
-                                            {instructionsLength > INSTRUCTIONS_PREVIEW_CHARS ? '…' : ''}
+                                    {doc.customInstructions && (
+                                        <InstructionsPreview
+                                            data-testid='import-instructions'
+                                            tabIndex={0}
+                                            aria-label={intl.formatMessage({defaultMessage: 'Custom instructions'})}
+                                        >
+                                            {doc.customInstructions}
                                         </InstructionsPreview>
                                     )}
                                     <SummaryLine>
@@ -604,7 +612,7 @@ const SummaryLine = styled.div`
 
 const InstructionsPreview = styled.div`
     padding: 8px 12px;
-    max-height: 96px;
+    max-height: 240px;
     overflow: auto;
     white-space: pre-wrap;
     overflow-wrap: break-word;
