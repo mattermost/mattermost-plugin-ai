@@ -212,7 +212,7 @@ func TestBroadcastDMToTeamFlowEval(t *testing.T) {
 			"Send everyone on the staff team a direct message saying: Hey! Just a reminder that we have a company all-hands meeting tomorrow at 3pm in the main conference room. Please make sure to attend.",
 			[]string{
 				"Confirms that DMs were sent and identifies the recipients",
-				"Does not mention sending a message to a bot account (autobot.eval or Automation Bot)",
+				"Does not claim to have sent a message to a bot account (autobot.eval or Automation Bot)",
 			},
 			[][]string{{"dm"}},
 		)
