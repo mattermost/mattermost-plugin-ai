@@ -149,7 +149,7 @@ func TestFindSpecificInfoFlowEval(t *testing.T) {
 				"Mentions the ability to switch back within minutes",
 				"Mentions continuous replication as a safety net",
 				"Does not attribute the rollback plan to bob.eval or charlie.eval",
-				"Does not present the timeline, the data volume, or the monitoring dashboards as part of the rollback plan",
+				"Does not present the migration schedule (next sprint, two weeks of testing), the data volume, or the monitoring dashboards as part of the rollback plan",
 			},
 			[][]string{{"read_channel", "search_posts", "read_post"}},
 		)
