@@ -66,28 +66,38 @@ export function isHostAllowed(hostname: string, allowedDomains: LinkDomainRule[]
  * so the host checked is the host a click would navigate to.
  */
 export function linkAllowlist(allowedDomains: LinkDomainRule[], siteURL: string): (href: string) => boolean {
-    let siteRoot: string | null = null;
+    let site: URL | null = null;
     try {
-        siteRoot = new URL(siteURL).href.replace(/\/$/, '');
+        site = new URL(siteURL);
     } catch {
         // Without a usable site URL nothing counts as internal.
     }
+    const siteRoot = site?.href.replace(/\/$/, '');
 
-    const isInternal = (url: URL) => siteRoot !== null && (
-        url.href === siteRoot || ['/', '?', '#'].some((sep) => url.href.startsWith(siteRoot + sep))
-    );
+    // Mirrors core: scheme-less links are in-app routes (the webapp router
+    // applies any subpath), and absolute links must start with the site URL.
+    // Resolving relative links keeps "//host" and "/\host" external.
+    const isInternal = (href: string, url: URL) => {
+        if (!site || !siteRoot) {
+            return false;
+        }
+        if (!(/^[a-z][a-z0-9+.-]*:/i).test(href)) {
+            return url.origin === site.origin;
+        }
+        return url.href === siteRoot || ['/', '?', '#'].some((sep) => url.href.startsWith(siteRoot + sep));
+    };
 
     return (href) => {
         let url: URL;
         try {
-            url = siteRoot === null ? new URL(href) : new URL(href, siteRoot + '/');
+            url = siteRoot ? new URL(href, siteRoot + '/') : new URL(href);
         } catch {
             return false;
         }
         if (url.protocol !== 'http:' && url.protocol !== 'https:') {
             return false;
         }
-        return isInternal(url) || isHostAllowed(url.hostname, allowedDomains);
+        return isInternal(href, url) || isHostAllowed(url.hostname, allowedDomains);
     };
 }
 
