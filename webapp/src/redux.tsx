@@ -80,7 +80,7 @@ function bots(state = null, action: any) {
 function linkPolicy(state: LinkPolicy = PLAIN_TEXT_LINK_POLICY, action: any) {
     switch (action.type) {
     case SetLinkPolicyHandler:
-        return action.linkPolicy;
+        return action.linkPolicy ?? PLAIN_TEXT_LINK_POLICY;
     default:
         return state;
     }

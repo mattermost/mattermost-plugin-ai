@@ -17,7 +17,8 @@ import {
     LLMBot,
 } from './bots';
 import {ChannelAccessLevel, UserAccessLevel} from './components/system_console/bot';
-import {BotsHandler, SetLinkPolicyHandler} from './redux';
+import {BotsHandler, SetLinkPolicyHandler, setupRedux} from './redux';
+import {getLinkPolicy} from './selectors';
 import manifest from './manifest';
 
 // mm_webapp reads window.Components/ProductApi at module load, which are absent
@@ -258,6 +259,25 @@ describe('fetchAndStoreBots', () => {
 
         expect(dispatch).toHaveBeenCalledWith({type: BotsHandler, bots});
         expect(dispatch).toHaveBeenCalledWith({type: SetLinkPolicyHandler, linkPolicy});
+    });
+
+    test('falls back to the plain text link policy when the server omits linkPolicy', async () => {
+        mockGetAIBots.mockResolvedValue({bots: [makeBot('a')], searchEnabled: true});
+
+        let pluginReducer: Parameters<typeof createStore>[0] | undefined;
+        await setupRedux(
+            {registerReducer: (reducer: typeof pluginReducer) => {
+                pluginReducer = reducer;
+            }},
+            {getState: () => ({entities: {general: {license: {}, config: {}}}}), dispatch: jest.fn()} as any,
+        );
+        const store = createStore((state: any = {}, action: any) => ({
+            ['plugins-' + manifest.id]: pluginReducer!(state['plugins-' + manifest.id], action),
+        }));
+
+        await expect(fetchAndStoreBots(store.dispatch)).resolves.toHaveLength(1);
+
+        expect(getLinkPolicy(store.getState() as any)).toEqual({kind: 'plain_text'});
     });
 
     test('returns null and dispatches nothing when the response is falsy', async () => {
