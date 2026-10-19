@@ -278,6 +278,10 @@ func (c *Conversations) regenerateViaConversation(
 		return nil, fmt.Errorf("failed to get conversation for regen: %w", err)
 	}
 
+	// Regen truncates the request at the originating user message, so a
+	// steering note would never reach the model: cancel without one.
+	c.cancelThreadWake(responsePostMarkerKey(post))
+
 	// Regeneration is triggered by the requester clicking the regen control,
 	// so the user is interactively present.
 	llmContext := c.buildConversationContextWithTools(

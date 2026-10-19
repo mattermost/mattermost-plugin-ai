@@ -452,7 +452,7 @@ func (c *Conversations) HandleToolCall(ctx context.Context, userID string, post 
 		return nil
 	}
 
-	return c.streamToolFollowUp(ctx, bot, user, channel, post, conv, isDM, false, userRejected, llmContext)
+	return c.streamToolFollowUp(ctx, bot, user, channel, post, conv, followUpOptions{UserRejected: userRejected, ApprovalContext: llmContext})
 }
 
 // resolveInteractionAnswers validates the user's answers for every accepted
@@ -644,7 +644,18 @@ func (c *Conversations) HandleToolResult(ctx context.Context, userID string, pos
 
 	// Channel second-stage follow-up rebuilds a fresh llmContext without in-request
 	// WebSearch data; citation decoration is DM-only via HandleToolCall's llmContext.
-	return c.streamToolFollowUp(ctx, bot, user, channel, post, conv, false, false, clickedPostUserRejected, nil)
+	return c.streamToolFollowUp(ctx, bot, user, channel, post, conv, followUpOptions{UserRejected: clickedPostUserRejected})
+}
+
+// followUpOptions are the per-caller knobs of streamToolFollowUp.
+type followUpOptions struct {
+	// Unattended marks a scheduler resume: no interactive user is present.
+	Unattended bool
+	// UserRejected appends rejection guidance so the model does not retry.
+	UserRejected bool
+	// ApprovalContext is the in-request context whose created files and web
+	// search data decorate the stream; nil on the channel second-stage path.
+	ApprovalContext *llm.Context
 }
 
 // streamToolFollowUp rebuilds the completion request from the conversation and
@@ -660,20 +671,19 @@ func (c *Conversations) streamToolFollowUp(
 	channel *model.Channel,
 	post *model.Post,
 	conv *store.Conversation,
-	isDM bool,
-	unattended bool,
-	userRejected bool,
-	approvalContext *llm.Context,
+	opts followUpOptions,
 ) error {
 	ctx, span := telemetry.Tracer().Start(ctx, "tool followup completion")
 	defer span.End()
+
+	isDM := mmapi.IsDMWith(bot.GetMMBot().UserId, channel)
 
 	channelToolFilterOpts, channelToolsAutoRunEverywhereOnly := c.channelFollowUpMCPToolFilterContextOptions(isDM, conv)
 	// The follow-up runs because a user clicked an approval control, so the
 	// requester is interactively present — unless the conversation root was a
 	// bot activate_ai flow, which stays constrained to unattended tools, or
 	// this is an unattended scheduler resume.
-	if !channelToolsAutoRunEverywhereOnly && !unattended {
+	if !channelToolsAutoRunEverywhereOnly && !opts.Unattended {
 		channelToolFilterOpts = append(channelToolFilterOpts, c.contextBuilder.WithLLMContextInteractive())
 	}
 	channelToolFilterOpts = append(channelToolFilterOpts, c.contextBuilder.WithLLMContextResponseFiles())
@@ -696,11 +706,14 @@ func (c *Conversations) streamToolFollowUp(
 	}
 
 	// Channel thread posts aren't stored as turns, so rebuild with thread context.
-	completionReq, err := c.buildToolFollowUpRequest(conv, llmContext, isDM, unattended, auth.SessionIDFromContext(ctx))
+	completionReq, err := c.buildToolFollowUpRequest(conv, llmContext, isDM, conversation.BuildOptions{
+		SessionID:      auth.SessionIDFromContext(ctx),
+		ResponsePostID: post.Id,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to build completion request for tool follow-up: %w", err)
 	}
-	if userRejected {
+	if opts.UserRejected {
 		completionReq.Posts = append(completionReq.Posts, llm.Post{Role: llm.PostRoleUser, Message: toolRejectionGuidance})
 	}
 	completionReq.Operation = llm.OperationConversationToolFollowup
@@ -716,15 +729,15 @@ func (c *Conversations) streamToolFollowUp(
 		return fmt.Errorf("tool runner failed on tool follow-up: %w", err)
 	}
 
-	stream := decorateStreamWithWebSearchAnnotations(runResult.Stream, approvalContext)
+	stream := decorateStreamWithWebSearchAnnotations(runResult.Stream, opts.ApprovalContext)
 
 	// Recover files created in earlier requests of this run (e.g. an
 	// approved CreateFile whose share decision arrives in a later request,
 	// where the in-memory registry is gone) from the persisted turns.
-	// approvalContext is nil on the HandleToolResult path; the decorator
+	// ApprovalContext is nil on the HandleToolResult path; the decorator
 	// tolerates nil contexts.
 	extraFileIDs := c.collectCreatedFileIDsFromTurns(conv.ID, post.Id)
-	stream = c.decorateStreamWithCreatedFiles(ctx, bot, stream, post, extraFileIDs, llmContext, llmContext, approvalContext)
+	stream = c.decorateStreamWithCreatedFiles(ctx, bot, stream, post, extraFileIDs, llmContext, llmContext, opts.ApprovalContext)
 
 	// Stream onto the same post; finalize demotes the prior anchor so
 	// resolved tool cards remain visible alongside the new round.
@@ -738,10 +751,7 @@ func (c *Conversations) streamToolFollowUp(
 // buildToolFollowUpRequest rebuilds the completion request for a tool follow-up.
 // Channel conversations re-fetch the live thread so non-turn thread posts stay in
 // context (matching the initial mention); DMs persist every post as a turn.
-// Unattended follow-ups drop thread posts made after the latest user turn,
-// since no one vetted them before tools may auto-run.
-func (c *Conversations) buildToolFollowUpRequest(conv *store.Conversation, llmContext *llm.Context, isDM, unattended bool, sessionID string) (*llm.CompletionRequest, error) {
-	buildOpts := conversation.BuildOptions{SessionID: sessionID, SkipThreadPostsAfterLatestUserTurn: unattended}
+func (c *Conversations) buildToolFollowUpRequest(conv *store.Conversation, llmContext *llm.Context, isDM bool, buildOpts conversation.BuildOptions) (*llm.CompletionRequest, error) {
 	if !isDM && conv.RootPostID != nil {
 		// Best-effort: if the live thread can't be fetched (deleted root,
 		// permissions, API blip), degrade to turns-only context rather than

@@ -68,10 +68,10 @@ func (p *MMToolProvider) GetTools(bot *bots.Bot, llmContext *llm.Context) []llm.
 		builtInTools = append(builtInTools, NewAskUserQuestionTool())
 	}
 
-	// Same catalog gate as CreateFile: only conversation flows that stream a
-	// response post can later resume onto that post (they stamp
-	// llm.Context.ResponsePostID once the placeholder exists).
-	if p.scheduleWake != nil && llmContext != nil && llmContext.ToolCatalog.ResponseFilesSupported {
+	// Same catalog gate as CreateFile: every flow that streams a response post
+	// stamps llm.Context.ResponsePostID before tools run, so the wake always
+	// has a post to resume onto. The wake runs as the requesting user.
+	if p.scheduleWake != nil && llmContext != nil && llmContext.ToolCatalog.ResponseFilesSupported && llmContext.RequestingUser != nil {
 		builtInTools = append(builtInTools, NewWaitForAsyncWorkTool(p.scheduleWake))
 	}
 

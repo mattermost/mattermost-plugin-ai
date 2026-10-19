@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -15,9 +16,11 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/conversation"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmapi"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmtools"
+	"github.com/mattermost/mattermost-plugin-agents/v2/store"
 	"github.com/mattermost/mattermost-plugin-agents/v2/streaming"
 	"github.com/mattermost/mattermost-plugin-agents/v2/telemetry"
 	"github.com/mattermost/mattermost/server/public/model"
+	"github.com/mattermost/mattermost/server/public/pluginapi/cluster"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -30,108 +33,176 @@ const WakeJobKeyPrefix = "wait_wake_"
 // with; the model-facing stop instruction in WakeUserMessage is advisory only.
 const maxConsecutiveWakes = 20
 
-// pendingWakeKeyPrefix records, per conversation, the job key of the only
-// wake allowed to fire, so repeated or batched waits cannot fan out parallel
-// resumes. A marker rather than a deterministic job key: JobOnce cannot
-// safely cancel and reschedule one key across cluster nodes.
-const pendingWakeKeyPrefix = "wait_pending_wake_"
+// resumeLockKeyPrefix names the per-conversation cluster mutex that
+// serializes wake resumes, so a wake scheduled by a still-running resume waits
+// for it.
+const resumeLockKeyPrefix = "wait_resume_"
 
-// pendingWakeTTL outlives the longest wait plus scheduler downtime.
-const pendingWakeTTL = 24 * time.Hour
+// resumeLockMaxWait bounds how long a wake waits behind a running resume.
+const resumeLockMaxWait = time.Hour
 
-// resumeLeaseKeyPrefix serializes wake resumes per conversation across the
-// cluster, so a wake scheduled by a still-running resume waits for it.
-const resumeLeaseKeyPrefix = "wait_resume_lease_"
-
-// resumeLeaseTTL is renewed while a resume runs; it only bounds how long a
-// crashed node can keep holding the lease.
-const resumeLeaseTTL = 2 * time.Minute
-
-// resumeLeaseMaxWait bounds how long a wake waits behind a running resume.
-const resumeLeaseMaxWait = time.Hour
-
-var (
-	resumeLeasePollInterval  = 5 * time.Second
-	resumeLeaseRenewInterval = resumeLeaseTTL / 3
-)
-
-// acquireResumeLease blocks until it holds the conversation's resume lease and
-// keeps renewing it until the returned release func is called.
-func (c *Conversations) acquireResumeLease(conversationID string) (func(), error) {
-	key := resumeLeaseKeyPrefix + conversationID
-	leaseID := model.NewId()
-	deadline := time.Now().Add(resumeLeaseMaxWait)
-	for {
-		acquired, err := c.mmClient.KVCompareAndSetWithExpiry(key, nil, leaseID, resumeLeaseTTL)
-		if err != nil {
-			return nil, fmt.Errorf("failed to acquire resume lease: %w", err)
-		}
-		if acquired {
-			stop := make(chan struct{})
-			renewDone := make(chan struct{})
-			go func() {
-				defer close(renewDone)
-				c.renewResumeLease(key, leaseID, resumeLeaseRenewInterval, stop)
-			}()
-			return func() {
-				close(stop)
-				<-renewDone
-				if _, err := c.mmClient.KVCompareAndSet(key, leaseID, nil); err != nil {
-					c.mmClient.LogWarn("wait_for_async_work: failed to release resume lease", "error", err, "conversation_id", conversationID)
-				}
-			}, nil
-		}
-		if time.Now().After(deadline) {
-			return nil, fmt.Errorf("timed out waiting for resume lease")
-		}
-		time.Sleep(resumeLeasePollInterval)
+// lockResume blocks until it holds the conversation's resume mutex and returns
+// the unlock func.
+func (c *Conversations) lockResume(conversationID string) (func(), error) {
+	mtx, err := cluster.NewMutex(c.mutexAPI, resumeLockKeyPrefix+conversationID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create resume mutex: %w", err)
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), resumeLockMaxWait)
+	defer cancel()
+	if err := mtx.LockWithContext(ctx); err != nil {
+		return nil, fmt.Errorf("failed to lock resume mutex: %w", err)
+	}
+	return mtx.Unlock, nil
 }
 
-func (c *Conversations) renewResumeLease(key, leaseID string, interval time.Duration, stop <-chan struct{}) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-stop:
-			return
-		case <-ticker.C:
-			renewed, err := c.mmClient.KVCompareAndSetWithExpiry(key, leaseID, leaseID, resumeLeaseTTL)
-			if err != nil || !renewed {
-				c.mmClient.LogWarn("wait_for_async_work: failed to renew resume lease", "error", err, "key", key)
-			}
-		}
+// wakeMarkerKeyPrefix names the per-(thread, bot) KV marker of the pending
+// wake. The marker is the single source of truth for "a wait is pending in
+// this thread for this bot": ScheduleWake claims it, steering and firing
+// wakes consume it.
+const wakeMarkerKeyPrefix = "wait_thread_"
+
+// wakeMarkerTTL outlives the longest wait (30 minutes) plus the time a fired
+// wake may queue on the resume mutex (resumeLockMaxWait). A stale marker
+// self-heals: any new live invocation in the thread consumes it before the
+// model can call wait_for_async_work again.
+const wakeMarkerTTL = 2 * time.Hour
+
+// wakeMarker identifies one scheduled wake: its owning conversation and when
+// it was scheduled. A wake only runs while the marker still holds its identity.
+type wakeMarker struct {
+	ConversationID string `json:"conversation_id"`
+	ScheduledAt    int64  `json:"scheduled_at"`
+}
+
+// threadRootID is the root of the thread post belongs to.
+func threadRootID(post *model.Post) string {
+	if post.RootId != "" {
+		return post.RootId
 	}
+	return post.Id
+}
+
+// threadWakeMarkerKey keys the marker by the thread root and the bot: the
+// root post is shared by every user's conversation in the thread.
+func threadWakeMarkerKey(rootPostID, botID string) string {
+	return wakeMarkerKeyPrefix + rootPostID + "_" + botID
+}
+
+// responsePostMarkerKey derives the marker key from a bot response post.
+func responsePostMarkerKey(post *model.Post) string {
+	return threadWakeMarkerKey(threadRootID(post), post.UserId)
 }
 
 // WakeJob is the JobOnce props payload for a wait_for_async_work resume. All
 // other conversation state is rederived from the response post at wake time.
 type WakeJob struct {
 	PostID string `json:"post_id"`
-	// ConversationID is empty for jobs scheduled before pending-wake tracking.
-	ConversationID string `json:"conversation_id,omitempty"`
-	// Reason is model-authored; never interpolate it into a user-role turn.
-	Reason string `json:"reason"`
+	// UserID is the user whose turn scheduled the wait; the wake runs as them.
+	UserID string `json:"user_id"`
+	// wakeMarker identifies the wake: the job and the thread marker carry the
+	// same value.
+	wakeMarker
 }
 
-// RecordPendingWake marks jobKey as the conversation's only live wake,
-// superseding any wake scheduled earlier.
-func (c *Conversations) RecordPendingWake(conversationID, jobKey string) error {
-	return c.mmClient.KVSetWithExpiry(pendingWakeKeyPrefix+conversationID, jobKey, pendingWakeTTL)
+// WakeScheduler is the subset of cluster.JobOnceScheduler used to schedule
+// wakes.
+type WakeScheduler interface {
+	ScheduleOnce(key string, runAt time.Time, props any) (*cluster.JobOnce, error)
+	Cancel(key string)
 }
 
-func (c *Conversations) isPendingWake(job WakeJob, jobKey string) (bool, error) {
-	if job.ConversationID == "" {
-		return true, nil
+// SetWakeScheduler installs the scheduler backing ScheduleWake and the API
+// used for the per-conversation resume mutex.
+func (c *Conversations) SetWakeScheduler(s WakeScheduler, mutexAPI cluster.MutexPluginAPI) {
+	c.wakeScheduler = s
+	c.mutexAPI = mutexAPI
+}
+
+// ScheduleWake schedules the conversation that owns postID to resume as userID
+// after wait. It first claims the thread's marker with create-if-absent, so at
+// most one wait is pending per thread and bot across the cluster; the job is
+// keyed by conversation so a steering consumer can cancel it from the marker.
+// The scheduler deletes the job right after the callback returns, and the
+// resuming wake consumes the marker first, so a resumed turn can schedule the
+// next wait.
+func (c *Conversations) ScheduleWake(postID, userID string, wait time.Duration) error {
+	post, err := c.mmClient.GetPost(postID)
+	if err != nil {
+		return fmt.Errorf("failed to get response post: %w", err)
 	}
-	var pending string
-	if err := c.mmClient.KVGet(pendingWakeKeyPrefix+job.ConversationID, &pending); err != nil {
-		if mmapi.IsKVNotFound(err) {
-			return false, nil
+	convID, _ := post.GetProp(streaming.ConversationIDProp).(string)
+	if convID == "" {
+		return fmt.Errorf("response post %s has no conversation", postID)
+	}
+
+	now := time.Now()
+	job := WakeJob{PostID: postID, UserID: userID, wakeMarker: wakeMarker{ConversationID: convID, ScheduledAt: now.UnixMilli()}}
+	markerKey := responsePostMarkerKey(post)
+	claimed, err := c.mmClient.KVCompareAndSetWithExpiry(markerKey, nil, job.wakeMarker, wakeMarkerTTL)
+	if err != nil {
+		return fmt.Errorf("failed to record pending wake: %w", err)
+	}
+	if !claimed {
+		return mmtools.ErrWaitAlreadyScheduled
+	}
+
+	if _, err := c.wakeScheduler.ScheduleOnce(WakeJobKeyPrefix+convID, now.Add(wait), job); err != nil {
+		if _, releaseErr := c.consumeWakeMarker(markerKey, job.wakeMarker); releaseErr != nil {
+			c.mmClient.LogWarn("wait_for_async_work: failed to release pending wake marker", "error", releaseErr, "key", markerKey)
 		}
-		return false, err
+		return fmt.Errorf("failed to schedule wake: %w", err)
 	}
-	return pending == jobKey, nil
+	return nil
+}
+
+// consumeWakeMarker deletes the marker if it still holds expected. The
+// compare-and-set decides every race over a wake (steering, firing,
+// regeneration): exactly one caller consumes it.
+func (c *Conversations) consumeWakeMarker(key string, expected wakeMarker) (bool, error) {
+	return c.mmClient.KVCompareAndSet(key, expected, nil)
+}
+
+// cancelThreadWake cancels the thread's pending wake, whichever user's
+// conversation scheduled it, and reports whether there was one.
+func (c *Conversations) cancelThreadWake(markerKey string) bool {
+	if c.wakeScheduler == nil {
+		return false
+	}
+	var marker wakeMarker
+	if err := c.mmClient.KVGet(markerKey, &marker); err != nil {
+		if !mmapi.IsKVNotFound(err) {
+			c.mmClient.LogWarn("wait_for_async_work: failed to read pending wake", "error", err, "key", markerKey)
+		}
+		return false
+	}
+	consumed, err := c.consumeWakeMarker(markerKey, marker)
+	if err != nil {
+		c.mmClient.LogWarn("wait_for_async_work: failed to clear pending wake", "error", err, "key", markerKey)
+	}
+	if !consumed {
+		return false
+	}
+	c.wakeScheduler.Cancel(WakeJobKeyPrefix + marker.ConversationID)
+	return true
+}
+
+// getOrCreateConversation wraps convService.GetOrCreateConversation for live
+// turns. A new message in a thread steers away the thread's pending wake, even
+// one owned by another user's conversation, and the invoking conversation
+// records why so the model understands the wait is gone. Best-effort: the
+// message must still be handled if recording fails.
+func (c *Conversations) getOrCreateConversation(params conversation.GetOrCreateParams) (*conversation.GetOrCreateResult, error) {
+	result, err := c.convService.GetOrCreateConversation(params)
+	if err != nil {
+		return nil, err
+	}
+	if c.cancelThreadWake(threadWakeMarkerKey(params.RootPostID, params.BotID)) {
+		if err := c.convService.AppendSyntheticUserTurn(result.Conversation.ID, mmtools.WakeCanceledUserMessage); err != nil {
+			c.mmClient.LogError("wait_for_async_work: failed to record canceled wait", "error", err, "conversation_id", result.Conversation.ID)
+		}
+	}
+	return result, nil
 }
 
 // HandleWakeJob is the cluster.JobOnceScheduler callback. Props scheduled
@@ -147,45 +218,24 @@ func (c *Conversations) HandleWakeJob(key string, props any) {
 		return
 	}
 
-	if !c.isCurrentWake(job, key) {
-		return
-	}
-
 	// The scheduler serializes callbacks under a process-wide mutex; resume
 	// runs a full LLM turn (potentially minutes), so it must not block other
 	// wakes from firing.
-	go c.runWake(job, key)
+	go c.runWake(job)
 }
 
 // runWake resumes the conversation once it holds the conversation's resume
-// lease, re-checking afterwards that no newer wait superseded this wake.
-func (c *Conversations) runWake(job WakeJob, key string) {
-	if job.ConversationID != "" {
-		release, err := c.acquireResumeLease(job.ConversationID)
-		if err != nil {
-			c.mmClient.LogError("wait_for_async_work: dropping wake", "error", err, "conversation_id", job.ConversationID)
-			return
-		}
-		defer release()
-		if !c.isCurrentWake(job, key) {
-			return
-		}
+// mutex.
+func (c *Conversations) runWake(job WakeJob) {
+	unlock, err := c.lockResume(job.ConversationID)
+	if err != nil {
+		c.mmClient.LogError("wait_for_async_work: dropping wake", "error", err, "conversation_id", job.ConversationID)
+		return
 	}
+	defer unlock()
 	if err := c.ResumeConversation(context.Background(), job); err != nil {
 		c.mmClient.LogError("wait_for_async_work: wake failed", "error", err, "post_id", job.PostID)
 	}
-}
-
-func (c *Conversations) isCurrentWake(job WakeJob, key string) bool {
-	pending, err := c.isPendingWake(job, key)
-	if err != nil {
-		c.mmClient.LogError("wait_for_async_work: failed to read pending wake", "error", err, "key", key)
-		return false
-	}
-	if !pending {
-		c.mmClient.LogDebug("wait_for_async_work: dropping superseded wake", "key", key, "conversation_id", job.ConversationID)
-	}
-	return pending
 }
 
 func wakeJobFromProps(props any) (WakeJob, error) {
@@ -197,8 +247,8 @@ func wakeJobFromProps(props any) (WakeJob, error) {
 	if err := json.Unmarshal(raw, &job); err != nil {
 		return WakeJob{}, fmt.Errorf("failed to unmarshal wake job props: %w", err)
 	}
-	if job.PostID == "" {
-		return WakeJob{}, fmt.Errorf("wake job props missing post_id")
+	if job.PostID == "" || job.ConversationID == "" || job.UserID == "" || job.ScheduledAt == 0 {
+		return WakeJob{}, fmt.Errorf("wake job props missing post_id, conversation_id, user_id, or scheduled_at")
 	}
 	return job, nil
 }
@@ -210,12 +260,10 @@ func wakeJobFromProps(props any) (WakeJob, error) {
 // Conversation state is rederived from the original response post, mirroring
 // HandleToolCall; if any entity is gone the thread is dead and the wake is
 // dropped.
-func (c *Conversations) ResumeConversation(ctx context.Context, job WakeJob) error {
+func (c *Conversations) ResumeConversation(ctx context.Context, job WakeJob) (err error) {
 	post, err := c.mmClient.GetPost(job.PostID)
 	if err != nil {
-		c.mmClient.LogDebug("wait_for_async_work: dropping wake, post missing",
-			"error", err, "post_id", job.PostID)
-		return nil
+		return c.dropIfMissing("post", err, "post_id", job.PostID)
 	}
 
 	// Chain into the originating run's trace, same as HandleToolCall / regen.
@@ -227,47 +275,52 @@ func (c *Conversations) ResumeConversation(ctx context.Context, job WakeJob) err
 		trace.WithAttributes(telemetry.PostID.String(job.PostID)),
 	)
 	defer span.End()
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "failed to resume conversation")
+		}
+	}()
 
-	convID, ok := post.GetProp(streaming.ConversationIDProp).(string)
-	if !ok || convID == "" {
-		c.mmClient.LogDebug("wait_for_async_work: dropping wake, post has no conversation",
-			"post_id", job.PostID)
-		return nil
+	// A missing marker means a new message steered the thread (or a newer wait
+	// replaced this one) after the wake fired.
+	consumed, err := c.consumeWakeMarker(responsePostMarkerKey(post), job.wakeMarker)
+	if err != nil {
+		return fmt.Errorf("failed to consume pending wake: %w", err)
+	}
+	if !consumed {
+		return c.dropWake("steered or superseded", nil, "conversation_id", job.ConversationID)
 	}
 
-	conv, err := c.convService.GetConversation(convID)
+	conv, err := c.convService.GetConversation(job.ConversationID)
 	if err != nil {
-		c.mmClient.LogDebug("wait_for_async_work: dropping wake, conversation missing",
-			"error", err, "conversation_id", convID)
-		return nil
+		return c.dropIfMissing("conversation", err, "conversation_id", job.ConversationID)
+	}
+
+	turns, err := c.convService.GetTurns(conv.ID)
+	if err != nil {
+		return fmt.Errorf("failed to get turns: %w", err)
 	}
 
 	bot := c.bots.GetBotByID(post.UserId)
 	if bot == nil {
-		c.mmClient.LogDebug("wait_for_async_work: dropping wake, bot missing", "bot_id", post.UserId)
-		return nil
+		return c.dropWake("bot missing", nil, "bot_id", post.UserId)
 	}
 
-	user, err := c.mmClient.GetUser(conv.UserID)
+	user, err := c.mmClient.GetUser(job.UserID)
 	if err != nil {
-		c.mmClient.LogDebug("wait_for_async_work: dropping wake, user missing",
-			"error", err, "user_id", conv.UserID)
-		return nil
+		return c.dropIfMissing("user", err, "user_id", job.UserID)
 	}
 
 	channel, err := c.mmClient.GetChannel(post.ChannelId)
 	if err != nil {
-		c.mmClient.LogDebug("wait_for_async_work: dropping wake, channel missing",
-			"error", err, "channel_id", post.ChannelId)
-		return nil
+		return c.dropIfMissing("channel", err, "channel_id", post.ChannelId)
 	}
 
 	// The wake runs unattended with plugin authority, so re-check that the
 	// requester could still start this turn themselves.
 	if user.DeleteAt != 0 || !c.mmClient.HasPermissionToChannel(user.Id, channel.Id, model.PermissionReadChannel) {
-		c.mmClient.LogDebug("wait_for_async_work: dropping wake, user no longer authorized",
-			"user_id", user.Id, "channel_id", channel.Id)
-		return nil
+		return c.dropWake("user no longer authorized", nil, "user_id", user.Id, "channel_id", channel.Id)
 	}
 
 	isDM := mmapi.IsDMWith(bot.GetMMBot().UserId, channel)
@@ -278,84 +331,72 @@ func (c *Conversations) ResumeConversation(ctx context.Context, job WakeJob) err
 		restrictionErr = c.bots.CheckUsageRestrictions(ctx, user.Id, bot, channel)
 	}
 	if errors.Is(restrictionErr, bots.ErrUsageRestriction) {
-		c.mmClient.LogDebug("wait_for_async_work: dropping wake, usage restricted",
-			"error", restrictionErr, "user_id", user.Id, "bot_id", bot.GetMMBot().UserId, "channel_id", channel.Id)
-		return nil
+		return c.dropWake("usage restricted", restrictionErr, "user_id", user.Id, "bot_id", bot.GetMMBot().UserId, "channel_id", channel.Id)
 	} else if restrictionErr != nil {
-		span.RecordError(restrictionErr)
-		span.SetStatus(codes.Error, "failed to check usage restrictions")
 		return fmt.Errorf("failed to check usage restrictions: %w", restrictionErr)
 	}
 
-	wakes, err := c.consecutiveWakeCount(conv.ID)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "failed to count wakes")
-		return err
-	}
-	if wakes >= maxConsecutiveWakes {
-		c.mmClient.LogDebug("wait_for_async_work: dropping wake, chain limit reached",
-			"conversation_id", conv.ID, "wakes", wakes)
-		return nil
+	if wakes := countConsecutiveWakes(turns); wakes >= maxConsecutiveWakes {
+		return c.dropWake("chain limit reached", nil, "conversation_id", conv.ID, "wakes", wakes)
 	}
 
-	responseRootID := post.Id
-	if post.RootId != "" {
-		responseRootID = post.RootId
-	}
 	wakePost := &model.Post{
 		ChannelId: post.ChannelId,
-		RootId:    responseRootID,
-	}
-	if err := c.createResponsePlaceholder(bot.GetMMBot().UserId, conv.UserID, wakePost, post.Id); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "failed to create wake response post")
-		return err
+		RootId:    threadRootID(post),
 	}
 	wakePost.AddProp(streaming.ConversationIDProp, conv.ID)
-	if err := c.mmClient.UpdatePost(wakePost); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "failed to attach conversation to wake response post")
-		c.failResponsePlaceholder(wakePost, user.Locale)
-		return fmt.Errorf("failed to attach conversation to wake response post: %w", err)
+	if err := c.createResponsePlaceholder(bot.GetMMBot().UserId, user.Id, wakePost, post.Id); err != nil {
+		return fmt.Errorf("failed to create wake response post: %w", err)
 	}
 
 	if err := c.convService.AppendSyntheticUserTurn(conv.ID, mmtools.WakeUserMessage); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "failed to write wake turn")
 		c.failResponsePlaceholder(wakePost, user.Locale)
 		return err
 	}
 
-	if err := c.streamToolFollowUp(ctx, bot, user, channel, wakePost, conv, isDM, true, false, nil); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "failed to resume conversation")
+	if err := c.streamToolFollowUp(ctx, bot, user, channel, wakePost, conv, followUpOptions{Unattended: true}); err != nil {
 		c.failResponsePlaceholder(wakePost, user.Locale)
 		return err
 	}
 	return nil
 }
 
-// consecutiveWakeCount counts wake turns since the requester's latest real
-// (post-linked) user turn.
-func (c *Conversations) consecutiveWakeCount(conversationID string) (int, error) {
-	turns, err := c.convService.GetTurns(conversationID)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get turns: %w", err)
+// dropIfMissing drops the wake when err says the entity is gone. Any other
+// failure may be transient, so it is returned for runWake to log as an error.
+func (c *Conversations) dropIfMissing(entity string, err error, keyValues ...any) error {
+	appErr, isAppErr := errors.AsType[*model.AppError](err)
+	if errors.Is(err, store.ErrConversationNotFound) || isAppErr && appErr.StatusCode == http.StatusNotFound {
+		return c.dropWake(entity+" missing", err, keyValues...)
 	}
+	return fmt.Errorf("failed to get %s: %w", entity, err)
+}
+
+// dropWake logs why a wake is abandoned and reports it as handled: the thread
+// is dead or the requester lost access, so retrying cannot help.
+func (c *Conversations) dropWake(reason string, cause error, keyValues ...any) error {
+	if cause != nil {
+		keyValues = append(keyValues, "error", cause)
+	}
+	c.mmClient.LogDebug("wait_for_async_work: dropping wake, "+reason, keyValues...)
+	return nil
+}
+
+// countConsecutiveWakes counts wake turns since the requester's latest real
+// (post-linked) user turn.
+func countConsecutiveWakes(turns []store.Turn) int {
 	count := 0
-	for _, turn := range turns {
+	for i := len(turns) - 1; i >= 0; i-- {
+		turn := turns[i]
 		if turn.Role != "user" {
 			continue
 		}
 		if turn.PostID != nil {
-			count = 0
-			continue
+			break
 		}
-		var blocks []conversation.ContentBlock
-		if json.Unmarshal(turn.Content, &blocks) == nil && len(blocks) == 1 && blocks[0].Text == mmtools.WakeUserMessage {
+		blocks, err := conversation.UnmarshalBlocks(turn.Content)
+		if err == nil && len(blocks) == 1 && blocks[0].Text == mmtools.WakeUserMessage {
 			count++
 		}
 	}
-	return count, nil
+	return count
 }

@@ -560,31 +560,8 @@ func (p *Plugin) OnActivate() error {
 		if wakeErr := wakeJobs.Start(); wakeErr != nil {
 			pluginAPI.Log.Warn("wait_for_async_work wake scheduler did not (re)start", "error", wakeErr)
 		}
-		toolProvider.SetScheduleWake(func(postID, reason string, wait time.Duration) error {
-			post, postErr := mmClient.GetPost(postID)
-			if postErr != nil {
-				return fmt.Errorf("failed to get response post: %w", postErr)
-			}
-			convID, _ := post.GetProp(streaming.ConversationIDProp).(string)
-			if convID == "" {
-				return fmt.Errorf("response post %s has no conversation", postID)
-			}
-			// Record only after scheduling succeeds, so a failed schedule
-			// cannot supersede the conversation's existing wake. The wait is
-			// at least a minute, so the job cannot fire before the record.
-			key := conversations.WakeJobKeyPrefix + model.NewId()
-			if _, scheduleErr := wakeJobs.ScheduleOnce(
-				key,
-				time.Now().Add(wait),
-				conversations.WakeJob{PostID: postID, ConversationID: convID, Reason: reason},
-			); scheduleErr != nil {
-				return scheduleErr
-			}
-			if recordErr := conversationsService.RecordPendingWake(convID, key); recordErr != nil {
-				return fmt.Errorf("failed to record pending wake: %w", recordErr)
-			}
-			return nil
-		})
+		conversationsService.SetWakeScheduler(wakeJobs, p.API)
+		toolProvider.SetScheduleWake(conversationsService.ScheduleWake)
 	}
 
 	// Initialize embedded MCP server handlers for plugin endpoints

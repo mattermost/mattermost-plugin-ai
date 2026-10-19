@@ -390,10 +390,10 @@ type BuildOptions struct {
 	// always shared=true anyway and nothing would be redacted in that case.
 	AllowUnsharedToolContent bool
 
-	// SkipThreadPostsAfterLatestUserTurn drops non-turn thread posts created
-	// after the latest post-linked user turn in channel requests. Unattended
-	// runs set this so thread posts nobody vetted cannot steer auto-run tools.
-	SkipThreadPostsAfterLatestUserTurn bool
+	// ResponsePostID is the bot post the request is being built for. In channel
+	// requests it is omitted from the rendered thread unless it is already a
+	// turn: a fresh placeholder is empty and not yet part of the conversation.
+	ResponsePostID string
 }
 
 func firstBuildOptions(opts []BuildOptions) BuildOptions {
@@ -706,6 +706,16 @@ func (s *Service) GenerateTitle(
 	return nil
 }
 
+// floatingRun is a post-less user turn and the post-less turns that follow it.
+// It has no thread position of its own, so it is rendered before the first
+// thread post created after it, and never after the post-linked turn that
+// follows it in the conversation (beforePostID).
+type floatingRun struct {
+	turns        []store.Turn
+	createdAt    int64
+	beforePostID string
+}
+
 // BuildChannelMentionRequest builds a CompletionRequest for a channel mention.
 // It reads the bot's own turns from the conversation and interleaves thread
 // posts from other users/bots at the correct sequence points.
@@ -738,33 +748,47 @@ func (s *Service) BuildChannelMentionRequest(
 	enableVision, maxFileSize := s.attachmentConfigForBot(conv.BotID)
 	mmClient := mmapi.WithFilePolicy(s.mmClient, firstBuildOptions(opts).SessionID)
 
-	// Build a set of post IDs that belong to the bot's turns.
+	// Post-linked turns are rendered where their post sits in the thread.
 	turnPostIDs := make(map[string]bool)
-	// Map from postID to the turn for quick lookup.
 	turnByPostID := make(map[string]store.Turn)
-	// Turns without post IDs (tool rounds, etc.) keyed by index.
-	var turnsWithoutPosts []store.Turn
 	latestPostLinkedSequence := 0
 	latestPostLinkedPostID := ""
 	latestPostLinkedRole := ""
-	latestUserPostID := ""
-	var latestUserTurnCreatedAt int64
-
+	// Post-less turns (tool rounds, synthetic user turns) are grouped by
+	// walking turns in sequence order: tool rounds ride with the preceding
+	// post-linked turn so tool_use/tool_result stay contiguous, while a
+	// post-less user turn opens a floating run positioned by time.
+	turnsByPrecedingPost := make(map[int][]store.Turn)
+	var floatingRuns []*floatingRun
+	// unanchored are the runs since the last post-linked turn; that turn's
+	// post is the latest position they may be rendered at.
+	var unanchored []*floatingRun
+	var openRun *floatingRun
+	precedingSeq := 0
 	for _, turn := range turns {
-		if turn.PostID != nil {
+		switch {
+		case turn.PostID != nil:
 			turnPostIDs[*turn.PostID] = true
 			turnByPostID[*turn.PostID] = turn
-			if turn.Role == "user" {
-				latestUserPostID = *turn.PostID
-				latestUserTurnCreatedAt = turn.CreatedAt
-			}
 			if turn.Sequence > latestPostLinkedSequence {
 				latestPostLinkedSequence = turn.Sequence
 				latestPostLinkedPostID = *turn.PostID
 				latestPostLinkedRole = turn.Role
 			}
-		} else {
-			turnsWithoutPosts = append(turnsWithoutPosts, turn)
+			for _, run := range unanchored {
+				run.beforePostID = *turn.PostID
+			}
+			unanchored = nil
+			openRun = nil
+			precedingSeq = turn.Sequence
+		case turn.Role == "user":
+			openRun = &floatingRun{turns: []store.Turn{turn}, createdAt: turn.CreatedAt}
+			floatingRuns = append(floatingRuns, openRun)
+			unanchored = append(unanchored, openRun)
+		case openRun != nil:
+			openRun.turns = append(openRun.turns, turn)
+		default:
+			turnsByPrecedingPost[precedingSeq] = append(turnsByPrecedingPost[precedingSeq], turn)
 		}
 	}
 
@@ -776,40 +800,9 @@ func (s *Service) BuildChannelMentionRequest(
 		Message: conv.SystemPrompt,
 	})
 
-	// Build a unified timeline.
-	// We iterate over thread posts in order (they are sorted by CreateAt).
-	// For each post, either render it from the turn (if it belongs to the bot)
-	// or as plain text.
-	//
-	// Turns without post IDs (tool rounds) are attached right after the
-	// last turn-with-post that precedes them in sequence order.
-	//
-	// Build a map from post-linked turn sequence to following non-post turns.
-	turnsByPrecedingPost := make(map[int][]store.Turn)
-	if len(turnsWithoutPosts) > 0 {
-		// Find the preceding post-linked turn for each non-post turn.
-		postLinkedSeqs := make([]int, 0)
-		for _, turn := range turns {
-			if turn.PostID != nil {
-				postLinkedSeqs = append(postLinkedSeqs, turn.Sequence)
-			}
-		}
-		for _, turn := range turnsWithoutPosts {
-			// Find the largest post-linked sequence that is less than this turn's sequence.
-			precedingSeq := 0
-			for _, seq := range postLinkedSeqs {
-				if seq < turn.Sequence && seq > precedingSeq {
-					precedingSeq = seq
-				}
-			}
-			turnsByPrecedingPost[precedingSeq] = append(turnsByPrecedingPost[precedingSeq], turn)
-		}
-	}
-
-	// Emit any non-post turns that precede all post-linked turns
-	// (precedingSeq = 0). Route through turnsToLLMPosts so tool_use and
-	// tool_result within the same tool round merge into a single llm.Post,
-	// matching BuildCompletionRequest's behavior.
+	// Route through turnsToLLMPosts so tool_use and tool_result within the
+	// same tool round merge into a single llm.Post, matching
+	// BuildCompletionRequest's behavior.
 	conversionOpts := PostConversionOptions{
 		RedactUnshared: redactUnshared,
 		MMClient:       mmClient,
@@ -825,17 +818,39 @@ func (s *Service) BuildChannelMentionRequest(
 	}
 	posts = append(posts, leadingPosts...)
 
-	skipUnlinkedPosts := firstBuildOptions(opts).SkipThreadPostsAfterLatestUserTurn && latestUserPostID != ""
-	pastLatestUserTurn := false
+	// Thread posts in order, each rendered from the bot's turn when one exists,
+	// otherwise as plain user text. Floating runs are emitted before the first
+	// post that is later than them or that their conversation position precedes.
+	pendingRuns := floatingRuns
+	emitRun := func(run *floatingRun) error {
+		runPosts, err := turnsToLLMPosts(run.turns, conversionOpts)
+		if err != nil {
+			return err
+		}
+		posts = append(posts, runPosts...)
+		return nil
+	}
+	emitRunsBefore := func(threadPost *model.Post) error {
+		for len(pendingRuns) > 0 {
+			run := pendingRuns[0]
+			if run.beforePostID != threadPost.Id && run.createdAt >= threadPost.CreateAt {
+				return nil
+			}
+			if err := emitRun(run); err != nil {
+				return err
+			}
+			pendingRuns = pendingRuns[1:]
+		}
+		return nil
+	}
+
+	responsePostID := firstBuildOptions(opts).ResponsePostID
 	for _, threadPost := range threadData.Posts {
-		// The CreateAt check keeps the cutoff closed when the user's post is
-		// gone from the thread (e.g. deleted) and the position is never seen.
-		if skipUnlinkedPosts && !turnPostIDs[threadPost.Id] &&
-			(pastLatestUserTurn || threadPost.CreateAt > latestUserTurnCreatedAt) {
+		if threadPost.Id == responsePostID && !turnPostIDs[threadPost.Id] {
 			continue
 		}
-		if threadPost.Id == latestUserPostID {
-			pastLatestUserTurn = true
+		if err := emitRunsBefore(threadPost); err != nil {
+			return nil, err
 		}
 		if turnPostIDs[threadPost.Id] {
 			// Render the post-linked turn and any trailing tool-round turns
@@ -860,6 +875,11 @@ func (s *Service) BuildChannelMentionRequest(
 		}
 		if latestPostLinkedRole == "user" && threadPost.Id == latestPostLinkedPostID {
 			break
+		}
+	}
+	for _, run := range pendingRuns {
+		if err := emitRun(run); err != nil {
+			return nil, err
 		}
 	}
 

@@ -325,10 +325,7 @@ func TestStreamToolFollowUpInteractiveFlag(t *testing.T) {
 			&model.Channel{Id: "dm-channel", Type: model.ChannelTypeDirect, Name: "bot-id__user-id"},
 			&model.Post{Id: "root-post-id"},
 			conv,
-			true,
-			false,
-			false,
-			nil,
+			followUpOptions{},
 		)
 		require.NoError(t, err)
 		streamingService.waitForStreaming()
@@ -379,10 +376,7 @@ func TestStreamToolFollowUpInteractiveFlag(t *testing.T) {
 			&model.Channel{Id: "channel-id", TeamId: "team-id", Type: model.ChannelTypeOpen},
 			&model.Post{Id: "post-id"},
 			conv,
-			false,
-			false,
-			false,
-			nil,
+			followUpOptions{},
 		)
 		require.NoError(t, err)
 		streamingService.waitForStreaming()

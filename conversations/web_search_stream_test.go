@@ -146,10 +146,7 @@ func TestStreamToolFollowUpDecoratesWebSearchAnnotations(t *testing.T) {
 		&model.Channel{Id: "dm-channel", Type: model.ChannelTypeDirect, Name: "bot-id__user-id"},
 		&model.Post{Id: "root-post-id"},
 		conv,
-		true,
-		false,
-		false,
-		testWebSearchApprovalContext(),
+		followUpOptions{ApprovalContext: testWebSearchApprovalContext()},
 	)
 	require.NoError(t, err)
 	streamingService.waitForStreaming()
@@ -185,10 +182,7 @@ func TestStreamToolFollowUpSkipsAnnotationDecorationWithoutApprovalContext(t *te
 		&model.Channel{Id: "channel-id", Type: model.ChannelTypeOpen, TeamId: "team-id"},
 		&model.Post{Id: "root-post-id"},
 		conv,
-		false,
-		false,
-		false,
-		nil,
+		followUpOptions{},
 	)
 	require.NoError(t, err)
 	streamingService.waitForStreaming()

@@ -349,7 +349,7 @@ func (c *Conversations) handleMentionViaConversation(
 	}
 
 	userPostID := post.Id
-	convResult, convErr := c.convService.GetOrCreateConversation(conversation.GetOrCreateParams{
+	convResult, convErr := c.getOrCreateConversation(conversation.GetOrCreateParams{
 		UserID:       postingUser.Id,
 		SessionID:    auth.SessionIDFromContext(ctx),
 		BotID:        bot.GetMMBot().UserId,
