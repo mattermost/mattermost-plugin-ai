@@ -646,6 +646,24 @@ func (p *MMPostStreamService) streamToPostImpl(ctx context.Context, stream *llm.
 	defer heartbeat.Stop()
 	lastFlushedMessage := post.Message
 
+	// stopStream finishes a canceled stream. A user stop is an intentional,
+	// complete response. Plugin shutdown is an interruption the user should be
+	// told about.
+	// The root is checked too: ctx learns of the shutdown asynchronously.
+	shuttingDown := func() bool { return lifecycle.IsShutdown(ctx) || lifecycle.IsShutdown(p.root()) }
+	stopStream := func() {
+		outcome = telemetry.StreamOutcomeCancelled
+		if shuttingDown() {
+			finalStatus = store.TurnStatusInterrupted
+			MarkInterrupted(post, InterruptedReasonShutdown, model.GetMillis())
+		}
+		if err := p.mmClient.UpdatePost(post); err != nil {
+			p.mmClient.LogError("Error updating post on stop signaled", "error", err)
+			return
+		}
+		p.sendPostStreamingEvent(post, broadcast, map[string]any{"control": PostStreamingControlCancel})
+	}
+
 	for {
 		select {
 		case <-heartbeat.C:
@@ -663,6 +681,13 @@ func (p *MMPostStreamService) streamToPostImpl(ctx context.Context, stream *llm.
 			}
 			p.sendPostStreamingEvent(post, broadcast, map[string]any{"control": PostStreamingControlHeartbeat})
 		case event, ok := <-stream.Stream:
+			// Shutdown cancels the LLM request too, which can close the stream
+			// or emit end/error before ctx.Done is selected. Treat any of those
+			// as the interruption so the reply is not saved as finished.
+			if shuttingDown() && (!ok || event.Type == llm.EventTypeEnd || event.Type == llm.EventTypeError) {
+				stopStream()
+				return
+			}
 			if !ok {
 				// Stream channel closed - persist final state
 				if err := p.mmClient.UpdatePost(post); err != nil {
@@ -894,18 +919,7 @@ func (p *MMPostStreamService) streamToPostImpl(ctx context.Context, stream *llm.
 				}
 			}
 		case <-ctx.Done():
-			outcome = telemetry.StreamOutcomeCancelled
-			// A user stop is an intentional, complete response. Plugin
-			// shutdown is an interruption the user should be told about.
-			if lifecycle.IsShutdown(ctx) {
-				finalStatus = store.TurnStatusInterrupted
-				MarkInterrupted(post, InterruptedReasonShutdown, model.GetMillis())
-			}
-			if err := p.mmClient.UpdatePost(post); err != nil {
-				p.mmClient.LogError("Error updating post on stop signaled", "error", err)
-				return
-			}
-			p.sendPostStreamingEvent(post, broadcast, map[string]any{"control": PostStreamingControlCancel})
+			stopStream()
 			return
 		}
 	}

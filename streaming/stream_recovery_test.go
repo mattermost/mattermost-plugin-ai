@@ -142,6 +142,59 @@ func TestStreamCancellationStatus(t *testing.T) {
 	}
 }
 
+// Shutdown also cancels the LLM request, so the stream can end (error or
+// close) in the same instant ctx.Done fires. Whichever select case wins, the
+// reply must be marked interrupted. Repeat to cover both select orders.
+func TestStreamShutdownWhileLLMStreamEnds(t *testing.T) {
+	endings := []struct {
+		name string
+		end  func(chan llm.TextStreamEvent)
+	}{
+		{name: "error event", end: func(c chan llm.TextStreamEvent) {
+			c <- llm.TextStreamEvent{Type: llm.EventTypeError, Value: context.Canceled}
+		}},
+		{name: "channel closed", end: func(c chan llm.TextStreamEvent) { close(c) }},
+	}
+	for _, ending := range endings {
+		t.Run(ending.name, func(t *testing.T) {
+			for range 20 {
+				service, client, ts := newRecoveryTestService(t)
+				root, cancelRoot := context.WithCancelCause(context.Background())
+				service.SetRootContext(root)
+
+				post := newStreamPost()
+				ctx, err := service.GetStreamingContext(context.Background(), post.Id)
+				require.NoError(t, err)
+
+				stream := make(chan llm.TextStreamEvent, 2)
+				stream <- llm.TextStreamEvent{Type: llm.EventTypeText, Value: "partial answer"}
+
+				done := make(chan struct{})
+				go func() {
+					defer close(done)
+					defer service.FinishStreaming(post.Id)
+					service.StreamToPost(ctx, &llm.TextStreamResult{Stream: stream}, post, "en", "requester-id")
+				}()
+				require.Eventually(t, func() bool { return service.ActiveStreams() == 1 && len(stream) == 0 }, time.Second, time.Millisecond)
+
+				cancelRoot(lifecycle.ErrShutdown)
+				ending.end(stream)
+				<-done
+
+				ts.mu.Lock()
+				turn := findStreamTurn(ts.turns, post.Id)
+				ts.mu.Unlock()
+				require.NotNil(t, turn)
+				require.Equal(t, store.TurnStatusInterrupted, turn.Status)
+				last := client.lastUpdate()
+				require.NotNil(t, last)
+				require.Equal(t, InterruptedReasonShutdown, last.GetProp(InterruptedProp))
+				require.Equal(t, "partial answer", last.Message)
+			}
+		})
+	}
+}
+
 func TestStreamHeartbeat(t *testing.T) {
 	service, client, ts := newRecoveryTestService(t)
 	service.SetHeartbeatInterval(10 * time.Millisecond)
