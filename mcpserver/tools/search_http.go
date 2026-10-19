@@ -91,7 +91,7 @@ func (s *HTTPSemanticSearchService) Search(ctx context.Context, query string, op
 	req.Header.Set("Content-Type", "application/json")
 
 	// Extract auth token from context and add to request
-	if token, ok := ctx.Value(auth.AuthTokenContextKey).(string); ok && token != "" {
+	if token := authorizationTokenFromContext(ctx); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 

@@ -203,6 +203,10 @@ func (c *fakeMMClient) HasPermissionToChannel(string, string, *model.Permission)
 	return true
 }
 
+func (c *fakeMMClient) HasPermissionToFileAction(sessionID, _, _ string) bool {
+	return sessionID != ""
+}
+
 func (c *fakeMMClient) GetFileInfo(string) (*model.FileInfo, error) {
 	return nil, errors.New("not implemented")
 }

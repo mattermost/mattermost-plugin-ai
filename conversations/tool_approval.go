@@ -14,6 +14,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/conversation"
 	"github.com/mattermost/mattermost-plugin-agents/llm"
 	"github.com/mattermost/mattermost-plugin-agents/mcp"
+	"github.com/mattermost/mattermost-plugin-agents/mcpserver/auth"
 	"github.com/mattermost/mattermost-plugin-agents/mmapi"
 	"github.com/mattermost/mattermost-plugin-agents/store"
 	"github.com/mattermost/mattermost-plugin-agents/streaming"
@@ -426,7 +427,7 @@ func (c *Conversations) streamToolFollowUp(
 	}
 
 	// Channel thread posts aren't stored as turns, so rebuild with thread context.
-	completionReq, err := c.buildToolFollowUpRequest(conv, llmContext, isDM)
+	completionReq, err := c.buildToolFollowUpRequest(conv, llmContext, isDM, auth.SessionIDFromContext(ctx))
 	if err != nil {
 		return fmt.Errorf("failed to build completion request for tool follow-up: %w", err)
 	}
@@ -465,7 +466,8 @@ func (c *Conversations) streamToolFollowUp(
 // buildToolFollowUpRequest rebuilds the completion request for a tool follow-up.
 // Channel conversations re-fetch the live thread so non-turn thread posts stay in
 // context (matching the initial mention); DMs persist every post as a turn.
-func (c *Conversations) buildToolFollowUpRequest(conv *store.Conversation, llmContext *llm.Context, isDM bool) (*llm.CompletionRequest, error) {
+func (c *Conversations) buildToolFollowUpRequest(conv *store.Conversation, llmContext *llm.Context, isDM bool, sessionID string) (*llm.CompletionRequest, error) {
+	buildOpts := conversation.BuildOptions{SessionID: sessionID}
 	if !isDM && conv.RootPostID != nil {
 		// Best-effort: if the live thread can't be fetched (deleted root,
 		// permissions, API blip), degrade to turns-only context rather than
@@ -474,11 +476,11 @@ func (c *Conversations) buildToolFollowUpRequest(conv *store.Conversation, llmCo
 		threadData, err := mmapi.GetThreadData(c.mmClient, *conv.RootPostID)
 		if err != nil {
 			c.mmClient.LogWarn("Failed to get thread data for tool follow-up, falling back to turns-only context", "error", err)
-			return c.convService.BuildCompletionRequest(conv, llmContext)
+			return c.convService.BuildCompletionRequest(conv, llmContext, buildOpts)
 		}
-		return c.convService.BuildChannelMentionRequest(conv, llmContext, threadData)
+		return c.convService.BuildChannelMentionRequest(conv, llmContext, threadData, buildOpts)
 	}
-	return c.convService.BuildCompletionRequest(conv, llmContext)
+	return c.convService.BuildCompletionRequest(conv, llmContext, buildOpts)
 }
 
 func resolveApprovedToolUseBlock(ctx context.Context, llmContext *llm.Context, block conversation.ContentBlock) (string, error) {

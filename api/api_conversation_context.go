@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/mattermost/mattermost-plugin-agents/conversation"
 	"github.com/mattermost/mattermost-plugin-agents/llm"
+	"github.com/mattermost/mattermost-plugin-agents/mcpserver/auth"
 	"github.com/mattermost/mattermost-plugin-agents/store"
 	"github.com/mattermost/mattermost/server/public/model"
 )
@@ -53,7 +54,9 @@ func (a *API) handleGetConversationContext(c *gin.Context) {
 	// Anthropic's alternating-role requirement, which CountTokens enforces).
 	enableVision, maxFileSize := a.attachmentConfigForBot(conv.BotID)
 	llmCtx := a.buildContextForConversation(c.Request.Context(), userID, conv)
-	req, err := conversation.AssembleRequest(conv, turns, llmCtx, a.mmClient, enableVision, maxFileSize)
+	req, err := conversation.AssembleRequest(conv, turns, llmCtx, a.mmClient, enableVision, maxFileSize, conversation.BuildOptions{
+		SessionID: auth.SessionIDFromContext(c.Request.Context()),
+	})
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to build composition: %w", err))
 		return
