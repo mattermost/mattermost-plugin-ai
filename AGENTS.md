@@ -18,7 +18,7 @@ Mattermost server plugin (`mattermost-ai`) that integrates LLM providers. Go 1.2
 - Build & deploy plugin to a running Mattermost: `make deploy`
 - E2E (self-contained, no env setup needed; slow, defer to CI when possible): `make e2e`
 - Single e2e spec: `cd e2e && npx playwright test tests/path/spec.ts --reporter=list`
-- Prompt evals (non-interactive): `make evals-ci`
+- Prompt evals (non-interactive): `make evals-ci` (includes `./mcpserver`, which boots Mattermost containers and needs Docker)
   Provider: `LLM_PROVIDER=openai|anthropic|azure|openaicompatible|all make evals-ci`
   Model: `ANTHROPIC_MODEL=claude-opus-5-5 make evals-ci`
 - Streaming benchmarks: `go test -bench=. -benchmem ./llm/... ./streaming/...`

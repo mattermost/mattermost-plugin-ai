@@ -89,6 +89,8 @@ The report writes:
 - `comment.md`: only checks that fail on this change but not on the baseline. With `--previous` (the comment already on the pull request) it also says when the earlier failures are fixed. It is empty when the existing comment should be left as it is, and CI changes nothing in that case.
 - `summary.md`: every provider's status, including pre-existing failures, flaky checks, providers that could not run (missing credentials, retired models), and failures of providers that have no usable baseline while other providers do. CI adds it to the workflow run summary.
 
+A rubric is graded from the agent's response alone, so it should check only what the response says. State the response cannot show, such as who received a DM or which tools ran, belongs in the eval's code assertions.
+
 Besides one check per rubric, every graded run records a "Passes the eval's code assertions" check for the eval's other assertions, such as required tool calls or valid citations, so they are reported even when the rubrics pass. Each run of an eval is its own subtest (`run_0`, `run_1`, ...), so a `require` failure in one run does not skip the others.
 
 A provider without usable results (an outage, a package that crashed) hides its failures instead of fixing them. The comment lists the providers it reports on in a hidden `eval-providers` line. A provider that reported nothing in a later run stays listed with a note, and the comment is resolved only once every listed provider has reported, no check fails, and `--complete` says every eval package ran to completion.
