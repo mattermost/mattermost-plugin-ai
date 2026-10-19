@@ -1599,6 +1599,84 @@ func TestUpdateAgentRename(t *testing.T) {
 	}
 }
 
+// TestUpdateAgentRenameBindsLegacyReferences covers settings that still select
+// the agent by its legacy username: a rename releases that username, so the
+// settings must move to the agent's bot user ID before the bot is renamed.
+func TestUpdateAgentRenameBindsLegacyReferences(t *testing.T) {
+	tests := []struct {
+		name            string
+		seeded          config.Config
+		configErr       error
+		expectedStatus  int
+		expectedConfig  config.Config
+		expectedBotName string
+	}{
+		{
+			name:            "legacy names of the renamed agent become its bot user ID",
+			seeded:          config.Config{DefaultBotName: "old-name", TranscriptGenerator: "Old-Name"},
+			expectedStatus:  http.StatusOK,
+			expectedConfig:  config.Config{DefaultBotUserID: "bot-1", TranscriptBotUserID: "bot-1"},
+			expectedBotName: "new-name",
+		},
+		{
+			name:            "legacy names of other agents are left alone",
+			seeded:          config.Config{DefaultBotName: "someone-else", TranscriptBotUserID: "bot-2"},
+			expectedStatus:  http.StatusOK,
+			expectedConfig:  config.Config{DefaultBotName: "someone-else", TranscriptBotUserID: "bot-2"},
+			expectedBotName: "new-name",
+		},
+		{
+			name:            "a failed config write leaves the bot account and settings unchanged",
+			seeded:          config.Config{DefaultBotName: "old-name"},
+			configErr:       errors.New("db down"),
+			expectedStatus:  http.StatusInternalServerError,
+			expectedConfig:  config.Config{DefaultBotName: "old-name"},
+			expectedBotName: "old-name",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			e := setupAgentTestEnvironment(t)
+			defer e.Cleanup(t)
+
+			mockLicensed(e.mockAPI)
+			e.mockAPI.On("LogError", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+			e.mockAPI.On("LogWarn", mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
+
+			seeded := tc.seeded
+			seeded.Services = []llm.ServiceConfig{{ID: "svc-1", Name: "Test Service", Type: "openai"}}
+			stored := seeded
+			configStore := &mockConfigStore{cfg: &stored, updateErr: tc.configErr}
+			e.api.configStore = configStore
+
+			agent := &llm.BotConfig{
+				ID: "agent-1", CreatorID: testUserID, BotUserID: "bot-1",
+				DisplayName: "Agent", Name: "old-name", ServiceID: "svc-1",
+			}
+			e.agentStore.agents["agent-1"] = agent
+
+			botName := "old-name"
+			e.mockAPI.On("GetUserByUsername", mock.Anything).
+				Return(nil, model.NewAppError("GetUserByUsername", "app.user.missing", nil, "", http.StatusNotFound)).Maybe()
+			e.mockAPI.On("PatchBot", "bot-1", mock.AnythingOfType("*model.BotPatch")).Run(func(args mock.Arguments) {
+				if patch := args.Get(1).(*model.BotPatch); patch.Username != nil {
+					botName = *patch.Username
+				}
+			}).Return(&model.Bot{UserId: "bot-1"}, nil).Maybe()
+
+			body := updateAgentBodyFromStored(agent, map[string]any{"username": "new-name"})
+			recorder := doRequest(e.api, http.MethodPut, "/agents/agent-1", body, testUserID)
+
+			require.Equal(t, tc.expectedStatus, recorder.Result().StatusCode, recorder.Body.String())
+			assert.Equal(t, tc.expectedBotName, botName)
+			expected := tc.expectedConfig
+			expected.Services = seeded.Services
+			assert.Equal(t, expected, *configStore.cfg)
+		})
+	}
+}
+
 type recordingAgentNotifier struct {
 	published []string
 }

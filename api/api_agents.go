@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strings"
 	"slices"
 	"strconv"
 
@@ -31,7 +32,7 @@ var validUsernameRe = regexp.MustCompile(`^[a-z][a-z0-9._-]*$`)
 
 var errInvalidAgentUsername = errors.New("invalid username: must start with a lowercase letter and contain only lowercase letters, numbers, dots, hyphens, or underscores")
 
-// errNoAgentConfigReferences aborts the config update when no setting references the deleted agent.
+// errNoAgentConfigReferences aborts the config update when no setting references the agent.
 var errNoAgentConfigReferences = errors.New("no setting references the agent")
 
 // errServiceAccountAuthRequiresAdmin is returned when a caller without
@@ -386,6 +387,44 @@ func (a *API) renameAgentBot(c *gin.Context, botUserID, username string) (rename
 // clearAgentConfigReferences clears the default agent and transcript agent
 // settings that select the given agent, by bot user ID or legacy username.
 func (a *API) clearAgentConfigReferences(botUserID, username string) error {
+	return a.updateAgentConfigReferences(func(prev *config.Config) (config.Config, bool) {
+		return prev.ClearAgentReferences(botUserID, username)
+	})
+}
+
+// bindAgentConfigReferences points the default agent and transcript agent
+// settings that still select an agent by the legacy username at its bot user
+// ID, so renaming the agent cannot release them to whoever takes the name next.
+// Settings that already select agents by ID need no write.
+func (a *API) bindAgentConfigReferences(botUserID, username string) error {
+	bind := func(prev *config.Config) (config.Config, bool) {
+		resolved := map[string]string{}
+		for _, name := range prev.LegacyAgentReferences() {
+			if strings.EqualFold(name, username) {
+				resolved[name] = botUserID
+			}
+		}
+		return prev.MigrateAgentReferences(resolved)
+	}
+	if a.configStore == nil {
+		return nil
+	}
+	current, err := a.configStore.GetConfig()
+	if err != nil {
+		return err
+	}
+	if current == nil {
+		return nil
+	}
+	if _, needed := bind(current); !needed {
+		return nil
+	}
+	return a.updateAgentConfigReferences(bind)
+}
+
+// updateAgentConfigReferences saves the config transform returns when it
+// reports a change, then loads it here and tells peers to reload.
+func (a *API) updateAgentConfigReferences(transform func(prev *config.Config) (config.Config, bool)) error {
 	if a.configStore == nil {
 		return nil
 	}
@@ -393,8 +432,8 @@ func (a *API) clearAgentConfigReferences(botUserID, username string) error {
 		if prev == nil {
 			return config.Config{}, errNoAgentConfigReferences
 		}
-		next, cleared := prev.ClearAgentReferences(botUserID, username)
-		if !cleared {
+		next, changed := transform(prev)
+		if !changed {
 			return config.Config{}, errNoAgentConfigReferences
 		}
 		return next, nil
@@ -410,7 +449,7 @@ func (a *API) clearAgentConfigReferences(botUserID, username string) error {
 	}
 	if a.clusterNotifier != nil {
 		if notifyErr := a.clusterNotifier.PublishConfigUpdate(); notifyErr != nil {
-			a.pluginAPI.Log.Warn("Failed to notify cluster of deleted agent config update", "error", notifyErr.Error())
+			a.pluginAPI.Log.Warn("Failed to notify cluster of agent setting update", "error", notifyErr.Error())
 		}
 	}
 	return nil
@@ -751,6 +790,10 @@ func (a *API) handleUpdateAgent(c *gin.Context) {
 	revertRename := func() {}
 	renameReverted := false
 	if usernameChanged {
+		if err := a.bindAgentConfigReferences(cfg.BotUserID, prev.Name); err != nil {
+			abortAgentRequest(c, http.StatusInternalServerError, fmt.Errorf("failed to point settings at the agent before renaming it: %w", err))
+			return
+		}
 		renamed, ok := a.renameAgentBot(c, cfg.BotUserID, cfg.Name)
 		if !ok {
 			return
