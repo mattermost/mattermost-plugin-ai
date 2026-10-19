@@ -127,7 +127,7 @@ func setupAutoReplyTestEnv(t *testing.T, botConfigs []llm.BotConfig, llmResponse
 			fLLM,
 		))
 	}
-	botService.SetBotsForTesting(registered)
+	conversations.SetBotsWithAccounts(mockAPI, botService, registered...)
 
 	channel := &model.Channel{Id: autoReplyChannelID, Type: model.ChannelTypeOpen, TeamId: autoReplyTeamID}
 	mmClient := &fakeMMClient{

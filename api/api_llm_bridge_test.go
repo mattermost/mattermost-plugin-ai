@@ -859,7 +859,7 @@ func TestBridgeGetBots(t *testing.T) {
 				}, mmBot, nil)
 				allBots = append(allBots, bot)
 			}
-			e.bots.SetBotsForTesting(allBots)
+			e.setBots(allBots...)
 
 			// Create bridge client and make request
 			client := e.CreateBridgeClient()

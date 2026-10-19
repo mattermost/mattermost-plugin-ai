@@ -37,6 +37,7 @@ type DropdownProps = {
     shift?: Parameters<typeof shift>[0];
     focusManager?: boolean | Omit<ComponentProps<typeof FloatingFocusManager>, 'context' | 'children'>;
     portal?: boolean;
+    floatingClassName?: string;
     isOpen: boolean;
     onOpenChange?: ((open: boolean) => void);
 
@@ -72,6 +73,7 @@ const Dropdown = (props: DropdownProps) => {
 
     let content = (
         <FloatingContainer
+            className={props.floatingClassName}
             {...getFloatingProps({
                 ref: floating,
                 style: {
