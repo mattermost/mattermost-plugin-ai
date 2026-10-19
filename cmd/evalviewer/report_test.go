@@ -265,6 +265,18 @@ func TestCommentLifecycle(t *testing.T) {
 			wantTracked: []caseKey{catCheck},
 		},
 		{
+			name: "a fixed check resolves even when another check of its eval fails with no baseline", previous: unresolved(catCheck),
+			results:  []EvalLogLine{graded(catOpenAI, "is a cat", 0, true), graded(catOpenAI, "is cute", 0, false), graded(catAnthropic, "is a cat", 0, true)},
+			baseline: []EvalLogLine{graded(catAnthropic, "is a cat", 0, true)},
+			want:     []string{commentResolved}, wantNone: []string{"Still failing"},
+		},
+		{
+			name: "an errored check stays listed through its eval's failures with no baseline", previous: unresolved(caseKey{provider: "openai", test: "TestReactEval/react_cat_message"}), results: openaiFails,
+			baseline: []EvalLogLine{graded(catAnthropic, "is a cat", 0, true)},
+			want:     []string{"### Still failing, with nothing to compare against", notRechecked}, wantNone: []string{commentResolved},
+			wantTracked: []caseKey{catCheck},
+		},
+		{
 			name: "a check that also fails on the baseline resolves the comment", previous: unresolved(catCheck), results: openaiFails,
 			baseline: []EvalLogLine{graded(catOpenAI, "is a cat", 0, false), graded(catAnthropic, "is a cat", 0, true)},
 			want:     []string{commentResolved},

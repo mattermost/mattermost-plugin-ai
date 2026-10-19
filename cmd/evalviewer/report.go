@@ -398,8 +398,12 @@ func (r report) trackedChecks(checks []caseKey) (unchecked, unbaselined []caseKe
 		}
 		switch {
 		case p != nil && p.ranEval(key.test):
+			// The check itself if it has a result; otherwise (it errored before,
+			// or its rubric was edited) the eval's current failures stand in for it.
+			_, exact := p.cases[key]
 			for _, c := range r.unbaselined {
-				if c.provider == key.provider && c.test == key.test && !slices.Contains(unbaselined, c.caseKey) {
+				matches := c.caseKey == key || (!exact && c.provider == key.provider && c.test == key.test)
+				if matches && !slices.Contains(unbaselined, c.caseKey) {
 					unbaselined = append(unbaselined, c.caseKey)
 				}
 			}
