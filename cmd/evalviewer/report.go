@@ -94,6 +94,15 @@ func (p *providerResults) firstError() string {
 	return "no results were recorded; check that the provider credentials are configured"
 }
 
+func (p *providerResults) ranEval(test string) bool {
+	for key := range p.cases {
+		if key.test == test {
+			return true
+		}
+	}
+	return false
+}
+
 func (p *providerResults) sortedCases() []*caseStats {
 	cases := make([]*caseStats, 0, len(p.cases))
 	for _, c := range p.cases {
@@ -304,9 +313,9 @@ var commentChecksPattern = regexp.MustCompile(`<!-- eval-checks: ([A-Za-z0-9+/=]
 // already on the pull request ("" if none). An empty result leaves that
 // comment as it is.
 //
-// A check without a result this run (its provider was unavailable, or its
-// package crashed) hides its failure instead of fixing it. So a previous
-// comment's checks that have no result stay listed as not rechecked, and the
+// An eval without a result this run (its provider was unavailable, or its
+// package crashed) hides its failures instead of fixing them. So a previous
+// comment's checks whose eval has no result stay listed as not rechecked, and the
 // comment is resolved only when nothing fails and nothing is left unchecked.
 func (r report) commentMarkdown(previous string) string {
 	unchecked := r.notRechecked(previousChecks(previous))
@@ -371,15 +380,15 @@ func previousChecks(comment string) []caseKey {
 	return checks
 }
 
-// notRechecked returns the checks that have no result in this run.
+// notRechecked returns the checks whose eval has no result in this run. Any
+// result for the eval counts, since a check's key changes when it errored
+// before or its rubric was edited.
 func (r report) notRechecked(checks []caseKey) []caseKey {
 	var missing []caseKey
 	for _, key := range checks {
 		i := slices.IndexFunc(r.providers, func(p *providerResults) bool { return p.name == key.provider })
-		if i >= 0 && !r.providers[i].unavailable() {
-			if _, ok := r.providers[i].cases[key]; ok {
-				continue
-			}
+		if i >= 0 && !r.providers[i].unavailable() && r.providers[i].ranEval(key.test) {
+			continue
 		}
 		if !slices.Contains(missing, key) {
 			missing = append(missing, key)
@@ -390,7 +399,7 @@ func (r report) notRechecked(checks []caseKey) []caseKey {
 
 func writeNotRechecked(sb *strings.Builder, checks []caseKey) {
 	sb.WriteString("### Not rechecked in this run\n\n")
-	sb.WriteString("These checks failed in an earlier run and have no result in this one (the provider was unavailable or the eval did not run), so they still count as failing.\n\n")
+	sb.WriteString("These checks failed in an earlier run and their eval has no result in this one (the provider was unavailable or the eval did not run), so they still count as failing.\n\n")
 	sb.WriteString("| Eval | Check | Provider |\n")
 	sb.WriteString("|------|-------|----------|\n")
 	for _, c := range checks {

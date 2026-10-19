@@ -242,6 +242,14 @@ func TestCommentLifecycle(t *testing.T) {
 			wantTracked: []caseKey{{provider: "anthropic", test: "TestReactEval/react_cat_message", rubric: "is a cat"}, catCheck},
 		},
 		{
+			name: "an errored check resolves once its eval is graded and passes", previous: unresolved(caseKey{provider: "openai", test: "TestReactEval/react_cat_message"}), results: allPass,
+			want: []string{commentResolved}, wantNone: []string{"Not rechecked"},
+		},
+		{
+			name: "a check whose rubric was edited resolves once the eval passes", previous: unresolved(caseKey{provider: "openai", test: "TestReactEval/react_cat_message", rubric: "old rubric text"}), results: allPass,
+			want: []string{commentResolved}, wantNone: []string{"Not rechecked"},
+		},
+		{
 			name: "a provider that is gone keeps its earlier checks", previous: unresolved(caseKey{provider: "cohere", test: "TestX", rubric: "r"}), results: allPass,
 			want: []string{"| TestX | r | Cohere |"}, wantTracked: []caseKey{{provider: "cohere", test: "TestX", rubric: "r"}},
 		},
