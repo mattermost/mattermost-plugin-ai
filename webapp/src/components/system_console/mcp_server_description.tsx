@@ -33,9 +33,13 @@ type Props = {
     // False while the server's connection settings have unsaved changes.
     connectionSaved: boolean;
     onChange: (description: string) => void;
+
+    // Receives an auto-filled description once it arrives, by when the admin
+    // may have changed or deleted the server.
+    onSuggestion: (description: string) => void;
 };
 
-const MCPServerDescription = ({serverID, description, connectionSaved, onChange}: Props) => {
+const MCPServerDescription = ({serverID, description, connectionSaved, onChange, onSuggestion}: Props) => {
     const intl = useIntl();
     const [autoFill, setAutoFill] = useState<AutoFill>({status: 'idle'});
     const canAutoFill = Boolean(serverID) && connectionSaved;
@@ -52,7 +56,7 @@ const MCPServerDescription = ({serverID, description, connectionSaved, onChange}
             } else if (suggestion.source === '' || !suggestion.description) {
                 setAutoFill({status: 'empty'});
             } else {
-                onChange(suggestion.description);
+                onSuggestion(suggestion.description);
                 setAutoFill({status: 'filled', source: suggestion.source});
             }
         } catch {

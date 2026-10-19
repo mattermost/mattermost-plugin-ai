@@ -37,15 +37,17 @@ const mockGetSuggestion = getMCPSuggestedDescription as jest.Mock;
 
 function renderDescription(props: Partial<React.ComponentProps<typeof MCPServerDescription>> = {}) {
     const onChange = props.onChange ?? jest.fn();
+    const onSuggestion = props.onSuggestion ?? jest.fn();
     render(
         <MCPServerDescription
             serverID={'serverID' in props ? props.serverID : 'server-id'}
             description={props.description ?? ''}
             connectionSaved={props.connectionSaved ?? true}
             onChange={onChange}
+            onSuggestion={onSuggestion}
         />,
     );
-    return {onChange};
+    return {onChange, onSuggestion};
 }
 
 const autoFillButton = () => screen.getByRole('button', {name: 'Auto-fill from server'});
@@ -70,36 +72,37 @@ describe('MCPServerDescription', () => {
         ['instructions', 'The server has no description, so this was filled from its usage instructions. Edit it as needed, then save.'],
     ])('fills the field from the server %s and says where it came from', async (source, message) => {
         mockGetSuggestion.mockResolvedValue({description: 'Search and update tickets.', source, needsOAuth: false});
-        const {onChange} = renderDescription();
+        const {onSuggestion} = renderDescription();
 
         fireEvent.click(autoFillButton());
 
         expect(await screen.findByText(message)).toBeTruthy();
         expect(mockGetSuggestion).toHaveBeenCalledWith('server-id');
-        expect(onChange).toHaveBeenCalledWith('Search and update tickets.');
+        expect(onSuggestion).toHaveBeenCalledWith('Search and update tickets.');
     });
 
     test('leaves the field alone when the server does not describe itself', async () => {
         mockGetSuggestion.mockResolvedValue({description: '', source: '', needsOAuth: false});
-        const {onChange} = renderDescription({description: 'Kept'});
+        const {onChange, onSuggestion} = renderDescription({description: 'Kept'});
 
         fireEvent.click(autoFillButton());
 
         expect(await screen.findByText("This server doesn't describe itself. Write a description instead.")).toBeTruthy();
         expect(onChange).not.toHaveBeenCalled();
+        expect(onSuggestion).not.toHaveBeenCalled();
     });
 
     test('offers to connect when the admin must sign in to the server first', async () => {
         const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
         mockGetSuggestion.mockResolvedValue({description: '', source: '', needsOAuth: true, authURL: 'https://mm.example.com/start'});
-        const {onChange} = renderDescription();
+        const {onSuggestion} = renderDescription();
 
         fireEvent.click(autoFillButton());
 
         expect(await screen.findByText('Connect your account to this server, then try again.')).toBeTruthy();
         fireEvent.click(screen.getByRole('button', {name: 'Connect'}));
         expect(openSpy).toHaveBeenCalledWith('https://mm.example.com/start', '_blank', 'noopener,noreferrer');
-        expect(onChange).not.toHaveBeenCalled();
+        expect(onSuggestion).not.toHaveBeenCalled();
         openSpy.mockRestore();
     });
 

@@ -55,13 +55,22 @@ export type MCPConfig = Omit<BaseMCPConfig, 'servers'> & {
     servers: MCPServerConfig[] | null;
 };
 
+// Like a React state setter: work that finishes asynchronously passes a
+// function so it applies to the configuration as it is then, not as it was
+// when the work started.
+export type MCPConfigUpdate = MCPConfig | ((current: MCPConfig) => MCPConfig);
+
+// ServerUpdate changes one server against its current configuration, or
+// returns it unchanged when the change no longer applies.
+type ServerUpdate = (current: MCPServerConfig) => MCPServerConfig;
+
 type Props = {
     mcpConfig: MCPConfig;
 
     // The servers as last saved, matched by id, for actions that run against
     // the saved configuration.
     savedServers?: MCPServerConfig[];
-    onChange: (config: MCPConfig) => void;
+    onChange: (update: MCPConfigUpdate) => void;
 };
 
 // connectionSettings is what determines how the server is reached and as whom.
@@ -79,6 +88,22 @@ const getIdleTimeoutInputValue = (idleTimeoutMinutes?: number): string => {
 
     return idleTimeoutMinutes.toString();
 };
+
+// MCP client and embedded server are always enabled; users can still
+// disable individual tools but cannot turn off MCP entirely.
+// Spread mcpConfig so fields like plugin_servers and embeddedServer.id
+// survive rebuilds that only override a subset of keys.
+const normalizeMCPConfig = (mcpConfig: MCPConfig): MCPConfig => ({
+    ...mcpConfig,
+    enabled: true,
+    enablePluginServer: mcpConfig?.enablePluginServer ?? false,
+    servers: Array.isArray(mcpConfig?.servers) ? mcpConfig.servers : [],
+    embeddedServer: {
+        ...(mcpConfig?.embeddedServer || {}),
+        enabled: true,
+    },
+    idleTimeoutMinutes: mcpConfig?.idleTimeoutMinutes,
+});
 
 // Default configuration for a new MCP server
 const defaultServerConfig: MCPServerConfig = {
@@ -182,12 +207,16 @@ const MCPServer = ({
     serverConfig,
     savedServer,
     onChange,
+    onUpdate,
     onDelete,
 }: {
     serverIndex: number;
     serverConfig: MCPServerConfig;
     savedServer?: MCPServerConfig;
     onChange: (serverIndex: number, config: MCPServerConfig) => void;
+
+    // For work that finishes after the admin may have edited or deleted servers.
+    onUpdate: (update: ServerUpdate) => void;
     onDelete: () => void;
 }) => {
     const intl = useIntl();
@@ -235,23 +264,15 @@ const MCPServer = ({
             if (trimmed === lastSeededBaseURLRef.current) {
                 return;
             }
-            let toolConfigs = config.tool_configs;
+            let toolConfigs: MCPToolConfig[];
             try {
                 const seeded = await getVettedToolSeed(baseURL);
-                if (seeded.length > 0) {
-                    toolConfigs = seeded.map((tc) => ({...tc}));
-                } else {
-                    toolConfigs = [];
-                }
+                toolConfigs = seeded.map((tc) => ({...tc}));
             } catch {
                 return;
             }
             lastSeededBaseURLRef.current = trimmed;
-            onChange(serverIndex, {
-                ...config,
-                baseURL,
-                tool_configs: toolConfigs,
-            });
+            onUpdate((current) => (current.baseURL === baseURL ? {...current, tool_configs: toolConfigs} : current));
         })().catch(() => null);
     };
 
@@ -355,6 +376,11 @@ const MCPServer = ({
                 description={config.description}
                 connectionSaved={Boolean(savedServer) && connectionSettings(savedServer as MCPServerConfig) === connectionSettings(config)}
                 onChange={(description) => onChange(serverIndex, {...config, description})}
+                onSuggestion={(description) => {
+                    // config is this render's, the one the suggestion was requested from.
+                    const requestedWith = connectionSettings(config);
+                    onUpdate((current) => (connectionSettings(current) === requestedWith ? {...current, description} : current));
+                }}
             />
 
             <FormRow>
@@ -528,20 +554,22 @@ const MCPServers = ({mcpConfig, savedServers = [], onChange}: Props) => {
         setIdleTimeoutInputValue(getIdleTimeoutInputValue(mcpConfig?.idleTimeoutMinutes));
     }, [mcpConfig?.idleTimeoutMinutes]);
 
-    // MCP client and embedded server are always enabled; users can still
-    // disable individual tools but cannot turn off MCP entirely.
-    // Spread mcpConfig so fields like plugin_servers and embeddedServer.id
-    // survive rebuilds that only override a subset of keys.
-    const config: MCPConfig = {
-        ...mcpConfig,
-        enabled: true,
-        enablePluginServer: mcpConfig?.enablePluginServer ?? false,
-        servers: normalizedServers,
-        embeddedServer: {
-            ...(mcpConfig?.embeddedServer || {}),
-            enabled: true,
-        },
-        idleTimeoutMinutes: mcpConfig?.idleTimeoutMinutes,
+    const config = normalizeMCPConfig(mcpConfig);
+
+    const updateConfigLater = (update: (current: MCPConfig) => MCPConfig) => {
+        onChange((current) => update(normalizeMCPConfig(current)));
+    };
+
+    // Saved servers are matched by stable ID; unsaved ones only have their
+    // position, so their updates must check the server is still the one meant.
+    const updateServerLater = (serverIndex: number, serverID: string | undefined, update: ServerUpdate) => {
+        updateConfigLater((current) => ({
+            ...current,
+            servers: (current.servers ?? []).map((server, index) => {
+                const same = serverID ? server.id === serverID : index === serverIndex && !server.id;
+                return same ? update(server) : server;
+            }),
+        }));
     };
 
     const pluginServers = (preloadedToolsData?.servers ?? []).filter(
@@ -738,6 +766,7 @@ const MCPServers = ({mcpConfig, savedServers = [], onChange}: Props) => {
                                                 serverConfig={serverConfig}
                                                 savedServer={serverConfig.id ? savedServers.find((saved) => saved.id === serverConfig.id) : undefined} // eslint-disable-line no-undefined
                                                 onChange={updateServer}
+                                                onUpdate={(update) => updateServerLater(index, serverConfig.id, update)}
                                                 onDelete={() => deleteServer(index)}
                                             />
                                         ))}
@@ -769,7 +798,7 @@ const MCPServers = ({mcpConfig, savedServers = [], onChange}: Props) => {
                     >
                         <MCPToolsViewer
                             mcpConfig={config}
-                            onConfigChange={(updatedConfig) => onChange(updatedConfig)}
+                            onConfigChange={(update) => (typeof update === 'function' ? updateConfigLater(update) : onChange(update))}
                             initialToolsData={preloadedToolsData}
                         />
                     </div>

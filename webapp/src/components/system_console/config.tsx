@@ -431,13 +431,14 @@ const Config = (props: Props) => {
             <MCPServers
                 mcpConfig={mcpConfig}
                 savedServers={savedConfig.mcp?.servers ?? []}
-                onChange={(config) => {
-                    // Ensure we're creating a valid structure for the server configuration
-                    const updatedConfig = {
-                        ...config,
-                        servers: config.servers || [],
-                    };
-                    updateConfig({mcp: updatedConfig});
+                onChange={(update) => {
+                    setLocalConfig((prev) => {
+                        const updated = typeof update === 'function' ? update(prev.mcp || defaultConfig.mcp) : update;
+
+                        // Ensure we're creating a valid structure for the server configuration
+                        return {...prev, mcp: {...updated, servers: updated.servers || []}};
+                    });
+                    props.setSaveNeeded();
                 }}
             />
         </ConfigContainer>
