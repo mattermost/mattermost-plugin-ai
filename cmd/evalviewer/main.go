@@ -48,7 +48,6 @@ var (
 	reportCommit      string
 	reportRunURL      string
 	reportPrevious    string
-	reportComplete    bool
 	reportChangeLabel string
 	reportBaseLabel   string
 
@@ -156,8 +155,7 @@ first.`,
 	reportCmd.Flags().StringVar(&reportBaselineDir, "baseline", "", "Directory containing baseline evals.jsonl results from the target branch")
 	reportCmd.Flags().StringSliceVar(&reportProviders, "providers", nil, "Providers expected to have results; missing ones are reported as unavailable")
 	reportCmd.Flags().StringVar(&reportCommentFile, "comment", "comment.md", "Where to write the pull request comment (empty when the existing comment should be left as it is)")
-	reportCmd.Flags().StringVar(&reportPrevious, "previous", "", "File holding the eval comment already on the pull request, so the new comment keeps its unchecked providers or resolves it")
-	reportCmd.Flags().BoolVar(&reportComplete, "complete", false, "Every eval package ran to completion; required to resolve the previous comment")
+	reportCmd.Flags().StringVar(&reportPrevious, "previous", "", "File holding the eval comment already on the pull request, so the new comment keeps its checks that were not rechecked or resolves it")
 	reportCmd.Flags().StringVar(&reportSummaryFile, "summary", "summary.md", "Where to write the workflow run summary")
 	reportCmd.Flags().StringVar(&reportJSONFile, "json", "", "Where to write a machine-readable summary for history (optional)")
 	reportCmd.Flags().StringVar(&reportCommit, "commit", "", "Commit the results belong to, shown in the comment and recorded in the JSON summary")
@@ -338,7 +336,7 @@ func reportCommand() {
 		}
 		previous = string(data)
 	}
-	comment := r.commentMarkdown(previous, reportComplete)
+	comment := r.commentMarkdown(previous)
 	if err := os.WriteFile(reportCommentFile, []byte(comment), 0600); err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing %s: %v\n", reportCommentFile, err)
 		os.Exit(1)

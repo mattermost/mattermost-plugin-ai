@@ -221,7 +221,6 @@ jobs:
             --baseline eval-baseline \
             --providers openai,anthropic,azure,mistral,bedrock \
             --previous previous-comment.md \
-            --complete=${{ needs.evals.result == 'success' }} \
             --comment comment.md \
             --summary summary.md \
             --commit "${{ github.event.pull_request.head.sha }}" \

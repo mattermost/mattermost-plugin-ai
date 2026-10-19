@@ -5,6 +5,8 @@ package main
 
 import (
 	"cmp"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -293,77 +295,112 @@ func failedOnBaseline(base *providerResults, key caseKey) bool {
 // commentResolved starts the body of a comment whose failures are gone.
 const commentResolved = "✅ No eval regressions"
 
-// commentProvidersPattern matches the hidden line that lists the providers a
-// comment reports regressions for.
-var commentProvidersPattern = regexp.MustCompile(`<!-- eval-providers: ([^>]*) -->`)
+// commentChecksPattern matches the hidden line that lists the failing checks
+// a comment reports, base64-encoded JSON so no check text can end the HTML
+// comment early.
+var commentChecksPattern = regexp.MustCompile(`<!-- eval-checks: ([A-Za-z0-9+/=]*) -->`)
 
 // commentMarkdown renders the pull request comment, given the eval comment
 // already on the pull request ("" if none). An empty result leaves that
 // comment as it is.
 //
-// A provider without usable results (an outage, a package that crashed) hides
-// its failures instead of fixing them. So a previous comment's providers that
-// reported nothing this run stay listed, and the comment is resolved only
-// when every one of them reported and all evals ran (complete).
-func (r report) commentMarkdown(previous string, complete bool) string {
-	unchecked := r.unreported(previousProviders(previous))
+// A check without a result this run (its provider was unavailable, or its
+// package crashed) hides its failure instead of fixing it. So a previous
+// comment's checks that have no result stay listed as not rechecked, and the
+// comment is resolved only when nothing fails and nothing is left unchecked.
+func (r report) commentMarkdown(previous string) string {
+	unchecked := r.notRechecked(previousChecks(previous))
 
-	if len(r.regressions) > 0 {
-		var sb strings.Builder
-		sb.WriteString(commentMarker + "\n\n")
-		providers := slices.Concat(r.commentProviders(), unchecked)
-		slices.Sort(providers)
-		fmt.Fprintf(&sb, "<!-- eval-providers: %s -->\n", strings.Join(slices.Compact(providers), ","))
-		r.writeRunLink(&sb)
-		if len(unchecked) > 0 {
-			names := make([]string, len(unchecked))
-			for i, name := range unchecked {
-				names[i] = providerDisplayName(name)
-			}
-			fmt.Fprintf(&sb, "No usable results for %s in this run, so earlier failures there were not rechecked.\n\n", strings.Join(names, ", "))
+	if len(r.regressions) == 0 && len(unchecked) == 0 {
+		if previous == "" || strings.Contains(previous, commentResolved) {
+			return ""
 		}
-		r.writeRegressions(&sb)
-		sb.WriteString("<sub>Only checks that newly fail are listed. Pre-existing failures, flaky checks, and unavailable providers are in the workflow run summary.</sub>\n")
-		return sb.String()
+		resolved := commentMarker + "\n\n" + commentResolved
+		if r.commit != "" {
+			resolved += " as of " + r.commit[:min(7, len(r.commit))]
+		}
+		return resolved + ".\n"
 	}
 
-	if previous == "" || strings.Contains(previous, commentResolved) || !complete || len(unchecked) > 0 {
-		return ""
+	var sb strings.Builder
+	sb.WriteString(commentMarker + "\n\n")
+	checks := make([]caseKey, 0, len(r.regressions)+len(unchecked))
+	for _, c := range r.regressions {
+		checks = append(checks, c.caseKey)
 	}
-	resolved := commentMarker + "\n\n" + commentResolved
-	if r.commit != "" {
-		resolved += " as of " + r.commit[:min(7, len(r.commit))]
+	sb.WriteString(checksLine(append(checks, unchecked...)) + "\n")
+	r.writeRunLink(&sb)
+	if len(r.regressions) > 0 {
+		r.writeRegressions(&sb)
 	}
-	return resolved + ".\n"
+	if len(unchecked) > 0 {
+		writeNotRechecked(&sb, unchecked)
+	}
+	sb.WriteString("<sub>Only checks that newly fail are listed. Pre-existing failures, flaky checks, and unavailable providers are in the workflow run summary.</sub>\n")
+	return sb.String()
 }
 
-func previousProviders(comment string) []string {
-	m := commentProvidersPattern.FindStringSubmatch(comment)
+func checksLine(checks []caseKey) string {
+	encoded := make([][3]string, len(checks))
+	for i, c := range checks {
+		encoded[i] = [3]string{c.provider, c.test, c.rubric}
+	}
+	data, _ := json.Marshal(encoded)
+	return "<!-- eval-checks: " + base64.StdEncoding.EncodeToString(data) + " -->"
+}
+
+// previousChecks returns the checks a previous comment reports. Comments
+// from before checks were tracked report none.
+func previousChecks(comment string) []caseKey {
+	m := commentChecksPattern.FindStringSubmatch(comment)
 	if m == nil {
 		return nil
 	}
-	return strings.FieldsFunc(m[1], func(c rune) bool { return c == ',' })
+	data, err := base64.StdEncoding.DecodeString(m[1])
+	if err != nil {
+		return nil
+	}
+	var decoded [][3]string
+	if json.Unmarshal(data, &decoded) != nil {
+		return nil
+	}
+	checks := make([]caseKey, len(decoded))
+	for i, c := range decoded {
+		checks[i] = caseKey{provider: c[0], test: c[1], rubric: c[2]}
+	}
+	return checks
 }
 
-// unreported returns the named providers that have no usable results.
-func (r report) unreported(names []string) []string {
-	var missing []string
-	for _, name := range names {
-		i := slices.IndexFunc(r.providers, func(p *providerResults) bool { return p.name == name })
-		if i < 0 || r.providers[i].unavailable() {
-			missing = append(missing, name)
+// notRechecked returns the checks that have no result in this run.
+func (r report) notRechecked(checks []caseKey) []caseKey {
+	var missing []caseKey
+	for _, key := range checks {
+		i := slices.IndexFunc(r.providers, func(p *providerResults) bool { return p.name == key.provider })
+		if i >= 0 && !r.providers[i].unavailable() {
+			if _, ok := r.providers[i].cases[key]; ok {
+				continue
+			}
+		}
+		if !slices.Contains(missing, key) {
+			missing = append(missing, key)
 		}
 	}
 	return missing
 }
 
-func (r report) commentProviders() []string {
-	var providers []string
-	for _, c := range r.regressions {
-		providers = append(providers, c.provider)
+func writeNotRechecked(sb *strings.Builder, checks []caseKey) {
+	sb.WriteString("### Not rechecked in this run\n\n")
+	sb.WriteString("These checks failed in an earlier run and have no result in this one (the provider was unavailable or the eval did not run), so they still count as failing.\n\n")
+	sb.WriteString("| Eval | Check | Provider |\n")
+	sb.WriteString("|------|-------|----------|\n")
+	for _, c := range checks {
+		check := c.rubric
+		if check == "" {
+			check = "errored before grading"
+		}
+		fmt.Fprintf(sb, "| %s | %s | %s |\n", tableCell(displayTestName(c.test)), tableCell(check), providerDisplayName(c.provider))
 	}
-	slices.Sort(providers)
-	return slices.Compact(providers)
+	sb.WriteString("\n")
 }
 
 // writeRunLink says which commit the comment reports on and links the full

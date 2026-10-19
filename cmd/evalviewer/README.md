@@ -93,7 +93,7 @@ A rubric is graded from the agent's response alone, so it should check only what
 
 Besides one check per rubric, every graded run records a "Passes the eval's code assertions" check for the eval's other assertions, such as required tool calls or valid citations, so they are reported even when the rubrics pass. Each run of an eval is its own subtest (`run_0`, `run_1`, ...), so a `require` failure in one run does not skip the others.
 
-A provider without usable results (an outage, a package that crashed) hides its failures instead of fixing them. The comment lists the providers it reports on in a hidden `eval-providers` line. A provider that reported nothing in a later run stays listed with a note, and the comment is resolved only once every listed provider has reported, no check fails, and `--complete` says every eval package ran to completion.
+A check without a result (its provider had an outage, its package crashed) hides its failure instead of fixing it. The comment lists every failing check it reports in a hidden `eval-checks` line. A listed check that has no result in a later run stays in the comment under "Not rechecked in this run", and the comment is resolved only once no check fails and every listed check has a result again.
 
 Repeated runs (`GOEVALS=N`) are combined by majority vote, so a check that fails one run out of three is reported as flaky rather than failing. A run that errors before grading (for example, the provider rejects the request) is recorded with its error, with credential values redacted.
 
