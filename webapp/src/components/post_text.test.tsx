@@ -15,7 +15,7 @@ jest.mock('react-redux', () => ({
     useSelector: (selector: (state: unknown) => unknown) => selector(mockState),
 }));
 
-const stateWithLinkPolicy = (linkPolicy?: LinkPolicy) => ({
+const stateWithLinkPolicy = (linkPolicy: LinkPolicy | null) => ({
     entities: {
         channels: {channels: {}},
         teams: {teams: {}},
@@ -77,7 +77,7 @@ describe('PostText internal links', () => {
 });
 
 describe('PostText link policy', () => {
-    const formatText = jest.fn((_message: string, _options: {unsafeLinks: boolean}) => renderedHTML);
+    const formatText = jest.fn<string, [string, {unsafeLinks: boolean}]>(() => renderedHTML);
 
     beforeEach(() => {
         formatText.mockClear();
@@ -92,7 +92,7 @@ describe('PostText link policy', () => {
     });
 
     test.each([
-        {name: 'no policy loaded yet renders links as plain text', policy: undefined, unsafeLinks: true, externalClickable: true},
+        {name: 'no policy loaded yet renders links as plain text', policy: null, unsafeLinks: true, externalClickable: true},
         {name: 'plain text policy renders links as plain text', policy: {kind: 'plain_text'} as LinkPolicy, unsafeLinks: true, externalClickable: true},
         {name: 'any domain policy keeps external links', policy: {kind: 'any_domain'} as LinkPolicy, unsafeLinks: false, externalClickable: true},
         {

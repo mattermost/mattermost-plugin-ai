@@ -72,6 +72,7 @@ Enter a comma-separated list of hostnames, for example `mattermost.atlassian.net
 - A plain entry such as `example.com` matches only that exact host. It doesn't match `docs.example.com`.
 - A wildcard entry such as `*.example.com` matches any subdomain (`docs.example.com`, `a.b.example.com`) but not `example.com` itself. To allow both, list both.
 - Matching is case-insensitive, and ports and paths in entries are ignored.
+- Saving fails if an entry isn't a valid domain (for example `*` or `my domain.com`), so a typo can't silently block links you meant to allow.
 - Only `http` and `https` links can be clickable. Other schemes, such as `mailto:`, are shown as plain text.
 - Links to your own Mattermost server (the configured Site URL), such as permalinks and channel links, are always clickable.
 
