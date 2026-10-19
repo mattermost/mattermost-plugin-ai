@@ -210,8 +210,8 @@ func TestStreamHeartbeat(t *testing.T) {
 	}()
 
 	// While streaming (no further tokens), the turn exists in the streaming
-	// state with partial content, the partial text is flushed to the post,
-	// and heartbeat events keep reaching clients.
+	// state with partial content and heartbeat events keep reaching clients.
+	// The post itself is not rewritten (each update adds edit history).
 	require.Eventually(t, func() bool {
 		ts.mu.Lock()
 		defer ts.mu.Unlock()
@@ -220,9 +220,11 @@ func TestStreamHeartbeat(t *testing.T) {
 			string(turn.Content) != "[]"
 	}, 2*time.Second, 5*time.Millisecond)
 	require.Eventually(t, func() bool {
-		last := client.lastUpdate()
-		return last != nil && last.Message == "so far" && client.controlCount(PostStreamingControlHeartbeat) >= 2
+		return client.controlCount(PostStreamingControlHeartbeat) >= 2
 	}, 2*time.Second, 5*time.Millisecond)
+	if last := client.lastUpdate(); last != nil {
+		assert.NotEqual(t, "so far", last.Message, "heartbeats must not update the post")
+	}
 
 	stream <- llm.TextStreamEvent{Type: llm.EventTypeEnd}
 	close(stream)

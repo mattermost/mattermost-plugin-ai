@@ -1517,13 +1517,22 @@ describe('LLMBotPost interrupted and stale generation notices', () => {
 
     test('offers Stop again when regenerate is refused because the response is still streaming', async () => {
         (doRegenerate as jest.Mock).mockImplementationOnce(() => Promise.reject(Object.assign(new Error('conflict'), {status_code: 409})));
-        renderPost(makePost('Partial answer'));
+        let listener: PostUpdateHandler | undefined;
+        renderPost(makePost('Partial answer'), (postID, listenerID, handler) => {
+            listener = handler;
+        });
 
         fireEvent.click(screen.getByTestId('regenerate-button'));
 
         expect(await screen.findByText(/still being generated/)).toBeTruthy();
         expect(screen.getByText('Stop Generating')).toBeTruthy();
         expect(screen.getByText('Partial answer')).toBeTruthy();
+
+        // Once that stream ends, the stale "still being generated" error goes.
+        act(() => {
+            listener?.(postUpdateMessage({post_id: 'post_1', control: 'end'}));
+        });
+        expect(screen.queryByText(/still being generated/)).toBeNull();
     });
 
     test('hides Regenerate for someone who is not the requester', () => {

@@ -463,6 +463,7 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
                 progressCompleteRef.current = true;
                 setProgressPhase(null);
                 setGenerating(false);
+                setError('');
                 setPrecontent(false);
                 setStopped(false);
                 setIsReasoningLoading(false);
@@ -494,6 +495,7 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
                     return;
                 }
                 reasoningSeenRef.current = false;
+                setError('');
                 setGenerating(true);
                 setAwaitingEnd(false);
                 setPrecontent(true);

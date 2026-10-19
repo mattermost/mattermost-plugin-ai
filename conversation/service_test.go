@@ -2627,3 +2627,64 @@ func TestBuildCompletionRequest_TurnStatus(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildChannelMentionRequest_SkipsStreamingReply(t *testing.T) {
+	svc, s := setupTestService(t)
+
+	botID := model.NewId()
+	rootPostID := "chan_root"
+	result, err := svc.CreateConversation(CreateConversationParams{
+		UserID:       model.NewId(),
+		BotID:        botID,
+		RootPostID:   &rootPostID,
+		Operation:    "conversation",
+		SystemPrompt: "system prompt",
+		UserMessage:  "hello bot",
+		UserPostID:   new("post1"),
+	})
+	require.NoError(t, err)
+
+	content, _ := json.Marshal([]ContentBlock{{Type: BlockTypeText, Text: "partial reply"}})
+	require.NoError(t, s.CreateTurn(&store.Turn{
+		ID:             model.NewId(),
+		ConversationID: result.ConversationID,
+		PostID:         new("post2"),
+		Role:           "assistant",
+		Content:        content,
+		Sequence:       2,
+		CreatedAt:      model.GetMillis(),
+		Status:         store.TurnStatusStreaming,
+	}))
+	// A newer question in the same conversation, asked while the reply streams.
+	question, _ := json.Marshal([]ContentBlock{{Type: BlockTypeText, Text: "another question"}})
+	require.NoError(t, s.CreateTurn(&store.Turn{
+		ID:             model.NewId(),
+		ConversationID: result.ConversationID,
+		PostID:         new("post3"),
+		Role:           "user",
+		Content:        question,
+		Sequence:       3,
+		CreatedAt:      model.GetMillis(),
+	}))
+
+	conv, err := s.GetConversation(result.ConversationID)
+	require.NoError(t, err)
+	threadData := &mmapi.ThreadData{
+		Posts: []*model.Post{
+			{Id: "post1", UserId: "someuser", CreateAt: 1000, Message: "hello bot"},
+			{Id: "post2", UserId: botID, CreateAt: 2000, Message: "partial reply"},
+			{Id: "post3", UserId: "someuser", CreateAt: 3000, Message: "another question"},
+		},
+		UsersByID: map[string]*model.User{
+			"someuser": {Id: "someuser", Username: "alice"},
+			botID:      {Id: botID, Username: "aibot"},
+		},
+	}
+	svc.bots = &testBotLookup{botUserIDs: map[string]bool{botID: true}}
+
+	req, err := svc.BuildChannelMentionRequest(conv, &llm.Context{}, threadData)
+	require.NoError(t, err)
+	for _, p := range req.Posts {
+		assert.NotContains(t, p.Message, "partial reply", "a reply still streaming must not reach the LLM")
+	}
+}

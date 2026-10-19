@@ -644,13 +644,13 @@ func (p *MMPostStreamService) streamToPostImpl(ctx context.Context, stream *llm.
 	}
 	heartbeat := time.NewTicker(interval)
 	defer heartbeat.Stop()
-	lastFlushedMessage := post.Message
+
+	// The root is checked too: ctx learns of the shutdown asynchronously.
+	shuttingDown := func() bool { return lifecycle.IsShutdown(ctx) || lifecycle.IsShutdown(p.root()) }
 
 	// stopStream finishes a canceled stream. A user stop is an intentional,
 	// complete response. Plugin shutdown is an interruption the user should be
 	// told about.
-	// The root is checked too: ctx learns of the shutdown asynchronously.
-	shuttingDown := func() bool { return lifecycle.IsShutdown(ctx) || lifecycle.IsShutdown(p.root()) }
 	stopStream := func() {
 		outcome = telemetry.StreamOutcomeCancelled
 		if shuttingDown() {
@@ -668,16 +668,12 @@ func (p *MMPostStreamService) streamToPostImpl(ctx context.Context, stream *llm.
 		select {
 		case <-heartbeat.C:
 			// Persist progress independent of token flow so a dead node's
-			// stream is detectable (UpdatedAt) and its partial text survives.
+			// stream is detectable (UpdatedAt) and its partial text survives
+			// on the turn. The post is not updated here: each post update
+			// stores an edit-history row, and recovery and remounted clients
+			// read the partial text from the turn.
 			if acc != nil {
 				p.heartbeatTurn(acc)
-			}
-			if post.Message != lastFlushedMessage {
-				if err := p.mmClient.UpdatePost(post); err != nil {
-					p.mmClient.LogWarn("Failed to flush partial streamed message", "error", err, "post_id", post.Id)
-				} else {
-					lastFlushedMessage = post.Message
-				}
 			}
 			p.sendPostStreamingEvent(post, broadcast, map[string]any{"control": PostStreamingControlHeartbeat})
 		case event, ok := <-stream.Stream:
