@@ -182,6 +182,10 @@ const Config = (props: Props) => {
     const [loadError, setLoadError] = useState<string | null>(null);
     const [runtimeBots, setRuntimeBots] = useState<RuntimeBotOption[]>([]);
     const [runtimeBotsError, setRuntimeBotsError] = useState<string | null>(null);
+
+    // Core's admin console only uses a save action's error to keep Save
+    // enabled, so field-level errors have to be rendered here.
+    const [linkDomainsError, setLinkDomainsError] = useState('');
     const intl = useIntl();
     const tokenAccountingLicensed = useIsLicensedFor('token_accounting');
     const providerWebSearchLicensed = useIsLicensedFor('provider_web_search');
@@ -228,10 +232,11 @@ const Config = (props: Props) => {
                 // service/MCP IDs (and the UI gated on them) appear
                 // immediately instead of after a page reload.
                 setLocalConfig({...defaultConfig, ...saved});
+                setLinkDomainsError('');
                 return {};
             } catch (e: any) {
                 if (e?.server_error_id === 'invalid_allowed_link_domains') {
-                    return {error: {message: intl.formatMessage({defaultMessage: 'Failed to save configuration: Allowed Link Domains contains an entry that is not a valid domain.'})}};
+                    setLinkDomainsError(intl.formatMessage({defaultMessage: 'One or more entries are not valid domains.'}));
                 }
                 return {error: {message: intl.formatMessage({defaultMessage: 'Failed to save configuration.'})}};
             }
@@ -356,7 +361,11 @@ const Config = (props: Props) => {
                         <TextItem
                             label={intl.formatMessage({defaultMessage: 'Allowed Link Domains (csv)'})}
                             value={value.allowedLinkDomains}
-                            onChange={(e) => updateConfig({allowedLinkDomains: e.target.value})}
+                            onChange={(e) => {
+                                setLinkDomainsError('');
+                                updateConfig({allowedLinkDomains: e.target.value});
+                            }}
+                            error={linkDomainsError}
                             helptext={intl.formatMessage({defaultMessage: 'Comma separated list of domains that AI-generated links may point to. Links to any other domain are shown as plain text. Supports wildcards like *.mydomain.com, which matches subdomains but not mydomain.com itself. Links to this Mattermost server are always allowed. Leave empty to allow links to any domain.'})}
                             placeholder={'example.com, *.mydomain.com'}
                         />

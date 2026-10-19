@@ -1,5 +1,3 @@
-import path from 'path';
-
 import { test, expect, Locator, Page } from '@playwright/test';
 
 import MattermostContainer from 'helpers/mmcontainer';
@@ -8,7 +6,7 @@ import { AIPlugin } from 'helpers/ai-plugin';
 import { SystemConsoleHelper } from 'helpers/system-console';
 import { RunAIMockContainer } from 'helpers/plugincontainer';
 import { mattermostAIAdminConfigApiFromClient } from 'helpers/plugin-http';
-import { OpenAIMockContainer, RunOpenAIMocks, turnMocksWithTitleSiphon } from 'helpers/openai-mock';
+import { OpenAIMockContainer, RunOpenAIMocks, buildTextResponse, turnMocksWithTitleSiphon } from 'helpers/openai-mock';
 
 const username = 'regularuser';
 const password = 'regularuser';
@@ -24,31 +22,8 @@ const REPLY_MARKDOWN = [
     '- [Sub](https://docs.trusted.example/x)',
     '- [Blocked](https://evil.example.net/login)',
     '- https://evil.example.net/raw',
+    '- [Town Square](/test/channels/town-square)',
 ].join('\n');
-
-function buildStreamingReply(content: string): string {
-    const chunk = (delta: Record<string, unknown>, finishReason: string | null) => `data: ${JSON.stringify({
-        id: 'chatcmpl-links',
-        object: 'chat.completion.chunk',
-        created: 1708124577,
-        model: 'gpt-mock',
-        choices: [{ index: 0, delta, finish_reason: finishReason }],
-    })}`;
-    return [
-        chunk({ role: 'assistant', content: '' }, null),
-        chunk({ content }, null),
-        chunk({}, 'stop'),
-        'data: [DONE]',
-    ].join('\n\n') + '\n\n';
-}
-
-async function screenshotToArtifacts(target: Page | Locator, name: string): Promise<void> {
-    const dir = process.env.ARTIFACTS_DIR;
-    if (!dir) {
-        return;
-    }
-    await target.screenshot({ path: path.join(dir, name) });
-}
 
 let mattermost: MattermostContainer;
 let openAIMock: OpenAIMockContainer;
@@ -66,7 +41,7 @@ async function askForLinks(page: Page): Promise<Locator> {
     await mmPage.login(mattermost.url(), username, password);
     await aiPlugin.resetState();
 
-    await openAIMock.addMocks(turnMocksWithTitleSiphon(buildStreamingReply(REPLY_MARKDOWN)));
+    await openAIMock.addMocks(turnMocksWithTitleSiphon(buildTextResponse(REPLY_MARKDOWN)));
     await aiPlugin.sendMessage('Give me some links');
     await aiPlugin.waitForBotResponse(REPLY_MARKER);
 
@@ -78,10 +53,7 @@ test.describe.serial('AI-generated link domain allowlist', () => {
     test.beforeAll(async () => {
         test.setTimeout(240000);
         mattermost = await RunAIMockContainer({
-            config: {
-                allowUnsafeLinks: true,
-                allowedLinkDomains: ALLOWED_LINK_DOMAINS,
-            },
+            config: { allowUnsafeLinks: true },
         });
         openAIMock = await RunOpenAIMocks(mattermost.network);
     });
@@ -92,6 +64,8 @@ test.describe.serial('AI-generated link domain allowlist', () => {
     });
 
     test('keeps allowlisted links clickable and renders others as plain text', async ({ page }) => {
+        await setAllowedLinkDomains(ALLOWED_LINK_DOMAINS);
+
         const postText = await askForLinks(page);
 
         await expect(postText.getByRole('link', { name: 'Allowed', exact: true })).toHaveAttribute('href', 'https://allowed.example.com/page');
@@ -100,8 +74,7 @@ test.describe.serial('AI-generated link domain allowlist', () => {
         await expect(postText.locator('a[href*="evil.example.net"]')).toHaveCount(0);
         await expect(postText.getByText('Blocked : https://evil.example.net/login', { exact: true })).toBeVisible();
         await expect(postText.getByText('https://evil.example.net/raw', { exact: true })).toBeVisible();
-
-        await screenshotToArtifacts(postText, 'link-allowlist-rendered-post.png');
+        await expect(postText.getByRole('link', { name: 'Town Square', exact: true })).toBeVisible();
     });
 
     test('keeps every link clickable when the allowlist is empty', async ({ page }) => {
@@ -113,11 +86,9 @@ test.describe.serial('AI-generated link domain allowlist', () => {
         await expect(postText.locator('a[href="https://evil.example.net/raw"]')).toBeVisible();
         await expect(postText.getByRole('link', { name: 'Allowed', exact: true })).toHaveAttribute('href', 'https://allowed.example.com/page');
         await expect(postText).not.toContainText('Blocked : https://evil.example.net/login');
-
-        await screenshotToArtifacts(postText, 'link-allowlist-empty-rendered-post.png');
     });
 
-    test('system console shows and persists the allowlist only while links are rendered', async ({ page }) => {
+    test('system console saves the allowlist, rejects invalid entries, and hides it while links are plain text', async ({ page }) => {
         await setAllowedLinkDomains('');
 
         const mmPage = new MattermostPage(page);
@@ -127,26 +98,21 @@ test.describe.serial('AI-generated link domain allowlist', () => {
         await systemConsole.getFunctionsPanel().scrollIntoViewIfNeeded();
 
         const field = page.getByLabel('Allowed Link Domains (csv)');
-        const renderLinksRadios = page.locator('text=Render AI-generated links').locator('..').locator('..').getByRole('radio');
-        const trueRadio = renderLinksRadios.first();
-        const falseRadio = renderLinksRadios.nth(1);
+        const renderLinks = page.getByRole('radiogroup', { name: 'Render AI-generated links' });
+        const trueRadio = renderLinks.getByRole('radio', { name: 'True' });
+        const falseRadio = renderLinks.getByRole('radio', { name: 'False' });
 
         await expect(trueRadio).toBeChecked();
-        await expect(field).toBeVisible();
         await expect(field).toHaveValue('');
 
-        await field.fill(ALLOWED_LINK_DOMAINS);
-        await Promise.all([
-            page.waitForResponse((response) => response.request().method() === 'PUT' && response.url().includes('/admin/config')),
-            systemConsole.getSaveButton().click(),
-        ]);
+        await field.fill('allowed.example.com, not a host');
+        await systemConsole.clickSave();
+        await expect(page.getByText('One or more entries are not valid domains.')).toBeVisible();
 
+        await field.fill(ALLOWED_LINK_DOMAINS);
+        await systemConsole.clickSave();
         await page.reload();
-        await systemConsole.getFunctionsPanel().scrollIntoViewIfNeeded();
         await expect(field).toHaveValue(ALLOWED_LINK_DOMAINS);
-        await field.scrollIntoViewIfNeeded();
-        await page.waitForLoadState('networkidle');
-        await screenshotToArtifacts(page, 'link-allowlist-system-console.png');
 
         await falseRadio.click();
         await expect(field).toBeHidden();

@@ -2,7 +2,7 @@
 // See LICENSE.txt for license information.
 
 import React from 'react';
-import {act, render, screen} from '@testing-library/react';
+import {act, fireEvent, render, screen} from '@testing-library/react';
 import {IntlProvider} from 'react-intl';
 
 import {getAIBots, getPluginConfig, savePluginConfig} from '@/client';
@@ -178,7 +178,8 @@ describe('Config save flow', () => {
         expect(screen.getByText('mcp:Jira:unsaved')).toBeTruthy();
     });
 
-    it('explains a save rejected for invalid allowed link domains', async () => {
+    it('shows an inline error when the save is rejected for invalid allowed link domains, until the field is edited', async () => {
+        (getPluginConfig as jest.Mock).mockResolvedValue({...loadedConfig, allowUnsafeLinks: true, allowedLinkDomains: 'not a host'});
         const {registerSaveAction} = renderConfig();
         await screen.findByText('service:My Service:unsaved');
 
@@ -190,7 +191,11 @@ describe('Config save flow', () => {
             result = await save();
         });
 
-        expect(result.error?.message).toBe('Failed to save configuration: Allowed Link Domains contains an entry that is not a valid domain.');
+        expect(result.error?.message).toBe('Failed to save configuration.');
+        expect(await screen.findByText('One or more entries are not valid domains.')).toBeTruthy();
+
+        fireEvent.change(screen.getByLabelText('Allowed Link Domains (csv)'), {target: {value: 'example.com'}});
+        expect(screen.queryByText('One or more entries are not valid domains.')).toBeNull();
     });
 });
 
