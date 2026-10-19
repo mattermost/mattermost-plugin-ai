@@ -452,7 +452,7 @@ func (c *Conversations) HandleToolCall(ctx context.Context, userID string, post 
 		return nil
 	}
 
-	return c.streamToolFollowUp(ctx, bot, user, channel, post, conv, isDM, userRejected, llmContext)
+	return c.streamToolFollowUp(ctx, bot, user, channel, post, conv, isDM, false, userRejected, llmContext)
 }
 
 // resolveInteractionAnswers validates the user's answers for every accepted
@@ -644,7 +644,7 @@ func (c *Conversations) HandleToolResult(ctx context.Context, userID string, pos
 
 	// Channel second-stage follow-up rebuilds a fresh llmContext without in-request
 	// WebSearch data; citation decoration is DM-only via HandleToolCall's llmContext.
-	return c.streamToolFollowUp(ctx, bot, user, channel, post, conv, false, clickedPostUserRejected, nil)
+	return c.streamToolFollowUp(ctx, bot, user, channel, post, conv, false, false, clickedPostUserRejected, nil)
 }
 
 // streamToolFollowUp rebuilds the completion request from the conversation and
@@ -661,6 +661,7 @@ func (c *Conversations) streamToolFollowUp(
 	post *model.Post,
 	conv *store.Conversation,
 	isDM bool,
+	unattended bool,
 	userRejected bool,
 	approvalContext *llm.Context,
 ) error {
@@ -670,8 +671,9 @@ func (c *Conversations) streamToolFollowUp(
 	channelToolFilterOpts, channelToolsAutoRunEverywhereOnly := c.channelFollowUpMCPToolFilterContextOptions(isDM, conv)
 	// The follow-up runs because a user clicked an approval control, so the
 	// requester is interactively present — unless the conversation root was a
-	// bot activate_ai flow, which stays constrained to unattended tools.
-	if !channelToolsAutoRunEverywhereOnly {
+	// bot activate_ai flow, which stays constrained to unattended tools, or
+	// this is an unattended scheduler resume.
+	if !channelToolsAutoRunEverywhereOnly && !unattended {
 		channelToolFilterOpts = append(channelToolFilterOpts, c.contextBuilder.WithLLMContextInteractive())
 	}
 	channelToolFilterOpts = append(channelToolFilterOpts, c.contextBuilder.WithLLMContextResponseFiles())
@@ -694,7 +696,7 @@ func (c *Conversations) streamToolFollowUp(
 	}
 
 	// Channel thread posts aren't stored as turns, so rebuild with thread context.
-	completionReq, err := c.buildToolFollowUpRequest(conv, llmContext, isDM, auth.SessionIDFromContext(ctx))
+	completionReq, err := c.buildToolFollowUpRequest(conv, llmContext, isDM, unattended, auth.SessionIDFromContext(ctx))
 	if err != nil {
 		return fmt.Errorf("failed to build completion request for tool follow-up: %w", err)
 	}
@@ -736,8 +738,10 @@ func (c *Conversations) streamToolFollowUp(
 // buildToolFollowUpRequest rebuilds the completion request for a tool follow-up.
 // Channel conversations re-fetch the live thread so non-turn thread posts stay in
 // context (matching the initial mention); DMs persist every post as a turn.
-func (c *Conversations) buildToolFollowUpRequest(conv *store.Conversation, llmContext *llm.Context, isDM bool, sessionID string) (*llm.CompletionRequest, error) {
-	buildOpts := conversation.BuildOptions{SessionID: sessionID}
+// Unattended follow-ups drop thread posts made after the latest user turn,
+// since no one vetted them before tools may auto-run.
+func (c *Conversations) buildToolFollowUpRequest(conv *store.Conversation, llmContext *llm.Context, isDM, unattended bool, sessionID string) (*llm.CompletionRequest, error) {
+	buildOpts := conversation.BuildOptions{SessionID: sessionID, SkipThreadPostsAfterLatestUserTurn: unattended}
 	if !isDM && conv.RootPostID != nil {
 		// Best-effort: if the live thread can't be fetched (deleted root,
 		// permissions, API blip), degrade to turns-only context rather than

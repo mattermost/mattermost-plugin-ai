@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1539,6 +1540,117 @@ func TestBuildChannelMentionRequest_StopsAtCurrentUserTurn(t *testing.T) {
 	for _, post := range req.Posts {
 		assert.NotContains(t, post.Message, "Thinking...")
 		assert.NotContains(t, post.Message, "this happened after the mention")
+	}
+}
+
+func TestBuildChannelMentionRequest_SkipThreadPostsAfterLatestUserTurn(t *testing.T) {
+	tests := []struct {
+		name         string
+		skip         bool
+		mentionGone  bool
+		wantPeerPost bool
+	}{
+		{name: "attended follow-up keeps later thread posts", skip: false, wantPeerPost: true},
+		{name: "unattended follow-up drops later thread posts", skip: true, wantPeerPost: false},
+		{name: "unattended follow-up drops later posts when the mention was deleted", skip: true, mentionGone: true, wantPeerPost: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc, s := setupTestService(t)
+
+			botID := model.NewId()
+			userID := model.NewId()
+			peerID := model.NewId()
+			rootPostID := "skip_root"
+			mentionPostID := "skip_mention"
+			replyPostID := "skip_reply"
+
+			// Thread times straddle the real clock the user turn is stamped with.
+			now := model.GetMillis()
+			result, err := svc.CreateConversation(CreateConversationParams{
+				UserID:       userID,
+				BotID:        botID,
+				RootPostID:   &rootPostID,
+				Operation:    "conversation",
+				SystemPrompt: "system",
+				UserMessage:  "@aibot watch the job",
+				UserPostID:   new(mentionPostID),
+			})
+			require.NoError(t, err)
+
+			replyContent, err := json.Marshal([]ContentBlock{{Type: BlockTypeText, Text: "waiting on the job"}})
+			require.NoError(t, err)
+			require.NoError(t, s.CreateTurn(&store.Turn{
+				ID:             model.NewId(),
+				ConversationID: result.ConversationID,
+				PostID:         new(replyPostID),
+				Role:           "assistant",
+				Content:        replyContent,
+				Sequence:       2,
+				CreatedAt:      3000,
+			}))
+			require.NoError(t, svc.AppendSyntheticUserTurn(result.ConversationID, "wake"))
+
+			// An earlier wake in the chain replied on its own post.
+			wakeReplyContent, err := json.Marshal([]ContentBlock{{Type: BlockTypeText, Text: "still running"}})
+			require.NoError(t, err)
+			require.NoError(t, s.CreateTurn(&store.Turn{
+				ID:             model.NewId(),
+				ConversationID: result.ConversationID,
+				PostID:         new("skip_wake_reply"),
+				Role:           "assistant",
+				Content:        wakeReplyContent,
+				Sequence:       4,
+				CreatedAt:      5000,
+			}))
+			require.NoError(t, svc.AppendSyntheticUserTurn(result.ConversationID, "wake"))
+
+			conv, err := s.GetConversation(result.ConversationID)
+			require.NoError(t, err)
+
+			threadPosts := []*model.Post{
+				{Id: rootPostID, UserId: userID, CreateAt: now - 2000, Message: "earlier context"},
+				{Id: mentionPostID, UserId: userID, CreateAt: now - 1000, Message: "@aibot watch the job"},
+				{Id: replyPostID, UserId: botID, CreateAt: now + 1000, Message: "waiting on the job"},
+				{Id: "peer_post", UserId: peerID, CreateAt: now + 2000, Message: "PEER_FIRST"},
+				{Id: "skip_wake_reply", UserId: botID, CreateAt: now + 3000, Message: "still running"},
+				{Id: "peer_post_2", UserId: peerID, CreateAt: now + 4000, Message: "PEER_SECOND"},
+			}
+			if tt.mentionGone {
+				threadPosts = slices.DeleteFunc(threadPosts, func(p *model.Post) bool { return p.Id == mentionPostID })
+			}
+			threadData := &mmapi.ThreadData{
+				Posts: threadPosts,
+				UsersByID: map[string]*model.User{
+					userID: {Id: userID, Username: "alice"},
+					peerID: {Id: peerID, Username: "mallory"},
+					botID:  {Id: botID, Username: "aibot"},
+				},
+			}
+			svc.bots = &testBotLookup{botUserIDs: map[string]bool{botID: true}}
+
+			req, err := svc.BuildChannelMentionRequest(conv, &llm.Context{}, threadData,
+				BuildOptions{SkipThreadPostsAfterLatestUserTurn: tt.skip})
+			require.NoError(t, err)
+
+			var all strings.Builder
+			for _, post := range req.Posts {
+				all.WriteString(post.Message)
+				all.WriteString("\n")
+			}
+			assert.Contains(t, all.String(), "earlier context")
+			assert.Contains(t, all.String(), "waiting on the job")
+			assert.Contains(t, all.String(), "still running")
+			assert.Contains(t, all.String(), "wake")
+			for _, peer := range []string{"PEER_FIRST", "PEER_SECOND"} {
+				if tt.wantPeerPost {
+					assert.Contains(t, all.String(), peer)
+				} else {
+					assert.NotContains(t, all.String(), peer)
+				}
+			}
+		})
 	}
 }
 

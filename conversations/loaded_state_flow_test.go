@@ -673,6 +673,7 @@ func TestStreamToolFollowUpRestoresToolFromPriorLoadTurns(t *testing.T) {
 		conv,
 		true,
 		false,
+		false,
 		nil,
 	)
 	require.NoError(t, err)

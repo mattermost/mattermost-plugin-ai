@@ -327,6 +327,7 @@ func TestStreamToolFollowUpInteractiveFlag(t *testing.T) {
 			conv,
 			true,
 			false,
+			false,
 			nil,
 		)
 		require.NoError(t, err)
@@ -378,6 +379,7 @@ func TestStreamToolFollowUpInteractiveFlag(t *testing.T) {
 			&model.Channel{Id: "channel-id", TeamId: "team-id", Type: model.ChannelTypeOpen},
 			&model.Post{Id: "post-id"},
 			conv,
+			false,
 			false,
 			false,
 			nil,

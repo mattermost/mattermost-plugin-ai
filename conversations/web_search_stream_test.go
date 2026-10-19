@@ -148,6 +148,7 @@ func TestStreamToolFollowUpDecoratesWebSearchAnnotations(t *testing.T) {
 		conv,
 		true,
 		false,
+		false,
 		testWebSearchApprovalContext(),
 	)
 	require.NoError(t, err)
@@ -184,6 +185,7 @@ func TestStreamToolFollowUpSkipsAnnotationDecorationWithoutApprovalContext(t *te
 		&model.Channel{Id: "channel-id", Type: model.ChannelTypeOpen, TeamId: "team-id"},
 		&model.Post{Id: "root-post-id"},
 		conv,
+		false,
 		false,
 		false,
 		nil,

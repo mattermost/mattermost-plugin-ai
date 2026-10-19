@@ -389,6 +389,11 @@ type BuildOptions struct {
 	// requester (e.g. the DM follow-up stream), since DM tool_results are
 	// always shared=true anyway and nothing would be redacted in that case.
 	AllowUnsharedToolContent bool
+
+	// SkipThreadPostsAfterLatestUserTurn drops non-turn thread posts created
+	// after the latest post-linked user turn in channel requests. Unattended
+	// runs set this so thread posts nobody vetted cannot steer auto-run tools.
+	SkipThreadPostsAfterLatestUserTurn bool
 }
 
 func firstBuildOptions(opts []BuildOptions) BuildOptions {
@@ -742,11 +747,17 @@ func (s *Service) BuildChannelMentionRequest(
 	latestPostLinkedSequence := 0
 	latestPostLinkedPostID := ""
 	latestPostLinkedRole := ""
+	latestUserPostID := ""
+	var latestUserTurnCreatedAt int64
 
 	for _, turn := range turns {
 		if turn.PostID != nil {
 			turnPostIDs[*turn.PostID] = true
 			turnByPostID[*turn.PostID] = turn
+			if turn.Role == "user" {
+				latestUserPostID = *turn.PostID
+				latestUserTurnCreatedAt = turn.CreatedAt
+			}
 			if turn.Sequence > latestPostLinkedSequence {
 				latestPostLinkedSequence = turn.Sequence
 				latestPostLinkedPostID = *turn.PostID
@@ -814,7 +825,18 @@ func (s *Service) BuildChannelMentionRequest(
 	}
 	posts = append(posts, leadingPosts...)
 
+	skipUnlinkedPosts := firstBuildOptions(opts).SkipThreadPostsAfterLatestUserTurn && latestUserPostID != ""
+	pastLatestUserTurn := false
 	for _, threadPost := range threadData.Posts {
+		// The CreateAt check keeps the cutoff closed when the user's post is
+		// gone from the thread (e.g. deleted) and the position is never seen.
+		if skipUnlinkedPosts && !turnPostIDs[threadPost.Id] &&
+			(pastLatestUserTurn || threadPost.CreateAt > latestUserTurnCreatedAt) {
+			continue
+		}
+		if threadPost.Id == latestUserPostID {
+			pastLatestUserTurn = true
+		}
 		if turnPostIDs[threadPost.Id] {
 			// Render the post-linked turn and any trailing tool-round turns
 			// as a single contiguous run so tool_result merges into the
