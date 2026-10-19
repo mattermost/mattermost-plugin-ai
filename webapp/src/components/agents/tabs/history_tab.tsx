@@ -136,7 +136,9 @@ const HistoryTab = ({agentId, services, isDirty, currentUserAccessLevel, onResto
                 return;
             }
             setList((prev) => {
-                if (!prev) {
+                // A reload since the request replaced the list, so this page
+                // no longer continues it.
+                if (!prev || prev.versions[prev.versions.length - 1]?.version !== before) {
                     return prev;
                 }
                 const older = (result.versions ?? []).filter((v) => v.version < before);

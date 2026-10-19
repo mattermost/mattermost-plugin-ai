@@ -2,7 +2,7 @@
 // See LICENSE.txt for license information.
 
 import React from 'react';
-import {fireEvent, render, screen, waitFor, waitForElementToBeRemoved, within} from '@testing-library/react';
+import {act, fireEvent, render, screen, waitFor, waitForElementToBeRemoved, within} from '@testing-library/react';
 import {IntlProvider} from 'react-intl';
 
 import {createAgent, getAgentVersion, getAgentVersions, getProfilesByIds, restoreAgentVersion, updateAgent} from '@/client';
@@ -1292,6 +1292,40 @@ describe('AgentConfigView history and export', () => {
             const instructions = await screen.findByTestId('version-snapshot-instructions');
             await waitFor(() => expect(instructions.textContent).toBe('instructions 1'));
             expect(screen.getByRole('button', {name: 'Restore this version'})).not.toBeNull();
+        });
+
+        test('drops an older page requested before a restore reloaded the list', async () => {
+            let resolveReload: (list: AgentVersionList) => void = jest.fn();
+            let resolveOlder: (list: AgentVersionList) => void = jest.fn();
+            mockGetAgentVersions.
+                mockResolvedValueOnce(firstPage).
+                mockImplementationOnce(() => new Promise((resolve) => {
+                    resolveReload = resolve;
+                })).
+                mockImplementationOnce(() => new Promise((resolve) => {
+                    resolveOlder = resolve;
+                }));
+            mockRestoreAgentVersion.mockResolvedValue(existingAgent);
+            renderEdit();
+            fireEvent.click(screen.getByRole('tab', {name: 'History'}));
+            const list = await screen.findByTestId('version-list');
+
+            fireEvent.click(within(list).getByText('Version 3'));
+            await waitFor(() => expect((screen.getByRole('button', {name: 'Restore this version'}) as HTMLButtonElement).disabled).toBe(false));
+            fireEvent.click(screen.getByRole('button', {name: 'Restore this version'}));
+            fireEvent.click(within(screen.getByRole('dialog', {name: 'Restore this version?'})).getByRole('button', {name: 'Restore'}));
+            await waitFor(() => expect(mockGetAgentVersions).toHaveBeenCalledTimes(2));
+
+            // The pre-restore list is still on screen while the reload is pending.
+            fireEvent.click(screen.getByRole('button', {name: 'Load older versions'}));
+            expect(mockGetAgentVersions).toHaveBeenLastCalledWith('agent_1', {before: 3});
+
+            await act(async () => resolveReload({currentVersion: 5, versions: [summary(5), summary(4)], hasMore: true}));
+            await act(async () => resolveOlder(lastPage));
+
+            const titles = within(screen.getByTestId('version-list')).getAllByText(/^Version \d$/).map((el) => el.textContent);
+            expect(titles).toEqual(['Version 5', 'Version 4']);
+            expect(screen.getByRole('button', {name: 'Load older versions'})).not.toBeNull();
         });
 
         test('keeps the loaded versions and the button when an older page fails', async () => {
