@@ -83,6 +83,7 @@ func TestMigrateAgentReferences(t *testing.T) {
 	tests := []struct {
 		name           string
 		stored         *agentReferences
+		inMemory       *agentReferences
 		emptyRegistry  bool
 		updateErr      error
 		expected       *agentReferences
@@ -140,6 +141,12 @@ func TestMigrateAgentReferences(t *testing.T) {
 			expected:  &agentReferences{DefaultBotName: "ai"},
 		},
 		{
+			name:     "a node that loaded legacy names before a peer migrated them takes the stored IDs",
+			stored:   &agentReferences{DefaultBotUserID: aiID, TranscriptBotUserID: scribeID},
+			inMemory: &agentReferences{DefaultBotName: "ai", TranscriptGenerator: "scribe"},
+			expected: &agentReferences{DefaultBotUserID: aiID, TranscriptBotUserID: scribeID},
+		},
+		{
 			name: "no stored config",
 		},
 	}
@@ -189,7 +196,11 @@ func TestMigrateAgentReferences(t *testing.T) {
 			p.SetAPI(mockAPI)
 			if tc.stored != nil {
 				store.cfg = tc.stored.config()
-				require.NoError(t, p.configuration.StorePersistedConfigWithoutNotify(tc.stored.config()))
+				inMemory := tc.stored
+				if tc.inMemory != nil {
+					inMemory = tc.inMemory
+				}
+				require.NoError(t, p.configuration.StorePersistedConfigWithoutNotify(inMemory.config()))
 			}
 
 			p.migrateAgentReferences(client, store, registry)
