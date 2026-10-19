@@ -178,9 +178,19 @@ jobs:
         id: baseline
         env:
           GH_TOKEN: ${{ github.token }}
+        # A run whose eval job failed has partial results (a package did not
+        # finish), so only successful runs are used. Artifacts are newest first.
         run: |
-          run_id=$(gh api "repos/${{ github.repository }}/actions/artifacts?name=eval-results-openai&per_page=100" \
-            --jq '[.artifacts[] | select(.expired == false and .workflow_run.head_branch == "master" and .workflow_run.head_repository_id == .workflow_run.repository_id)][0].workflow_run.id // empty')
+          run_id=""
+          candidates=$(gh api "repos/${{ github.repository }}/actions/artifacts?name=eval-results-openai&per_page=100" \
+            --jq '.artifacts[] | select(.expired == false and .workflow_run.head_branch == "master" and .workflow_run.head_repository_id == .workflow_run.repository_id) | .workflow_run.id' \
+            | awk '!seen[$0]++' | head -n 10)
+          for id in $candidates; do
+            if [ "$(gh api "repos/${{ github.repository }}/actions/runs/$id" --jq .conclusion)" = success ]; then
+              run_id=$id
+              break
+            fi
+          done
           echo "run-id=$run_id" >> "$GITHUB_OUTPUT"
 
       - name: Download master baseline
