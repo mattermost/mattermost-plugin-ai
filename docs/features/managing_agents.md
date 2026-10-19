@@ -224,13 +224,13 @@ The file contains only settings that mean the same thing on any server:
 - Suggested username and display name
 - Custom instructions
 - **Enable Tools**, **Max tool turns**, and dynamic tool loading
-- **Automatically enable all MCP tools**, and the list of granted MCP tools, each identified by its MCP server's URL (with the server's name for reference)
+- **Automatically enable all MCP tools**, and the list of granted MCP tools, each identified by its MCP server's URL (with the server's name for reference when you can see that server)
 
 The file does **not** contain the AI service, model, reasoning settings, native provider tools, vision, access rules (channels, users, teams, attribute-based policies), agent admins, the service account setting, the avatar, or any IDs. It never contains MCP server credentials or AI service keys. Custom instructions are included, so treat the file as you would the instructions themselves.
 
 ### Import
 
-Select **Import agent** on the **Agents** page and choose an exported file. Users who can create agents, or who can manage at least one agent, can import. You can then either:
+Select **Import agent** on the **Agents** page and choose an exported file. Users who can create agents, or who can manage at least one agent, can import. Files larger than 2 MiB are rejected. The modal shows the file's full custom instructions before you import, so review them: they become the agent's instructions. You can then either:
 
 - **Create a new agent.** Choose the username (prefilled from the file), display name, AI service, and optionally a model. This requires permission to create agents and counts toward the agent limit like any other new agent. Settings not carried in the file get the same defaults as a new agent created in the editor: everyone can use it, there are no extra admins, and vision and reasoning are on.
 - **Update an existing agent** you can manage. Only the settings carried in the file change; the agent's username, display name, AI service, model, access rules, admins, and service account setting stay as they are. When the file's suggested username matches an agent you can manage, that agent is preselected.
