@@ -195,7 +195,10 @@ func reportIncomplete(packages []incompletePackage) {
 }
 
 func goModulePath() string {
-	out, err := exec.Command("go", "list", "-m").Output()
+	// A go.work makes `go list -m` print every workspace module.
+	cmd := exec.Command("go", "list", "-m")
+	cmd.Env = append(os.Environ(), "GOWORK=off")
+	out, err := cmd.Output()
 	if err != nil {
 		return ""
 	}
