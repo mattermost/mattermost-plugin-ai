@@ -5,6 +5,7 @@ mcpserver/bin/
 webapp/src/manifest.ts
 server/manifest.go
 evals.jsonl
+evals-incomplete.txt
 go.work
 go.work.sum
 *.log

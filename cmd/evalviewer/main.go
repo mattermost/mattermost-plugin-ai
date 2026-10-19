@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -170,8 +171,8 @@ provider across runs, newest first.`,
 	reportCmd.Flags().StringVar(&reportCommentFile, "comment", "comment.md", "Where to write the pull request comment (empty when nothing is actionable)")
 	reportCmd.Flags().StringVar(&reportSummaryFile, "summary", "summary.md", "Where to write the workflow run summary")
 	reportCmd.Flags().StringVar(&reportJSONFile, "json", "", "Where to write a machine-readable summary for history (optional)")
-	reportCmd.Flags().StringVar(&reportCommit, "commit", "", "Commit the results belong to, recorded in the JSON summary")
-	reportCmd.Flags().StringVar(&reportRunURL, "run-url", "", "Workflow run URL, recorded in the JSON summary")
+	reportCmd.Flags().StringVar(&reportCommit, "commit", "", "Commit the results belong to, shown in the comment and recorded in the JSON summary")
+	reportCmd.Flags().StringVar(&reportRunURL, "run-url", "", "Workflow run URL, linked from the comment and recorded in the JSON summary")
 	reportCmd.Flags().StringVar(&reportChangeLabel, "change-label", pullRequestLabels.change, "How the report refers to the results being checked")
 	reportCmd.Flags().StringVar(&reportBaseLabel, "baseline-label", pullRequestLabels.baseline, "How the report refers to the baseline")
 
@@ -193,8 +194,9 @@ provider across runs, newest first.`,
 }
 
 // runEvals cleans up stale results, then runs `go test` with GOEVALS=1 set,
-// streaming output to the terminal. It returns the `go test` error so each
-// command can apply its own exit-code policy.
+// streaming output to the terminal. Packages that did not finish are recorded
+// as errored results. It returns the `go test` error so each command can apply
+// its own exit-code policy.
 func runEvals(args []string) error {
 	if err := cleanupOldResults(); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: Failed to clean old results: %v\n", err)
@@ -207,9 +209,14 @@ func runEvals(args []string) error {
 	if os.Getenv("GOEVALS") == "" {
 		cmd.Env = append(cmd.Env, "GOEVALS=1")
 	}
-	cmd.Stdout = os.Stdout
+	var watcher packageWatcher
+	cmd.Stdout = io.MultiWriter(os.Stdout, &watcher)
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	err := cmd.Run()
+	if recordErr := recordIncompletePackages(watcher.packages()); recordErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Failed to record packages that did not finish: %v\n", recordErr)
+	}
+	return err
 }
 
 func runCommand(args []string) {
@@ -325,6 +332,8 @@ func reportCommand() {
 
 	r := buildReport(results, baseline, reportProviders)
 	r.labels = reportLabels{change: reportChangeLabel, baseline: reportBaseLabel}
+	r.commit = reportCommit
+	r.runURL = reportRunURL
 
 	comment := r.commentMarkdown()
 	if err := os.WriteFile(reportCommentFile, []byte(comment), 0600); err != nil {
@@ -489,6 +498,9 @@ func cleanupOldResults() error {
 	}
 
 	fmt.Printf("Cleaning up old results: %s\n", evalFile)
+	if err := os.Remove(filepath.Join(filepath.Dir(evalFile), incompleteMarker)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	return os.Remove(evalFile)
 }
 

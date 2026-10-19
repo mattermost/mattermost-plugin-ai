@@ -81,3 +81,13 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
+      # Eval failures do not fail this job, but a package that did not finish
+      # does: its results are partial and must not become a baseline.
+      - name: Check that every eval package finished
+        if: always()
+        run: |
+          if [ -f evals-incomplete.txt ]; then
+            echo "::error title=Evals did not finish::These packages failed to build, panicked, or timed out: $(paste -sd ' ' evals-incomplete.txt)"
+            exit 1
+          fi
+
