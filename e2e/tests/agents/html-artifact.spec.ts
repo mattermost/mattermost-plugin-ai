@@ -314,7 +314,7 @@ test.describe('HTML artifacts', () => {
         // file name keeps enough room to be read.
         const notice = rhsCard.getByTestId('html-artifact-notice');
         await expect(notice).toBeVisible();
-        await expect(notice).toHaveText("AI-generated · Don't enter passwords");
+        await expect(notice).toHaveText('AI-generated · Never enter passwords or private info');
         const fileName = rhsCard.getByTestId('html-artifact-file-name');
         await expect(fileName).toHaveAttribute('title', SPRINT_DASHBOARD_FILE_NAME);
         const nameFits = await fileName.evaluate((el) => el.scrollWidth <= el.clientWidth);
@@ -357,7 +357,7 @@ test.describe('HTML artifacts', () => {
         await expect(center.card.getByTestId('html-artifact-interact')).toHaveCount(0);
         await frame.getByRole('button', {name: /Kudos/}).click();
         await expect(frame.locator('#kudos-count')).toHaveText('1');
-        await expect(center.card.getByTestId('html-artifact-notice')).toContainText("Don't enter passwords");
+        await expect(center.card.getByTestId('html-artifact-notice')).toContainText('Never enter passwords or private info');
 
         // Inline height follows the content: no inner scrollbar.
         await expect.poll(async () => frame.locator('html').evaluate((el) => el.scrollHeight - el.clientHeight), {timeout: 10000}).toBeLessThanOrEqual(1);
@@ -407,7 +407,7 @@ test.describe('HTML artifacts', () => {
         const fullFrame = artifactFrame(fullIframe);
         await expect(fullFrame.getByRole('heading', {name: 'Sprint 42 dashboard'})).toBeVisible({timeout: 30000});
         await expect(viewer.getByText('Interactive')).toBeVisible();
-        await expect(viewer.getByTestId('html-artifact-notice')).toContainText("Don't enter passwords");
+        await expect(viewer.getByTestId('html-artifact-notice')).toContainText('Never enter passwords or private info');
 
         // The click that opened fullscreen engages the fullscreen frame, not
         // the inline one under it. Focus inside the artifact shows up on this

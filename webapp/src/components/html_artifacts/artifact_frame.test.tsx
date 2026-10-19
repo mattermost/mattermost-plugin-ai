@@ -1005,7 +1005,7 @@ describe('artifact safety notice', () => {
         await flushLoad();
         const notice = screen.getByRole('note');
         expect(notice.getAttribute('aria-label')).toMatch(/AI-generated.*Never enter passwords/);
-        expect(notice.textContent).toContain('Don\'t enter passwords');
+        expect(notice.textContent).toContain('Never enter passwords or private info');
         expect(screen.getByTestId(area).contains(notice)).toBe(false);
     });
 });
@@ -1026,6 +1026,7 @@ describe('HTMLArtifactCard run gate', () => {
         renderCard();
         await flushLoad();
         expect(placeholder()?.textContent).toContain('runs code only when you choose');
+        expect(placeholder()?.textContent).toContain('only visible to you');
         expect(wrapperIframe()).toBeNull();
         expect(screen.queryByTestId('html-artifact-frame')).toBeNull();
         expect(screen.queryByTestId('html-artifact-reload')).toBeNull();

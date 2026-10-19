@@ -11,7 +11,7 @@ jest.mock('react-intl', () => ({
     useIntl: () => ({locale: 'en', formatMessage: ({defaultMessage}: {defaultMessage: string}) => defaultMessage}),
 }));
 
-const FULL_SENTENCE = 'AI-generated content. Never enter passwords or sensitive information into it.';
+const FULL_SENTENCE = 'AI-generated content. Never enter passwords or private information into it. Changes you make in it are only visible to you.';
 
 describe('ArtifactNotice', () => {
     it.each([
@@ -24,6 +24,6 @@ describe('ArtifactNotice', () => {
         expect(notice.getAttribute('role')).toBe('note');
         expect(notice.getAttribute('aria-label')).toBe(FULL_SENTENCE);
         expect(notice.getAttribute('title')).toBe(FULL_SENTENCE);
-        expect(notice.textContent).toBe('AI-generated · Don\'t enter passwords');
+        expect(notice.textContent).toBe('AI-generated · Never enter passwords or private info');
     });
 });

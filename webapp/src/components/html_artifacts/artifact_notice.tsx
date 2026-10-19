@@ -22,7 +22,7 @@ interface Props {
 // the host reminds viewers not to enter secrets into it.
 const ArtifactNotice = ({wrapBelowPx}: Props) => {
     const intl = useIntl();
-    const label = intl.formatMessage({defaultMessage: 'AI-generated content. Never enter passwords or sensitive information into it.'});
+    const label = intl.formatMessage({defaultMessage: 'AI-generated content. Never enter passwords or private information into it. Changes you make in it are only visible to you.'});
 
     return (
         <Notice
@@ -37,7 +37,7 @@ const ArtifactNotice = ({wrapBelowPx}: Props) => {
                 glyph={<ShieldAlertOutlineIcon/>}
             />
             <NoticeText aria-hidden='true'>
-                {intl.formatMessage({defaultMessage: 'AI-generated · Don\'t enter passwords'})}
+                {intl.formatMessage({defaultMessage: 'AI-generated · Never enter passwords or private info'})}
             </NoticeText>
         </Notice>
     );
@@ -68,6 +68,9 @@ const Notice = styled.span<{$wrapBelowPx?: number}>`
         @container (max-width: ${props.$wrapBelowPx}px) {
             order: 1;
             flex: 1 0 100%;
+
+            // On its own row the warning wraps rather than being cut off.
+            white-space: normal;
         }
     ` : '')}
 `;
