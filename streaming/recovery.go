@@ -5,6 +5,7 @@ package streaming
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -21,6 +22,10 @@ type RecoveryStore interface {
 	ClaimStaleStreamingTurn(id string, staleAfterMillis int64) (bool, error)
 	ReleaseStreamingTurnClaim(id string) error
 }
+
+// ErrPostNotFound is returned by RecoveryClient.GetPost when the post no
+// longer exists (e.g. it was deleted mid-stream).
+var ErrPostNotFound = errors.New("post not found")
 
 // RecoveryClient is the Mattermost API subset used by the sweep.
 type RecoveryClient interface {
@@ -53,7 +58,7 @@ func RecoverAbandonedStreams(ctx context.Context, rs RecoveryStore, client Recov
 	staleMillis := StaleStreamThreshold.Milliseconds()
 	var recovered []RecoveredStream
 	// Drain the backlog in batches. Stop when a batch is short, or when a
-	// full batch repaired nothing (released claims would be listed again).
+	// full batch resolved nothing (released claims would be listed again).
 	for {
 		turns, err := rs.GetStaleStreamingTurns(staleMillis, limit)
 		if err != nil {
@@ -62,14 +67,17 @@ func RecoverAbandonedStreams(ctx context.Context, rs RecoveryStore, client Recov
 			return recovered, fmt.Errorf("failed to list stale streaming turns: %w", err)
 		}
 
-		repairedInBatch := 0
+		resolvedInBatch := 0
 		for _, turn := range turns {
-			if r, ok := recoverTurn(rs, client, turn, staleMillis); ok {
+			r, outcome := recoverTurn(rs, client, turn, staleMillis)
+			if outcome == recoveryRepaired {
 				recovered = append(recovered, r)
-				repairedInBatch++
+			}
+			if outcome != recoveryRetry {
+				resolvedInBatch++
 			}
 		}
-		if uint64(len(turns)) < limit || repairedInBatch == 0 {
+		if uint64(len(turns)) < limit || resolvedInBatch == 0 {
 			break
 		}
 	}
@@ -80,16 +88,28 @@ func RecoverAbandonedStreams(ctx context.Context, rs RecoveryStore, client Recov
 	return recovered, nil
 }
 
+type recoveryOutcome int
+
+const (
+	// recoveryRepaired: the turn was claimed and its post marked interrupted.
+	recoveryRepaired recoveryOutcome = iota
+	// recoverySkipped: nothing left to repair (another node claimed it, or
+	// the turn has no post or its post was deleted); it leaves the backlog.
+	recoverySkipped
+	// recoveryRetry: the claim failed or was released; it stays stale.
+	recoveryRetry
+)
+
 // recoverTurn claims one stale turn and marks its post interrupted. When the
 // post cannot be updated the claim is released so a later sweep retries it.
-func recoverTurn(rs RecoveryStore, client RecoveryClient, turn store.Turn, staleMillis int64) (RecoveredStream, bool) {
+func recoverTurn(rs RecoveryStore, client RecoveryClient, turn store.Turn, staleMillis int64) (RecoveredStream, recoveryOutcome) {
 	claimed, claimErr := rs.ClaimStaleStreamingTurn(turn.ID, staleMillis)
 	if claimErr != nil {
 		client.LogWarn("Failed to claim abandoned streaming turn", "error", claimErr, "turn_id", turn.ID)
-		return RecoveredStream{}, false
+		return RecoveredStream{}, recoveryRetry
 	}
 	if !claimed || turn.PostID == nil || *turn.PostID == "" {
-		return RecoveredStream{}, false
+		return RecoveredStream{}, recoverySkipped
 	}
 
 	release := func() {
@@ -99,10 +119,15 @@ func recoverTurn(rs RecoveryStore, client RecoveryClient, turn store.Turn, stale
 	}
 
 	post, getErr := client.GetPost(*turn.PostID)
+	if errors.Is(getErr, ErrPostNotFound) {
+		// Keep the claim: there is no post to repair, and releasing it would
+		// list the turn again on every sweep.
+		return RecoveredStream{}, recoverySkipped
+	}
 	if getErr != nil {
 		client.LogWarn("Failed to load post for abandoned stream", "error", getErr, "post_id", *turn.PostID)
 		release()
-		return RecoveredStream{}, false
+		return RecoveredStream{}, recoveryRetry
 	}
 	if partial := partialTextFromTurn(turn); len(partial) > len(post.Message) {
 		post.Message = partial
@@ -111,9 +136,9 @@ func recoverTurn(rs RecoveryStore, client RecoveryClient, turn store.Turn, stale
 	if updErr := client.UpdatePost(post); updErr != nil {
 		client.LogWarn("Failed to mark abandoned stream post interrupted", "error", updErr, "post_id", post.Id)
 		release()
-		return RecoveredStream{}, false
+		return RecoveredStream{}, recoveryRetry
 	}
-	return RecoveredStream{PostID: post.Id, ChannelID: post.ChannelId, TurnID: turn.ID}, true
+	return RecoveredStream{PostID: post.Id, ChannelID: post.ChannelId, TurnID: turn.ID}, recoveryRepaired
 }
 
 // partialTextFromTurn concatenates the text blocks of a turn's content.

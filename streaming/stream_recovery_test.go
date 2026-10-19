@@ -238,7 +238,7 @@ type fakeRecoveryClient struct {
 func (c *fakeRecoveryClient) GetPost(id string) (*model.Post, error) {
 	p, ok := c.posts[id]
 	if !ok {
-		return nil, fmt.Errorf("not found")
+		return nil, ErrPostNotFound
 	}
 	return p.Clone(), nil
 }
@@ -322,6 +322,25 @@ func TestRecoverAbandonedStreams(t *testing.T) {
 		recovered, err := RecoverAbandonedStreams(context.Background(), rs, client, 2)
 		require.NoError(t, err)
 		require.Len(t, recovered, 5)
+	})
+
+	t.Run("turns whose posts were deleted leave the backlog without blocking newer turns", func(t *testing.T) {
+		rs := &fakeRecoveryStore{claimed: map[string]bool{}}
+		client := &fakeRecoveryClient{posts: map[string]*model.Post{}}
+		// The oldest full batch points at deleted posts.
+		for i := range 4 {
+			rs.stale = append(rs.stale, store.Turn{ID: fmt.Sprintf("gone-%d", i), PostID: strp(fmt.Sprintf("deleted-%d", i)), Role: "assistant", Content: textContent("x")})
+		}
+		rs.stale = append(rs.stale, store.Turn{ID: "turn-live", PostID: strp("post-live"), Role: "assistant", Content: textContent("x")})
+		client.posts["post-live"] = &model.Post{Id: "post-live"}
+
+		recovered, err := RecoverAbandonedStreams(context.Background(), rs, client, 2)
+		require.NoError(t, err)
+		require.Len(t, recovered, 1)
+		assert.Equal(t, "post-live", recovered[0].PostID)
+		for i := range 4 {
+			assert.True(t, rs.claimed[fmt.Sprintf("gone-%d", i)], "a deleted post's turn must not be listed again")
+		}
 	})
 
 	t.Run("list error is returned", func(t *testing.T) {

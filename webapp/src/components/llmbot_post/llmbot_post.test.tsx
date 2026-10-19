@@ -40,7 +40,7 @@ jest.mock('react-intl', () => {
 
 jest.mock('@/client', () => ({
     doPostbackSummary: jest.fn(),
-    doRegenerate: jest.fn(),
+    doRegenerate: jest.fn(() => Promise.resolve()),
     doStopGenerating: jest.fn(),
 }));
 
@@ -1405,6 +1405,18 @@ describe('LLMBotPost interrupted and stale generation notices', () => {
 
         expect(doRegenerate).toHaveBeenCalledWith('post_1');
         expect(screen.queryByTestId('llm-bot-post-interrupted')).toBeNull();
+    });
+
+    test('restores the post when the server refuses to regenerate', async () => {
+        (doRegenerate as jest.Mock).mockImplementationOnce(() => Promise.reject(new Error('already streaming')));
+        mockUseConversation.mockReturnValue({conversation: makeConversation([], 'user_1'), loading: false, error: null});
+        renderPost(interruptedPost('shutdown'));
+
+        fireEvent.click(within(screen.getByTestId('llm-bot-post-interrupted')).getByText('Regenerate'));
+
+        expect(await screen.findByText(/Could not regenerate this response/)).toBeTruthy();
+        expect(screen.getByText('Partial answer')).toBeTruthy();
+        expect(screen.getByTestId('llm-bot-post-interrupted')).toBeTruthy();
     });
 
     test('hides Regenerate for someone who is not the requester', () => {

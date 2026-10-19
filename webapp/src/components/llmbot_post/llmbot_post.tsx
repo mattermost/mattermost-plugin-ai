@@ -587,9 +587,23 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
         setServerTools([]);
         setLiveRounds([]);
         resetActivityTracking();
+        setError('');
         regeneratingRef.current = true;
         setRegenerating(true);
-        doRegenerate(props.post.id);
+
+        // The server refuses while a stream still owns the post (e.g. this
+        // client stopped receiving its events); restore the post instead of
+        // leaving it blank.
+        doRegenerate(props.post.id).catch(() => {
+            regeneratingRef.current = false;
+            setRegenerating(false);
+            setPrecontent(false);
+            setMessage(props.post.message);
+            setError(intl.formatMessage({defaultMessage: 'Could not regenerate this response. If it is still being generated, stop it first.'}));
+            if (conversationId) {
+                invalidateConversation(conversationId);
+            }
+        });
     };
 
     const stopGenerating = () => {

@@ -27,15 +27,20 @@ func TestStripTrustedProps(t *testing.T) {
 	tests := []struct {
 		name        string
 		post        *model.Post
+		oldPost     *model.Post
 		wantTrusted bool
 	}{
 		{name: "user post loses plugin-trusted props", post: forged("user"), wantTrusted: false},
 		{name: "agent bot post keeps them", post: forged(botID), wantTrusted: true},
 		{name: "other bot/integration post loses them", post: forged("other-bot"), wantTrusted: false},
+		// The local bot cache can miss a valid agent bot (added on another
+		// node, or since removed from config); values it already had stay.
+		{name: "update keeps values unchanged from the stored post", post: forged("unknown-bot"), oldPost: forged("unknown-bot"), wantTrusted: true},
+		{name: "update that adds them loses them", post: forged("user"), oldPost: &model.Post{UserId: "user"}, wantTrusted: false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := stripTrustedProps(tc.post, isAgentBot)
+			got := stripTrustedProps(tc.post, tc.oldPost, isAgentBot)
 			for _, key := range pluginTrustedPostProps {
 				if tc.wantTrusted {
 					assert.NotNil(t, got.GetProp(key), key)
@@ -53,6 +58,6 @@ func TestStripTrustedProps(t *testing.T) {
 	t.Run("post without trusted props is returned unchanged", func(t *testing.T) {
 		p := &model.Post{UserId: "user", Message: "plain"}
 		p.AddProp("custom", "x")
-		assert.Same(t, p, stripTrustedProps(p, isAgentBot))
+		assert.Same(t, p, stripTrustedProps(p, nil, isAgentBot))
 	})
 }

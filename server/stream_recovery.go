@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/audit"
@@ -37,7 +38,11 @@ type recoveryClient struct {
 }
 
 func (c recoveryClient) GetPost(postID string) (*model.Post, error) {
-	return c.api.Post.GetPost(postID)
+	post, err := c.api.Post.GetPost(postID)
+	if errors.Is(err, pluginapi.ErrNotFound) {
+		return nil, streaming.ErrPostNotFound
+	}
+	return post, err
 }
 
 func (c recoveryClient) UpdatePost(post *model.Post) error {
