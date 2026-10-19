@@ -346,7 +346,7 @@ const Config = (props: Props) => {
                     <SelectionItem
                         label={intl.formatMessage({defaultMessage: 'Default bot'})}
                         value={defaultBotID}
-                        error={runtimeBots.length > 0 && !defaultBotID ? intl.formatMessage({defaultMessage: 'The configured default agent is not available. Requests that do not choose an agent will fail until you select another one.'}) : undefined}
+                        error={runtimeBots.length > 0 && !defaultBotID ? intl.formatMessage({defaultMessage: 'The configured default agent is not available. Requests that do not choose an agent will fail until you select another one.'}) : ''}
                         onChange={(defaultBotUserID) => {
                             updateConfig({defaultBotUserID, defaultBotName: ''});
                         }}
