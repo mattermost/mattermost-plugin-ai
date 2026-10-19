@@ -20,6 +20,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/accesscontrol"
 	"github.com/mattermost/mattermost-plugin-agents/v2/autoreply"
 	"github.com/mattermost/mattermost-plugin-agents/v2/bots"
+	"github.com/mattermost/mattermost-plugin-agents/v2/config"
 	"github.com/mattermost/mattermost-plugin-agents/v2/conversations"
 	"github.com/mattermost/mattermost-plugin-agents/v2/embeddings"
 	"github.com/mattermost/mattermost-plugin-agents/v2/embeddings/mocks"
@@ -66,7 +67,7 @@ type TestEnvironment struct {
 // testConfigImpl is a minimal implementation of Config for testing
 type testConfigImpl struct {
 	allowUnsafeLinks                bool
-	allowedLinkDomains              []string
+	allowedLinkDomains              string
 	enableChannelMentionToolCalling bool
 	mcpConfig                       mcp.Config
 	services                        []llm.ServiceConfig
@@ -85,11 +86,8 @@ func (tc *testConfigImpl) AllowUnsafeLinks() bool {
 	return tc.allowUnsafeLinks
 }
 
-func (tc *testConfigImpl) AllowedLinkDomains() []string {
-	if tc.allowedLinkDomains == nil {
-		return []string{}
-	}
-	return tc.allowedLinkDomains
+func (tc *testConfigImpl) LinkPolicy() config.LinkPolicy {
+	return config.NewLinkPolicy(tc.allowUnsafeLinks, tc.allowedLinkDomains)
 }
 
 func (tc *testConfigImpl) EmbeddingSearchConfig() embeddings.EmbeddingSearchConfig {
@@ -1371,7 +1369,8 @@ func TestHandleGetAIBots(t *testing.T) {
 		expectedUseServiceAccountAuth bool
 		expectedSearchEnabled         bool
 		expectedAllowUnsafeLinks      bool
-		expectedAllowedLinkDomains    []string
+		expectedLinkPolicyKind        config.LinkPolicyKind
+		expectedAllowedDomains        []config.LinkDomainRule
 		expectedStatus                int
 		envSetup                      func(e *TestEnvironment)
 	}{
@@ -1383,6 +1382,7 @@ func TestHandleGetAIBots(t *testing.T) {
 			}(),
 			expectedSearchEnabled:    true,
 			expectedAllowUnsafeLinks: false,
+			expectedLinkPolicyKind:   config.LinkPolicyPlainText,
 			expectedStatus:           http.StatusOK,
 			envSetup: func(e *TestEnvironment) {
 				e.mockAPI.On("GetChannelByName", "", mock.AnythingOfType("string"), false).Return(nil, &model.AppError{})
@@ -1393,6 +1393,7 @@ func TestHandleGetAIBots(t *testing.T) {
 			searchService:            search.New(nil, nil, nil),
 			expectedSearchEnabled:    false,
 			expectedAllowUnsafeLinks: false,
+			expectedLinkPolicyKind:   config.LinkPolicyPlainText,
 			expectedStatus:           http.StatusOK,
 			envSetup: func(e *TestEnvironment) {
 				e.mockAPI.On("GetChannelByName", "", mock.AnythingOfType("string"), false).Return(nil, &model.AppError{})
@@ -1403,6 +1404,7 @@ func TestHandleGetAIBots(t *testing.T) {
 			searchService:            nil,
 			expectedSearchEnabled:    false,
 			expectedAllowUnsafeLinks: false,
+			expectedLinkPolicyKind:   config.LinkPolicyPlainText,
 			expectedStatus:           http.StatusOK,
 			envSetup: func(e *TestEnvironment) {
 				e.mockAPI.On("GetChannelByName", "", mock.AnythingOfType("string"), false).Return(nil, &model.AppError{})
@@ -1416,6 +1418,7 @@ func TestHandleGetAIBots(t *testing.T) {
 			expectedUseServiceAccountAuth: true,
 			expectedSearchEnabled:         false,
 			expectedAllowUnsafeLinks:      true,
+			expectedLinkPolicyKind:        config.LinkPolicyAnyDomain,
 			expectedStatus:                http.StatusOK,
 			envSetup: func(e *TestEnvironment) {
 				e.config.allowUnsafeLinks = true
@@ -1423,14 +1426,15 @@ func TestHandleGetAIBots(t *testing.T) {
 			},
 		},
 		{
-			name:                       "allowed link domains are returned",
-			searchService:              nil,
-			expectedAllowUnsafeLinks:   true,
-			expectedAllowedLinkDomains: []string{"example.com", "*.mattermost.com"},
-			expectedStatus:             http.StatusOK,
+			name:                     "link domain allowlist is returned as the link policy",
+			searchService:            nil,
+			expectedAllowUnsafeLinks: true,
+			expectedLinkPolicyKind:   config.LinkPolicyAllowlist,
+			expectedAllowedDomains:   []config.LinkDomainRule{{Host: "example.com"}, {Host: "mattermost.com", Wildcard: true}},
+			expectedStatus:           http.StatusOK,
 			envSetup: func(e *TestEnvironment) {
 				e.config.allowUnsafeLinks = true
-				e.config.allowedLinkDomains = []string{"example.com", "*.mattermost.com"}
+				e.config.allowedLinkDomains = "example.com, *.mattermost.com"
 				e.mockAPI.On("GetChannelByName", "", mock.AnythingOfType("string"), false).Return(nil, &model.AppError{})
 			},
 		},
@@ -1443,6 +1447,7 @@ func TestHandleGetAIBots(t *testing.T) {
 			expectedUseServiceAccountAuth: false,
 			expectedSearchEnabled:         false,
 			expectedAllowUnsafeLinks:      false,
+			expectedLinkPolicyKind:        config.LinkPolicyPlainText,
 			expectedStatus:                http.StatusOK,
 			envSetup: func(e *TestEnvironment) {
 				e.OverrideLicense(nil)
@@ -1489,7 +1494,8 @@ func TestHandleGetAIBots(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, test.expectedSearchEnabled, response.SearchEnabled, "SearchEnabled field should match expected value")
 				require.Equal(t, test.expectedAllowUnsafeLinks, response.AllowUnsafeLinks, "AllowUnsafeLinks field should match expected value")
-				require.ElementsMatch(t, test.expectedAllowedLinkDomains, response.AllowedLinkDomains, "AllowedLinkDomains field should match expected value")
+				require.Equal(t, test.expectedLinkPolicyKind, response.LinkPolicy.Kind, "LinkPolicy kind should match expected value")
+				require.ElementsMatch(t, test.expectedAllowedDomains, response.LinkPolicy.AllowedDomains, "LinkPolicy allowed domains should match expected value")
 				require.NotEmpty(t, response.Bots, "Should return at least one bot")
 				require.Equal(t, test.expectedUseServiceAccountAuth, response.Bots[0].UseServiceAccountAuth,
 					"UseServiceAccountAuth field should report the effective service account mode")

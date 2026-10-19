@@ -5,7 +5,6 @@ package config
 
 import (
 	"encoding/json"
-	"slices"
 	"testing"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
@@ -398,37 +397,5 @@ func TestContainerGetServicesReturnsIndependentSlice(t *testing.T) {
 	}
 	if fresh[0].ID != "s1" {
 		t.Fatalf("stored service ID = %q, want %q", fresh[0].ID, "s1")
-	}
-}
-
-func TestContainerAllowedLinkDomains(t *testing.T) {
-	tests := []struct {
-		name string
-		raw  string
-		want []string
-	}{
-		{name: "empty", raw: "", want: []string{}},
-		{name: "only separators and whitespace", raw: " , ,, ", want: []string{}},
-		{name: "single domain", raw: "example.com", want: []string{"example.com"}},
-		{
-			name: "trims, lowercases, and strips trailing dots",
-			raw:  " Example.COM , *.Mattermost.com. ,docs.example.org",
-			want: []string{"example.com", "*.mattermost.com", "docs.example.org"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			container := &Container{}
-			container.Update(&Config{AllowedLinkDomains: tt.raw})
-
-			got := container.AllowedLinkDomains()
-			if got == nil {
-				t.Fatal("AllowedLinkDomains() returned nil")
-			}
-			if !slices.Equal(got, tt.want) {
-				t.Fatalf("AllowedLinkDomains() = %q, want %q", got, tt.want)
-			}
-		})
 	}
 }

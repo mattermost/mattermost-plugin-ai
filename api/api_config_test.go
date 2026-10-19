@@ -272,6 +272,7 @@ func TestHandleSaveConfig(t *testing.T) {
 		requestBody           any
 		clusterErr            error
 		expectedStatus        int
+		expectedErrorCode     agentErrorCode
 		validateStore         func(t *testing.T, store *testConfigStore)
 		validateUpdater       func(t *testing.T, updater *testConfigUpdater)
 		validateClusterNotify func(t *testing.T, notifier *testClusterNotifier)
@@ -415,6 +416,38 @@ func TestHandleSaveConfig(t *testing.T) {
 			},
 		},
 		{
+			name: "saves a valid link domain allowlist as entered",
+			requestBody: config.Config{
+				AllowUnsafeLinks:   true,
+				AllowedLinkDomains: "Example.com, *.mattermost.com",
+			},
+			expectedStatus: http.StatusOK,
+			validateStore: func(t *testing.T, store *testConfigStore) {
+				require.NotNil(t, store.cfg)
+				assert.Equal(t, "Example.com, *.mattermost.com", store.cfg.AllowedLinkDomains)
+			},
+		},
+		{
+			// An invalid entry matches nothing, so persisting it would quietly
+			// block links the admin meant to allow.
+			name: "rejects a link domain allowlist with invalid entries",
+			requestBody: config.Config{
+				AllowUnsafeLinks:   true,
+				AllowedLinkDomains: "example.com, not a host",
+			},
+			expectedStatus:    http.StatusBadRequest,
+			expectedErrorCode: configErrorInvalidLinkDomains,
+			validateStore: func(t *testing.T, store *testConfigStore) {
+				assert.Nil(t, store.cfg)
+			},
+			validateUpdater: func(t *testing.T, updater *testConfigUpdater) {
+				assert.Equal(t, 0, updater.callCount)
+			},
+			validateClusterNotify: func(t *testing.T, notifier *testClusterNotifier) {
+				assert.Equal(t, 0, notifier.callCount)
+			},
+		},
+		{
 			name:           "rejects invalid JSON",
 			requestBody:    "not-json",
 			expectedStatus: http.StatusBadRequest,
@@ -521,6 +554,11 @@ func TestHandleSaveConfig(t *testing.T) {
 			router.ServeHTTP(w, req)
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
+			if tt.expectedErrorCode != "" {
+				var resp agentErrorResponse
+				require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+				assert.Equal(t, tt.expectedErrorCode, resp.Code)
+			}
 			if tt.validateStore != nil {
 				tt.validateStore(t, store)
 			}

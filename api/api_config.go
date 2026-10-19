@@ -31,6 +31,10 @@ func normalizeAdminConfig(cfg config.Config) config.Config {
 	return cfg
 }
 
+// configErrorInvalidLinkDomains: the allowedLinkDomains setting has an entry
+// that is not a valid hostname.
+const configErrorInvalidLinkDomains agentErrorCode = "invalid_allowed_link_domains"
+
 // validateServiceStructuredOutputPolicies rejects a service whose
 // structured-output policy is not a value the runtime understands. Persisting a
 // typo would take every agent on that service offline (EnsureBots skips an
@@ -126,6 +130,14 @@ func (a *API) handleSaveConfig(c *gin.Context) {
 
 	if err := validateServiceStructuredOutputPolicies(cfg); err != nil {
 		c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+
+	// Invalid entries would silently match nothing at runtime, so reject them
+	// with a code the System Console can show to the admin.
+	if _, invalid := config.ParseLinkDomains(cfg.AllowedLinkDomains); len(invalid) > 0 {
+		abortAgentRequestWithCode(c, http.StatusBadRequest, configErrorInvalidLinkDomains,
+			fmt.Errorf("allowedLinkDomains has entries that are not valid hostnames: %q", invalid))
 		return
 	}
 
