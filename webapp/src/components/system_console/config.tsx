@@ -177,6 +177,10 @@ const BetaMessage = () => (
 
 const Config = (props: Props) => {
     const [localConfig, setLocalConfig] = useState<Config>(defaultConfig);
+
+    // The last loaded or saved configuration, for actions that only work
+    // against what the server already has.
+    const [savedConfig, setSavedConfig] = useState<Config>(defaultConfig);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [runtimeBots, setRuntimeBots] = useState<RuntimeBotOption[]>([]);
@@ -191,6 +195,7 @@ const Config = (props: Props) => {
             try {
                 const cfg = await getPluginConfig();
                 setLocalConfig({...defaultConfig, ...cfg});
+                setSavedConfig({...defaultConfig, ...cfg});
                 setLoadError(null);
             } catch (e: any) {
                 setLoadError(intl.formatMessage({defaultMessage: 'Failed to load configuration.'}));
@@ -227,6 +232,7 @@ const Config = (props: Props) => {
                 // service/MCP IDs (and the UI gated on them) appear
                 // immediately instead of after a page reload.
                 setLocalConfig({...defaultConfig, ...saved});
+                setSavedConfig({...defaultConfig, ...saved});
                 return {};
             } catch (e: any) {
                 return {error: {message: intl.formatMessage({defaultMessage: 'Failed to save configuration.'})}};
@@ -443,13 +449,15 @@ const Config = (props: Props) => {
             />
             <MCPServers
                 mcpConfig={mcpConfig}
-                onChange={(config) => {
-                    // Ensure we're creating a valid structure for the server configuration
-                    const updatedConfig = {
-                        ...config,
-                        servers: config.servers || [],
-                    };
-                    updateConfig({mcp: updatedConfig});
+                savedServers={savedConfig.mcp?.servers ?? []}
+                onChange={(update) => {
+                    setLocalConfig((prev) => {
+                        const updated = typeof update === 'function' ? update(prev.mcp || defaultConfig.mcp) : update;
+
+                        // Ensure we're creating a valid structure for the server configuration
+                        return {...prev, mcp: {...updated, servers: updated.servers || []}};
+                    });
+                    props.setSaveNeeded();
                 }}
             />
         </ConfigContainer>
