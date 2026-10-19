@@ -46,9 +46,13 @@ const resolveBotID = (id: string | undefined, legacyName: string | undefined, bo
     return '';
 };
 
-// The server answers with the first bot when the configured default is empty or unknown.
+// The server answers with the first bot only when no default is configured; a
+// configured default that is unavailable fails requests, so it resolves to ''.
 export const effectiveDefaultBotID = (configuredID: string | undefined, legacyName: string | undefined, bots: RuntimeBotOption[]) => {
-    return resolveBotID(configuredID, legacyName, bots) || (bots[0]?.id ?? '');
+    if (configuredID || legacyName) {
+        return resolveBotID(configuredID, legacyName, bots);
+    }
+    return bots[0]?.id ?? '';
 };
 
 type Props = {
@@ -302,6 +306,7 @@ const Config = (props: Props) => {
 
     // Initialize with default empty config if not provided
     const mcpConfig = value.mcp || defaultConfig.mcp;
+    const defaultBotID = effectiveDefaultBotID(value.defaultBotUserID, value.defaultBotName, runtimeBots);
 
     return (
         <ConfigContainer>
@@ -340,7 +345,8 @@ const Config = (props: Props) => {
                     )}
                     <SelectionItem
                         label={intl.formatMessage({defaultMessage: 'Default bot'})}
-                        value={effectiveDefaultBotID(value.defaultBotUserID, value.defaultBotName, runtimeBots)}
+                        value={defaultBotID}
+                        error={runtimeBots.length > 0 && !defaultBotID ? intl.formatMessage({defaultMessage: 'The configured default agent is not available. Requests that do not choose an agent will fail until you select another one.'}) : undefined}
                         onChange={(defaultBotUserID) => {
                             updateConfig({defaultBotUserID, defaultBotName: ''});
                         }}

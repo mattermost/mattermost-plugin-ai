@@ -254,8 +254,8 @@ describe('effectiveDefaultBotID', () => {
         {name: 'a legacy name only', id: '', legacy: 'second', expected: BOT_SECOND},
         {name: 'a renamed agent still matched by ID', id: BOT_FIRST, legacy: 'old-name', expected: BOT_FIRST},
         {name: 'an empty default', id: '', legacy: '', expected: BOT_FIRST},
-        {name: 'a removed agent ID', id: 'gone0000000000000000000000', legacy: '', expected: BOT_FIRST},
-        {name: 'an unknown legacy name', id: '', legacy: 'gone', expected: BOT_FIRST},
+        {name: 'a removed agent ID', id: 'gone0000000000000000000000', legacy: '', expected: ''},
+        {name: 'an unknown legacy name', id: '', legacy: 'gone', expected: ''},
     ])('resolves $name the way the server does', ({id, legacy, expected}) => {
         expect(effectiveDefaultBotID(id, legacy, runtimeBots)).toBe(expected);
     });
@@ -305,6 +305,14 @@ describe('Config default agent selector', () => {
         expect(saved.defaultBotName).toBe('');
         expect(saved.transcriptBotUserID).toBe('');
         expect(saved.transcriptBackend).toBe('scribe');
+    });
+
+    it('flags a configured default agent that is not available', async () => {
+        (getPluginConfig as jest.Mock).mockResolvedValue({...loadedConfig, defaultBotUserID: 'gone0000000000000000000000'});
+        renderConfig();
+
+        await screen.findByText(/The configured default agent is not available/);
+        expect(screen.queryByText('First')).toBeNull();
     });
 
     it('sends empty ID and legacy fields when nothing is configured', async () => {

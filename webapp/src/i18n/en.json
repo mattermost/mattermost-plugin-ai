@@ -261,6 +261,7 @@
   "NSpmIUIF": "Standard (vector)",
   "NoM7z5WV": "No tools available from this server",
   "Nv8iD2up": "Auto-reply mode",
+  "NxfGBScu": "The configured default agent is not available. Requests that do not choose an agent will fail until you select another one.",
   "NzZHOLQy": "Account ID",
   "O1NZgVej": "For MCP servers that require a pre-registered OAuth application (e.g. GitHub). Leave empty if the server supports automatic registration.",
   "OHD0uZ9A": "Failed to update prompt. Please try again.",
