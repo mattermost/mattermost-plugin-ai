@@ -524,12 +524,14 @@ func (a *API) ginlogger(c *gin.Context) {
 		switch {
 		case isClientDisconnect(ginErr.Err):
 			a.pluginAPI.Log.Debug("Client disconnected during request", fields...)
-		case status >= http.StatusInternalServerError:
-			a.pluginAPI.Log.Error("Request failed", fields...)
-		default:
+		case status >= http.StatusBadRequest && status < http.StatusInternalServerError:
 			// 4xx responses are expected outcomes (missing resources,
 			// permission checks, bad input), not server faults.
 			a.pluginAPI.Log.Debug("Request rejected", fields...)
+		default:
+			// 5xx, or a success response that still recorded an error
+			// (a best-effort step failed and the client won't see it).
+			a.pluginAPI.Log.Error("Request failed", fields...)
 		}
 	}
 }
