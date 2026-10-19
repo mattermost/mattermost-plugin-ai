@@ -460,8 +460,6 @@ describe('agent versioning and import/export client', () => {
         {header: null, expected: null},
         {header: 'attachment', expected: null},
         {header: 'attachment; filename="a-v1.agent.json"', expected: 'a-v1.agent.json'},
-        {header: 'attachment; filename=a-v1.agent.json', expected: 'a-v1.agent.json'},
-        {header: "attachment; filename*=UTF-8''caf%C3%A9.agent.json", expected: 'café.agent.json'},
     ])('parseContentDispositionFilename($header)', ({header, expected}) => {
         expect(parseContentDispositionFilename(header)).toBe(expected);
     });
