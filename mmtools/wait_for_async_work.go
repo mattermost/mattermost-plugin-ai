@@ -88,6 +88,6 @@ func waitSuccessMessage(minutes int, reason string) string {
 }
 
 // WakeUserMessage is the synthetic user-turn text injected when a wait fires.
-func WakeUserMessage(reason string) string {
-	return fmt.Sprintf("The wait you requested has elapsed (reason: %s). Check the status of the async work now using the appropriate tools. Report results to the user if complete, or call wait_for_async_work again if still running. If you have already waited many times without progress, report the situation to the user instead of waiting again.", reason)
-}
+// It is a fixed string: the model-supplied reason must never be voiced as
+// the user, so the model recovers it from its own earlier tool result.
+const WakeUserMessage = "The wait you requested with wait_for_async_work has elapsed; your earlier call to that tool notes what you were waiting on. Check the status of the async work now using the appropriate tools. Report results to the user if complete, or call wait_for_async_work again if still running. If you have already waited many times without progress, report the situation to the user instead of waiting again."

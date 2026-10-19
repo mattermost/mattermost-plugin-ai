@@ -26,6 +26,7 @@ const WakeJobKeyPrefix = "wait_wake_"
 // other conversation state is rederived from the response post at wake time.
 type WakeJob struct {
 	PostID string `json:"post_id"`
+	// Reason is model-authored; never interpolate it into a user-role turn.
 	Reason string `json:"reason"`
 }
 
@@ -126,6 +127,14 @@ func (c *Conversations) ResumeConversation(ctx context.Context, job WakeJob) err
 		return nil
 	}
 
+	// The wake runs unattended with plugin authority, so re-check that the
+	// requester could still start this turn themselves.
+	if user.DeleteAt != 0 || !c.mmClient.HasPermissionToChannel(user.Id, channel.Id, model.PermissionReadChannel) {
+		c.mmClient.LogDebug("wait_for_async_work: dropping wake, user no longer authorized",
+			"user_id", user.Id, "channel_id", channel.Id)
+		return nil
+	}
+
 	responseRootID := post.Id
 	if post.RootId != "" {
 		responseRootID = post.RootId
@@ -147,7 +156,7 @@ func (c *Conversations) ResumeConversation(ctx context.Context, job WakeJob) err
 		return fmt.Errorf("failed to attach conversation to wake response post: %w", err)
 	}
 
-	if err := c.convService.AppendSyntheticUserTurn(conv.ID, mmtools.WakeUserMessage(job.Reason)); err != nil {
+	if err := c.convService.AppendSyntheticUserTurn(conv.ID, mmtools.WakeUserMessage); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to write wake turn")
 		c.failResponsePlaceholder(wakePost, user.Locale)

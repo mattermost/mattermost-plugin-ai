@@ -103,6 +103,7 @@ func TestResumeConversationWritesWakeTurnAndFollowsUp(t *testing.T) {
 	mmClient.On("GetPost", "bot-post-id").Return(post, nil).Once()
 	mmClient.On("GetUser", "user-id").Return(user, nil).Once()
 	mmClient.On("GetChannel", "dm-channel").Return(channel, nil).Once()
+	mmClient.On("HasPermissionToChannel", "user-id", "dm-channel", model.PermissionReadChannel).Return(true).Once()
 	mmClient.On("CreatePost", mock.Anything).Run(func(args mock.Arguments) {
 		wakePost = args.Get(0).(*model.Post)
 		wakePost.Id = "wake-post-id"
@@ -148,10 +149,13 @@ func TestResumeConversationWritesWakeTurnAndFollowsUp(t *testing.T) {
 	var blocks []conversation.ContentBlock
 	require.NoError(t, json.Unmarshal(turns[1].Content, &blocks))
 	require.Equal(t, conversation.BlockTypeText, blocks[0].Type)
-	require.Equal(t, mmtools.WakeUserMessage(plantedWakeReason), blocks[0].Text)
+	require.Equal(t, mmtools.WakeUserMessage, blocks[0].Text)
 
+	// The model-supplied reason must never be voiced as the user.
 	require.Len(t, lm.requests, 1)
-	require.Contains(t, lm.requests[0].Posts[len(lm.requests[0].Posts)-1].Message, plantedWakeReason)
+	for _, p := range lm.requests[0].Posts {
+		require.NotContains(t, p.Message, plantedWakeReason)
+	}
 
 	assertAuditDoesNotContain(t, loggedAudit, rec, plantedWakeReason)
 }
@@ -184,6 +188,7 @@ func TestResumeConversationFailsPlaceholderWhenConversationPropUpdateFails(t *te
 	mmClient.On("GetPost", "bot-post-id").Return(post, nil).Once()
 	mmClient.On("GetUser", "user-id").Return(user, nil).Once()
 	mmClient.On("GetChannel", "dm-channel").Return(channel, nil).Once()
+	mmClient.On("HasPermissionToChannel", "user-id", "dm-channel", model.PermissionReadChannel).Return(true).Once()
 	mmClient.On("CreatePost", mock.Anything).Run(func(args mock.Arguments) {
 		wakePost = args.Get(0).(*model.Post)
 		wakePost.Id = "wake-post-id"
@@ -220,9 +225,18 @@ func TestResumeConversationFailsPlaceholderWhenConversationPropUpdateFails(t *te
 }
 
 func TestResumeConversationDrops(t *testing.T) {
+	livePost := func(convID string) *model.Post {
+		post := &model.Post{Id: "bot-post-id", UserId: "bot-id", ChannelId: "dm-channel"}
+		post.AddProp(streaming.ConversationIDProp, convID)
+		return post
+	}
+
 	tests := []struct {
 		name string
 		post func(convID string) *model.Post
+		// user, when set, means lookups reach the authorization check.
+		user    *model.User
+		canRead bool
 	}{
 		{
 			name: "post missing",
@@ -242,6 +256,18 @@ func TestResumeConversationDrops(t *testing.T) {
 				return post
 			},
 		},
+		{
+			name:    "requester deactivated",
+			post:    livePost,
+			user:    &model.User{Id: "user-id", DeleteAt: 1},
+			canRead: true,
+		},
+		{
+			name:    "requester lost channel access",
+			post:    livePost,
+			user:    &model.User{Id: "user-id"},
+			canRead: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -259,6 +285,13 @@ func TestResumeConversationDrops(t *testing.T) {
 				mmClient.On("GetPost", "bot-post-id").Return(post, nil).Once()
 			} else {
 				mmClient.On("GetPost", "bot-post-id").Return(nil, model.NewAppError("GetPost", "not found", nil, "", 404)).Once()
+			}
+			if tt.user != nil {
+				mmClient.On("GetUser", "user-id").Return(tt.user, nil).Once()
+				mmClient.On("GetChannel", "dm-channel").Return(&model.Channel{Id: "dm-channel", Type: model.ChannelTypeDirect}, nil).Once()
+				if tt.user.DeleteAt == 0 {
+					mmClient.On("HasPermissionToChannel", "user-id", "dm-channel", model.PermissionReadChannel).Return(tt.canRead).Once()
+				}
 			}
 			mmClient.On("LogDebug", mock.Anything, mock.Anything).Return().Once()
 

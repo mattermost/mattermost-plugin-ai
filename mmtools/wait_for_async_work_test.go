@@ -163,28 +163,14 @@ func TestClampWaitMinutes(t *testing.T) {
 }
 
 func TestWaitMessages(t *testing.T) {
-	tests := []struct {
-		name   string
-		reason string
-	}{
-		{name: "success echoes reason", reason: "cursor agent abc"},
-		{name: "wake echoes reason and asks to stop looping", reason: "jira job 42"},
-	}
+	success := waitSuccessMessage(7, "cursor agent abc")
+	require.Contains(t, success, "cursor agent abc")
+	require.Contains(t, success, "~7 minutes")
+	require.Contains(t, success, "Wrap up your current response")
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			success := waitSuccessMessage(7, tt.reason)
-			require.Contains(t, success, tt.reason)
-			require.Contains(t, success, "~7 minutes")
-			require.Contains(t, success, "Wrap up your current response")
-
-			wake := WakeUserMessage(tt.reason)
-			require.Contains(t, wake, tt.reason)
-			require.Contains(t, wake, "Check the status of the async work")
-			require.Contains(t, wake, "call wait_for_async_work again")
-			require.Contains(t, wake, "already waited many times without progress")
-		})
-	}
+	require.Contains(t, WakeUserMessage, "Check the status of the async work")
+	require.Contains(t, WakeUserMessage, "call wait_for_async_work again")
+	require.Contains(t, WakeUserMessage, "already waited many times without progress")
 }
 
 func TestGetToolsWaitForAsyncWorkCatalog(t *testing.T) {
