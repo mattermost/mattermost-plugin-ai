@@ -61,10 +61,13 @@ func RecordScore(e *EvalT, result *EvalResult) {
 // citations, so a failing assertion is reported even when the rubrics pass.
 const assertionsCheck = "Passes the eval's code assertions"
 
+const unreportedFailure = "the eval failed before grading without an assertion message; see the test log"
+
 // failureLine returns the line that records a run's assertion failures: an
 // error when the run failed before anything was graded, and otherwise the
-// assertionsCheck result.
-func failureLine(recorded int, failures []string) (EvalLogLine, bool) {
+// assertionsCheck result. failed reports whether the run's test failed, which
+// also covers failures reported directly on the testing.T rather than EvalT.
+func failureLine(recorded int, failures []string, failed bool) (EvalLogLine, bool) {
 	summaries := make([]string, len(failures))
 	for i, failure := range failures {
 		summaries[i] = redactSecrets(summarizeFailure(failure))
@@ -78,6 +81,8 @@ func failureLine(recorded int, failures []string) (EvalLogLine, bool) {
 		return line, true
 	case len(failures) > 0:
 		return EvalLogLine{Error: summaries[len(summaries)-1]}, true
+	case failed:
+		return EvalLogLine{Error: unreportedFailure}, true
 	default:
 		return EvalLogLine{}, false
 	}

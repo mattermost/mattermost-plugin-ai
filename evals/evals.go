@@ -323,7 +323,7 @@ func runOnce(e *EvalT, f func(e *EvalT)) {
 	e.agentMeter.reset()
 	e.graderMeter.reset()
 	defer func() {
-		if line, ok := failureLine(e.recorded, e.failures); ok {
+		if line, ok := failureLine(e.recorded, e.failures, e.Failed()); ok {
 			writeLogLine(e, line)
 		}
 		recordUsage(e)

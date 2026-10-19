@@ -36,7 +36,7 @@ type searchFlowResult struct {
 func runSearchFlowEval(e *evals.EvalT, suite *TestSuite, data *evalChannelData, query string, scope *model.Channel) searchFlowResult {
 	e.Helper()
 
-	setup := setupAgenticEval(e.T, e, suite, data.alice, data.team)
+	setup := setupAgenticEval(e, suite, data.alice, data.team)
 	setup.llmContext.SiteURL = suite.serverURL
 
 	promptsObj, err := llm.NewPrompts(prompts.PromptsFolder)
@@ -175,8 +175,8 @@ func TestSearchBarFlowEval(t *testing.T) {
 // was limited to, in order; an empty ID means the lookup was not limited to a
 // channel. search_posts may also be limited with its in filter, which takes a
 // channel name or ID; names are resolved against channels.
-func lookupChannelIDs(t *testing.T, calls []llm.ToolCall, channels ...*model.Channel) []string {
-	t.Helper()
+func lookupChannelIDs(e *evals.EvalT, calls []llm.ToolCall, channels ...*model.Channel) []string {
+	e.Helper()
 	var ids []string
 	for _, call := range calls {
 		switch llm.BareMCPToolName(call.Name) {
@@ -188,7 +188,7 @@ func lookupChannelIDs(t *testing.T, calls []llm.ToolCall, channels ...*model.Cha
 			ChannelID string `json:"channel_id"`
 			In        string `json:"in"`
 		}
-		require.NoError(t, json.Unmarshal(call.Arguments, &args))
+		require.NoError(e, json.Unmarshal(call.Arguments, &args))
 		id := args.ChannelID
 		if in := strings.TrimPrefix(strings.TrimSpace(args.In), "~"); id == "" && in != "" {
 			id = in
@@ -244,7 +244,7 @@ func TestAskChannelSearchFlowEval(t *testing.T) {
 		evals.Run(t, "ask-channel "+tt.name, func(e *evals.EvalT) {
 			result := runSearchFlowEval(e, suite, data, tt.query, data.designChannel)
 
-			channelIDs := lookupChannelIDs(e.T, result.toolCalls, data.channel, data.designChannel)
+			channelIDs := lookupChannelIDs(e, result.toolCalls, data.channel, data.designChannel)
 			require.NotEmpty(e, channelIDs, "the agent must search or read Mattermost")
 			assert.Equal(e, data.designChannel.Id, channelIDs[0], "the first lookup must start in the requested channel (lookups: %v)", channelIDs)
 

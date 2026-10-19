@@ -55,6 +55,7 @@ func TestFailureLine(t *testing.T) {
 		name     string
 		recorded int
 		failures []string
+		failed   bool
 		want     *EvalLogLine
 	}{
 		{
@@ -77,13 +78,24 @@ func TestFailureLine(t *testing.T) {
 			want:     &EvalLogLine{Error: "provider rejected the request"},
 		},
 		{
+			name:   "failure reported outside EvalT before grading is recorded as an error",
+			failed: true,
+			want:   &EvalLogLine{Error: unreportedFailure},
+		},
+		{
+			name:     "rubric failure does not fail the assertions check",
+			recorded: 1,
+			failed:   true,
+			want:     &EvalLogLine{Rubric: assertionsCheck, Pass: true, Score: 1},
+		},
+		{
 			name: "run that neither graded nor failed records nothing",
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			line, ok := failureLine(tc.recorded, tc.failures)
+			line, ok := failureLine(tc.recorded, tc.failures, tc.failed)
 			if tc.want == nil {
 				assert.False(t, ok)
 				return

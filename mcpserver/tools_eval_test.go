@@ -29,7 +29,7 @@ import (
 func runAgenticFlowEval(e *evals.EvalT, suite *TestSuite, requestingUser *model.User, team *model.Team, userMessage string, rubrics []string, requiredTools [][]string) string {
 	e.Helper()
 
-	setup := setupAgenticEval(e.T, e, suite, requestingUser, team)
+	setup := setupAgenticEval(e, suite, requestingUser, team)
 
 	promptsObj, err := llm.NewPrompts(prompts.PromptsFolder)
 	require.NoError(e, err, "Failed to load prompts")

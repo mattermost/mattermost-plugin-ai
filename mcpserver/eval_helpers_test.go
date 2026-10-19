@@ -336,11 +336,11 @@ type agenticEvalSetup struct {
 
 // setupAgenticEval builds the common infrastructure for agentic flow evals:
 // MCP tools as llm.Tool, ToolStore, ToolRunner, and populated llm.Context.
-func setupAgenticEval(t *testing.T, e *evals.EvalT, suite *TestSuite, requestingUser *model.User, team *model.Team) *agenticEvalSetup {
-	t.Helper()
+func setupAgenticEval(e *evals.EvalT, suite *TestSuite, requestingUser *model.User, team *model.Team) *agenticEvalSetup {
+	e.Helper()
 
-	mcpTools := mcpToolsToLLMTools(t, suite.mcpServer.GetMCPServer())
-	require.NotEmpty(t, mcpTools, "Should have MCP tools")
+	mcpTools := mcpToolsToLLMTools(e, suite.mcpServer.GetMCPServer())
+	require.NotEmpty(e, mcpTools, "Should have MCP tools")
 
 	allToolNames := make([]string, len(mcpTools))
 	for i, tool := range mcpTools {
@@ -361,7 +361,7 @@ func setupAgenticEval(t *testing.T, e *evals.EvalT, suite *TestSuite, requesting
 	llmContext.BotUsername = "ai-bot"
 	llmContext.BotModel = "eval-model"
 
-	loggedLLM := &evalStreamLogger{inner: e.LLM, t: t}
+	loggedLLM := &evalStreamLogger{inner: e.LLM, t: e.T}
 
 	return &agenticEvalSetup{
 		llm:          loggedLLM,
@@ -373,14 +373,14 @@ func setupAgenticEval(t *testing.T, e *evals.EvalT, suite *TestSuite, requesting
 
 // mcpToolsToLLMTools converts MCP server tools into llm.Tool instances with resolvers
 // that call through the MCP protocol.
-func mcpToolsToLLMTools(t *testing.T, mcpServer *gomcp.Server) []llm.Tool {
-	t.Helper()
+func mcpToolsToLLMTools(e *evals.EvalT, mcpServer *gomcp.Server) []llm.Tool {
+	e.Helper()
 
-	session := testhelpers.CreateTestMCPSession(t, mcpServer)
+	session := testhelpers.CreateTestMCPSession(e.T, mcpServer)
 
 	ctx := context.Background()
 	toolsList, err := session.ListTools(ctx, nil)
-	require.NoError(t, err, "Failed to list MCP tools")
+	require.NoError(e, err, "Failed to list MCP tools")
 
 	var tools []llm.Tool
 	for _, tool := range toolsList.Tools {
