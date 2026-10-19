@@ -14,10 +14,24 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/store"
 )
 
-// agentVersionListResponse is the body of GET /agents/:agentid/versions.
-type agentVersionListResponse struct {
-	CurrentVersion int                  `json:"currentVersion"`
-	Versions       []store.AgentVersion `json:"versions"`
+const (
+	defaultAgentVersionPageSize = 50
+	maxAgentVersionPageSize     = 200
+)
+
+// parsePositiveIntQuery reads an optional positive integer query parameter,
+// returning fallback when it is absent and aborting with 400 when it is invalid.
+func parsePositiveIntQuery(c *gin.Context, name string, fallback int) (int, bool) {
+	raw, present := c.GetQuery(name)
+	if !present {
+		return fallback, true
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 1 {
+		abortAgentRequest(c, http.StatusBadRequest, fmt.Errorf("invalid %s %q: must be a positive integer", name, raw))
+		return 0, false
+	}
+	return value, true
 }
 
 // parseAgentVersionParam reads the :version path parameter, aborting with
@@ -32,8 +46,10 @@ func parseAgentVersionParam(c *gin.Context) (int, bool) {
 	return version, true
 }
 
-// handleListAgentVersions handles GET /agents/:agentid/versions (newest first).
-// Snapshots carry custom instructions, so only agent managers may read them.
+// handleListAgentVersions handles GET /agents/:agentid/versions: one page of
+// versions, newest first, older than the optional ?before= version and at most
+// ?limit= long. Snapshots carry custom instructions, so only agent managers
+// may read them.
 func (a *API) handleListAgentVersions(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	agentID := c.Param("agentid")
@@ -41,18 +57,21 @@ func (a *API) handleListAgentVersions(c *gin.Context) {
 	if _, ok := a.loadManageableAgent(c, agentID, userID, "not authorized to view this agent's history", nil); !ok {
 		return
 	}
+	before, ok := parsePositiveIntQuery(c, "before", 0)
+	if !ok {
+		return
+	}
+	limit, ok := parsePositiveIntQuery(c, "limit", defaultAgentVersionPageSize)
+	if !ok {
+		return
+	}
 
-	versions, err := a.agentStore.ListAgentVersions(agentID)
+	page, err := a.agentStore.ListAgentVersions(agentID, before, min(limit, maxAgentVersionPageSize))
 	if err != nil {
 		abortAgentRequest(c, http.StatusInternalServerError, fmt.Errorf("failed to list agent versions: %w", err))
 		return
 	}
-
-	resp := agentVersionListResponse{Versions: versions}
-	if len(versions) > 0 {
-		resp.CurrentVersion = versions[0].Version
-	}
-	c.JSON(http.StatusOK, resp)
+	c.JSON(http.StatusOK, page)
 }
 
 // handleGetAgentVersion handles GET /agents/:agentid/versions/:version.

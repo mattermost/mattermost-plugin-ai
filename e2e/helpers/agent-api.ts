@@ -128,9 +128,11 @@ export interface AgentVersionSummary {
     changedFields: string[];
 }
 
+// One page of versions, newest first (the server default page is 50).
 export interface AgentVersionList {
     currentVersion: number;
     versions: AgentVersionSummary[];
+    hasMore: boolean;
 }
 
 export interface AgentVersionDetail extends AgentVersionSummary {

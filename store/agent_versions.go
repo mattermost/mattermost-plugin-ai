@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 
 	"github.com/jmoiron/sqlx"
@@ -255,30 +256,68 @@ func ensureCurrentAgentVersionTx(tx *sqlx.Tx, current *llm.BotConfig) (int, stri
 	return latest + 1, configJSON, true, nil
 }
 
-// ListAgentVersions returns the versions of agentID, newest first. Deleted
-// agents keep their versions; callers gate access on the agent itself.
-func (s *Store) ListAgentVersions(agentID string) ([]AgentVersion, error) {
-	var rows []agentVersionRow
-	err := s.db.Select(&rows,
-		`SELECT Version, CreatedBy, CreateAt, Source, RestoredFromVersion, ChangedFields
-		FROM Agents_AgentVersions
-		WHERE AgentID = $1
-		ORDER BY Version DESC`,
-		agentID,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list versions of agent %q: %w", agentID, err)
+// AgentVersionPage is one page of an agent's versions, newest first.
+type AgentVersionPage struct {
+	// CurrentVersion is the agent's latest version number whatever page this
+	// is, or 0 when it has no versions.
+	CurrentVersion int            `json:"currentVersion"`
+	Versions       []AgentVersion `json:"versions"`
+	// HasMore reports whether versions older than this page exist.
+	HasMore bool `json:"hasMore"`
+}
+
+// ListAgentVersions returns up to limit versions of agentID older than
+// before (no upper bound when before is 0), newest first. Deleted agents keep
+// their versions; callers gate access on the agent itself.
+func (s *Store) ListAgentVersions(agentID string, before, limit int) (AgentVersionPage, error) {
+	if limit < 1 {
+		return AgentVersionPage{}, fmt.Errorf("invalid agent version page size %d", limit)
+	}
+	if before <= 0 {
+		before = math.MaxInt32
 	}
 
-	versions := make([]AgentVersion, 0, len(rows))
+	var rows []struct {
+		agentVersionRow
+		CurrentVersion int `db:"currentversion"`
+	}
+	err := s.db.Select(&rows,
+		`SELECT Version, CreatedBy, CreateAt, Source, RestoredFromVersion, ChangedFields,
+			(SELECT MAX(Version) FROM Agents_AgentVersions WHERE AgentID = $1) AS CurrentVersion
+		FROM Agents_AgentVersions
+		WHERE AgentID = $1 AND Version < $2
+		ORDER BY Version DESC
+		LIMIT $3`,
+		agentID, before, limit+1,
+	)
+	if err != nil {
+		return AgentVersionPage{}, fmt.Errorf("failed to list versions of agent %q: %w", agentID, err)
+	}
+
+	page := AgentVersionPage{Versions: make([]AgentVersion, 0, min(len(rows), limit))}
+	if len(rows) > limit {
+		page.HasMore = true
+		rows = rows[:limit]
+	}
 	for i := range rows {
 		v, parseErr := rows[i].toAgentVersion()
 		if parseErr != nil {
-			return nil, parseErr
+			return AgentVersionPage{}, parseErr
 		}
-		versions = append(versions, v)
+		page.Versions = append(page.Versions, v)
 	}
-	return versions, nil
+
+	if len(rows) > 0 {
+		page.CurrentVersion = rows[0].CurrentVersion
+		return page, nil
+	}
+	if err := s.db.Get(&page.CurrentVersion,
+		`SELECT COALESCE(MAX(Version), 0) FROM Agents_AgentVersions WHERE AgentID = $1`,
+		agentID,
+	); err != nil {
+		return AgentVersionPage{}, fmt.Errorf("failed to get current version of agent %q: %w", agentID, err)
+	}
+	return page, nil
 }
 
 // GetAgentVersion returns one version of agentID with its configuration

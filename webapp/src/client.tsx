@@ -1097,8 +1097,18 @@ async function fetchAgentJSON<T>(url: string, init: {method: string; body?: stri
     return (await fetchAgentRoute(url, init)).json();
 }
 
-export function getAgentVersions(agentId: string): Promise<AgentVersionList> {
-    return fetchAgentJSON(`${agentRoute(agentId)}/versions`, {method: 'GET'});
+// getAgentVersions fetches one page of versions, newest first: those older
+// than `before` (from the newest when omitted), at most `limit` long.
+export function getAgentVersions(agentId: string, page: {before?: number; limit?: number} = {}): Promise<AgentVersionList> {
+    const params = new URLSearchParams();
+    if (typeof page.before === 'number') {
+        params.set('before', String(page.before));
+    }
+    if (typeof page.limit === 'number') {
+        params.set('limit', String(page.limit));
+    }
+    const query = params.toString();
+    return fetchAgentJSON(`${agentRoute(agentId)}/versions${query ? `?${query}` : ''}`, {method: 'GET'});
 }
 
 export function getAgentVersion(agentId: string, version: number): Promise<AgentVersionDetail> {

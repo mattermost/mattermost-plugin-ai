@@ -114,7 +114,9 @@ type AgentStore interface {
 	UpdateAgent(cfg *llm.BotConfig, meta store.AgentVersionMeta) error
 	DeleteAgent(id string) error
 
-	ListAgentVersions(agentID string) ([]store.AgentVersion, error)
+	// ListAgentVersions returns up to limit versions older than before (no
+	// upper bound when before is 0), newest first.
+	ListAgentVersions(agentID string, before, limit int) (store.AgentVersionPage, error)
 	// GetAgentVersion returns nil, nil when the version does not exist.
 	GetAgentVersion(agentID string, version int) (*store.AgentVersionDetail, error)
 	// GetLatestAgentVersion returns nil, nil when the agent has no versions.

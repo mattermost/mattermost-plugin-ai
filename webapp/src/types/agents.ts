@@ -183,9 +183,12 @@ export type AgentVersionSummary = {
     changedFields: string[] | null;
 }
 
+// AgentVersionList is one page of GET /agents/:id/versions. currentVersion is
+// the agent's latest version on every page.
 export type AgentVersionList = {
     currentVersion: number;
     versions: AgentVersionSummary[];
+    hasMore: boolean;
 }
 
 // AgentVersionDetail is GET /agents/:id/versions/:version. config is the stored

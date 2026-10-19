@@ -76,8 +76,14 @@ const HistoryTab = ({agentId, services, isDirty, currentUserAccessLevel, onResto
     const [restoring, setRestoring] = useState(false);
     const [restoreError, setRestoreError] = useState('');
     const [restoredNotice, setRestoredNotice] = useState('');
+    const [loadingOlder, setLoadingOlder] = useState(false);
+    const [olderError, setOlderError] = useState('');
     const requestedAuthors = useRef(new Set<string>());
     const mountedRef = useRef(true);
+
+    // Bumped by every first-page load so that page responses requested before
+    // it (e.g. older pages of the list a restore replaced) are dropped.
+    const listGenerationRef = useRef(0);
 
     useEffect(() => {
         mountedRef.current = true;
@@ -87,9 +93,16 @@ const HistoryTab = ({agentId, services, isDirty, currentUserAccessLevel, onResto
     }, []);
 
     const loadList = useCallback(async (selectNewest: boolean) => {
+        listGenerationRef.current += 1;
+        const generation = listGenerationRef.current;
+        setLoadingOlder(false);
+        setOlderError('');
         try {
             setListError('');
             const result = await getAgentVersions(agentId);
+            if (!mountedRef.current || generation !== listGenerationRef.current) {
+                return;
+            }
             const versions = result.versions ?? [];
             const next = {...result, versions};
             setList(next);
@@ -103,9 +116,42 @@ const HistoryTab = ({agentId, services, isDirty, currentUserAccessLevel, onResto
                 return prev;
             });
         } catch (e) {
-            setListError(errorMessage(e, intlRef.current.formatMessage({defaultMessage: 'Failed to load version history.'})));
+            if (mountedRef.current && generation === listGenerationRef.current) {
+                setListError(errorMessage(e, intlRef.current.formatMessage({defaultMessage: 'Failed to load version history.'})));
+            }
         }
     }, [agentId]);
+
+    const loadOlder = async () => {
+        if (!list || loadingOlder || list.versions.length === 0) {
+            return;
+        }
+        const generation = listGenerationRef.current;
+        const before = list.versions[list.versions.length - 1].version;
+        setLoadingOlder(true);
+        setOlderError('');
+        try {
+            const result = await getAgentVersions(agentId, {before});
+            if (!mountedRef.current || generation !== listGenerationRef.current) {
+                return;
+            }
+            setList((prev) => {
+                if (!prev) {
+                    return prev;
+                }
+                const older = (result.versions ?? []).filter((v) => v.version < before);
+                return {...prev, versions: [...prev.versions, ...older], hasMore: Boolean(result.hasMore)};
+            });
+        } catch (e) {
+            if (mountedRef.current && generation === listGenerationRef.current) {
+                setOlderError(errorMessage(e, intl.formatMessage({defaultMessage: 'Failed to load older versions.'})));
+            }
+        } finally {
+            if (mountedRef.current && generation === listGenerationRef.current) {
+                setLoadingOlder(false);
+            }
+        }
+    };
 
     useEffect(() => {
         loadList(true);
@@ -240,46 +286,64 @@ const HistoryTab = ({agentId, services, isDirty, currentUserAccessLevel, onResto
 
     return (
         <Layout>
-            <VersionList
-                aria-label={intl.formatMessage({defaultMessage: 'Version history'})}
-                data-testid='version-list'
-            >
-                {list.versions.map((v) => {
-                    const changed = changedFieldLabels(intl, v.changedFields);
-                    return (
-                        <li key={v.version}>
-                            <VersionItem
-                                type='button'
-                                $selected={v.version === selected}
-                                {...(v.version === selected ? {'aria-current': 'true' as const} : {})}
-                                onClick={() => handleSelect(v.version)}
-                            >
-                                <VersionTitleRow>
-                                    <VersionTitle>
-                                        {intl.formatMessage({defaultMessage: 'Version {version}'}, {version: v.version})}
-                                    </VersionTitle>
-                                    {v.version === list.currentVersion && <CurrentTag/>}
-                                </VersionTitleRow>
-                                <VersionMeta>{versionSourceLabel(intl, v)}</VersionMeta>
-                                <VersionMeta>
-                                    {intl.formatMessage(
-                                        {defaultMessage: '{author} · {time}'},
-                                        {author: authorLabel(v.createdBy), time: formatTimestamp(intl, v.createAt)},
-                                    )}
-                                </VersionMeta>
-                                {changed.length > 0 && (
+            <ListColumn>
+                <VersionList
+                    aria-label={intl.formatMessage({defaultMessage: 'Version history'})}
+                    data-testid='version-list'
+                >
+                    {list.versions.map((v) => {
+                        const changed = changedFieldLabels(intl, v.changedFields);
+                        return (
+                            <li key={v.version}>
+                                <VersionItem
+                                    type='button'
+                                    $selected={v.version === selected}
+                                    {...(v.version === selected ? {'aria-current': 'true' as const} : {})}
+                                    onClick={() => handleSelect(v.version)}
+                                >
+                                    <VersionTitleRow>
+                                        <VersionTitle>
+                                            {intl.formatMessage({defaultMessage: 'Version {version}'}, {version: v.version})}
+                                        </VersionTitle>
+                                        {v.version === list.currentVersion && <CurrentTag/>}
+                                    </VersionTitleRow>
+                                    <VersionMeta>{versionSourceLabel(intl, v)}</VersionMeta>
                                     <VersionMeta>
                                         {intl.formatMessage(
-                                            {defaultMessage: 'Changed: {fields}'},
-                                            {fields: changed.join(', ')},
+                                            {defaultMessage: '{author} · {time}'},
+                                            {author: authorLabel(v.createdBy), time: formatTimestamp(intl, v.createAt)},
                                         )}
                                     </VersionMeta>
-                                )}
-                            </VersionItem>
-                        </li>
-                    );
-                })}
-            </VersionList>
+                                    {changed.length > 0 && (
+                                        <VersionMeta>
+                                            {intl.formatMessage(
+                                                {defaultMessage: 'Changed: {fields}'},
+                                                {fields: changed.join(', ')},
+                                            )}
+                                        </VersionMeta>
+                                    )}
+                                </VersionItem>
+                            </li>
+                        );
+                    })}
+                </VersionList>
+                {list.hasMore && (
+                    <Button
+                        emphasis='tertiary'
+                        loading={loadingOlder}
+                        onClick={loadOlder}
+                    >
+                        <FormattedMessage defaultMessage='Load older versions'/>
+                    </Button>
+                )}
+                {olderError && (
+                    <SectionNotice
+                        type='danger'
+                        title={olderError}
+                        role='alert'
+                    />
+                )}
+            </ListColumn>
 
             <DetailPane>
                 {restoredNotice && (
@@ -382,11 +446,17 @@ const Layout = styled.div`
     align-items: flex-start;
 `;
 
+const ListColumn = styled.div`
+    flex: 0 0 300px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+`;
+
 const VersionList = styled.ol`
     list-style: none;
     margin: 0;
     padding: 0;
-    flex: 0 0 300px;
     display: flex;
     flex-direction: column;
     gap: 8px;

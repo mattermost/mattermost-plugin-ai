@@ -398,6 +398,8 @@ describe('agent versioning and import/export client', () => {
 
     test.each([
         {name: 'list versions', call: () => getAgentVersions('a1'), url: `${agentBase}/a1/versions`, method: 'GET'},
+        {name: 'list older versions', call: () => getAgentVersions('a1', {before: 51}), url: `${agentBase}/a1/versions?before=51`, method: 'GET'},
+        {name: 'list a page of versions', call: () => getAgentVersions('a1', {before: 51, limit: 20}), url: `${agentBase}/a1/versions?before=51&limit=20`, method: 'GET'},
         {name: 'get one version', call: () => getAgentVersion('a1', 3), url: `${agentBase}/a1/versions/3`, method: 'GET'},
         {name: 'restore a version', call: () => restoreAgentVersion('a1', 3), url: `${agentBase}/a1/versions/3/restore`, method: 'POST'},
         {name: 'preview an import', call: () => previewAgentImport(document), url: `${agentBase}/import/preview`, method: 'POST'},

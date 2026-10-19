@@ -587,13 +587,23 @@ func (m *mockAgentStore) recordVersion(cfg, prev *llm.BotConfig, meta store.Agen
 	m.versions[cfg.ID] = history
 }
 
-func (m *mockAgentStore) ListAgentVersions(agentID string) ([]store.AgentVersion, error) {
-	history := m.versions[agentID]
-	out := make([]store.AgentVersion, 0, len(history))
-	for i := len(history) - 1; i >= 0; i-- {
-		out = append(out, history[i].AgentVersion)
+func (m *mockAgentStore) ListAgentVersions(agentID string, before, limit int) (store.AgentVersionPage, error) {
+	if limit < 1 {
+		return store.AgentVersionPage{}, fmt.Errorf("invalid agent version page size %d", limit)
 	}
-	return out, nil
+	history := m.versions[agentID]
+	page := store.AgentVersionPage{CurrentVersion: len(history), Versions: []store.AgentVersion{}}
+	for i := len(history) - 1; i >= 0; i-- {
+		if before > 0 && history[i].Version >= before {
+			continue
+		}
+		if len(page.Versions) == limit {
+			page.HasMore = true
+			break
+		}
+		page.Versions = append(page.Versions, history[i].AgentVersion)
+	}
+	return page, nil
 }
 
 func (m *mockAgentStore) GetAgentVersion(agentID string, version int) (*store.AgentVersionDetail, error) {

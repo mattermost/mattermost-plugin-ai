@@ -5,8 +5,10 @@ package api
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/audit"
@@ -100,9 +102,10 @@ func TestListAndGetAgentVersions(t *testing.T) {
 
 	recorder := doRequest(e.api, http.MethodGet, "/agents/agent-1/versions", nil, testUserID)
 	require.Equal(t, http.StatusOK, recorder.Result().StatusCode)
-	var list agentVersionListResponse
+	var list store.AgentVersionPage
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &list))
 	assert.Equal(t, 2, list.CurrentVersion)
+	assert.False(t, list.HasMore)
 	require.Len(t, list.Versions, 2)
 	assert.Equal(t, 2, list.Versions[0].Version)
 	assert.Equal(t, testUserID, list.Versions[0].CreatedBy)
@@ -138,6 +141,78 @@ func TestListAndGetAgentVersions(t *testing.T) {
 	}
 }
 
+func TestListAgentVersionsPaging(t *testing.T) {
+	const totalVersions = 250
+	versionRange := func(from, to int) []int {
+		out := []int{}
+		for v := from; v >= to; v-- {
+			out = append(out, v)
+		}
+		return out
+	}
+
+	tests := []struct {
+		name             string
+		query            string
+		expectedStatus   int
+		expectedVersions []int
+		expectedHasMore  bool
+	}{
+		{name: "defaults to the newest 50", query: "", expectedStatus: http.StatusOK, expectedVersions: versionRange(250, 201), expectedHasMore: true},
+		{name: "before and limit", query: "?before=100&limit=10", expectedStatus: http.StatusOK, expectedVersions: versionRange(99, 90), expectedHasMore: true},
+		{name: "limit is clamped to 200", query: "?limit=500", expectedStatus: http.StatusOK, expectedVersions: versionRange(250, 51), expectedHasMore: true},
+		{name: "last page", query: "?before=3", expectedStatus: http.StatusOK, expectedVersions: []int{2, 1}},
+		{name: "nothing before version 1", query: "?before=1", expectedStatus: http.StatusOK, expectedVersions: []int{}},
+		{name: "zero limit", query: "?limit=0", expectedStatus: http.StatusBadRequest},
+		{name: "negative limit", query: "?limit=-5", expectedStatus: http.StatusBadRequest},
+		{name: "non-integer limit", query: "?limit=ten", expectedStatus: http.StatusBadRequest},
+		{name: "zero before", query: "?before=0", expectedStatus: http.StatusBadRequest},
+		{name: "empty before", query: "?before=", expectedStatus: http.StatusBadRequest},
+		{name: "fractional before", query: "?before=1.5", expectedStatus: http.StatusBadRequest},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := setupAgentTestEnvironment(t)
+			defer e.Cleanup(t)
+			mockLicensed(e.mockAPI)
+			agent := versionTestAgent()
+			e.agentStore.agents[agent.ID] = agent
+			for range totalVersions {
+				e.agentStore.recordVersion(agent, nil, store.AgentVersionMeta{Source: store.AgentVersionSourceUpdate})
+			}
+
+			recorder := doRequest(e.api, http.MethodGet, "/agents/agent-1/versions"+tt.query, nil, testUserID)
+			require.Equal(t, tt.expectedStatus, recorder.Result().StatusCode, recorder.Body.String())
+			if tt.expectedStatus != http.StatusOK {
+				return
+			}
+
+			var raw map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &raw))
+			assert.ElementsMatch(t, []string{"currentVersion", "versions", "hasMore"}, slices.Collect(maps.Keys(raw)))
+
+			var page store.AgentVersionPage
+			require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &page))
+			assert.Equal(t, totalVersions, page.CurrentVersion, "currentVersion is the latest version on every page")
+			assert.Equal(t, tt.expectedHasMore, page.HasMore)
+			got := make([]int, 0, len(page.Versions))
+			for _, v := range page.Versions {
+				got = append(got, v.Version)
+			}
+			assert.Equal(t, tt.expectedVersions, got)
+		})
+	}
+}
+
+// allAgentVersions returns every version the mock store holds for agentID, newest first.
+func allAgentVersions(t *testing.T, e *TestEnvironment, agentID string) []store.AgentVersion {
+	t.Helper()
+	page, err := e.agentStore.ListAgentVersions(agentID, 0, len(e.agentStore.versions[agentID])+1)
+	require.NoError(t, err)
+	return page.Versions
+}
+
 func TestRestoreAgentVersion(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -168,8 +243,7 @@ func TestRestoreAgentVersion(t *testing.T) {
 				assert.Equal(t, "original instructions", stored.CustomInstructions)
 				assert.Equal(t, "bot-1", stored.BotUserID, "identity is untouched")
 
-				versions, err := e.agentStore.ListAgentVersions(versionTestAgentID)
-				require.NoError(t, err)
+				versions := allAgentVersions(t, e, versionTestAgentID)
 				require.Len(t, versions, 3, "history is never rewritten")
 				assert.Equal(t, store.AgentVersionSourceRestore, versions[0].Source)
 				assert.Equal(t, 1, versions[0].RestoredFromVersion)

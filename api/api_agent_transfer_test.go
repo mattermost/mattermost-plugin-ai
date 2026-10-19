@@ -472,8 +472,7 @@ func TestImportAgentCreate(t *testing.T) {
 			assert.Equal(t, "medium", stored.ReasoningEffort)
 			assert.Equal(t, []string{llm.NativeToolWebSearch}, stored.EnabledNativeTools)
 
-			versions, err := e.agentStore.ListAgentVersions(created.ID)
-			require.NoError(t, err)
+			versions := allAgentVersions(t, e, created.ID)
 			require.Len(t, versions, 1)
 			assert.Equal(t, store.AgentVersionSourceImport, versions[0].Source)
 			assert.Equal(t, testUserID, versions[0].CreatedBy)
@@ -603,8 +602,7 @@ func TestImportAgentUpdate(t *testing.T) {
 			assert.Equal(t, want.ReasoningEffort, stored.ReasoningEffort)
 			assert.Equal(t, want.UseServiceAccountAuth, stored.UseServiceAccountAuth)
 
-			versions, err := e.agentStore.ListAgentVersions("agent-1")
-			require.NoError(t, err)
+			versions := allAgentVersions(t, e, "agent-1")
 			require.NotEmpty(t, versions)
 			assert.Equal(t, store.AgentVersionSourceImport, versions[0].Source)
 			assert.Equal(t, testUserID, versions[0].CreatedBy)

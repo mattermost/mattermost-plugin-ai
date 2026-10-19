@@ -1053,6 +1053,7 @@ describe('AgentConfigView history and export', () => {
             {version: 2, createdBy: 'user_1', createAt: 1759600000000, source: 'update', restoredFromVersion: 0, changedFields: ['customInstructions']},
             {version: 1, createdBy: '', createAt: 1759500000000, source: 'initial', restoredFromVersion: 0, changedFields: []},
         ],
+        hasMore: false,
     };
 
     function versionDetail(version: number, customInstructions: string): AgentVersionDetail {
@@ -1155,6 +1156,7 @@ describe('AgentConfigView history and export', () => {
                 {version: 3, createdBy: 'user_1', createAt: 1759700000000, source: 'restore', restoredFromVersion: 1, changedFields: ['customInstructions']},
                 ...versionList.versions,
             ],
+            hasMore: false,
         });
         fireEvent.click(within(dialog).getByRole('button', {name: 'Restore'}));
 
@@ -1236,6 +1238,74 @@ describe('AgentConfigView history and export', () => {
 
         expect(await screen.findByText('The AI service for this version no longer exists.')).not.toBeNull();
         expect(onRestored).not.toHaveBeenCalled();
+    });
+
+    test.each([
+        {name: 'more versions exist', hasMore: true},
+        {name: 'all versions are loaded', hasMore: false},
+    ])('History tab offers older versions only when $name', async ({hasMore}) => {
+        mockGetAgentVersions.mockResolvedValue({...versionList, hasMore});
+        renderEdit();
+        fireEvent.click(screen.getByRole('tab', {name: 'History'}));
+        await screen.findByTestId('version-list');
+
+        expect(mockGetAgentVersions).toHaveBeenCalledWith('agent_1');
+        expect(screen.queryByRole('button', {name: 'Load older versions'}) !== null).toBe(hasMore);
+    });
+
+    describe('paging older versions', () => {
+        const summary = (version: number) => ({
+            version,
+            createdBy: '',
+            createAt: 1759500000000 + version,
+            source: 'update' as const,
+            restoredFromVersion: 0,
+            changedFields: ['customInstructions'],
+        });
+        const firstPage: AgentVersionList = {currentVersion: 4, versions: [summary(4), summary(3)], hasMore: true};
+        const lastPage: AgentVersionList = {currentVersion: 4, versions: [summary(2), summary(1)], hasMore: false};
+
+        beforeEach(() => {
+            mockGetAgentVersion.mockImplementation(async (_id, version) => ({
+                ...summary(version),
+                config: {...existingAgent, customInstructions: `instructions ${version}`},
+            }));
+        });
+
+        test('appends the page before the oldest loaded version until none are left', async () => {
+            mockGetAgentVersions.mockResolvedValueOnce(firstPage).mockResolvedValueOnce(lastPage);
+            renderEdit();
+            fireEvent.click(screen.getByRole('tab', {name: 'History'}));
+            const list = await screen.findByTestId('version-list');
+            expect(within(list).getAllByRole('listitem')).toHaveLength(2);
+
+            fireEvent.click(screen.getByRole('button', {name: 'Load older versions'}));
+
+            await waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(4));
+            expect(mockGetAgentVersions).toHaveBeenLastCalledWith('agent_1', {before: 3});
+            const titles = within(list).getAllByText(/^Version \d$/).map((el) => el.textContent);
+            expect(titles).toEqual(['Version 4', 'Version 3', 'Version 2', 'Version 1']);
+            expect(within(list).getAllByText('Current')).toHaveLength(1);
+            expect(screen.queryByRole('button', {name: 'Load older versions'})).toBeNull();
+
+            fireEvent.click(within(list).getByText('Version 1'));
+            const instructions = await screen.findByTestId('version-snapshot-instructions');
+            await waitFor(() => expect(instructions.textContent).toBe('instructions 1'));
+            expect(screen.getByRole('button', {name: 'Restore this version'})).not.toBeNull();
+        });
+
+        test('keeps the loaded versions and the button when an older page fails', async () => {
+            mockGetAgentVersions.mockResolvedValueOnce(firstPage).mockRejectedValueOnce({message: 'Server unavailable'});
+            renderEdit();
+            fireEvent.click(screen.getByRole('tab', {name: 'History'}));
+            const list = await screen.findByTestId('version-list');
+
+            fireEvent.click(screen.getByRole('button', {name: 'Load older versions'}));
+
+            expect(await screen.findByText('Server unavailable')).not.toBeNull();
+            expect(within(list).getAllByRole('listitem')).toHaveLength(2);
+            expect(screen.getByRole('button', {name: 'Load older versions'})).not.toBeNull();
+        });
     });
 
     test.each([
