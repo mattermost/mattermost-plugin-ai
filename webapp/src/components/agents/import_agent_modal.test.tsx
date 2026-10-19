@@ -296,7 +296,7 @@ describe('ImportAgentModal', () => {
         const {onImported} = renderModal();
 
         await loadPreview(makePreview({
-            existingAgent: {id: 'agent_1', displayName: 'Release Helper', username: 'release-helper', canManage: true},
+            existingAgent: {id: 'agent_1', displayName: 'Release Helper', username: 'release-helper'},
             mcpServers: [{sourceOrigin: 'https://mcp.example.com/mcp', sourceName: 'Jira', toolNames: ['create_issue'], autoTargetOrigin: 'https://mcp.example.com/mcp'}],
         }));
 
@@ -322,11 +322,11 @@ describe('ImportAgentModal', () => {
         expect(onImported).toHaveBeenCalledWith(expect.objectContaining({mode: 'update'}));
     });
 
-    test('does not preselect an existing agent the user cannot manage', async () => {
+    test('does not preselect an existing agent missing from the manageable agents', async () => {
         renderModal();
 
         await loadPreview(makePreview({
-            existingAgent: {id: 'agent_9', displayName: 'Theirs', username: 'release-helper', canManage: false},
+            existingAgent: {id: 'agent_9', displayName: 'Theirs', username: 'release-helper'},
             mcpServers: [],
         }, {autoEnableNewMCPTools: true}));
 
@@ -337,9 +337,9 @@ describe('ImportAgentModal', () => {
         {name: 'the user switches to update mode', canCreate: true, existingAgent: null},
         {name: 'update is the only mode', canCreate: false, existingAgent: null},
         {
-            name: 'the matching agent is not manageable',
+            name: 'the matching agent is missing from the manageable agents',
             canCreate: false,
-            existingAgent: {id: 'agent_9', displayName: 'Theirs', username: 'release-helper', canManage: false},
+            existingAgent: {id: 'agent_9', displayName: 'Theirs', username: 'release-helper'},
         },
     ])('requires choosing the agent to update when $name', async ({canCreate, existingAgent}) => {
         mockImport.mockResolvedValue({id: 'agent_2'} as UserAgent);

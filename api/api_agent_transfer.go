@@ -28,12 +28,12 @@ type ImportAgentPreviewRequest struct {
 	Document agentexport.Document `json:"document"`
 }
 
-// importExistingAgent identifies the agent an import document would update by default.
+// importExistingAgent identifies the manageable agent an import document
+// would update by default.
 type importExistingAgent struct {
 	ID          string `json:"id"`
 	DisplayName string `json:"displayName"`
 	Username    string `json:"username"`
-	CanManage   bool   `json:"canManage"`
 }
 
 // importAgentPreviewResponse is the body of POST /agents/import/preview.
@@ -58,8 +58,8 @@ type ImportAgentRequest struct {
 	MCPServerMappings []agentexport.ServerMapping `json:"mcpServerMappings"`
 }
 
-// handleExportAgent handles GET /agents/:agentid/export: the current agent
-// configuration as a downloadable export document.
+// handleExportAgent handles GET /agents/:agentid/export: the agent's current
+// version as a downloadable export document.
 func (a *API) handleExportAgent(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	agentID := c.Param("agentid")
@@ -69,10 +69,16 @@ func (a *API) handleExportAgent(c *gin.Context) {
 		return
 	}
 
-	version, err := a.agentStore.GetLatestAgentVersion(agentID)
+	// The configuration and its version number come from one version row so
+	// a concurrent save cannot label one version's settings with another's number.
+	latest, err := a.agentStore.GetLatestAgentVersion(agentID)
 	if err != nil {
 		abortAgentRequest(c, http.StatusInternalServerError, fmt.Errorf("failed to get agent version: %w", err))
 		return
+	}
+	version := 0
+	if latest != nil {
+		cfg, version = &latest.Config, latest.Version
 	}
 
 	doc := agentexport.New(cfg, version, agentexport.Servers(a.pluginConfigOrEmpty().MCP), model.GetMillis())
@@ -140,6 +146,8 @@ func (a *API) handlePreviewAgentImport(c *gin.Context) {
 		AvailableMCPServers: available,
 	}
 
+	// Only agents the caller can manage are reported, so the preview never
+	// reveals agents that GET /agents hides from them.
 	if doc.Agent.Name != "" {
 		agents, err := a.agentStore.ListAgents()
 		if err != nil {
@@ -147,12 +155,11 @@ func (a *API) handlePreviewAgentImport(c *gin.Context) {
 			return
 		}
 		for _, agent := range agents {
-			if agent.Name == doc.Agent.Name {
+			if agent.Name == doc.Agent.Name && canManageAgent(a.pluginAPI, agent, userID) {
 				resp.ExistingAgent = &importExistingAgent{
 					ID:          agent.ID,
 					DisplayName: agent.DisplayName,
 					Username:    agent.Name,
-					CanManage:   canManageAgent(a.pluginAPI, agent, userID),
 				}
 				break
 			}

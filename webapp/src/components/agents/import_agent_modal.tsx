@@ -140,16 +140,9 @@ const ImportAgentModal = ({services, manageableAgents, canCreate, createDisabled
             if (isStale()) {
                 return;
             }
-            const manageableExisting = result.existingAgent && result.existingAgent.canManage &&
-                manageableAgents.some((a) => a.id === result.existingAgent?.id) ? result.existingAgent : null;
-
-            let initialMode: AgentImportMode = 'create';
-            if (manageableExisting) {
-                initialMode = 'update';
-            } else if (!createAllowed) {
-                initialMode = 'update';
-            }
-            setMode(initialMode);
+            const existingId = result.existingAgent?.id;
+            const manageableExisting = manageableAgents.some((a) => a.id === existingId) ? result.existingAgent : null;
+            setMode(manageableExisting || !createAllowed ? 'update' : 'create');
 
             // Only the agent the document names is a safe default; any other
             // target must be chosen explicitly so one click never overwrites

@@ -239,7 +239,6 @@ export type AgentImportExistingAgent = {
     id: string;
     displayName: string;
     username: string;
-    canManage: boolean;
 }
 
 export type AgentImportPreview = {

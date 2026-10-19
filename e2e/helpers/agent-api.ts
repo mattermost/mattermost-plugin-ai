@@ -170,7 +170,7 @@ export interface AgentImportPreview {
         autoTargetOrigin: string;
     }>;
     availableMCPServers: Array<{ origin: string; name: string }>;
-    existingAgent?: { id: string; displayName: string; username: string; canManage: boolean } | null;
+    existingAgent?: { id: string; displayName: string; username: string } | null;
 }
 
 export interface AgentImportRequest {

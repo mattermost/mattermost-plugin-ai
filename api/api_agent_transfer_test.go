@@ -158,6 +158,21 @@ func TestExportAgent(t *testing.T) {
 	}
 }
 
+func TestExportAgentUsesOneVersionSnapshot(t *testing.T) {
+	e := setupTransferTestEnvironment(t)
+	defer e.Cleanup(t)
+	seedVersionedAgent(t, e, fullyConfiguredAgent(), map[string]any{"customInstructions": "version 2 instructions"})
+	// The stored row moves past the latest version, as if a save landed between the reads.
+	e.agentStore.agents["agent-1"].CustomInstructions = "unversioned instructions"
+
+	recorder := doRequest(e.api, http.MethodGet, "/agents/agent-1/export", nil, testUserID)
+	require.Equal(t, http.StatusOK, recorder.Result().StatusCode, recorder.Body.String())
+	var doc agentexport.Document
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &doc))
+	assert.Equal(t, 2, doc.AgentVersion)
+	assert.Equal(t, "version 2 instructions", doc.Agent.CustomInstructions)
+}
+
 func TestPreviewAgentImport(t *testing.T) {
 	doc := exportDocument(
 		agentexport.MCPTool{ServerOrigin: jiraOrigin + "/", ServerName: "Jira", ToolName: "create_issue"},
@@ -192,10 +207,29 @@ func TestPreviewAgentImport(t *testing.T) {
 			{Origin: config.MCPEmbeddedServerOrigin, Name: "Mattermost"},
 		}, resp.AvailableMCPServers)
 		require.NotNil(t, resp.ExistingAgent)
-		assert.Equal(t, importExistingAgent{ID: "agent-1", DisplayName: "My Agent", Username: "my-agent", CanManage: true}, *resp.ExistingAgent)
+		assert.Equal(t, importExistingAgent{ID: "agent-1", DisplayName: "My Agent", Username: "my-agent"}, *resp.ExistingAgent)
 
 		assert.NotContains(t, recorder.Body.String(), plantedHeaderSecret)
 		assert.Empty(t, *records, "preview is read-only and not audited")
+	})
+
+	t.Run("does not reveal a matching agent the caller cannot manage", func(t *testing.T) {
+		e := setupTransferTestEnvironment(t)
+		defer e.Cleanup(t)
+		e.mockAPI.On("HasPermissionTo", testUserID, model.PermissionManageOwnAgent).Return(true)
+		e.mockAPI.On("HasPermissionTo", testUserID, mock.Anything).Return(false)
+		hidden := fullyConfiguredAgent()
+		hidden.CreatorID = "someone-else"
+		hidden.DisplayName = "Hidden Agent"
+		e.agentStore.agents["agent-1"] = hidden
+
+		recorder := doRequest(e.api, http.MethodPost, "/agents/import/preview", map[string]any{"document": doc}, testUserID)
+		require.Equal(t, http.StatusOK, recorder.Result().StatusCode, recorder.Body.String())
+		var resp importAgentPreviewResponse
+		require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+		assert.Nil(t, resp.ExistingAgent)
+		assert.NotContains(t, recorder.Body.String(), "Hidden Agent")
+		assert.NotContains(t, recorder.Body.String(), "agent-1")
 	})
 
 	t.Run("agent managers without create permission may preview", func(t *testing.T) {
