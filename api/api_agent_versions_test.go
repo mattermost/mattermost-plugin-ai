@@ -6,6 +6,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"testing"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/audit"
@@ -338,33 +339,31 @@ func TestAgentVersionReadsAreNotAudited(t *testing.T) {
 	assert.Empty(t, *records)
 }
 
+// Restore and import rebuild a full update request from a stored config, so a
+// request field that requestFieldsFromConfig misses would silently be reset.
 func TestRequestFieldsFromConfigRoundTrip(t *testing.T) {
-	cfg := llm.BotConfig{
-		DisplayName:             "Display",
-		ServiceID:               "svc",
-		CustomInstructions:      "instructions",
-		ChannelAccessLevel:      llm.ChannelAccessLevelAllow,
-		ChannelIDs:              []string{"c"},
-		UserAccessLevel:         llm.UserAccessLevelBlock,
-		UserIDs:                 []string{"u"},
-		TeamIDs:                 []string{"t"},
-		AdminUserIDs:            []string{"a"},
-		EnabledMCPTools:         []llm.EnabledMCPTool{{ServerOrigin: "o", ToolName: "n"}},
-		AutoEnableNewMCPTools:   true,
-		MCPDynamicToolLoading:   true,
-		UseServiceAccountAuth:   true,
-		Model:                   "m",
-		EnableVision:            true,
-		DisableTools:            true,
-		EnabledNativeTools:      []string{"web_search"},
-		ReasoningEnabled:        true,
-		ReasoningEffort:         "high",
-		ThinkingBudget:          1024,
-		StructuredOutputEnabled: true, //nolint:staticcheck // deprecated field is still persisted verbatim
-		MaxToolTurns:            5,
+	var want AgentRequestFields
+	v := reflect.ValueOf(&want).Elem()
+	for i := range v.NumField() {
+		f := v.Field(i)
+		switch f.Kind() {
+		case reflect.String:
+			f.SetString("value-" + v.Type().Field(i).Name)
+		case reflect.Int:
+			f.SetInt(int64(i + 1))
+		case reflect.Bool:
+			f.SetBool(true)
+		case reflect.Slice:
+			f.Set(reflect.MakeSlice(f.Type(), 1, 1))
+			if elem := f.Index(0); elem.Kind() == reflect.String {
+				elem.SetString("item")
+			}
+		default:
+			t.Fatalf("field %s has kind %s; extend this test", v.Type().Field(i).Name, f.Kind())
+		}
 	}
 
-	var applied llm.BotConfig
-	requestFieldsFromConfig(&cfg).applyTo(&applied)
-	assert.Equal(t, cfg, applied, "every request-controlled field must survive a restore")
+	var cfg llm.BotConfig
+	want.applyTo(&cfg)
+	assert.Equal(t, want, requestFieldsFromConfig(&cfg), "every request-controlled field must survive a restore")
 }
