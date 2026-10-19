@@ -9,9 +9,7 @@ import (
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/bots"
 	"github.com/mattermost/mattermost-plugin-agents/v2/config"
-	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
-	"github.com/mattermost/mattermost/server/public/pluginapi/cluster"
 )
 
 var errNoAgentReferencesToMigrate = errors.New("no agent references to migrate")
@@ -30,16 +28,9 @@ type agentReferenceConfigStore interface {
 // A name no agent account holds is left in place, with a warning, and retried
 // on the next activation; until then it keeps resolving by name. Settings that
 // already hold an ID are never rewritten, so the migration needs no completion
-// flag. Callers must store the returned config and publish it to the cluster
+// flag, and nodes racing at activation are serialized by UpdateConfig. Callers must store the returned config and publish it to the cluster
 // when migrated is true.
-func migrateAgentReferencesToBotUserIDs(api plugin.API, pluginAPI *pluginapi.Client, st agentReferenceConfigStore, resolver bots.UsernameResolver) (config.Config, bool, error) {
-	mtx, err := cluster.NewMutex(api, "ai_agent_reference_migration")
-	if err != nil {
-		return config.Config{}, false, fmt.Errorf("failed to create agent reference migration mutex: %w", err)
-	}
-	mtx.Lock()
-	defer mtx.Unlock()
-
+func migrateAgentReferencesToBotUserIDs(pluginAPI *pluginapi.Client, st agentReferenceConfigStore, resolver bots.UsernameResolver) (config.Config, bool, error) {
 	current, err := st.GetConfig()
 	if err != nil {
 		return config.Config{}, false, fmt.Errorf("failed to load config for agent reference migration: %w", err)
@@ -81,7 +72,7 @@ func migrateAgentReferencesToBotUserIDs(api plugin.API, pluginAPI *pluginapi.Cli
 // wrote, loads the result and tells peers to reload. Failures are logged: an
 // unmigrated setting keeps resolving by its legacy username.
 func (p *Plugin) migrateAgentReferences(pluginAPI *pluginapi.Client, st agentReferenceConfigStore, resolver bots.UsernameResolver) {
-	saved, migrated, err := migrateAgentReferencesToBotUserIDs(p.API, pluginAPI, st, resolver)
+	saved, migrated, err := migrateAgentReferencesToBotUserIDs(pluginAPI, st, resolver)
 	if err != nil {
 		pluginAPI.Log.Error("failed to migrate agent settings to bot user IDs", "error", err)
 		return

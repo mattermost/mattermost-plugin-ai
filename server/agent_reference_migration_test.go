@@ -150,7 +150,6 @@ func TestMigrateAgentReferences(t *testing.T) {
 			defer mockAPI.AssertExpectations(t)
 			client := pluginapi.NewClient(mockAPI, nil)
 
-			mockAPI.On("KVSetWithOptions", mock.AnythingOfType("string"), mock.Anything, mock.AnythingOfType("model.PluginKVSetOptions")).Return(true, nil).Maybe()
 			var warned []string
 			for arity := 1; arity <= 9; arity++ {
 				args := make([]any, arity)
