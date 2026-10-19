@@ -1,8 +1,6 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import manifest from './manifest';
-import {LLMBot} from './bots';
 import {doRunSearch, getChannelInterval} from './client';
 import {doSelectPost} from './hooks';
 
@@ -59,21 +57,8 @@ export async function handleSummarizeChannelCommand(
     // Process command options
     const options = parseOptionsFromMessage(message);
 
-    // The user types an agent username; the API selects agents by bot user ID.
-    let botId = '';
-    if (options.bot) {
-        const botName = options.bot.replace(/^@/, '');
-        const bots: LLMBot[] = store.getState()['plugins-' + manifest.id]?.bots || [];
-        const bot = bots.find((b) => b.username === botName);
-        if (!bot) {
-            return {
-                error: {
-                    message: 'Failed to summarize channel: no agent named ' + botName,
-                },
-            };
-        }
-        botId = bot.id;
-    }
+    // A typed name is resolved by the server, which knows who holds it now.
+    const botUsername = options.bot?.replace(/^@/, '') || '';
 
     // Default to summarize 24 hours (in milliseconds)
     const defaultTimePeriod = 24 * 60 * 60 * 1000;
@@ -93,7 +78,8 @@ export async function handleSummarizeChannelCommand(
             0,
             'summarize_range',
             '',
-            botId,
+            '',
+            botUsername,
         );
 
         // Get store and dispatch actions to select post and open RHS

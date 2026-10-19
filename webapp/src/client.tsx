@@ -925,8 +925,12 @@ export async function getChannelInterval(
     presetPrompt: string,
     prompt?: string,
     botId?: string,
+
+    // A username the user typed. The server checks which agent holds it now.
+    botUsername?: string,
 ): Promise<{postid: string; channelid: string}> {
-    const url = `${channelRoute(channelID)}/interval${botIdQuery(botId)}`;
+    const agentQuery = botId || !botUsername ? botIdQuery(botId) : `?botUsername=${encodeURIComponent(botUsername)}`;
+    const url = `${channelRoute(channelID)}/interval${agentQuery}`;
     const response = await fetch(url, Client4.getOptions({
         method: 'POST',
         body: JSON.stringify({

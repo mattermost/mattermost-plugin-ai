@@ -278,6 +278,15 @@ describe('agent selection by bot id', () => {
         expect(url).toBe(`${base}${path}`);
     });
 
+    test.each([
+        {name: 'a typed username', botId: '', botUsername: 'matty', query: '?botUsername=matty'},
+        {name: 'a typed username with reserved characters', botId: '', botUsername: 'a&b', query: '?botUsername=a%26b'},
+        {name: 'a bot id over a typed username', botId: BOT_ID, botUsername: 'matty', query: `?botId=${BOT_ID}`},
+    ])('getChannelInterval sends $name', async ({botId, botUsername, query}) => {
+        const [url] = await call(() => getChannelInterval(WELL_FORMED_ID, 1, 2, 'summarize_range', '', botId, botUsername));
+        expect(url).toBe(`${base}/channel/${WELL_FORMED_ID}/interval${query}`);
+    });
+
     test('renderCustomPrompt sends bot_id and never bot_username', async () => {
         const [url, options] = await call(() => renderCustomPrompt('prompt1', WELL_FORMED_ID, BOT_ID));
         expect(url).toBe(`${base}/custom-prompts/prompt1/render`);
