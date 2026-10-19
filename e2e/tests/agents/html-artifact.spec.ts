@@ -67,10 +67,68 @@ const screenshotDir = path.join(__dirname, '..', '..', 'screenshots', 'html-arti
 async function shot(page: Page, name: string): Promise<void> {
     fs.mkdirSync(screenshotDir, {recursive: true});
 
-    // Let fonts, iframe resize and transitions settle before capturing.
+    // Let fonts, images, iframe resizes and transitions settle before
+    // capturing: two consecutive layout snapshots must match, with no CSS
+    // transition still running.
     await page.evaluate(() => document.fonts.ready);
-    await page.waitForTimeout(600);
+    let prev = '';
+    await expect.poll(async () => {
+        const snapshot = await page.evaluate(() => {
+            const running = document.getAnimations().filter((a) => a instanceof CSSTransition && a.playState === 'running').length;
+            const imagesLoaded = Array.from(document.images).every((img) => img.complete || img.loading === 'lazy');
+            const frames = Array.from(document.querySelectorAll('iframe[data-testid="html-artifact-wrapper"]')).map((el) => {
+                const r = el.getBoundingClientRect();
+                return [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)].join(',');
+            });
+            return running === 0 && imagesLoaded ? frames.join(';') : null;
+        });
+        const settled = snapshot !== null && snapshot === prev;
+        prev = snapshot ?? '';
+        return settled;
+    }, {timeout: 15000, intervals: [150]}).toBe(true);
     await page.screenshot({path: path.join(screenshotDir, `${name}.png`)});
+}
+
+/**
+ * Resolves once React has painted and flushed effects for everything already
+ * rendered, and a request issued now has completed, so any request the host
+ * started before this (e.g. a remount's token fetch) has been seen.
+ */
+async function hostSettled(page: Page): Promise<void> {
+    await page.evaluate(async () => {
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve, 0))));
+        await fetch('/api/v4/system/ping', {headers: {'X-Requested-With': 'XMLHttpRequest'}});
+    });
+}
+
+/** Resolves once the host page has received `count` more bridge heartbeats from any artifact frame. */
+async function heartbeats(page: Page, count: number): Promise<void> {
+    await page.evaluate((n) => new Promise<void>((resolve) => {
+        let seen = 0;
+        const onMessage = (e: MessageEvent) => {
+            if (e.data?.mmArtifact && e.data.type === 'heartbeat' && ++seen >= n) {
+                window.removeEventListener('message', onMessage);
+                resolve();
+            }
+        };
+        window.addEventListener('message', onMessage);
+    }), count);
+}
+
+/**
+ * Navigates the page to another channel and back to `channelPath` without a
+ * reload, so `card` unmounts and the post list (and every card in it) mounts
+ * again.
+ */
+async function revisitChannel(page: Page, channelPath: string, card: Locator): Promise<void> {
+    const push = (url: string) => page.evaluate((u) => {
+        (window as unknown as {WebappUtils: {browserHistory: {push: (p: string) => void}}}).WebappUtils.browserHistory.push(u);
+    }, url);
+    await push('/test/channels/town-square');
+    await expect(page).toHaveURL(/\/test\/channels\/town-square$/);
+    await expect(card).toHaveCount(0, {timeout: 30000});
+    await push(channelPath);
+    await expect(page).toHaveURL(new RegExp(`${channelPath}$`));
 }
 
 /** Scrolls so `el` starts at the top of its scroll container. */
@@ -442,7 +500,7 @@ test.describe('HTML artifacts', () => {
             await expect(artifactWrappers(card)).toHaveCount(0);
 
             // The host does not remount the frame (which would run the navigation again).
-            await page.waitForTimeout(2000);
+            await hostSettled(page);
             expect(outbound).toEqual([]);
             expect(exfilRoutes).toEqual([]);
             expect(externalServer.requests.length).toBe(serverRequestsBefore);
@@ -522,7 +580,12 @@ test.describe('HTML artifacts', () => {
         // The viewer ran it, so it may hold focus for now.
         await expect(artifactFrame(artifactWrappers(botPost).first()).getByRole('heading', {name: 'Quarterly dashboard'})).toBeVisible({timeout: 60000});
         await expect(botPost.getByTestId('html-artifact-frame')).toHaveAttribute('data-engaged', 'true');
-        await page.waitForTimeout(1000);
+        await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute('data-testid'))).toBe('html-artifact-wrapper');
+        await expect(artifactFrame(artifactWrappers(botPost).first()).locator('#keys')).toBeFocused();
+
+        // Two heartbeats later the focus guard (every 250 ms) has seen the
+        // artifact holding focus several times, and left it running.
+        await heartbeats(page, 2);
         await expect(stopped).toHaveCount(0);
 
         const composer = new MattermostPage(page).postTextbox;
@@ -537,8 +600,10 @@ test.describe('HTML artifacts', () => {
         await composer.click();
         await page.keyboard.type(typed, {delay: 40});
         await expect(composer).toHaveValue(typed);
-        await page.waitForTimeout(1000);
-        await expect(composer).toHaveValue(typed);
+
+        // Keys typed later still reach the message box, not the artifact.
+        await page.keyboard.type(' next week', {delay: 40});
+        await expect(composer).toHaveValue(`${typed} next week`);
         await expect(stopped).toBeVisible();
         expect(exfiltrations).toBe(0);
     });
@@ -634,8 +699,11 @@ test.describe('HTML artifacts', () => {
         await expect(requesterPlaceholder).toContainText('runs code only when you choose');
         await expect(requesterCard.getByTestId('html-artifact-reload')).toHaveCount(0);
 
-        // Still nothing a while later: the placeholder is not a loading state.
-        await page.waitForTimeout(3000);
+        // Still nothing after the post list mounts again: the placeholder
+        // is not a loading state.
+        await revisitChannel(page, '/test/channels/off-topic', requesterCard);
+        await expect(requesterPlaceholder).toBeVisible({timeout: 60000});
+        await hostSettled(page);
         await expect(requesterCard.getByTestId('html-artifact-frame')).toHaveCount(0);
         expect(requesterArtifactRequests).toEqual([]);
 
@@ -674,7 +742,9 @@ test.describe('HTML artifacts', () => {
             await expect(viewerCard.getByTestId('html-artifact-notice')).toBeVisible();
             await expect(viewerCard.getByTestId('html-artifact-reload')).toHaveCount(0);
 
-            await viewerPage.waitForTimeout(3000);
+            await revisitChannel(viewerPage, '/test/channels/off-topic', viewerCard);
+            await expect(placeholder).toBeVisible({timeout: 60000});
+            await hostSettled(viewerPage);
             await expect(viewerCard.getByTestId('html-artifact-frame')).toHaveCount(0);
             expect(artifactRequests).toBe(0);
 
