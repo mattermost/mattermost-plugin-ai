@@ -102,7 +102,7 @@ func (l *pluginLogger) Error(message string, keyValuePairs ...any) {
 func (p *Plugin) OnActivate() error {
 	pluginAPI := pluginapi.NewClient(p.API, p.Driver)
 	p.pluginAPI = pluginAPI
-	mmClient := mmapi.NewClient(pluginAPI)
+	mmClient := mmapi.NewClient(pluginAPI, p.API)
 	licenseChecker := enterprise.NewLicenseChecker(pluginAPI)
 	dbClient := mmapi.NewDBClient(pluginAPI)
 
@@ -442,6 +442,7 @@ func (p *Plugin) OnActivate() error {
 
 	meetingsService := meetings.NewService(
 		pluginAPI,
+		mmClient,
 		streamingService,
 		prompts,
 		bots,

@@ -14,10 +14,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/mattermost/mattermost-plugin-agents/llm"
+	"github.com/mattermost/mattermost-plugin-agents/meetings"
+	"github.com/mattermost/mattermost-plugin-agents/mmapi/mocks"
 	"github.com/mattermost/mattermost-plugin-agents/store"
 	"github.com/mattermost/mattermost-plugin-agents/streaming"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -273,4 +276,109 @@ func TestHandleStopLogsClusterPublishErrors(t *testing.T) {
 		}
 	}
 	require.True(t, foundLog, "cluster publish failures must be logged so operators can diagnose dropped peer-cancels")
+}
+
+func TestHandleTranscribeFileDeniedByFilePolicy(t *testing.T) {
+	gin.SetMode(gin.ReleaseMode)
+	gin.DefaultWriter = io.Discard
+
+	const (
+		postID    = "post12345678901234567890ab"
+		channelID = "chan12345678901234567890ab"
+	)
+
+	tests := []struct {
+		name           string
+		allowed        bool
+		getFileInfoErr error
+		wantStatus     int
+		wantAdminRead  bool
+	}{
+		{
+			name:          "file policy denial is forbidden and does not read file metadata",
+			allowed:       false,
+			wantStatus:    http.StatusForbidden,
+			wantAdminRead: false,
+		},
+		{
+			name:           "unrelated file lookup failure stays an internal error",
+			allowed:        true,
+			getFileInfoErr: errors.New("file store down"),
+			wantStatus:     http.StatusInternalServerError,
+			wantAdminRead:  true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			e := SetupTestEnvironment(t)
+			defer e.Cleanup(t)
+
+			fileID := model.NewId()
+			sessionID := model.NewId()
+
+			e.setupTestBot(llm.BotConfig{Name: "thebot", DisplayName: "The Bot"})
+
+			e.mockAPI.On("GetPost", postID).Return(&model.Post{
+				Id:        postID,
+				UserId:    testUserID,
+				ChannelId: channelID,
+				FileIds:   []string{fileID},
+			}, nil)
+			e.mockAPI.On("GetChannel", channelID).Return(&model.Channel{
+				Id:     channelID,
+				Type:   model.ChannelTypeOpen,
+				TeamId: "teamid",
+			}, nil)
+			e.mockAPI.On("HasPermissionToChannel", testUserID, channelID, model.PermissionReadChannel).Return(true)
+			e.mockAPI.On("GetUser", testUserID).Return(&model.User{Id: testUserID}, nil)
+
+			mmClient := mocks.NewMockClient(t)
+			mmClient.On(
+				"HasPermissionToFileAction",
+				sessionID,
+				fileID,
+				model.AccessControlPolicyActionDownloadFileAttachment,
+			).Return(test.allowed)
+
+			adminReadCalled := false
+			if test.allowed {
+				mmClient.EXPECT().GetFileInfo(fileID).
+					Run(func(string) { adminReadCalled = true }).
+					Return((*model.FileInfo)(nil), test.getFileInfoErr)
+			} else {
+				mmClient.EXPECT().GetFileInfo(fileID).
+					Run(func(string) { adminReadCalled = true }).
+					Return(&model.FileInfo{Id: fileID, ChannelId: channelID}, nil).
+					Maybe()
+			}
+			mmClient.EXPECT().GetFile(fileID).
+				Run(func(string) { adminReadCalled = true }).
+				Return(io.NopCloser(strings.NewReader("sensitive recording contents")), nil).
+				Maybe()
+
+			e.api.meetingsService = meetings.NewService(
+				e.client,
+				mmClient,
+				nil,
+				nil,
+				e.bots,
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+			)
+
+			req := httptest.NewRequest(http.MethodPost, "/post/"+postID+"/transcribe/file/"+fileID, nil)
+			req.Header.Add("Mattermost-User-Id", testUserID)
+			rec := httptest.NewRecorder()
+			e.api.ServeHTTP(&plugin.Context{SessionId: sessionID}, rec, req)
+
+			require.Equal(t, test.wantStatus, rec.Result().StatusCode)
+			require.Equal(t, test.wantAdminRead, adminReadCalled,
+				"admin GetFileInfo/GetFile must run only after the caller's file policy allows access")
+			assert.NotContains(t, rec.Body.String(), "sensitive recording contents")
+		})
+	}
 }

@@ -67,7 +67,7 @@ func (s *HTTPFileContentService) GetContent(ctx context.Context, userID, fileID 
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if token, ok := ctx.Value(auth.AuthTokenContextKey).(string); ok && token != "" {
+	if token := authorizationTokenFromContext(ctx); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	if ctxUserID, ok := ctx.Value(auth.UserIDContextKey).(string); ok && ctxUserID != "" {
