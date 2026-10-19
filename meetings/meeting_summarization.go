@@ -163,6 +163,11 @@ func (s *Service) newCallTranscriptionSummaryThread(ctx context.Context, bot *bo
 				s.pluginAPI.Log.Error("Error in call recording post", "error", reterr)
 			}
 		}()
+		defer func() {
+			if r := recover(); r != nil {
+				reterr = fmt.Errorf("panic summarizing transcription: %v", r)
+			}
+		}()
 
 		transcriptionFileID, err := GetCaptionsFileIDFromProps(transcriptionPost)
 		if err != nil {
@@ -249,6 +254,11 @@ func (s *Service) summarizeCallRecording(ctx context.Context, bot *bots.Bot, roo
 					s.pluginAPI.Log.Error("Failed to update post in error handling handleCallRecordingPost", "error", err)
 				}
 				s.pluginAPI.Log.Error("Error in call recording post", "error", reterr)
+			}
+		}()
+		defer func() {
+			if r := recover(); r != nil {
+				reterr = fmt.Errorf("panic summarizing call recording: %v", r)
 			}
 		}()
 
