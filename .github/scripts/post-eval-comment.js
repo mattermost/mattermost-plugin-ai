@@ -9,8 +9,22 @@ const fs = require('fs');
 // versions of this workflow.
 const MARKER = '## 🤖 LLM Evaluation Results';
 const RESOLVED = '✅ No eval regressions';
+const PROVIDERS = /<!-- eval-providers: ([^>]*) -->/;
 
-async function postEvalComment(github, context, commentPath) {
+// Providers the existing comment reports on that have no usable results in
+// this run. Their failures are missing from the report, not fixed.
+function providersWithoutResults(existingBody, summaryPath) {
+    const match = existingBody.match(PROVIDERS);
+    const listed = match ? match[1].split(',').filter(Boolean) : [];
+    if (listed.length === 0) {
+        return [];
+    }
+    const summary = fs.existsSync(summaryPath) ? JSON.parse(fs.readFileSync(summaryPath, 'utf8')) : {providers: []};
+    const available = new Set(summary.providers.filter((p) => p.available).map((p) => p.name));
+    return listed.filter((name) => !available.has(name));
+}
+
+async function postEvalComment(github, context, commentPath, summaryPath) {
     const body = fs.existsSync(commentPath) ? fs.readFileSync(commentPath, 'utf8').trim() : '';
     const repo = {owner: context.repo.owner, repo: context.repo.repo};
 
@@ -33,6 +47,11 @@ async function postEvalComment(github, context, commentPath) {
     }
 
     if (existing && !existing.body.includes(RESOLVED)) {
+        const missing = providersWithoutResults(existing.body, summaryPath);
+        if (missing.length > 0) {
+            console.log(`Keeping eval comment ${existing.id}: no usable results for ${missing.join(', ')}`);
+            return;
+        }
         const sha = context.payload.pull_request.head.sha.slice(0, 7);
         await github.rest.issues.updateComment({
             ...repo,
@@ -46,4 +65,4 @@ async function postEvalComment(github, context, commentPath) {
     console.log('Nothing actionable; no eval comment posted.');
 }
 
-module.exports = {postEvalComment};
+module.exports = {postEvalComment, providersWithoutResults};

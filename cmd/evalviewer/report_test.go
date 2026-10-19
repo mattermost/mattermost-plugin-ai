@@ -213,10 +213,14 @@ func TestCommentMarkdown(t *testing.T) {
 		graded(sadOpenAI, "is sad", 0, true),
 	})
 	r := buildReport(results, resultSet{}, nil)
+	r.commit = "d1da9079abcdef"
+	r.runURL = "https://github.com/o/r/actions/runs/1"
 	comment := r.commentMarkdown()
 
 	for _, want := range []string{
 		commentMarker,
+		"<!-- eval-providers: openai -->",
+		"Results for `d1da907` · [full run summary](https://github.com/o/r/actions/runs/1)",
 		"| TestReactEval › react cat message | names a cat \\| heart emoji | OpenAI | 0/1 |",
 		"grader says names a cat | heart emoji",
 		"agent output",
@@ -243,6 +247,11 @@ func TestReproduceCommandQuoting(t *testing.T) {
 			want: `GOEVALS=1 LLM_PROVIDER=openai go test ./react -run '^TestDirectMessageConversations$/^\[openai\]_bot_dm_knows_it_doesn'\''t_know_what_it_can_do$' -v`,
 		},
 		{
+			name: "package that did not finish runs the whole package",
+			line: EvalLogLine{Name: "mcpserver/[openai]_did_not_finish", Package: "mcpserver", Error: "timed out"},
+			want: `GOEVALS=1 LLM_PROVIDER=openai go test ./mcpserver -run 'Eval$' -v`,
+		},
+		{
 			name: "shell syntax in the provider and package",
 			line: EvalLogLine{Name: "TestReactEval/[openai;curl_evil|sh]_cat", Package: "react$(id)", Rubric: "is a cat"},
 			want: `GOEVALS=1 LLM_PROVIDER='openai;curl_evil|sh' go test './react$(id)' -run '^TestReactEval$/^\[openai;curl_evil\|sh\]_cat$' -v`,
@@ -251,8 +260,13 @@ func TestReproduceCommandQuoting(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			r := buildReport(buildResultSet([]EvalLogLine{tc.line}), nil, nil)
-			if got := reproduceCommand(r.regressions[0]); got != tc.want {
+			var c *caseStats
+			for _, p := range buildResultSet([]EvalLogLine{tc.line}) {
+				for _, pc := range p.cases {
+					c = pc
+				}
+			}
+			if got := reproduceCommand(c); got != tc.want {
 				t.Errorf("reproduceCommand() = %s\nwant %s", got, tc.want)
 			}
 		})

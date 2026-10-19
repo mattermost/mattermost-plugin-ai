@@ -201,7 +201,10 @@ jobs:
             --baseline eval-baseline \
             --providers openai,anthropic,azure,mistral,bedrock \
             --comment comment.md \
-            --summary summary.md
+            --summary summary.md \
+            --json summary.json \
+            --commit "${{ github.event.pull_request.head.sha }}" \
+            --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           cat summary.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Post or resolve pull request comment
@@ -209,7 +212,7 @@ jobs:
         with:
           script: |
             const script = require('./.github/scripts/post-eval-comment.js');
-            await script.postEvalComment(github, context, 'comment.md');
+            await script.postEvalComment(github, context, 'comment.md', 'summary.json');
 
   lint:
     runs-on: ubuntu-latest

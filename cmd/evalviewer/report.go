@@ -286,6 +286,9 @@ type report struct {
 	baselines   map[string]*providerResults
 	hasBaseline bool
 	labels      reportLabels
+	// commit and runURL identify the run the comment reports on.
+	commit string
+	runURL string
 }
 
 // reportLabels names what is compared, for example "this PR" against
@@ -394,6 +397,8 @@ func (r report) commentMarkdown() string {
 
 	var sb strings.Builder
 	sb.WriteString(commentMarker + "\n\n")
+	fmt.Fprintf(&sb, "%s%s -->\n", commentProvidersPrefix, strings.Join(r.commentProviders(), ","))
+	r.writeRunLink(&sb)
 	if len(r.regressions) > 0 {
 		r.writeRegressions(&sb)
 	}
@@ -402,6 +407,39 @@ func (r report) commentMarkdown() string {
 	}
 	sb.WriteString("<sub>Only checks that newly fail and input token growth over the thresholds are listed. Pre-existing failures, flaky checks, cost, latency, and unavailable providers are in the workflow run summary.</sub>\n")
 	return sb.String()
+}
+
+// commentProvidersPrefix starts a hidden line listing the providers the
+// comment reports on. post-eval-comment.js resolves the comment only once
+// each of them has usable results again, so a provider that stops reporting
+// does not look like a fix.
+const commentProvidersPrefix = "<!-- eval-providers: "
+
+func (r report) commentProviders() []string {
+	var providers []string
+	for _, c := range r.regressions {
+		providers = append(providers, c.provider)
+	}
+	for _, c := range r.tokenGrowth {
+		providers = append(providers, c.provider)
+	}
+	slices.Sort(providers)
+	return slices.Compact(providers)
+}
+
+// writeRunLink says which commit the comment reports on and links the full
+// run summary, since the comment is edited in place across pushes.
+func (r report) writeRunLink(sb *strings.Builder) {
+	var parts []string
+	if r.commit != "" {
+		parts = append(parts, fmt.Sprintf("Results for `%s`", r.commit[:min(7, len(r.commit))]))
+	}
+	if r.runURL != "" {
+		parts = append(parts, fmt.Sprintf("[full run summary](%s)", r.runURL))
+	}
+	if len(parts) > 0 {
+		sb.WriteString(strings.Join(parts, " · ") + "\n\n")
+	}
 }
 
 func (r report) writeTokenGrowth(sb *strings.Builder) {
@@ -655,6 +693,10 @@ func reproduceCommand(c *caseStats) string {
 	pkg := "./..."
 	if c.pkg != "" {
 		pkg = "./" + c.pkg
+	}
+	if !strings.HasPrefix(c.segments[0], "Test") {
+		// A package that did not finish has no test to select.
+		return fmt.Sprintf("GOEVALS=1 LLM_PROVIDER=%s go test %s -run 'Eval$' -v", shellQuote(c.provider), shellQuote(pkg))
 	}
 	return fmt.Sprintf("GOEVALS=1 LLM_PROVIDER=%s go test %s -run %s -v", shellQuote(c.provider), shellQuote(pkg), shellQuote(pattern))
 }
