@@ -18,14 +18,13 @@ import {
     BooleanItem,
     ComboboxItem,
     FormRow,
-    FieldControlRow,
+    CompactFieldControlRow,
+    CompactItemLabel,
     InlineCheckbox,
-    ItemLabel,
     HelpText,
     ItemList,
     TextItem,
     SelectionItem,
-    SelectionItemOption,
     TextFieldContainer,
 } from '@/components/system_console/item';
 import AvatarItem from '@/components/system_console/avatar';
@@ -34,7 +33,7 @@ import {
     NativeToolsItem,
 } from '@/components/system_console/bot';
 import {IntItem} from '@/components/system_console/number_items';
-import ReasoningConfigItem from '@/components/system_console/reasoning_config';
+import ReasoningConfigItem, {defaultReasoningEffort} from '@/components/system_console/reasoning_config';
 import {LLMService} from '@/components/system_console/service';
 
 import {LicenseLevel, useIsLicensedFor, useLicenseLevelName, useServiceLimit} from '@/license';
@@ -49,8 +48,8 @@ type Props = {
     services: ServiceInfo[];
     errors?: Record<string, string>;
 
-    /** When true (e.g. edit mode), username cannot be changed; matches API behavior. */
-    usernameLocked?: boolean;
+    /** The saved username when editing an existing agent (empty when creating); used to flag a pending rename. */
+    savedUsername?: string;
 }
 
 // Keep in sync with legacy System Console bot form (webapp/src/components/system_console/bot.tsx).
@@ -64,7 +63,7 @@ const ConfigTab = (props: Props) => {
         onAvatarChange,
         services,
         errors = {},
-        usernameLocked = false,
+        savedUsername,
     } = props;
     const intl = useIntl();
     const serviceLimit = useServiceLimit();
@@ -105,7 +104,7 @@ const ConfigTab = (props: Props) => {
                     {
                         enabledNativeTools: providerWebSearchLicensed ? ['web_search'] : [],
                         reasoningEnabled: true,
-                        reasoningEffort: 'medium',
+                        reasoningEffort: defaultReasoningEffort(nextSvc?.type),
                         thinkingBudget: 0,
                     }),
             });
@@ -257,10 +256,18 @@ const ConfigTab = (props: Props) => {
         intl.formatMessage({defaultMessage: 'Default: {model}'}, {model: serviceDefaultModel}) :
         intl.formatMessage({defaultMessage: 'Use service default'});
 
+    const usernameRulesHelptext = intl.formatMessage({
+        defaultMessage: 'Users will mention this name to interact with the agent. Must start with a letter and contain only lowercase letters, numbers, dots, hyphens, or underscores.',
+    });
+    const usernameHelptext = savedUsername && draft.username !== savedUsername ? intl.formatMessage(
+        {defaultMessage: '{rules} Renaming keeps the agent\'s conversations, but people and integrations using @{savedUsername} will need to switch to the new name.'},
+        {rules: usernameRulesHelptext, savedUsername},
+    ) : usernameRulesHelptext;
+
     const handleReasoningBotChange = (bot: LLMBotConfig) => {
         onChange({
             reasoningEnabled: bot.reasoningEnabled ?? true,
-            reasoningEffort: bot.reasoningEffort || 'medium',
+            reasoningEffort: bot.reasoningEffort || defaultReasoningEffort(selectedService?.type),
             thinkingBudget: bot.thinkingBudget ?? 0,
         });
     };
@@ -279,13 +286,9 @@ const ConfigTab = (props: Props) => {
                     label={intl.formatMessage({defaultMessage: 'Agent username'})}
                     value={draft.username}
                     maxLength={22}
-                    disabled={usernameLocked}
                     onChange={(e) => onChange({username: e.target.value})}
                     error={errors.username}
-                    helptext={intl.formatMessage({
-                        defaultMessage:
-                            'Users will mention this name to interact with the agent. Must start with a letter and contain only lowercase letters, numbers, dots, hyphens, or underscores. The username cannot be changed after the agent is created.',
-                    })}
+                    helptext={usernameHelptext}
                 />
                 <AvatarItem
                     botusername={draft.username}
@@ -295,7 +298,7 @@ const ConfigTab = (props: Props) => {
                 <SelectionItem
                     label={intl.formatMessage({defaultMessage: 'AI Service'})}
                     value={draft.serviceId}
-                    onChange={(e) => onChange({serviceId: e.target.value})}
+                    onChange={(serviceId) => onChange({serviceId})}
                     error={errors.serviceId}
                     helptext={
                         serviceLimit !== null && services.length > 1 ?
@@ -308,28 +311,20 @@ const ConfigTab = (props: Props) => {
                                     'Select an AI service to load model suggestions and configure vision, tools, native provider tools, and reasoning.',
                             })
                     }
-                >
-                    <SelectionItemOption value=''>
-                        {intl.formatMessage({defaultMessage: 'Select a service'})}
-                    </SelectionItemOption>
-                    {draft.serviceId && !services.find((s) => s.id === draft.serviceId) && (
-                        <SelectionItemOption
-                            value={draft.serviceId}
-                            disabled={true}
-                        >
-                            {intl.formatMessage({defaultMessage: 'Unknown service (deleted)'})}
-                        </SelectionItemOption>
-                    )}
-                    {services.map((svc, index) => (
-                        <SelectionItemOption
-                            key={svc.id}
-                            value={svc.id}
-                            disabled={serviceLimit !== null && index >= serviceLimit}
-                        >
-                            {svc.name || svc.type}
-                        </SelectionItemOption>
-                    ))}
-                </SelectionItem>
+                    options={[
+                        {value: '', label: intl.formatMessage({defaultMessage: 'Select a service'})},
+                        ...(draft.serviceId && !services.find((s) => s.id === draft.serviceId) ? [{
+                            value: draft.serviceId,
+                            label: intl.formatMessage({defaultMessage: 'Unknown service (deleted)'}),
+                            disabled: true,
+                        }] : []),
+                        ...services.map((svc, index) => ({
+                            value: svc.id,
+                            label: svc.name || svc.type,
+                            disabled: serviceLimit !== null && index >= serviceLimit,
+                        })),
+                    ]}
+                />
 
                 {supportsModelFetching && availableModels.length > 0 ? (
                     <ComboboxItem
@@ -387,11 +382,11 @@ const ConfigTab = (props: Props) => {
                     <AdvancedContent>
                         <ItemList>
                             <FormRow>
-                                <ItemLabel>
+                                <CompactItemLabel>
                                     {intl.formatMessage({defaultMessage: 'Dynamic tool loading'})}
-                                </ItemLabel>
+                                </CompactItemLabel>
                                 <TextFieldContainer>
-                                    <FieldControlRow>
+                                    <CompactFieldControlRow>
                                         <InlineCheckbox
                                             testId='mcp-dynamic-tool-loading'
                                             inputAriaLabel={intl.formatMessage({defaultMessage: 'Dynamic tool loading'})}
@@ -399,7 +394,7 @@ const ConfigTab = (props: Props) => {
                                             checked={draft.mcpDynamicToolLoading}
                                             onChange={(checked) => onChange({mcpDynamicToolLoading: checked})}
                                         />
-                                    </FieldControlRow>
+                                    </CompactFieldControlRow>
                                     <HelpText>
                                         {intl.formatMessage({
                                             defaultMessage:
@@ -478,7 +473,7 @@ const ConfigTab = (props: Props) => {
 const FormContainer = styled.div`
     display: flex;
     flex-direction: column;
-    gap: 24px;
+    gap: var(--spacing-xxl);
 `;
 
 const CharacterCounter = styled.div<{$hasError: boolean}>`
@@ -488,16 +483,16 @@ const CharacterCounter = styled.div<{$hasError: boolean}>`
 
 const AdvancedSection = styled.div`
     border: 1px solid rgba(var(--center-channel-color-rgb), 0.12);
-    border-radius: 4px;
+    border-radius: var(--radius-s);
     overflow: hidden;
 `;
 
 const AdvancedHeader = styled.button`
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--spacing-xs);
     width: 100%;
-    padding: 12px 16px;
+    padding: var(--spacing-m) var(--spacing-l);
     border: none;
     background: rgba(var(--center-channel-color-rgb), 0.04);
     cursor: pointer;
@@ -517,22 +512,22 @@ const ChevronContainer = styled.span`
 `;
 
 const AdvancedHeaderText = styled.span`
-    font-size: 14px;
-    font-weight: 600;
-    line-height: 20px;
+    font-size: var(--font-size-100);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-100);
     color: var(--center-channel-color);
 `;
 
 const AdvancedHeaderHint = styled.span`
-    font-size: 12px;
-    font-weight: 400;
-    line-height: 16px;
+    font-size: var(--font-size-75);
+    font-weight: var(--font-weight-regular);
+    line-height: var(--line-height-75);
     color: rgba(var(--center-channel-color-rgb), 0.64);
     margin-left: auto;
 `;
 
 const AdvancedContent = styled.div`
-    padding: 24px 16px;
+    padding: var(--spacing-xxl) var(--spacing-l);
 `;
 
 export default ConfigTab;

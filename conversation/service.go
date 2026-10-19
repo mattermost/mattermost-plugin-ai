@@ -155,6 +155,16 @@ func (s *Service) GetConversation(id string) (*store.Conversation, error) {
 	return s.store.GetConversation(id)
 }
 
+// GetConversationByThread returns the conversation rooted at rootPostID for
+// the bot and user, or nil when the thread has none.
+func (s *Service) GetConversationByThread(rootPostID, botID, userID string) (*store.Conversation, error) {
+	conv, err := s.store.GetConversationByThreadBotUser(rootPostID, botID, userID)
+	if errors.Is(err, store.ErrConversationNotFound) {
+		return nil, nil
+	}
+	return conv, err
+}
+
 // GetTurns returns all turns for a conversation, ordered by sequence.
 func (s *Service) GetTurns(conversationID string) ([]store.Turn, error) {
 	return s.store.GetTurnsForConversation(conversationID)
@@ -653,8 +663,10 @@ func (s *Service) writeToolRound(conversationID string, tt toolrunner.ToolTurn, 
 // GenerateTitle generates a short title for the conversation and saves it.
 // This should be called asynchronously (in a goroutine) after conversation creation.
 // The lm parameter provides the language model for title generation.
-// The context parameter provides bot/user context for the LLM call.
+// The context parameter provides bot/user context for the LLM call; ctx
+// carries the trace so the title call is recorded under the turn's agent run.
 func (s *Service) GenerateTitle(
+	ctx stdcontext.Context,
 	conversationID string,
 	lm llm.LanguageModel,
 	userMessage string,
@@ -671,7 +683,7 @@ func (s *Service) GenerateTitle(
 		OperationSubType: llm.SubTypeNoStream,
 	}
 
-	title, err := lm.ChatCompletionNoStream(stdcontext.Background(), req,
+	title, err := lm.ChatCompletionNoStream(ctx, req,
 		llm.WithMaxGeneratedTokens(25),
 		llm.WithReasoningDisabled(),
 		llm.WithToolsDisabled(),

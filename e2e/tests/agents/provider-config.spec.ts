@@ -4,6 +4,7 @@
 import {test, expect, Page} from '@playwright/test';
 
 import {AgentPageHelper} from 'helpers/agent-page';
+import {chooseCompassOption} from 'helpers/compass-select';
 import {MattermostPage} from 'helpers/mm';
 import MattermostContainer from 'helpers/mmcontainer';
 import {OpenAIMockContainer, RunOpenAIMocks} from 'helpers/openai-mock';
@@ -116,11 +117,11 @@ test.describe('Agent provider configuration', () => {
 
         await expect(page.getByText('Display name is required')).toBeVisible({timeout: 10000});
         await expect(page.getByText('Username is required')).toBeVisible({timeout: 10000});
-        await expect(agentPage.getAIServiceSelect()).toHaveValue('validation-service');
+        await expect(agentPage.getAIServiceSelect()).toHaveText('Validation Service');
 
         await agentPage.getDisplayNameInput().fill('Validation Agent');
         await agentPage.getUsernameInput().fill('Invalid Name');
-        await agentPage.getAIServiceSelect().selectOption({label: 'Validation Service'});
+        await chooseCompassOption(agentPage.getAIServiceSelect(), 'Validation Service');
         await agentPage.getModalSaveButton().click();
 
         await expect(page.getByText('Username must start with a letter and contain only lowercase letters, numbers, periods, hyphens, and underscores')).toBeVisible({
@@ -153,7 +154,7 @@ test.describe('Agent provider configuration', () => {
 
         await agentPage.getDisplayNameInput().fill('Direct OpenAI Agent');
         await agentPage.getUsernameInput().fill('directopenaibot');
-        await agentPage.getAIServiceSelect().selectOption({label: 'OpenAI Direct Service'});
+        await chooseCompassOption(agentPage.getAIServiceSelect(), 'OpenAI Direct Service');
 
         await agentPage.getModalSaveButton().click();
         await agentPage.waitForModalClosed();
@@ -219,19 +220,19 @@ test.describe('Agent provider configuration', () => {
 
         await expect(agentPage.getNativeToolsSection('Native OpenAI Tools')).toBeVisible({timeout: 10000});
         await expect(agentPage.getNativeToolCheckbox('Native OpenAI Tools')).toBeChecked();
-        await expect(agentPage.getReasoningEffortSelect()).toHaveValue('high');
+        await expect(agentPage.getReasoningEffortSelect()).toHaveText('High');
 
-        await agentPage.getAIServiceSelect().selectOption({label: 'Plain Compatible Service'});
+        await chooseCompassOption(agentPage.getAIServiceSelect(), 'Plain Compatible Service');
         await expect(agentPage.getNativeToolsSection('Native OpenAI Tools')).toHaveCount(0);
         await expect(agentPage.getReasoningEffortSelect()).toHaveCount(0);
 
-        await agentPage.getAIServiceSelect().selectOption({label: 'Responses Compatible Service'});
+        await chooseCompassOption(agentPage.getAIServiceSelect(), 'Responses Compatible Service');
         await expect(agentPage.getNativeToolsSection('Native OpenAI Tools')).toBeVisible({timeout: 10000});
-        await expect(agentPage.getReasoningEffortSelect()).toHaveValue('high');
+        await expect(agentPage.getReasoningEffortSelect()).toHaveText('High');
 
         await agentPage.getNativeToolCheckbox('Native OpenAI Tools').click();
         await expect(agentPage.getNativeToolCheckbox('Native OpenAI Tools')).not.toBeChecked();
-        await agentPage.getReasoningEffortSelect().selectOption('minimal');
+        await chooseCompassOption(agentPage.getReasoningEffortSelect(), 'Minimal');
 
         await agentPage.getModalSaveButton().click();
         await agentPage.waitForModalClosed();
@@ -241,10 +242,10 @@ test.describe('Agent provider configuration', () => {
         await agentPage.waitForModal();
         await agentPage.expandAdvancedConfiguration();
 
-        await expect(agentPage.getAIServiceSelect()).toHaveValue('responses-service');
+        await expect(agentPage.getAIServiceSelect()).toHaveText('Responses Compatible Service');
         await expect(agentPage.getNativeToolsSection('Native OpenAI Tools')).toBeVisible({timeout: 10000});
         await expect(agentPage.getNativeToolCheckbox('Native OpenAI Tools')).not.toBeChecked();
-        await expect(agentPage.getReasoningEffortSelect()).toHaveValue('minimal');
+        await expect(agentPage.getReasoningEffortSelect()).toHaveText('Minimal');
     });
 
     test('edits migrated Anthropic settings from the agent builder', async ({page}) => {
@@ -287,15 +288,11 @@ test.describe('Agent provider configuration', () => {
         await expect(agentPage.getNativeToolsSection('Native Claude Tools')).toBeVisible({timeout: 10000});
         await expect(agentPage.getNativeToolCheckbox('Native Claude Tools')).toBeChecked();
         await expect(agentPage.getReasoningEnableCheckbox('Extended Thinking')).toBeChecked();
-        await expect(agentPage.getThinkingBudgetInput()).toHaveValue('2048');
 
-        await agentPage.getThinkingBudgetInput().fill('512');
-        await page.keyboard.press('Tab');
-        await expect(page.getByText('Thinking budget must be at least 1024 tokens.')).toBeVisible({timeout: 10000});
-
-        await agentPage.getThinkingBudgetInput().fill('4096');
-        await page.keyboard.press('Tab');
-        await expect(page.getByText('Thinking budget must be at least 1024 tokens.')).not.toBeVisible();
+        // Anthropic is configured by effort; the migrated budget has no field.
+        await expect(agentPage.getThinkingEffortSelect()).toHaveText('Model default');
+        await expect(page.getByText('Thinking Budget (tokens)', {exact: true})).toHaveCount(0);
+        await chooseCompassOption(agentPage.getThinkingEffortSelect(), 'Low');
 
         await agentPage.getNativeToolCheckbox('Native Claude Tools').click();
         await expect(agentPage.getNativeToolCheckbox('Native Claude Tools')).not.toBeChecked();
@@ -316,6 +313,6 @@ test.describe('Agent provider configuration', () => {
         await expect(agentPage.getNativeToolsSection('Native Claude Tools')).toBeVisible({timeout: 10000});
         await expect(agentPage.getNativeToolCheckbox('Native Claude Tools')).not.toBeChecked();
         await expect(agentPage.getReasoningEnableCheckbox('Extended Thinking')).toBeChecked();
-        await expect(agentPage.getThinkingBudgetInput()).toHaveValue('4096');
+        await expect(agentPage.getThinkingEffortSelect()).toHaveText('Low');
     });
 });

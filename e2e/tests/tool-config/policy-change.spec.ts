@@ -40,16 +40,15 @@ test.describe.serial('Per-Tool Policy Change', () => {
         // Expand the embedded server
         const serverHeader = page.getByText(/\d+\/\d+ tools? enabled/).first();
         await serverHeader.click();
-        await page.waitForTimeout(500);
 
         // Find read_post tool (should be "auto_run_in_dm" from vetted seed)
         await expect(page.getByText('read_post', { exact: true })).toBeVisible({ timeout: 5000 });
         const readPostPolicy = toolConfig.getToolPolicyDropdown('read_post');
-        await expect(readPostPolicy).toHaveValue('auto_run_in_dm');
+        await expect(readPostPolicy).toHaveText('Auto Run (DM)');
 
         // Change to "Ask Every Time"
         await toolConfig.setToolPolicy('read_post', 'Ask Every Time');
-        await expect(readPostPolicy).toHaveValue('ask');
+        await expect(readPostPolicy).toHaveText('Ask Every Time');
 
         // Save
         await toolConfig.clickSave();
@@ -60,12 +59,11 @@ test.describe.serial('Per-Tool Policy Change', () => {
         // Expand server again
         const serverHeader2 = page.getByText(/\d+\/\d+ tools? enabled/).first();
         await serverHeader2.click();
-        await page.waitForTimeout(500);
 
         // Verify the tool now shows "ask"
         await expect(page.getByText('read_post', { exact: true })).toBeVisible({ timeout: 5000 });
         const readPostPolicyAfter = toolConfig.getToolPolicyDropdown('read_post');
-        await expect(readPostPolicyAfter).toHaveValue('ask');
+        await expect(readPostPolicyAfter).toHaveText('Ask Every Time');
     });
 
     test('should change tool policy from Ask Every Time to Auto Run (DM) and persist', async ({ page }) => {
@@ -80,7 +78,6 @@ test.describe.serial('Per-Tool Policy Change', () => {
         // Expand the embedded server
         const serverHeader = page.getByText(/\d+\/\d+ tools? enabled/).first();
         await serverHeader.click();
-        await page.waitForTimeout(500);
 
         // read_post should be "ask" from the previous test changing it
         // (tests in the same describe block share the container)
@@ -89,7 +86,7 @@ test.describe.serial('Per-Tool Policy Change', () => {
         // Change to "Auto Run (DM)"
         await toolConfig.setToolPolicy('read_post', 'Auto Run (DM)');
         const readPostPolicy = toolConfig.getToolPolicyDropdown('read_post');
-        await expect(readPostPolicy).toHaveValue('auto_run_in_dm');
+        await expect(readPostPolicy).toHaveText('Auto Run (DM)');
 
         // Save
         await toolConfig.clickSave();
@@ -100,12 +97,11 @@ test.describe.serial('Per-Tool Policy Change', () => {
         // Expand server again
         const serverHeader2 = page.getByText(/\d+\/\d+ tools? enabled/).first();
         await serverHeader2.click();
-        await page.waitForTimeout(500);
 
         // Verify the tool now shows "auto_run_in_dm"
         await expect(page.getByText('read_post', { exact: true })).toBeVisible({ timeout: 5000 });
         const readPostPolicyAfter = toolConfig.getToolPolicyDropdown('read_post');
-        await expect(readPostPolicyAfter).toHaveValue('auto_run_in_dm');
+        await expect(readPostPolicyAfter).toHaveText('Auto Run (DM)');
     });
 
     test('should change tool policy to Auto Run (Everywhere) and persist', async ({ page }) => {
@@ -119,13 +115,12 @@ test.describe.serial('Per-Tool Policy Change', () => {
 
         const serverHeader = page.getByText(/\d+\/\d+ tools? enabled/).first();
         await serverHeader.click();
-        await page.waitForTimeout(500);
 
         await expect(page.getByText('read_post', { exact: true })).toBeVisible({ timeout: 5000 });
 
         await toolConfig.setToolPolicy('read_post', 'Auto Run (Everywhere)');
         const readPostPolicy = toolConfig.getToolPolicyDropdown('read_post');
-        await expect(readPostPolicy).toHaveValue('auto_run_everywhere');
+        await expect(readPostPolicy).toHaveText('Auto Run (Everywhere)');
 
         await toolConfig.clickSave();
 
@@ -133,10 +128,9 @@ test.describe.serial('Per-Tool Policy Change', () => {
 
         const serverHeader2 = page.getByText(/\d+\/\d+ tools? enabled/).first();
         await serverHeader2.click();
-        await page.waitForTimeout(500);
 
         await expect(page.getByText('read_post', { exact: true })).toBeVisible({ timeout: 5000 });
         const readPostPolicyAfter = toolConfig.getToolPolicyDropdown('read_post');
-        await expect(readPostPolicyAfter).toHaveValue('auto_run_everywhere');
+        await expect(readPostPolicyAfter).toHaveText('Auto Run (Everywhere)');
     });
 });

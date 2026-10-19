@@ -13,6 +13,7 @@ import (
 	"unicode"
 
 	"github.com/google/jsonschema-go/jsonschema"
+	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
@@ -493,9 +494,30 @@ func (s *ToolStore) lookupTool(name string) (Tool, bool) {
 }
 
 func (s *ToolStore) ResolveTool(ctx context.Context, name string, argsGetter ToolArgumentGetter, llmCtx *Context) (string, error) {
-	_, span := telemetry.Tracer().Start(ctx, "resolve tool",
-		trace.WithAttributes(telemetry.ToolName.String(name)),
-	)
+	return s.ResolveToolCall(ctx, name, ToolCallInfo{}, argsGetter, llmCtx)
+}
+
+// ToolCallInfo describes the call being resolved, for tracing.
+type ToolCallInfo struct {
+	// ID is the model-assigned tool call ID.
+	ID string
+	// Execution is telemetry.ToolExecutionAuto when the call ran without
+	// asking the user, or telemetry.ToolExecutionApproved after approval.
+	Execution string
+}
+
+// ResolveToolCall runs the named tool inside the single "resolve tool" span.
+// The span records the call's identity, outcome and result size; the
+// arguments and result themselves are never attached.
+func (s *ToolStore) ResolveToolCall(ctx context.Context, name string, info ToolCallInfo, argsGetter ToolArgumentGetter, llmCtx *Context) (string, error) {
+	attrs := []attribute.KeyValue{telemetry.ToolName.String(name)}
+	if info.ID != "" {
+		attrs = append(attrs, telemetry.ToolID.String(info.ID))
+	}
+	if info.Execution != "" {
+		attrs = append(attrs, telemetry.ToolExecution.String(info.Execution))
+	}
+	ctx, span := telemetry.Tracer().Start(ctx, "resolve tool", trace.WithAttributes(attrs...))
 	defer span.End()
 
 	tool, ok := s.lookupTool(name)
@@ -503,13 +525,21 @@ func (s *ToolStore) ResolveTool(ctx context.Context, name string, argsGetter Too
 		err := errors.New("unknown tool " + name)
 		span.RecordError(err)
 		span.SetStatus(otelcodes.Error, err.Error())
+		span.SetAttributes(telemetry.ToolStatus.String("error"))
 		return "", err
 	}
 	result, err := tool.Resolver(ctx, llmCtx, argsGetter)
 	if err != nil {
 		span.RecordError(err)
-		span.SetStatus(otelcodes.Error, err.Error())
+		span.SetStatus(otelcodes.Error, "tool resolution failed")
+		span.SetAttributes(telemetry.ToolStatus.String("error"))
+		return result, err
 	}
+	span.SetAttributes(
+		telemetry.ToolStatus.String("success"),
+		telemetry.ToolResultBytes.Int(len(result)),
+		telemetry.ToolResultTokens.Int(EstimateTokens(result)),
+	)
 	return result, err
 }
 
