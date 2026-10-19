@@ -507,7 +507,25 @@ The setting can also be configured directly in the plugin configuration JSON:
 }
 ```
 
-Valid values for `telemetryOutput` are `off`, `logs`, and `otlp`. When set to `off` (or omitted), the plugin uses a no-op tracer with zero overhead. The `openTelemetryEndpoint` field is only consulted when the mode is `otlp`.
+Valid values for `telemetryOutput` are `off`, `logs`, and `otlp`. When set to `off` (or omitted), the plugin uses a no-op tracer with zero overhead. The `openTelemetryEndpoint`, `openTelemetryTLS`, and `openTelemetryHeaders` fields are only consulted when the mode is `otlp`.
+
+In **Server Logs** mode each finished span is one `agents trace span` log entry. Span events (such as the four `agent.progress` phases of a reply) are written as a JSON array under the `events` key, and span links (such as the link from a turn to the previous turn) as a JSON array under `links`, so Loki's `| json` can parse both. Spans log at ERROR level only when they record a failure; an access policy denial is an expected decision and logs at INFO.
+
+#### Following one turn
+
+One user message produces one `agent run` trace whose ID is derived from the user turn, so a turn can be found from its post:
+
+1. Find the `message has been posted` span with `agents.post.id` set to the user's post ID. Its `agents.agent.run.trace_id` attribute names the run's trace.
+2. The `agent run` span in that trace carries `agents.post.id`, `agents.channel.id`, `agents.user.id`, `agents.conversation.id`, and `agents.conversation.user_turn.id`, and links back to the message hook span and to the previous turn's trace.
+3. Everything the turn did — `process dm request`, every `llm chat completion` round, `resolve tool`, `stream to post`, and the conversation's title generation — is in the run's trace. `agent run` lasts until the reply finishes streaming.
+
+The agent's own response posts don't start a trace.
+
+HTTP spans are named by method and route template (for example `POST /bridge/v1/completion/agent/:agent`). Requests that match no route aren't traced, and neither is the long-lived `GET /mcp-server/mcp` stream that an MCP client holds open; the MCP `POST` requests that carry tool calls are traced.
+
+#### Access control spans
+
+Per-request access decisions (`abac can_use_agent`, `abac can_use_service`, `abac can_use_mcp_server`) run on nearly every request and would otherwise outnumber all other spans. Both output modes drop decisions that allowed access. Policy administration spans and `abac is_available` (one span per uncached probe, recording `agents.abac.available`) are always kept. Denials (`agents.abac.denied=true`) and failed evaluations (status Error) are kept. Denied resources carry `agents.abac.resource_name` (the agent or MCP server name) next to `agents.abac.resource_id`.
 
 #### Local development with Grafana Tempo
 
@@ -540,7 +558,19 @@ For production, send traces to your existing OpenTelemetry Collector or directly
 - **OpenTelemetry Collector**: Point the endpoint to your collector's OTLP gRPC address. The collector can then export to Jaeger, Zipkin, Datadog, Grafana Tempo, AWS X-Ray, or any other supported backend.
 - **Direct export**: Point the endpoint directly to a backend that supports OTLP gRPC (e.g., Grafana Tempo at `tempo:4317`).
 
-The connection currently uses insecure (non-TLS) gRPC. For TLS-terminated endpoints, route through an OpenTelemetry Collector with TLS configured.
+By default the exporter connects over plaintext gRPC, which suits a collector on the same host or private network. For a collector that requires TLS or credentials, such as hosted Grafana Tempo:
+
+- Enable **Use TLS for OTLP Export** (`openTelemetryTLS`). The endpoint's certificate is verified against the system root certificates.
+- Set **OTLP Export Headers** (`openTelemetryHeaders`) to the headers the collector expects, as comma-separated `key=value` pairs in the `OTEL_EXPORTER_OTLP_HEADERS` format, for example `Authorization=Basic <base64 of instance-id:token>`. Percent-encode commas in values as `%2C`. The value is a credential: it's stored with the plugin configuration like other API keys, and it's never written to logs, spans, or audit records. Use it with TLS, or the credentials are sent in plaintext.
+
+```json
+{
+  "telemetryOutput": "otlp",
+  "openTelemetryEndpoint": "tempo-prod-04-prod-us-east-0.grafana.net:443",
+  "openTelemetryTLS": true,
+  "openTelemetryHeaders": "Authorization=Basic <credentials>"
+}
+```
 
 #### Custom span attributes
 
@@ -559,6 +589,27 @@ Traces include these semantic attributes for filtering and analysis. Cached toke
 | `agents.llm.cost` | Provider-reported request cost, when reported | `0.0123` |
 | `agents.tool.name` | Tool being called | `web_search`, `read_channel` |
 | `agents.tool.id` | Tool call identifier | `call_abc123` |
+| `agents.tool.status` | Tool resolution outcome | `success`, `error` |
+| `agents.tool.execution` | Whether the call ran automatically or after the user approved it | `auto`, `approved` |
+| `agents.tool.result.bytes` | Size of the tool result in bytes (the result itself is never recorded) | `86016` |
+| `agents.tool.result.tokens_estimate` | Estimated tokens in the tool result | `21504` |
+| `agents.tool.returned_names` | Tools returned by `search_tools` | `["jira__get_issue"]` |
+| `agents.tool.loaded_name` | Tool loaded by `load_tool` | `jira__get_issue` |
+| `agents.llm.finish_reason` | Why the LLM round ended | `stop`, `tool_calls`, `length` |
+| `agents.llm.time_to_first_token_ms` | Time from request to the first model output | `850` |
+| `agents.llm.round` | 0-based index of the LLM call within a turn's tool loop | `3` |
+| `agents.stream.outcome` | How streaming a reply ended | `completed`, `canceled`, `errored`, `empty` |
+| `agents.stream.message_length` | Length of the final reply in bytes | `1834` |
+| `agents.conversation.id` | Conversation ID | `abc123def456` |
+| `agents.conversation.user_turn.id` | User turn the run answers | `abc123def456` |
+| `agents.agent.run.trace_id` | On the message hook span: the trace ID of the agent run | `8d5576c0…` |
+| `agents.abac.resource_name` | Name of the agent or MCP server an access check evaluated | `jira` |
+| `agents.abac.denied` | The access check denied access | `true` |
+| `agents.abac.decision_source` | Set when the agent's legacy allow/block lists, not an access policy, made the decision | `legacy` |
+| `agents.abac.available` | On `abac is_available`: whether ABAC is licensed and enabled | `false` |
+| `agents.abac.probe_status_code` / `agents.abac.probe_error_id` | On `abac is_available`: why the probe reported unavailable | `501` / `app.pap.init.app_error` |
+| `agents.bridge.plugin_id` | On LLM bridge HTTP spans: the calling plugin | `com.mattermost.calls` |
+| `agents.service.id` | On LLM bridge service-completion spans: the requested service | `abc123def456` |
 | `agents.mcp.server` | MCP server name | `github-server` |
 | `agents.mcp.tool` | MCP tool name | `search_issues` |
 | `agents.user.id` | Requesting user ID | `abc123def456` |

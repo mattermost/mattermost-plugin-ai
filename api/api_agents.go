@@ -54,7 +54,22 @@ const MaxAgentRequestBodyBytes = 2 << 20 // 2 MiB
 // human-readable and actionable.
 type agentErrorResponse struct {
 	Error string `json:"error"`
+	// Code, when set, identifies the error so the webapp can show a translated
+	// message instead of Error.
+	Code agentErrorCode `json:"code,omitempty"`
 }
+
+// agentErrorCode identifies an agent request error the webapp localizes.
+type agentErrorCode string
+
+const (
+	// agentErrorUsernameTaken: another account holds the agent's username (or
+	// the email derived from it).
+	agentErrorUsernameTaken agentErrorCode = "username_taken"
+	// agentErrorUsernameHeldByDeactivatedBot: a deactivated bot holds the
+	// username; permanently deleting it frees the name.
+	agentErrorUsernameHeldByDeactivatedBot agentErrorCode = "username_held_by_deactivated_bot"
+)
 
 // statusForAccessErr: policy denials are 403; saving as attribute-based without ABAC is 400.
 func statusForAccessErr(err error) int {
@@ -79,6 +94,13 @@ func abortAgentRequest(c *gin.Context, status int, err error) {
 		publicMsg = "internal server error"
 	}
 	c.AbortWithStatusJSON(status, agentErrorResponse{Error: publicMsg})
+}
+
+// abortAgentRequestWithCode is abortAgentRequest for a client error the webapp
+// localizes by code.
+func abortAgentRequestWithCode(c *gin.Context, status int, code agentErrorCode, err error) {
+	_ = c.Error(err)
+	c.AbortWithStatusJSON(status, agentErrorResponse{Error: err.Error(), Code: code})
 }
 
 // AgentRequestFields are the request fields common to agent create and update.
@@ -394,13 +416,17 @@ func (a *API) clearAgentConfigReferences(botUserID, username string) error {
 	return nil
 }
 
-// refreshBotsAndNotify reloads bots on this node, notifies the cluster, and broadcasts so clients refresh bot lists.
-// renamedAgentID, when set, tells peers to refresh that agent individually before their full reload.
+// refreshBotsAndNotify applies a change to agentID on this node, notifies the cluster, and broadcasts so clients
+// refresh bot lists. The agent is refreshed on its own before every bot is reloaded, here and on peers, because the
+// full reload keeps the whole previous registry when any agent fails to build.
 // It returns the error from EnsureBots when a.bots is non-nil, or nil when a.bots is nil; cluster and websocket
 // steps always run regardless.
-func (a *API) refreshBotsAndNotify(renamedAgentID string) error {
+func (a *API) refreshBotsAndNotify(agentID string) error {
 	var ensureErr error
 	if a.bots != nil {
+		if err := a.bots.RefreshAgent(agentID); err != nil {
+			a.pluginAPI.Log.Error("Failed to refresh changed agent", "agent_id", agentID, "error", err.Error())
+		}
 		a.bots.ForceRefreshOnNextEnsure()
 		ensureErr = a.bots.EnsureBots()
 		if ensureErr != nil {
@@ -408,7 +434,7 @@ func (a *API) refreshBotsAndNotify(renamedAgentID string) error {
 		}
 	}
 	if a.clusterAgentNotifier != nil {
-		if err := a.clusterAgentNotifier.PublishAgentUpdate(renamedAgentID); err != nil {
+		if err := a.clusterAgentNotifier.PublishAgentUpdate(agentID); err != nil {
 			a.pluginAPI.Log.Error("Failed to publish agent update cluster event", "error", err.Error())
 		}
 	}
@@ -417,21 +443,6 @@ func (a *API) refreshBotsAndNotify(renamedAgentID string) error {
 		a.mmClient.PublishWebSocketEvent(WebsocketEventBotsInvalidate, map[string]any{}, &model.WebsocketBroadcast{})
 	}
 	return ensureErr
-}
-
-// refreshAfterRename refreshes a renamed agent from the store on this node,
-// then reloads every bot and tells peers to refresh it too. The agent is
-// refreshed on its own first because the full reload can fail and keep the
-// whole previous registry, which would keep listing the agent under its
-// previous name. Routing by the previous name is refused regardless, since
-// name-based lookups check the live bot account.
-func (a *API) refreshAfterRename(agentID string) error {
-	if a.bots != nil {
-		if err := a.bots.RefreshAgent(agentID); err != nil {
-			a.pluginAPI.Log.Error("Failed to refresh renamed agent", "agent_id", agentID, "error", err.Error())
-		}
-	}
-	return a.refreshBotsAndNotify(agentID)
 }
 
 // handleCreateAgent handles POST /agents: creates the bot user and persisted agent config.
@@ -503,8 +514,8 @@ func (a *API) handleCreateAgent(c *gin.Context) {
 	}
 	if err := a.pluginAPI.Bot.Create(mmBot); err != nil {
 		var appErr *model.AppError
-		if errors.As(err, &appErr) && appErr.Id == "app.user.save.username_exists.app_error" {
-			abortAgentRequest(c, http.StatusConflict, fmt.Errorf("username %q is already taken", req.Username))
+		if errors.As(err, &appErr) && (appErr.Id == "app.user.save.username_exists.app_error" || appErr.Id == "app.user.save.email_exists.app_error") {
+			abortAgentRequestWithCode(c, http.StatusConflict, a.agentUsernameConflictCode(userID, req.Username), fmt.Errorf("username %q is already taken", req.Username))
 			return
 		}
 		abortAgentRequest(c, http.StatusInternalServerError, fmt.Errorf("failed to create bot account: %w", err))
@@ -514,9 +525,7 @@ func (a *API) handleCreateAgent(c *gin.Context) {
 	agent := buildAgentConfigForCreate(req, userID, mmBot.UserId)
 
 	if err := a.agentStore.CreateAgent(agent); err != nil {
-		if _, deactivateErr := a.pluginAPI.Bot.UpdateActive(mmBot.UserId, false); deactivateErr != nil {
-			a.pluginAPI.Log.Error("Failed to deactivate bot after agent persist failure", "bot_user_id", mmBot.UserId, "error", deactivateErr.Error())
-		}
+		a.discardUnusedBot(mmBot.UserId)
 		abortAgentRequest(c, http.StatusInternalServerError, fmt.Errorf("failed to persist agent: %w", err))
 		return
 	}
@@ -525,8 +534,37 @@ func (a *API) handleCreateAgent(c *gin.Context) {
 	audit.AddParam(auditRec(c), audit.KeyAgentID, agent.ID)
 	audit.AddParam(auditRec(c), "bot_user_id", mmBot.UserId)
 
-	_ = a.refreshBotsAndNotify("")
+	_ = a.refreshBotsAndNotify(agent.ID)
 	c.JSON(http.StatusCreated, agent)
+}
+
+// agentUsernameConflictCode reports whether a deactivated bot holds username, in
+// which case permanently deleting it makes the name available again. The lookup
+// bypasses the caller's user-visibility restrictions, so only system admins are
+// told what holds the name.
+func (a *API) agentUsernameConflictCode(userID, username string) agentErrorCode {
+	if !isSystemAdmin(a.pluginAPI, userID) {
+		return agentErrorUsernameTaken
+	}
+	holder, err := a.pluginAPI.User.GetByUsername(username)
+	if err == nil && holder.IsBot && holder.DeleteAt != 0 {
+		return agentErrorUsernameHeldByDeactivatedBot
+	}
+	return agentErrorUsernameTaken
+}
+
+// discardUnusedBot removes a bot created for an agent that failed to persist. The
+// bot has no history yet, so it is deleted rather than deactivated: a deactivated
+// bot would keep blocking the username on retry.
+func (a *API) discardUnusedBot(botUserID string) {
+	deleteErr := a.pluginAPI.Bot.DeletePermanently(botUserID)
+	if deleteErr == nil {
+		return
+	}
+	a.pluginAPI.Log.Error("Failed to delete bot after agent persist failure", "bot_user_id", botUserID, "error", deleteErr.Error())
+	if _, err := a.pluginAPI.Bot.UpdateActive(botUserID, false); err != nil {
+		a.pluginAPI.Log.Error("Failed to deactivate bot after agent persist failure", "bot_user_id", botUserID, "error", err.Error())
+	}
 }
 
 // agentListItem is an agent as listed on GET /agents, with the reason it is
@@ -724,7 +762,7 @@ func (a *API) handleUpdateAgent(c *gin.Context) {
 		// rename was fully reverted and they already agree.
 		defer func() {
 			if c.IsAborted() && !renameReverted {
-				_ = a.refreshAfterRename(cfg.ID)
+				_ = a.refreshBotsAndNotify(cfg.ID)
 			}
 		}()
 		if renamed {
@@ -764,12 +802,7 @@ func (a *API) handleUpdateAgent(c *gin.Context) {
 		}
 	}
 
-	var ensureErr error
-	if usernameChanged {
-		ensureErr = a.refreshAfterRename(cfg.ID)
-	} else {
-		ensureErr = a.refreshBotsAndNotify("")
-	}
+	ensureErr := a.refreshBotsAndNotify(cfg.ID)
 
 	// EnsureBots patches display name on success; when it did not run (no bot registry) or failed, sync explicitly.
 	if displayNameChanged && (ensureErr != nil || a.bots == nil) {
@@ -815,7 +848,7 @@ func (a *API) handleDeleteAgent(c *gin.Context) {
 		a.pluginAPI.Log.Error("Failed to delete access policy for deleted agent", "agent_id", cfg.ID, "error", err.Error())
 	}
 
-	ensureErr := a.refreshBotsAndNotify("")
+	ensureErr := a.refreshBotsAndNotify(cfg.ID)
 
 	// EnsureBots deactivates removed bots on success; when it did not run or failed, deactivate explicitly.
 	if ensureErr != nil || a.bots == nil {

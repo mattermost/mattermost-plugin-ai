@@ -18,8 +18,8 @@ const clusterEventMCPOAuthUserInvalidate = "mcp_oauth_user_invalidate"
 const clusterEventStreamStop = "stream_stop"
 const clusterEventChannelAutoReplyInvalidate = "channel_autoreply_invalidate"
 
-// agentUpdateClusterPayload is sent only for a rename. Agent updates may carry
-// no data, and older nodes neither send nor read it.
+// agentUpdateClusterPayload names the agent an agent update changed. Updates
+// may carry no data, and older nodes neither send nor read it.
 type agentUpdateClusterPayload struct {
 	AgentID string `json:"agentID"`
 }
@@ -69,8 +69,8 @@ func (p *Plugin) PublishConfigUpdate() error {
 }
 
 // PublishAgentUpdate broadcasts an agent update event to all other nodes in
-// the cluster. A non-empty agentID names a renamed agent that peers refresh
-// individually before reloading every bot.
+// the cluster. A non-empty agentID names the changed agent, which peers
+// refresh individually before reloading every bot.
 func (p *Plugin) PublishAgentUpdate(agentID string) error {
 	if agentID == "" {
 		return p.publishClusterEvent(clusterEventAgentUpdate, nil)
@@ -124,15 +124,15 @@ func (p *Plugin) OnPluginClusterEvent(_ *plugin.Context, ev model.PluginClusterE
 		}
 
 	case clusterEventAgentUpdate:
-		// A renamed agent is refreshed on its own first, so a failing full
-		// reload cannot keep it listed under its previous name.
+		// The changed agent is refreshed on its own first, so a failing full
+		// reload cannot keep serving its previous configuration.
 		if len(ev.Data) > 0 {
 			var payload agentUpdateClusterPayload
 			if err := json.Unmarshal(ev.Data, &payload); err != nil {
 				p.pluginAPI.Log.Error("Failed to unmarshal agent update cluster payload", "error", err.Error())
 			} else if payload.AgentID != "" {
 				if err := p.bots.RefreshAgent(payload.AgentID); err != nil {
-					p.pluginAPI.Log.Error("Failed to refresh renamed agent after agent update cluster event", "agent_id", payload.AgentID, "error", err.Error())
+					p.pluginAPI.Log.Error("Failed to refresh changed agent after agent update cluster event", "agent_id", payload.AgentID, "error", err.Error())
 				}
 			}
 		}

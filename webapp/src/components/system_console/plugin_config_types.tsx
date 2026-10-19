@@ -20,6 +20,8 @@ export type PluginConfig = {
     transcriptBackend: string,
     telemetryOutput: 'off' | 'logs' | 'otlp' | '',
     openTelemetryEndpoint: string,
+    openTelemetryTLS?: boolean,
+    openTelemetryHeaders?: string,
     enableTokenUsageLogging: boolean,
     enableCallSummary: boolean,
     allowedUpstreamHostnames: string,

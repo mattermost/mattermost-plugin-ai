@@ -64,7 +64,7 @@ type Plugin struct {
 	telemetryShutdown    telemetry.ShutdownFunc
 	telemetryMu          sync.Mutex
 	telemetryMode        telemetry.OutputMode
-	telemetryEndpoint    string
+	telemetryOTLP        telemetryOTLPSettings
 	store                *store.Store
 	autoreplyService     channelAutoReplyRefresher
 	configMigrated       bool
@@ -644,6 +644,14 @@ func (p *Plugin) OnDeactivate() error {
 	return nil
 }
 
+// telemetryOTLPSettings is the OTLP part of the config that, when changed,
+// requires re-initializing the TracerProvider.
+type telemetryOTLPSettings struct {
+	endpoint string
+	tls      bool
+	headers  string
+}
+
 // applyTelemetryConfig (re)initializes the global OpenTelemetry TracerProvider
 // from the current plugin configuration. It is safe to call repeatedly: when
 // the mode and endpoint match what's already running, it is a no-op. When the
@@ -654,13 +662,30 @@ func (p *Plugin) applyTelemetryConfig() {
 	if mode == "" {
 		mode = telemetry.OutputModeOff
 	}
-	endpoint := cfg.OpenTelemetryEndpoint
+	otlp := telemetryOTLPSettings{
+		endpoint: cfg.OpenTelemetryEndpoint,
+		tls:      cfg.OpenTelemetryTLS,
+		headers:  cfg.OpenTelemetryHeaders,
+	}
 
 	p.telemetryMu.Lock()
 	defer p.telemetryMu.Unlock()
 
-	if mode == p.telemetryMode && endpoint == p.telemetryEndpoint {
+	if mode == p.telemetryMode && otlp == p.telemetryOTLP {
 		return
+	}
+
+	// Headers only matter for OTLP; a malformed value must not block
+	// switching to another mode.
+	var headers map[string]string
+	if mode == telemetry.OutputModeOTLP {
+		var parseErr error
+		headers, parseErr = telemetry.ParseHeaders(otlp.headers)
+		if parseErr != nil {
+			// The error names the bad pair's position only, never its value.
+			p.pluginAPI.Log.Error("Failed to initialize OpenTelemetry: invalid OTLP headers", "error", parseErr)
+			return
+		}
 	}
 
 	if p.telemetryShutdown != nil {
@@ -670,7 +695,17 @@ func (p *Plugin) applyTelemetryConfig() {
 		p.telemetryShutdown = nil
 	}
 
-	shutdown, err := telemetry.Init(context.Background(), "mattermost-ai-agents", manifest.Version, mode, endpoint, &p.pluginAPI.Log)
+	shutdown, err := telemetry.Init(context.Background(), telemetry.Options{
+		ServiceName:    "mattermost-ai-agents",
+		ServiceVersion: manifest.Version,
+		Mode:           mode,
+		OTLP: telemetry.OTLPOptions{
+			Endpoint: otlp.endpoint,
+			TLS:      otlp.tls,
+			Headers:  headers,
+		},
+		Log: &p.pluginAPI.Log,
+	})
 	if err != nil {
 		p.pluginAPI.Log.Error("Failed to initialize OpenTelemetry", "error", err, "mode", string(mode))
 		// Leave previous mode tracked so the next change still triggers a re-init.
@@ -678,7 +713,7 @@ func (p *Plugin) applyTelemetryConfig() {
 	}
 	p.telemetryShutdown = shutdown
 	p.telemetryMode = mode
-	p.telemetryEndpoint = endpoint
+	p.telemetryOTLP = otlp
 	if mode == telemetry.OutputModeOff {
 		p.pluginAPI.Log.Info("OpenTelemetry tracing disabled")
 	} else {
