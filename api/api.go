@@ -59,6 +59,7 @@ type Config interface {
 	GetDefaultBotName() string
 	MCP() mcp.Config
 	AllowUnsafeLinks() bool
+	AllowedLinkDomains() []string
 	EmbeddingSearchConfig() embeddings.EmbeddingSearchConfig
 	EnableChannelMentionToolCalling() bool
 
@@ -675,6 +676,9 @@ type AIBotsResponse struct {
 	Bots             []AIBotInfo `json:"bots"`
 	SearchEnabled    bool        `json:"searchEnabled"`
 	AllowUnsafeLinks bool        `json:"allowUnsafeLinks"`
+	// AllowedLinkDomains narrows AllowUnsafeLinks to these hosts; empty means
+	// every host is allowed.
+	AllowedLinkDomains []string `json:"allowedLinkDomains"`
 }
 
 // usesServiceAccountAuth reports the effective service account mode for a bot:
@@ -753,9 +757,10 @@ func (a *API) handleGetAIBots(c *gin.Context) {
 	searchEnabled := a.searchService.Enabled()
 
 	c.JSON(http.StatusOK, AIBotsResponse{
-		Bots:             bots,
-		SearchEnabled:    searchEnabled,
-		AllowUnsafeLinks: a.config.AllowUnsafeLinks(),
+		Bots:               bots,
+		SearchEnabled:      searchEnabled,
+		AllowUnsafeLinks:   a.config.AllowUnsafeLinks(),
+		AllowedLinkDomains: a.config.AllowedLinkDomains(),
 	})
 }
 

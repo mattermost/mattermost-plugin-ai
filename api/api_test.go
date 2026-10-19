@@ -66,6 +66,7 @@ type TestEnvironment struct {
 // testConfigImpl is a minimal implementation of Config for testing
 type testConfigImpl struct {
 	allowUnsafeLinks                bool
+	allowedLinkDomains              []string
 	enableChannelMentionToolCalling bool
 	mcpConfig                       mcp.Config
 	services                        []llm.ServiceConfig
@@ -82,6 +83,13 @@ func (tc *testConfigImpl) MCP() mcp.Config {
 
 func (tc *testConfigImpl) AllowUnsafeLinks() bool {
 	return tc.allowUnsafeLinks
+}
+
+func (tc *testConfigImpl) AllowedLinkDomains() []string {
+	if tc.allowedLinkDomains == nil {
+		return []string{}
+	}
+	return tc.allowedLinkDomains
 }
 
 func (tc *testConfigImpl) EmbeddingSearchConfig() embeddings.EmbeddingSearchConfig {
@@ -1363,6 +1371,7 @@ func TestHandleGetAIBots(t *testing.T) {
 		expectedUseServiceAccountAuth bool
 		expectedSearchEnabled         bool
 		expectedAllowUnsafeLinks      bool
+		expectedAllowedLinkDomains    []string
 		expectedStatus                int
 		envSetup                      func(e *TestEnvironment)
 	}{
@@ -1410,6 +1419,18 @@ func TestHandleGetAIBots(t *testing.T) {
 			expectedStatus:                http.StatusOK,
 			envSetup: func(e *TestEnvironment) {
 				e.config.allowUnsafeLinks = true
+				e.mockAPI.On("GetChannelByName", "", mock.AnythingOfType("string"), false).Return(nil, &model.AppError{})
+			},
+		},
+		{
+			name:                       "allowed link domains are returned",
+			searchService:              nil,
+			expectedAllowUnsafeLinks:   true,
+			expectedAllowedLinkDomains: []string{"example.com", "*.mattermost.com"},
+			expectedStatus:             http.StatusOK,
+			envSetup: func(e *TestEnvironment) {
+				e.config.allowUnsafeLinks = true
+				e.config.allowedLinkDomains = []string{"example.com", "*.mattermost.com"}
 				e.mockAPI.On("GetChannelByName", "", mock.AnythingOfType("string"), false).Return(nil, &model.AppError{})
 			},
 		},
@@ -1468,6 +1489,7 @@ func TestHandleGetAIBots(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, test.expectedSearchEnabled, response.SearchEnabled, "SearchEnabled field should match expected value")
 				require.Equal(t, test.expectedAllowUnsafeLinks, response.AllowUnsafeLinks, "AllowUnsafeLinks field should match expected value")
+				require.ElementsMatch(t, test.expectedAllowedLinkDomains, response.AllowedLinkDomains, "AllowedLinkDomains field should match expected value")
 				require.NotEmpty(t, response.Bots, "Should return at least one bot")
 				require.Equal(t, test.expectedUseServiceAccountAuth, response.Bots[0].UseServiceAccountAuth,
 					"UseServiceAccountAuth field should report the effective service account mode")

@@ -96,6 +96,7 @@ const defaultConfig: Config = {
     enableCallSummary: false,
     allowedUpstreamHostnames: '',
     allowUnsafeLinks: false,
+    allowedLinkDomains: '',
     enableChannelMentionToolCalling: false,
     allowNativeWebSearchInChannels: false,
     embeddingSearchConfig: {
@@ -348,6 +349,15 @@ const Config = (props: Props) => {
                         }}
                         helpText={intl.formatMessage({defaultMessage: 'When enabled, AI responses may contain clickable links, including potentially malicious destinations. Enable only if you trust the LLM output and have mitigations for exfiltration risks.'})}
                     />
+                    {value.allowUnsafeLinks && (
+                        <TextItem
+                            label={intl.formatMessage({defaultMessage: 'Allowed Link Domains (csv)'})}
+                            value={value.allowedLinkDomains}
+                            onChange={(e) => updateConfig({allowedLinkDomains: e.target.value})}
+                            helptext={intl.formatMessage({defaultMessage: 'Comma separated list of domains that AI-generated links may point to. Links to any other domain are shown as plain text. Supports wildcards like *.mydomain.com, which matches subdomains but not mydomain.com itself. Links to this Mattermost server are always allowed. Leave empty to allow links to any domain.'})}
+                            placeholder={'example.com, *.mydomain.com'}
+                        />
+                    )}
                     <BooleanItem
                         label={
                             <Horizontal>

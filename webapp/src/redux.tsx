@@ -24,6 +24,7 @@ export async function setupRedux(registry: any, store: WebappStore) {
         bots,
         selectedPostId,
         allowUnsafeLinks,
+        allowedLinkDomains,
         customPrompts,
         pinnedPromptIds,
         showCustomPromptsModal,
@@ -79,6 +80,15 @@ function allowUnsafeLinks(state = false, action: any) {
     switch (action.type) {
     case 'SET_ALLOW_UNSAFE_LINKS':
         return action.allowUnsafeLinks;
+    default:
+        return state;
+    }
+}
+
+function allowedLinkDomains(state: string[] = [], action: any) {
+    switch (action.type) {
+    case 'SET_ALLOWED_LINK_DOMAINS':
+        return action.allowedLinkDomains;
     default:
         return state;
     }

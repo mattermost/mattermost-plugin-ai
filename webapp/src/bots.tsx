@@ -88,6 +88,11 @@ export async function fetchAndStoreBots(dispatch: Dispatch): Promise<LLMBot[] | 
         allowUnsafeLinks: Boolean(response.allowUnsafeLinks),
     });
 
+    dispatch({
+        type: 'SET_ALLOWED_LINK_DOMAINS',
+        allowedLinkDomains: Array.isArray(response.allowedLinkDomains) ? response.allowedLinkDomains : [],
+    });
+
     return response.bots;
 }
 

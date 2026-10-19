@@ -9,6 +9,7 @@ import (
 	"os"
 	"slices"
 	"strconv"
+	"strings"
 	"sync/atomic"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/embeddings"
@@ -21,16 +22,20 @@ const (
 )
 
 type Config struct {
-	Services                        []llm.ServiceConfig              `json:"services"`
-	Bots                            []llm.BotConfig                  `json:"bots"`
-	DefaultBotName                  string                           `json:"defaultBotName"`
-	TranscriptGenerator             string                           `json:"transcriptBackend"`
-	EnableTokenUsageLogging         bool                             `json:"enableTokenUsageLogging"`
-	EnableCallSummary               bool                             `json:"enableCallSummary"`
-	EnableTokenUsageLogToPlugin     *bool                            `json:"enableTokenUsageLogToPlugin,omitempty"`
-	EnableTokenUsageLogToFile       *bool                            `json:"enableTokenUsageLogToFile,omitempty"`
-	AllowedUpstreamHostnames        string                           `json:"allowedUpstreamHostnames"`
-	AllowUnsafeLinks                bool                             `json:"allowUnsafeLinks"`
+	Services                    []llm.ServiceConfig `json:"services"`
+	Bots                        []llm.BotConfig     `json:"bots"`
+	DefaultBotName              string              `json:"defaultBotName"`
+	TranscriptGenerator         string              `json:"transcriptBackend"`
+	EnableTokenUsageLogging     bool                `json:"enableTokenUsageLogging"`
+	EnableCallSummary           bool                `json:"enableCallSummary"`
+	EnableTokenUsageLogToPlugin *bool               `json:"enableTokenUsageLogToPlugin,omitempty"`
+	EnableTokenUsageLogToFile   *bool               `json:"enableTokenUsageLogToFile,omitempty"`
+	AllowedUpstreamHostnames    string              `json:"allowedUpstreamHostnames"`
+	AllowUnsafeLinks            bool                `json:"allowUnsafeLinks"`
+	// AllowedLinkDomains restricts which hosts AI-generated links may point
+	// to when AllowUnsafeLinks is on, as a comma-separated list of hostnames
+	// (wildcards like *.example.com allowed). Empty allows every host.
+	AllowedLinkDomains              string                           `json:"allowedLinkDomains"`
 	EnableChannelMentionToolCalling bool                             `json:"enableChannelMentionToolCalling"`
 	AllowNativeWebSearchInChannels  bool                             `json:"allowNativeWebSearchInChannels"`
 	EmbeddingSearchConfig           embeddings.EmbeddingSearchConfig `json:"embeddingSearchConfig"`
@@ -172,6 +177,25 @@ func (c *Container) MCP() MCPConfig {
 
 func (c *Container) AllowUnsafeLinks() bool {
 	return c.Config().AllowUnsafeLinks
+}
+
+// AllowedLinkDomains returns the configured link domain allowlist as trimmed,
+// lowercased entries. It never returns nil so it serializes as a JSON array.
+func (c *Container) AllowedLinkDomains() []string {
+	return parseDomainList(c.Config().AllowedLinkDomains)
+}
+
+// parseDomainList splits a comma-separated domain list, trimming whitespace
+// and trailing dots, lowercasing, and dropping empty entries.
+func parseDomainList(raw string) []string {
+	domains := []string{}
+	for entry := range strings.SplitSeq(raw, ",") {
+		entry = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(entry), "."))
+		if entry != "" {
+			domains = append(domains, entry)
+		}
+	}
+	return domains
 }
 
 func (c *Container) EnableChannelMentionToolCalling() bool {
