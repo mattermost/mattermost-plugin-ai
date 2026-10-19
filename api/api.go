@@ -117,8 +117,8 @@ type AgentStore interface {
 	ListAgentVersions(agentID string) ([]store.AgentVersion, error)
 	// GetAgentVersion returns nil, nil when the version does not exist.
 	GetAgentVersion(agentID string, version int) (*store.AgentVersionDetail, error)
-	// GetLatestAgentVersion returns 0 when the agent has no versions.
-	GetLatestAgentVersion(agentID string) (int, error)
+	// GetLatestAgentVersion returns nil, nil when the agent has no versions.
+	GetLatestAgentVersion(agentID string) (*store.AgentVersionDetail, error)
 }
 
 // ConfigUpdater updates the in-memory plugin configuration.

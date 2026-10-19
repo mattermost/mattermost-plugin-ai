@@ -120,7 +120,13 @@ func TestAgentVersionLifecycle(t *testing.T) {
 	t.Run("latest version and unknown version", func(t *testing.T) {
 		latest, latestErr := s.GetLatestAgentVersion(agent.ID)
 		require.NoError(t, latestErr)
-		assert.Equal(t, 3, latest)
+		require.NotNil(t, latest)
+		assert.Equal(t, 3, latest.Version)
+		assert.Equal(t, "Be helpful and concise", latest.Config.CustomInstructions)
+
+		none, noneErr := s.GetLatestAgentVersion("unknownagent0000000000001")
+		require.NoError(t, noneErr)
+		assert.Nil(t, none)
 
 		missing, getErr := s.GetAgentVersion(agent.ID, 4)
 		require.NoError(t, getErr)
@@ -304,11 +310,11 @@ func TestAgentVersionMetaValidation(t *testing.T) {
 			require.NoError(t, latestErr)
 			if tt.wantErr {
 				require.Error(t, err)
-				assert.Equal(t, before, after)
+				assert.Equal(t, before.Version, after.Version)
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, before+1, after)
+			assert.Equal(t, before.Version+1, after.Version)
 		})
 	}
 }

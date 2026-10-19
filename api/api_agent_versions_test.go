@@ -193,7 +193,7 @@ func TestRestoreAgentVersion(t *testing.T) {
 				assert.Equal(t, "svc-1", e.agentStore.agents[versionTestAgentID].ServiceID)
 				latest, err := e.agentStore.GetLatestAgentVersion(versionTestAgentID)
 				require.NoError(t, err)
-				assert.Equal(t, 2, latest, "a rejected restore writes no version")
+				assert.Equal(t, 2, latest.Version, "a rejected restore writes no version")
 			},
 		},
 		{

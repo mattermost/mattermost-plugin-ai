@@ -606,8 +606,8 @@ func (m *mockAgentStore) GetAgentVersion(agentID string, version int) (*store.Ag
 	return &detail, nil
 }
 
-func (m *mockAgentStore) GetLatestAgentVersion(agentID string) (int, error) {
-	return len(m.versions[agentID]), nil
+func (m *mockAgentStore) GetLatestAgentVersion(agentID string) (*store.AgentVersionDetail, error) {
+	return m.GetAgentVersion(agentID, len(m.versions[agentID]))
 }
 
 // cloneBotConfig returns a deep copy so API callers cannot mutate mock store internals via returned pointers.

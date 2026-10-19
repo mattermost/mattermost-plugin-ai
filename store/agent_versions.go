@@ -154,10 +154,12 @@ func validateAgentVersionMeta(meta AgentVersionMeta) error {
 	}
 }
 
-func insertAgentVersionTx(tx *sqlx.Tx, agentID string, version int, snapshot llm.BotConfig, meta AgentVersionMeta, changed []string, createAt int64) error {
+// insertAgentVersionTx records snapshot as the given version of agentID and
+// returns the config JSON it stored.
+func insertAgentVersionTx(tx *sqlx.Tx, agentID string, version int, snapshot llm.BotConfig, meta AgentVersionMeta, changed []string, createAt int64) (string, error) {
 	configJSON, err := json.Marshal(snapshot)
 	if err != nil {
-		return fmt.Errorf("failed to marshal agent version config: %w", err)
+		return "", fmt.Errorf("failed to marshal agent version config: %w", err)
 	}
 	if _, err := tx.Exec(
 		`INSERT INTO Agents_AgentVersions (
@@ -173,9 +175,9 @@ func insertAgentVersionTx(tx *sqlx.Tx, agentID string, version int, snapshot llm
 		meta.RestoredFromVersion,
 		marshalJSONSlice(changed),
 	); err != nil {
-		return fmt.Errorf("failed to insert version %d of agent %q: %w", version, agentID, err)
+		return "", fmt.Errorf("failed to insert version %d of agent %q: %w", version, agentID, err)
 	}
-	return nil
+	return string(configJSON), nil
 }
 
 // latestAgentVersionTx returns the highest version number of agentID and its
@@ -222,25 +224,6 @@ func lockActiveAgentTx(tx *sqlx.Tx, agentID string) (*llm.BotConfig, error) {
 	return row.toBotConfig()
 }
 
-// ensureInitialAgentVersionTx records current (the locked, pre-write row) as
-// version 1 when the agent has no versions yet. It returns the latest
-// version number and that version's raw config JSON.
-func ensureInitialAgentVersionTx(tx *sqlx.Tx, current *llm.BotConfig) (int, string, error) {
-	latest, latestConfig, err := latestAgentVersionTx(tx, current.ID)
-	if err != nil || latest > 0 {
-		return latest, latestConfig, err
-	}
-	snapshot := agentVersionSnapshot(current)
-	if err = insertAgentVersionTx(tx, current.ID, 1, snapshot, AgentVersionMeta{Source: AgentVersionSourceInitial}, nil, current.UpdateAt); err != nil {
-		return 0, "", err
-	}
-	configJSON, err := json.Marshal(snapshot)
-	if err != nil {
-		return 0, "", fmt.Errorf("failed to marshal agent version config: %w", err)
-	}
-	return 1, string(configJSON), nil
-}
-
 // ensureCurrentAgentVersionTx makes sure the latest version of current (the
 // locked, pre-write row) records that row. An agent without versions gets
 // version 1 (source "initial"); one whose row differs from its latest
@@ -254,24 +237,22 @@ func ensureCurrentAgentVersionTx(tx *sqlx.Tx, current *llm.BotConfig) (int, stri
 	if err != nil {
 		return 0, "", false, err
 	}
-	if latest == 0 {
-		latest, latestConfig, err = ensureInitialAgentVersionTx(tx, current)
-		return latest, latestConfig, err == nil, err
-	}
 
 	snapshot := agentVersionSnapshot(current)
-	changed := changedVersionFields(latestConfig, snapshot)
-	if len(changed) == 0 {
-		return latest, latestConfig, false, nil
+	meta := AgentVersionMeta{Source: AgentVersionSourceInitial}
+	var changed []string
+	if latest > 0 {
+		changed = changedVersionFields(latestConfig, snapshot)
+		if len(changed) == 0 {
+			return latest, latestConfig, false, nil
+		}
+		meta = SystemAgentVersionMeta()
 	}
-	if err = insertAgentVersionTx(tx, current.ID, latest+1, snapshot, SystemAgentVersionMeta(), changed, current.UpdateAt); err != nil {
+	configJSON, err := insertAgentVersionTx(tx, current.ID, latest+1, snapshot, meta, changed, current.UpdateAt)
+	if err != nil {
 		return 0, "", false, err
 	}
-	configJSON, err := json.Marshal(snapshot)
-	if err != nil {
-		return 0, "", false, fmt.Errorf("failed to marshal agent version config: %w", err)
-	}
-	return latest + 1, string(configJSON), true, nil
+	return latest + 1, configJSON, true, nil
 }
 
 // ListAgentVersions returns the versions of agentID, newest first. Deleted
@@ -303,18 +284,27 @@ func (s *Store) ListAgentVersions(agentID string) ([]AgentVersion, error) {
 // GetAgentVersion returns one version of agentID with its configuration
 // snapshot, or nil, nil when that version does not exist.
 func (s *Store) GetAgentVersion(agentID string, version int) (*AgentVersionDetail, error) {
+	return s.getAgentVersionDetail(`WHERE AgentID = $1 AND Version = $2`, agentID, version)
+}
+
+// GetLatestAgentVersion returns the current (highest) version of agentID
+// with its configuration snapshot, or nil, nil when it has no versions.
+func (s *Store) GetLatestAgentVersion(agentID string) (*AgentVersionDetail, error) {
+	return s.getAgentVersionDetail(`WHERE AgentID = $1 ORDER BY Version DESC LIMIT 1`, agentID)
+}
+
+func (s *Store) getAgentVersionDetail(where string, args ...any) (*AgentVersionDetail, error) {
 	var row agentVersionRow
 	err := s.db.Get(&row,
 		`SELECT Version, Config, CreatedBy, CreateAt, Source, RestoredFromVersion, ChangedFields
-		FROM Agents_AgentVersions
-		WHERE AgentID = $1 AND Version = $2`,
-		agentID, version,
+		FROM Agents_AgentVersions `+where,
+		args...,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to get version %d of agent %q: %w", version, agentID, err)
+		return nil, fmt.Errorf("failed to get version of agent %q: %w", args[0], err)
 	}
 
 	v, err := row.toAgentVersion()
@@ -323,23 +313,9 @@ func (s *Store) GetAgentVersion(agentID string, version int) (*AgentVersionDetai
 	}
 	detail := &AgentVersionDetail{AgentVersion: v}
 	if err := json.Unmarshal([]byte(row.Config), &detail.Config); err != nil {
-		return nil, fmt.Errorf("failed to parse config of version %d of agent %q: %w", version, agentID, err)
+		return nil, fmt.Errorf("failed to parse config of version %d of agent %q: %w", row.Version, args[0], err)
 	}
 	return detail, nil
-}
-
-// GetLatestAgentVersion returns the current (highest) version number of
-// agentID, or 0 when it has no versions.
-func (s *Store) GetLatestAgentVersion(agentID string) (int, error) {
-	var latest int
-	err := s.db.Get(&latest,
-		`SELECT COALESCE(MAX(Version), 0) FROM Agents_AgentVersions WHERE AgentID = $1`,
-		agentID,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get latest version of agent %q: %w", agentID, err)
-	}
-	return latest, nil
 }
 
 // BackfillAgentVersions makes the latest version of every active agent

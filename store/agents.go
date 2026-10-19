@@ -199,7 +199,7 @@ func (s *Store) CreateAgent(cfg *llm.BotConfig, meta AgentVersionMeta) (err erro
 		return fmt.Errorf("failed to create agent: %w", err)
 	}
 
-	if err = insertAgentVersionTx(tx, cfg.ID, 1, agentVersionSnapshot(cfg), meta, nil, now); err != nil {
+	if _, err = insertAgentVersionTx(tx, cfg.ID, 1, agentVersionSnapshot(cfg), meta, nil, now); err != nil {
 		return err
 	}
 	if err = tx.Commit(); err != nil {
@@ -396,7 +396,7 @@ func (s *Store) UpdateAgent(cfg *llm.BotConfig, meta AgentVersionMeta) (err erro
 	}
 
 	snapshot := agentVersionSnapshot(cfg)
-	if err = insertAgentVersionTx(tx, cfg.ID, latest+1, snapshot, meta, changedVersionFields(latestConfig, snapshot), now); err != nil {
+	if _, err = insertAgentVersionTx(tx, cfg.ID, latest+1, snapshot, meta, changedVersionFields(latestConfig, snapshot), now); err != nil {
 		return err
 	}
 	if err = tx.Commit(); err != nil {
