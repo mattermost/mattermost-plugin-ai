@@ -44,6 +44,7 @@ describe('isLinkAllowed', () => {
         ['allowed host as userinfo', 'https://example.com@evil.com/', SITE_URL, false],
         ['protocol-relative other host', '//evil.com/x', SITE_URL, false],
         ['backslash before allowed host', 'https://evil.com\\@example.com', SITE_URL, false],
+        // eslint-disable-next-line no-script-url
         ['javascript scheme', 'javascript:alert(1)', SITE_URL, false],
         ['mailto scheme', 'mailto:someone@example.com', SITE_URL, false],
         ['non-http scheme on allowed host', 'ftp://example.com/file', SITE_URL, false],
