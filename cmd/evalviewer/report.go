@@ -290,27 +290,72 @@ func failedOnBaseline(base *providerResults, key caseKey) bool {
 	return ok && c.failing()
 }
 
-// commentMarkdown renders the pull request comment. It is empty when there is
-// nothing for the author to act on.
-func (r report) commentMarkdown() string {
-	if len(r.regressions) == 0 {
-		return ""
+// commentResolved starts the body of a comment whose failures are gone.
+const commentResolved = "✅ No eval regressions"
+
+// commentProvidersPattern matches the hidden line that lists the providers a
+// comment reports regressions for.
+var commentProvidersPattern = regexp.MustCompile(`<!-- eval-providers: ([^>]*) -->`)
+
+// commentMarkdown renders the pull request comment, given the eval comment
+// already on the pull request ("" if none). An empty result leaves that
+// comment as it is.
+//
+// A provider without usable results (an outage, a package that crashed) hides
+// its failures instead of fixing them. So a previous comment's providers that
+// reported nothing this run stay listed, and the comment is resolved only
+// when every one of them reported and all evals ran (complete).
+func (r report) commentMarkdown(previous string, complete bool) string {
+	unchecked := r.unreported(previousProviders(previous))
+
+	if len(r.regressions) > 0 {
+		var sb strings.Builder
+		sb.WriteString(commentMarker + "\n\n")
+		providers := slices.Concat(r.commentProviders(), unchecked)
+		slices.Sort(providers)
+		fmt.Fprintf(&sb, "<!-- eval-providers: %s -->\n", strings.Join(slices.Compact(providers), ","))
+		r.writeRunLink(&sb)
+		if len(unchecked) > 0 {
+			names := make([]string, len(unchecked))
+			for i, name := range unchecked {
+				names[i] = providerDisplayName(name)
+			}
+			fmt.Fprintf(&sb, "No usable results for %s in this run, so earlier failures there were not rechecked.\n\n", strings.Join(names, ", "))
+		}
+		r.writeRegressions(&sb)
+		sb.WriteString("<sub>Only checks that newly fail are listed. Pre-existing failures, flaky checks, and unavailable providers are in the workflow run summary.</sub>\n")
+		return sb.String()
 	}
 
-	var sb strings.Builder
-	sb.WriteString(commentMarker + "\n\n")
-	fmt.Fprintf(&sb, "%s%s -->\n", commentProvidersPrefix, strings.Join(r.commentProviders(), ","))
-	r.writeRunLink(&sb)
-	r.writeRegressions(&sb)
-	sb.WriteString("<sub>Only checks that newly fail are listed. Pre-existing failures, flaky checks, and unavailable providers are in the workflow run summary.</sub>\n")
-	return sb.String()
+	if previous == "" || strings.Contains(previous, commentResolved) || !complete || len(unchecked) > 0 {
+		return ""
+	}
+	resolved := commentMarker + "\n\n" + commentResolved
+	if r.commit != "" {
+		resolved += " as of " + r.commit[:min(7, len(r.commit))]
+	}
+	return resolved + ".\n"
 }
 
-// commentProvidersPrefix starts a hidden line listing the providers the
-// comment reports on. post-eval-comment.js resolves the comment only once
-// each of them has usable results again, so a provider that stops reporting
-// does not look like a fix.
-const commentProvidersPrefix = "<!-- eval-providers: "
+func previousProviders(comment string) []string {
+	m := commentProvidersPattern.FindStringSubmatch(comment)
+	if m == nil {
+		return nil
+	}
+	return strings.FieldsFunc(m[1], func(c rune) bool { return c == ',' })
+}
+
+// unreported returns the named providers that have no usable results.
+func (r report) unreported(names []string) []string {
+	var missing []string
+	for _, name := range names {
+		i := slices.IndexFunc(r.providers, func(p *providerResults) bool { return p.name == name })
+		if i < 0 || r.providers[i].unavailable() {
+			missing = append(missing, name)
+		}
+	}
+	return missing
+}
 
 func (r report) commentProviders() []string {
 	var providers []string

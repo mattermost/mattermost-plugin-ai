@@ -156,7 +156,7 @@ func TestBuildReport(t *testing.T) {
 			}
 			assertStrings(t, "unavailable", unavailable, tc.wantUnavailable)
 
-			comment := r.commentMarkdown()
+			comment := r.commentMarkdown("", false)
 			if (comment != "") != (len(tc.wantRegressions) > 0) {
 				t.Errorf("comment should be written only for regressions; got %q", comment)
 			}
@@ -172,7 +172,7 @@ func TestCommentMarkdown(t *testing.T) {
 	r := buildReport(results, resultSet{}, nil)
 	r.commit = "d1da9079abcdef"
 	r.runURL = "https://github.com/o/r/actions/runs/1"
-	comment := r.commentMarkdown()
+	comment := r.commentMarkdown("", false)
 
 	for _, want := range []string{
 		commentMarker,
@@ -189,6 +189,84 @@ func TestCommentMarkdown(t *testing.T) {
 	}
 	if strings.Contains(comment, "is sad") {
 		t.Errorf("comment should not mention passing checks:\n%s", comment)
+	}
+}
+
+func TestCommentLifecycle(t *testing.T) {
+	const sha = "d1da9079abcdef"
+	unresolved := func(providers string) string {
+		return commentMarker + "\n\n<!-- eval-providers: " + providers + " -->\n⚠️ **1 eval check fails on this PR.**\n"
+	}
+	resolved := commentMarker + "\n\n" + commentResolved + " as of earlier.\n"
+
+	openaiFails := []EvalLogLine{graded(catOpenAI, "is a cat", 0, false), graded(catAnthropic, "is a cat", 0, true)}
+	allPass := []EvalLogLine{graded(catOpenAI, "is a cat", 0, true), graded(catAnthropic, "is a cat", 0, true)}
+	openaiDown := []EvalLogLine{errored(catOpenAI, 0, "401 unauthorized"), graded(catAnthropic, "is a cat", 0, true)}
+	anthropicFailsOpenaiDown := []EvalLogLine{errored(catOpenAI, 0, "401 unauthorized"), graded(catAnthropic, "is a cat", 0, false)}
+	anthropicFailsOpenaiPasses := []EvalLogLine{graded(catOpenAI, "is a cat", 0, true), graded(catAnthropic, "is a cat", 0, false)}
+
+	tests := []struct {
+		name     string
+		previous string
+		results  []EvalLogLine
+		complete bool
+		want     []string
+		wantNone []string
+		wantNoop bool
+	}{
+		{name: "nothing to report creates no comment", results: allPass, complete: true, wantNoop: true},
+		{name: "fixed failures resolve the previous comment", previous: unresolved("openai"), results: allPass, complete: true, want: []string{commentMarker, commentResolved + " as of d1da907."}},
+		{name: "an incomplete run does not resolve", previous: unresolved("openai"), results: allPass, wantNoop: true},
+		{name: "a provider outage is not a fix", previous: unresolved("openai"), results: openaiDown, complete: true, wantNoop: true},
+		{name: "an already resolved comment is left alone", previous: resolved, results: allPass, complete: true, wantNoop: true},
+		{name: "a provider that is gone is not a fix", previous: unresolved("azure"), results: allPass, complete: true, wantNoop: true},
+		{
+			name: "a failure that persists keeps its provider listed", previous: unresolved("openai"), results: openaiFails, complete: true,
+			want: []string{"<!-- eval-providers: openai -->", "| TestReactEval › react cat message | is a cat | OpenAI | 0/1 |"}, wantNone: []string{"No usable results"},
+		},
+		{
+			name: "an outage keeps the provider's earlier failures listed", previous: unresolved("openai"), results: anthropicFailsOpenaiDown, complete: true,
+			want: []string{"<!-- eval-providers: anthropic,openai -->", "No usable results for OpenAI in this run, so earlier failures there were not rechecked.", "| Anthropic |"},
+		},
+		{
+			name: "a fixed provider drops out of the comment", previous: unresolved("openai"), results: anthropicFailsOpenaiPasses, complete: true,
+			want: []string{"<!-- eval-providers: anthropic -->"}, wantNone: []string{"No usable results", "| OpenAI |"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := buildReport(buildResultSet(tc.results), nil, []string{"anthropic", "openai"})
+			r.commit = sha
+			comment := r.commentMarkdown(tc.previous, tc.complete)
+
+			if tc.wantNoop {
+				if comment != "" {
+					t.Errorf("comment should be left alone; got %q", comment)
+				}
+				return
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(comment, want) {
+					t.Errorf("comment missing %q:\n%s", want, comment)
+				}
+			}
+			for _, none := range tc.wantNone {
+				if strings.Contains(comment, none) {
+					t.Errorf("comment should not contain %q:\n%s", none, comment)
+				}
+			}
+		})
+	}
+}
+
+func TestCarriedForwardCommentResolvesOnceProviderReports(t *testing.T) {
+	outage := buildReport(buildResultSet([]EvalLogLine{errored(catOpenAI, 0, "401 unauthorized"), graded(catAnthropic, "is a cat", 0, false)}), nil, []string{"anthropic", "openai"})
+	carried := outage.commentMarkdown(commentMarker+"\n\n<!-- eval-providers: openai -->\n", true)
+
+	recovered := buildReport(buildResultSet([]EvalLogLine{graded(catOpenAI, "is a cat", 0, true), graded(catAnthropic, "is a cat", 0, true)}), nil, []string{"anthropic", "openai"})
+	if got := recovered.commentMarkdown(carried, true); !strings.Contains(got, commentResolved) {
+		t.Errorf("comment should resolve once openai reports and nothing fails; got %q", got)
 	}
 }
 

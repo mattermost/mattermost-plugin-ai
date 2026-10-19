@@ -47,6 +47,8 @@ var (
 	reportJSONFile    string
 	reportCommit      string
 	reportRunURL      string
+	reportPrevious    string
+	reportComplete    bool
 	reportChangeLabel string
 	reportBaseLabel   string
 
@@ -119,8 +121,9 @@ All arguments after 'check' are passed directly to 'go test'.`,
 		Long: `Aggregate evals.jsonl files from one or more providers, compare them with a
 baseline from the target branch, and write:
 
-  - a pull request comment listing only checks that newly fail (empty when
-    there is nothing to act on), and
+  - a pull request comment listing only checks that newly fail, or resolving
+    the previous comment once they are fixed (empty when the previous comment
+    should be left as it is), and
   - a full summary for the workflow run, including pre-existing failures,
     flaky checks, and providers that could not run.
 
@@ -152,7 +155,9 @@ first.`,
 	reportCmd.Flags().StringVar(&reportResultsDir, "results", ".", "Directory containing evals.jsonl results")
 	reportCmd.Flags().StringVar(&reportBaselineDir, "baseline", "", "Directory containing baseline evals.jsonl results from the target branch")
 	reportCmd.Flags().StringSliceVar(&reportProviders, "providers", nil, "Providers expected to have results; missing ones are reported as unavailable")
-	reportCmd.Flags().StringVar(&reportCommentFile, "comment", "comment.md", "Where to write the pull request comment (empty when nothing is actionable)")
+	reportCmd.Flags().StringVar(&reportCommentFile, "comment", "comment.md", "Where to write the pull request comment (empty when the existing comment should be left as it is)")
+	reportCmd.Flags().StringVar(&reportPrevious, "previous", "", "File holding the eval comment already on the pull request, so the new comment keeps its unchecked providers or resolves it")
+	reportCmd.Flags().BoolVar(&reportComplete, "complete", false, "Every eval package ran to completion; required to resolve the previous comment")
 	reportCmd.Flags().StringVar(&reportSummaryFile, "summary", "summary.md", "Where to write the workflow run summary")
 	reportCmd.Flags().StringVar(&reportJSONFile, "json", "", "Where to write a machine-readable summary for history (optional)")
 	reportCmd.Flags().StringVar(&reportCommit, "commit", "", "Commit the results belong to, shown in the comment and recorded in the JSON summary")
@@ -324,7 +329,16 @@ func reportCommand() {
 	r.commit = reportCommit
 	r.runURL = reportRunURL
 
-	comment := r.commentMarkdown()
+	var previous string
+	if reportPrevious != "" {
+		data, err := os.ReadFile(reportPrevious)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			fmt.Fprintf(os.Stderr, "Error reading %s: %v\n", reportPrevious, err)
+			os.Exit(1)
+		}
+		previous = string(data)
+	}
+	comment := r.commentMarkdown(previous, reportComplete)
 	if err := os.WriteFile(reportCommentFile, []byte(comment), 0600); err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing %s: %v\n", reportCommentFile, err)
 		os.Exit(1)
@@ -354,9 +368,9 @@ func reportCommand() {
 	}
 	fmt.Print(summary)
 	if comment == "" {
-		fmt.Println("\nNothing actionable for the pull request; comment left empty.")
+		fmt.Println("\nNothing to change in the pull request comment; comment file left empty.")
 	} else {
-		fmt.Printf("\n%d regressions written to %s\n", len(r.regressions), reportCommentFile)
+		fmt.Printf("\nPull request comment written to %s (%d regressions)\n", reportCommentFile, len(r.regressions))
 	}
 }
 
