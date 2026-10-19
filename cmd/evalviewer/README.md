@@ -74,7 +74,7 @@ The check command will:
 4. Print a summary of evaluation results
 5. Exit with status code 1 if any evaluations failed
 
-A package that fails to build, panics, or times out before all of its evals ran is recorded in `evals.jsonl` as a "did not finish" error, and `evals-incomplete.txt` lists such packages next to it. CI fails the eval job when that file exists, so partial results never become a baseline.
+A package that did not run all of its evals always fails the command: it failed to build, `TestMain` exited, it panicked or timed out, or a test failed without recording a result (for example, because setting up its containers failed). Set `EVALS_REPORT_ONLY=1` to exit non-zero only in those cases and leave failed evals to `evalviewer report`. CI does this, so the eval job fails exactly when its results are partial, and partial results never become a baseline.
 
 ### Report Command (CI)
 Summarize existing results for a pull request. Reads `evals.jsonl` files from a directory (or its immediate subdirectories, the layout `actions/download-artifact` produces) and compares them with an optional baseline from the target branch.

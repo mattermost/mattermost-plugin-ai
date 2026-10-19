@@ -481,10 +481,6 @@ func reproduceCommand(c *caseStats) string {
 	if c.pkg != "" {
 		pkg = "./" + c.pkg
 	}
-	if !strings.HasPrefix(c.segments[0], "Test") {
-		// A package that did not finish has no test to select.
-		return fmt.Sprintf("GOEVALS=1 LLM_PROVIDER=%s go test %s -run 'Eval$' -v", shellQuote(c.provider), shellQuote(pkg))
-	}
 	return fmt.Sprintf("GOEVALS=1 LLM_PROVIDER=%s go test %s -run %s -v", shellQuote(c.provider), shellQuote(pkg), shellQuote(pattern))
 }
 

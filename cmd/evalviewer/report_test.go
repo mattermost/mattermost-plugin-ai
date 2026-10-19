@@ -204,11 +204,6 @@ func TestReproduceCommandQuoting(t *testing.T) {
 			want: `GOEVALS=1 LLM_PROVIDER=openai go test ./react -run '^TestDirectMessageConversations$/^\[openai\]_bot_dm_knows_it_doesn'\''t_know_what_it_can_do$' -v`,
 		},
 		{
-			name: "package that did not finish runs the whole package",
-			line: EvalLogLine{Name: "mcpserver/[openai]_did_not_finish", Package: "mcpserver", Error: "timed out"},
-			want: `GOEVALS=1 LLM_PROVIDER=openai go test ./mcpserver -run 'Eval$' -v`,
-		},
-		{
 			name: "shell syntax in the provider and package",
 			line: EvalLogLine{Name: "TestReactEval/[openai;curl_evil|sh]_cat", Package: "react$(id)", Rubric: "is a cat"},
 			want: `GOEVALS=1 LLM_PROVIDER='openai;curl_evil|sh' go test './react$(id)' -run '^TestReactEval$/^\[openai;curl_evil\|sh\]_cat$' -v`,

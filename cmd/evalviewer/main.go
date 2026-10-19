@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -97,6 +98,11 @@ All arguments after 'run' are passed directly to 'go test'.`,
 and exit with status code 1 if any evaluations failed. This command is designed
 for CI/CD pipelines and does not use the interactive TUI.
 
+A package that did not run all of its evals (it failed to build, panicked, timed
+out, or a test failed without recording a result) always fails the command. With
+EVALS_REPORT_ONLY set, failed evals do not, so 'evalviewer report' can present
+them.
+
 All arguments after 'check' are passed directly to 'go test'.`,
 		Example: `  evalviewer check ./conversations           # Run and check evals for conversations
   evalviewer check ./...                     # Run and check all evals
@@ -171,11 +177,28 @@ first.`,
 	}
 }
 
+// evalRun is the outcome of `go test` over the eval packages.
+type evalRun struct {
+	// err is the error from `go test`, which also fails when evals do.
+	err        error
+	incomplete []incompletePackage
+}
+
+// broken reports that evals did not all run, as opposed to some failing:
+// packages did not finish, or `go test` could not run at all.
+func (r evalRun) broken() bool {
+	var exitErr *exec.ExitError
+	return len(r.incomplete) > 0 || (r.err != nil && !errors.As(r.err, &exitErr))
+}
+
+// reportOnlyEnv makes check exit non-zero only when evals did not all run,
+// leaving failed evals to `evalviewer report`.
+const reportOnlyEnv = "EVALS_REPORT_ONLY"
+
 // runEvals cleans up stale results, then runs `go test` with GOEVALS=1 set,
-// streaming output to the terminal. Packages that did not finish are recorded
-// as errored results. It returns the `go test` error so each command can apply
-// its own exit-code policy.
-func runEvals(args []string) error {
+// streaming output to the terminal, so each command can apply its own
+// exit-code policy.
+func runEvals(args []string) evalRun {
 	if err := cleanupOldResults(); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: Failed to clean old results: %v\n", err)
 	}
@@ -190,16 +213,20 @@ func runEvals(args []string) error {
 	var watcher packageWatcher
 	cmd.Stdout = io.MultiWriter(os.Stdout, &watcher)
 	cmd.Stderr = os.Stderr
-	err := cmd.Run()
-	if recordErr := recordIncompletePackages(watcher.packages()); recordErr != nil {
-		fmt.Fprintf(os.Stderr, "Warning: Failed to record packages that did not finish: %v\n", recordErr)
+	run := evalRun{err: cmd.Run(), incomplete: watcher.incompletePackages()}
+
+	var records []EvalLogLine
+	if evalFile, err := findEvalsFile(); err == nil {
+		records, _ = loadLines(evalFile)
 	}
-	return err
+	run.incomplete = append(run.incomplete, watcher.unrecordedFailures(records, goModulePath())...)
+	reportIncomplete(run.incomplete)
+	return run
 }
 
 func runCommand(args []string) {
-	if err := runEvals(args); err != nil {
-		fmt.Printf("\nTests completed with errors: %v\n", err)
+	if run := runEvals(args); run.err != nil {
+		fmt.Printf("\nTests completed with errors: %v\n", run.err)
 	} else {
 		fmt.Println("\nTests completed successfully.")
 	}
@@ -241,45 +268,34 @@ func viewCommandWithFlags() {
 }
 
 func checkCommand(args []string) {
-	testErr := runEvals(args)
-	if testErr != nil {
-		fmt.Printf("\nTests completed with errors: %v\n", testErr)
+	run := runEvals(args)
+	if run.err != nil {
+		fmt.Printf("\nTests completed with errors: %v\n", run.err)
 	} else {
 		fmt.Println("\nTests completed successfully.")
 	}
 
-	// Find and check results
+	hasFailures := false
 	evalFile, err := findEvalsFile()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "\nError finding evals.jsonl: %v\n", err)
 		fmt.Println("No evaluation results found to check.")
-		// If tests failed but no evals file, exit with test error
-		if testErr != nil {
+	} else {
+		results, err := loadResults(evalFile, false)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading results: %v\n", err)
 			os.Exit(1)
 		}
-		os.Exit(0)
+		printSummary(results)
+		hasFailures = slices.ContainsFunc(results, func(result EvalLogLine) bool { return !result.Pass })
 	}
 
-	// Load and check results
-	results, err := loadResults(evalFile, false)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading results: %v\n", err)
+	switch {
+	case run.broken():
 		os.Exit(1)
-	}
-
-	// Print summary
-	printSummary(results)
-
-	// Exit with appropriate status code
-	hasFailures := false
-	for _, result := range results {
-		if !result.Pass {
-			hasFailures = true
-			break
-		}
-	}
-
-	if hasFailures || testErr != nil {
+	case os.Getenv(reportOnlyEnv) != "":
+		return
+	case hasFailures || run.err != nil:
 		os.Exit(1)
 	}
 }
@@ -471,9 +487,6 @@ func cleanupOldResults() error {
 	}
 
 	fmt.Printf("Cleaning up old results: %s\n", evalFile)
-	if err := os.Remove(filepath.Join(filepath.Dir(evalFile), incompleteMarker)); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
 	return os.Remove(evalFile)
 }
 
