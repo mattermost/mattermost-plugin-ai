@@ -109,10 +109,19 @@ const PostText = (props: Props) => {
         postId: props.postID,
     };
 
+    // A citation whose URL the policy rejects keeps its marker but loses the
+    // URL, so the chip renders without a destination to open.
+    const annotations = useMemo(
+        () => props.annotations?.map((annotation) => (
+            annotation.url && !links.isCitationUrlAllowed(annotation.url) ? {...annotation, url: undefined} : annotation // eslint-disable-line no-undefined
+        )),
+        [props.annotations, links],
+    );
+
     // Process message with annotations if they exist
     let processedMessage = props.message;
-    if (props.annotations && props.annotations.length > 0) {
-        processedMessage = insertAnnotationMarkers(props.message, props.annotations);
+    if (annotations && annotations.length > 0) {
+        processedMessage = insertAnnotationMarkers(props.message, annotations);
     }
 
     const text = messageHtmlToComponent(
@@ -125,8 +134,8 @@ const PostText = (props: Props) => {
     }
 
     // Post-process the rendered JSX to replace citation markers with React components
-    const processedText = props.annotations && props.annotations.length > 0 ?
-        replaceCitationMarkers(text, props.annotations) :
+    const processedText = annotations && annotations.length > 0 ?
+        replaceCitationMarkers(text, annotations) :
         text;
 
     return (

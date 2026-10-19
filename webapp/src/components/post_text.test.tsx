@@ -9,6 +9,11 @@ import {LinkPolicy} from '@/utils/link_allowlist';
 
 import PostText from './post_text';
 
+// Message ids are injected by the build's babel plugin, which ts-jest skips.
+jest.mock('react-intl', () => ({
+    useIntl: () => ({formatMessage: ({defaultMessage}: {defaultMessage: string}) => defaultMessage}),
+}));
+
 let mockState: Record<string, unknown> = {};
 
 jest.mock('react-redux', () => ({
@@ -123,5 +128,58 @@ describe('PostText link policy', () => {
         expect(formatText.mock.calls[0][1].unsafeLinks).toBe(unsafeLinks);
         expect(screen.getByText('internal').closest('a')).not.toBeNull();
         expect(screen.queryByRole('link', {name: 'external'}) !== null).toBe(externalClickable);
+    });
+});
+
+describe('PostText citations', () => {
+    const openSpy = jest.fn();
+    const originalOpen = window.open;
+
+    beforeEach(() => {
+        openSpy.mockClear();
+        window.open = openSpy;
+        (window as any).PostUtils = {
+            formatText: (message: string) => message,
+            messageHtmlToComponent: (html: string) => <span>{html}</span>,
+        };
+    });
+
+    afterEach(() => {
+        window.open = originalOpen;
+        delete (window as any).PostUtils;
+    });
+
+    test.each([
+        {name: 'plain text policy leaves citations clickable', policy: {kind: 'plain_text'} as LinkPolicy, opens: true},
+        {name: 'any domain policy leaves citations clickable', policy: {kind: 'any_domain'} as LinkPolicy, opens: true},
+        {
+            name: 'allowlist keeps citations to allowed domains clickable',
+            policy: {kind: 'allowlist', allowedDomains: [{host: 'example.com', wildcard: false}]} as LinkPolicy,
+            opens: true,
+        },
+        {
+            name: 'allowlist disables citations to other domains',
+            policy: {kind: 'allowlist', allowedDomains: [{host: 'other.com', wildcard: false}]} as LinkPolicy,
+            opens: false,
+        },
+    ])('$name', ({policy, opens}) => {
+        mockState = stateWithLinkPolicy(policy);
+
+        render(
+            <PostText
+                message='a claim'
+                channelID='channel'
+                postID='post'
+                annotations={[{type: 'url_citation', start_index: 0, end_index: 7, url: 'https://example.com/source', index: 1}]}
+            />,
+        );
+
+        fireEvent.click(screen.getByTestId('llm-citation'));
+
+        if (opens) {
+            expect(openSpy).toHaveBeenCalledWith('https://example.com/source', '_blank', 'noopener,noreferrer');
+        } else {
+            expect(openSpy).not.toHaveBeenCalled();
+        }
     });
 });

@@ -141,3 +141,15 @@ describe('linkRendering', () => {
         expect(Array.from(container.querySelectorAll('a')).map((a) => a.getAttribute('href'))).toEqual(expectedHrefs);
     });
 });
+
+describe('linkRendering citations', () => {
+    test.each([
+        {name: 'plain text policy leaves citations alone', policy: {kind: 'plain_text' as const}, url: 'https://evil.com/x', expected: true},
+        {name: 'any domain policy leaves citations alone', policy: {kind: 'any_domain' as const}, url: 'https://evil.com/x', expected: true},
+        {name: 'allowlist allows citations to allowed hosts', policy: {kind: 'allowlist' as const, allowedDomains: [plain('example.com')]}, url: 'https://example.com/x', expected: true},
+        {name: 'allowlist blocks citations to other hosts', policy: {kind: 'allowlist' as const, allowedDomains: [plain('example.com')]}, url: 'https://evil.com/x', expected: false},
+        {name: 'allowlist blocks non-http citations', policy: {kind: 'allowlist' as const, allowedDomains: [plain('example.com')]}, url: 'ftp://example.com/x', expected: false},
+    ])('$name', ({policy, url, expected}) => {
+        expect(linkRendering(policy, SITE_URL).isCitationUrlAllowed(url)).toBe(expected);
+    });
+});

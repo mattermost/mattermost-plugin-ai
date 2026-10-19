@@ -25,11 +25,19 @@ export type LinkRendering = {
 
     /** Applied to formatText's HTML output before it becomes React elements. */
     restrictLinks: (html: string) => string;
+
+    /**
+     * Whether a citation chip may open this URL. Citations are not Markdown
+     * links, so only an allowlist restricts them; the other policies leave
+     * them clickable as they were before link policies existed.
+     */
+    isCitationUrlAllowed: (url: string) => boolean;
 };
 
 const keepAllLinks = (html: string) => html;
+const allowAnyUrl = () => true;
 
-const PLAIN_TEXT_RENDERING: LinkRendering = {unsafeLinks: true, restrictLinks: keepAllLinks};
+const PLAIN_TEXT_RENDERING: LinkRendering = {unsafeLinks: true, restrictLinks: keepAllLinks, isCitationUrlAllowed: allowAnyUrl};
 
 /**
  * Turns a link policy into the options PostText renders with. siteURL is the
@@ -40,10 +48,10 @@ export function linkRendering(policy: LinkPolicy, siteURL: string): LinkRenderin
     case 'plain_text':
         return PLAIN_TEXT_RENDERING;
     case 'any_domain':
-        return {unsafeLinks: false, restrictLinks: keepAllLinks};
+        return {unsafeLinks: false, restrictLinks: keepAllLinks, isCitationUrlAllowed: allowAnyUrl};
     case 'allowlist': {
         const isAllowed = linkAllowlist(policy.allowedDomains, siteURL);
-        return {unsafeLinks: false, restrictLinks: (html) => restrictLinks(html, isAllowed)};
+        return {unsafeLinks: false, restrictLinks: (html) => restrictLinks(html, isAllowed), isCitationUrlAllowed: isAllowed};
     }
     default: {
         // A kind this bundle doesn't know about fails closed.
