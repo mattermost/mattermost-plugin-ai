@@ -5,6 +5,7 @@ package mcpserver_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -343,6 +344,106 @@ func TestMCPToolsIntegration(t *testing.T) {
 
 			_, err := executeToolWithMCP(t, suite, "search_posts", args)
 			require.NoError(t, err, "search_posts with no results should not error")
+		})
+
+		t.Run("ModifiersWithAndWithoutTeam", func(t *testing.T) {
+			ctx := context.Background()
+			data := seedChannelConversation(t, suite.serverURL, suite.adminToken)
+
+			// A second team, also with the requesting admin as a member, holding a
+			// same-named channel and a matching post from Alice.
+			otherTeam := testhelpers.CreateTestTeam(t, client, "other-eval-team", "Other Eval Team")
+			otherChannel := testhelpers.CreateTestChannel(t, client, otherTeam.Id, data.channel.Name, "Other Migration Planning")
+			testhelpers.AddUserToTeam(t, client, otherTeam.Id, data.alice.Id)
+			testhelpers.AddUserToChannel(t, client, otherChannel.Id, data.alice.Id)
+
+			aliceClient := model.NewAPIv4Client(suite.serverURL)
+			_, _, err := aliceClient.Login(ctx, data.alice.Username, "EvalTest123!")
+			require.NoError(t, err)
+			otherTeamPost, _, err := aliceClient.CreatePost(ctx, &model.Post{
+				ChannelId: otherChannel.Id,
+				Message:   "The MySQL replica for the other team is already provisioned.",
+			})
+			require.NoError(t, err)
+
+			// A DM matches every team-scoped search, so it exercises deduplication.
+			admin, _, err := client.GetMe(ctx, "")
+			require.NoError(t, err)
+			dm, _, err := client.CreateDirectChannel(ctx, admin.Id, data.alice.Id)
+			require.NoError(t, err)
+			dmPost, _, err := aliceClient.CreatePost(ctx, &model.Post{
+				ChannelId: dm.Id,
+				Message:   "Quick heads-up: the MySQL credentials rotate tonight.",
+			})
+			require.NoError(t, err)
+
+			// Charlie's post in the eval channel also mentions MySQL.
+			charlieMarker := "500GB of data"
+
+			tests := []struct {
+				name    string
+				args    map[string]any
+				want    []string
+				notWant []string
+			}{
+				{
+					name:    "from without team_id covers every team",
+					args:    map[string]any{"query": "MySQL", "from": data.alice.Username},
+					want:    []string{data.aliceRollbackPost.Id, otherTeamPost.Id, dmPost.Id},
+					notWant: []string{charlieMarker},
+				},
+				{
+					name:    "from typed into the query without team_id",
+					args:    map[string]any{"query": "from:" + data.alice.Username + " MySQL"},
+					want:    []string{data.aliceRollbackPost.Id, otherTeamPost.Id, dmPost.Id},
+					notWant: []string{charlieMarker},
+				},
+				{
+					name:    "from with team_id stays in that team",
+					args:    map[string]any{"query": "MySQL", "from": data.alice.Username, "team_id": data.team.Id},
+					want:    []string{data.aliceRollbackPost.Id, dmPost.Id},
+					notWant: []string{otherTeamPost.Id, charlieMarker},
+				},
+				{
+					name:    "from with channel_id stays in that channel",
+					args:    map[string]any{"query": "MySQL", "from": data.alice.Username, "channel_id": data.channel.Id},
+					want:    []string{data.aliceRollbackPost.Id},
+					notWant: []string{otherTeamPost.Id, dmPost.Id, charlieMarker},
+				},
+				{
+					name:    "in by channel name without team_id matches the channel in every team",
+					args:    map[string]any{"query": "MySQL", "in": data.channel.Name},
+					want:    []string{data.aliceRollbackPost.Id, otherTeamPost.Id},
+					notWant: []string{dmPost.Id},
+				},
+				{
+					name:    "in by channel ID without team_id matches only that channel",
+					args:    map[string]any{"query": "MySQL", "in": data.channel.Id},
+					want:    []string{data.aliceRollbackPost.Id},
+					notWant: []string{otherTeamPost.Id, dmPost.Id},
+				},
+				{
+					name:    "excluded channel without team_id",
+					args:    map[string]any{"query": "-in:" + data.channel.Name + " MySQL", "from": data.alice.Username},
+					want:    []string{dmPost.Id},
+					notWant: []string{data.aliceRollbackPost.Id, otherTeamPost.Id},
+				},
+			}
+
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					result, err := executeToolWithMCP(t, suite, "search_posts", tt.args)
+					require.NoError(t, err)
+					text := extractMCPText(result)
+
+					for _, id := range tt.want {
+						assert.Equal(t, 1, strings.Count(text, "Post ID: "+id), "post %s should appear exactly once in:\n%s", id, text)
+					}
+					for _, id := range tt.notWant {
+						assert.NotContains(t, text, id)
+					}
+				})
+			}
 		})
 	})
 
