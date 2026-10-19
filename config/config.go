@@ -39,6 +39,13 @@ type Config struct {
 	WebSearch                       WebSearchConfig                  `json:"webSearch"`
 	TelemetryOutput                 string                           `json:"telemetryOutput"`
 	OpenTelemetryEndpoint           string                           `json:"openTelemetryEndpoint"`
+	// OpenTelemetryTLS dials the OTLP endpoint over TLS. Off by default so
+	// configs saved before this field existed keep plaintext export.
+	OpenTelemetryTLS bool `json:"openTelemetryTLS"`
+	// OpenTelemetryHeaders holds OTLP export headers as comma-separated
+	// key=value pairs (e.g. "Authorization=Basic ..."). It is a credential:
+	// never log it or put it in spans or audit records.
+	OpenTelemetryHeaders string `json:"openTelemetryHeaders"`
 }
 
 type WebSearchConfig struct {
