@@ -6,6 +6,11 @@ import styled from 'styled-components';
 import {FormattedMessage, useIntl} from 'react-intl';
 import {ArrowLeftIcon} from '@mattermost/compass-icons/components';
 
+import {Button} from '@mattermost/compass-ui/components/button';
+import {Icon} from '@mattermost/compass-ui/components/icon';
+import {IconButton} from '@mattermost/compass-ui/components/icon-button';
+import {SectionNotice} from '@mattermost/compass-ui/components/section-notice';
+
 import {createAgent, updateAgent, uploadAgentAvatar} from '@/client';
 import {
     UserAgent,
@@ -19,8 +24,9 @@ import {
     codePointLength,
 } from '@/types/agents';
 import {ChannelAccessLevel, UserAccessLevel} from '@/components/system_console/bot';
-import {PrimaryButton, TertiaryButton} from '@/components/assets/buttons';
+import {defaultReasoningEffort} from '@/components/system_console/reasoning_config';
 import ConfirmationDialog from '@/components/confirmation_dialog';
+import {UnderlineTab, UnderlineTabs} from '@/components/underline_tabs';
 import {useIsLicensedFor} from '@/license';
 import {useABACSupport} from '@/utils/access_control';
 import {useCurrentUserHasSystemPermission} from '@/utils/permissions';
@@ -165,7 +171,8 @@ function draftToUpdateAgentPayload(draft: AgentDraft): UpdateAgentRequest {
     };
 }
 
-function agentToDraft(agent: UserAgent): AgentDraft {
+function agentToDraft(agent: UserAgent, services: ServiceInfo[]): AgentDraft {
+    const serviceType = services.find((s) => s.id === agent.serviceID)?.type;
     return {
         displayName: agent.displayName,
         username: agent.name,
@@ -186,7 +193,7 @@ function agentToDraft(agent: UserAgent): AgentDraft {
         disableTools: agent.disableTools ?? false,
         enabledNativeTools: agent.enabledNativeTools ?? [],
         reasoningEnabled: agent.reasoningEnabled ?? true,
-        reasoningEffort: agent.reasoningEffort || 'medium',
+        reasoningEffort: agent.reasoningEffort || defaultReasoningEffort(serviceType),
         thinkingBudget: agent.thinkingBudget ?? 0,
         maxToolTurns: agent.maxToolTurns && agent.maxToolTurns > 0 ? agent.maxToolTurns : DefaultMaxToolTurns,
     };
@@ -202,6 +209,7 @@ type Props = {
 }
 
 const DISCARD_CHANGES_TITLE_ID = 'discard-agent-changes-title';
+const RENAME_AGENT_TITLE_ID = 'rename-agent-title';
 
 const AgentConfigView = (props: Props) => {
     const {mode, agent, services, onBack, onSaved, onRestored} = props;
@@ -215,11 +223,12 @@ const AgentConfigView = (props: Props) => {
     const [activeTab, setActiveTab] = useState<Tab>('config');
     const initialDraft = useMemo(() => {
         if (agent) {
-            return agentToDraft(agent);
+            return agentToDraft(agent, services);
         }
         const draft = cloneDraft(emptyDraft);
         if (services.length > 0) {
             draft.serviceId = services[0].id;
+            draft.reasoningEffort = defaultReasoningEffort(services[0].type);
         }
 
         // Provider-native web search is on by default where it is available.
@@ -235,8 +244,12 @@ const AgentConfigView = (props: Props) => {
     const [exporting, setExporting] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [showDiscardDialog, setShowDiscardDialog] = useState(false);
-    const showDiscardDialogRef = useRef(false);
-    showDiscardDialogRef.current = showDiscardDialog;
+    const [showRenameDialog, setShowRenameDialog] = useState(false);
+    const dialogOpenRef = useRef(false);
+    dialogOpenRef.current = showDiscardDialog || showRenameDialog;
+
+    const savedUsername = (mode === 'edit' && agent?.name) || '';
+    const isRenaming = savedUsername !== '' && draft.username !== savedUsername;
 
     // Soft-lock Access / MCP grants while SA stays on for non-admins.
     // Save stays enabled so managers can still edit day-to-day config (including
@@ -262,7 +275,7 @@ const AgentConfigView = (props: Props) => {
         if (saving) {
             return;
         }
-        if (showDiscardDialogRef.current) {
+        if (dialogOpenRef.current) {
             return;
         }
 
@@ -283,13 +296,13 @@ const AgentConfigView = (props: Props) => {
     }, []);
 
     // Escape key: same as back — confirm when there are unsaved changes.
-    // Skip Escapes a child already handled (e.g. closing a react-select menu or a nested dialog).
+    // Skip Escapes a child already handled (e.g. closing a picker menu or a nested dialog).
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {
             if (e.key !== 'Escape' || e.defaultPrevented) {
                 return;
             }
-            if (showDiscardDialogRef.current) {
+            if (dialogOpenRef.current) {
                 return;
             }
             e.preventDefault();
@@ -322,7 +335,7 @@ const AgentConfigView = (props: Props) => {
     }, []);
 
     const handleVersionRestored = useCallback((restored: UserAgent) => {
-        const restoredDraft = agentToDraft(restored);
+        const restoredDraft = agentToDraft(restored, services);
 
         // Switching access away from attribute-based deletes the agent's
         // policy, so a restored attribute-based version has none until one
@@ -337,7 +350,7 @@ const AgentConfigView = (props: Props) => {
             setActiveTab('access');
         }
         onRestored?.(restored);
-    }, [baselineDraft.userAccessLevel, onRestored]);
+    }, [baselineDraft.userAccessLevel, onRestored, services]);
 
     const handleExport = useCallback(async () => {
         if (!agent || exporting) {
@@ -381,14 +394,7 @@ const AgentConfigView = (props: Props) => {
         return errs;
     }, [draft, intl]);
 
-    const handleSave = useCallback(async () => {
-        const validationErrors = validate();
-        if (Object.keys(validationErrors).length > 0) {
-            setErrors(validationErrors);
-            setActiveTab('config');
-            return;
-        }
-        setErrors({});
+    const save = useCallback(async () => {
         setSaving(true);
 
         try {
@@ -416,7 +422,11 @@ const AgentConfigView = (props: Props) => {
         } catch (e: any) {
             const message = (typeof e?.message === 'string' ? e.message : '').trim();
             if (e?.status_code === 409 || (message.includes('username') && (message.includes('taken') || message.includes('conflict')))) {
-                setErrors({username: intl.formatMessage({defaultMessage: 'This username is already taken'})});
+                if (e?.server_error_id === 'username_held_by_deactivated_bot') {
+                    setErrors({username: intl.formatMessage({defaultMessage: 'This username belongs to a deactivated bot account. Permanently delete that bot account to make the username available.'})});
+                } else {
+                    setErrors({username: intl.formatMessage({defaultMessage: 'This username is already taken'})});
+                }
                 setActiveTab('config');
             } else if (e?.status_code === 403 && !message) {
                 setErrors({general: intl.formatMessage({defaultMessage: 'You do not have permission to perform this action.'})});
@@ -431,7 +441,31 @@ const AgentConfigView = (props: Props) => {
         } finally {
             setSaving(false);
         }
-    }, [mode, agent, draft, avatarFile, intl, onSaved, validate]);
+    }, [mode, agent, draft, avatarFile, intl, onSaved]);
+
+    const handleSave = useCallback(() => {
+        const validationErrors = validate();
+        if (Object.keys(validationErrors).length > 0) {
+            setErrors(validationErrors);
+            setActiveTab('config');
+            return;
+        }
+        setErrors({});
+        if (isRenaming) {
+            setShowRenameDialog(true);
+            return;
+        }
+        save();
+    }, [validate, isRenaming, save]);
+
+    const handleRenameConfirm = useCallback(() => {
+        setShowRenameDialog(false);
+        save();
+    }, [save]);
+
+    const handleRenameCancel = useCallback(() => {
+        setShowRenameDialog(false);
+    }, []);
 
     const title = mode === 'create' ? intl.formatMessage({defaultMessage: 'New Agent'}) : draft.displayName || intl.formatMessage({defaultMessage: 'Edit Agent'});
 
@@ -441,132 +475,185 @@ const AgentConfigView = (props: Props) => {
                 <ViewHeader>
                     <HeaderLeading>
                         <BackButton
-                            type='button'
+                            icon={<Icon glyph={<ArrowLeftIcon/>}/>}
+                            size='medium'
                             onClick={requestBack}
                             disabled={saving}
                             aria-label={intl.formatMessage({defaultMessage: 'Back to agents'})}
-                        >
-                            <ArrowLeftIcon size={20}/>
-                        </BackButton>
+                        />
                         <ViewTitle>{title}</ViewTitle>
                     </HeaderLeading>
                     {mode === 'edit' && agent && (
-                        <ExportButton
-                            type='button'
+                        <Button
+                            emphasis='tertiary'
                             onClick={handleExport}
-                            disabled={exporting || saving}
+                            loading={exporting}
+                            disabled={saving}
                         >
                             {exporting ? <FormattedMessage defaultMessage='Exporting...'/> : <FormattedMessage defaultMessage='Export'/>}
-                        </ExportButton>
+                        </Button>
                     )}
                 </ViewHeader>
 
-                <TabsContainer>
-                    <TabButton
+                <ConfigTabs role='tablist'>
+                    <UnderlineTab
+                        type='button'
+                        role='tab'
+                        id='agent-config-tab'
+                        aria-controls='agent-config-panel'
+                        aria-selected={activeTab === 'config'}
+                        tabIndex={activeTab === 'config' ? 0 : -1}
                         $active={activeTab === 'config'}
                         onClick={() => setActiveTab('config')}
                     >
                         <FormattedMessage defaultMessage='Configuration'/>
-                    </TabButton>
-                    <TabButton
+                    </UnderlineTab>
+                    <UnderlineTab
+                        type='button'
+                        role='tab'
+                        id='agent-access-tab'
+                        aria-controls='agent-access-panel'
+                        aria-selected={activeTab === 'access'}
+                        tabIndex={activeTab === 'access' ? 0 : -1}
                         $active={activeTab === 'access'}
                         onClick={() => setActiveTab('access')}
                     >
                         <FormattedMessage defaultMessage='Access'/>
-                    </TabButton>
-                    <TabButton
+                    </UnderlineTab>
+                    <UnderlineTab
+                        type='button'
+                        role='tab'
+                        id='agent-mcps-tab'
+                        aria-controls='agent-mcps-panel'
+                        aria-selected={activeTab === 'mcps'}
+                        tabIndex={activeTab === 'mcps' ? 0 : -1}
                         $active={activeTab === 'mcps'}
                         disabled={mcpsTabDisabled}
-                        title={mcpsTabDisabled ? intl.formatMessage({defaultMessage: 'Enable Tools to configure MCP integrations'}) : ''}
-                        onClick={() => {
-                            if (!mcpsTabDisabled) {
-                                setActiveTab('mcps');
-                            }
-                        }}
+                        {...(mcpsTabDisabled ? {title: intl.formatMessage({defaultMessage: 'Enable Tools to configure MCP integrations'})} : {})}
+                        onClick={() => setActiveTab('mcps')}
                     >
                         <FormattedMessage defaultMessage='MCPs'/>
-                    </TabButton>
+                    </UnderlineTab>
                     {mode === 'edit' && agent && (
-                        <TabButton
+                        <UnderlineTab
+                            type='button'
+                            role='tab'
+                            id='agent-history-tab'
+                            aria-controls='agent-history-panel'
+                            aria-selected={activeTab === 'history'}
+                            tabIndex={activeTab === 'history' ? 0 : -1}
                             $active={activeTab === 'history'}
                             onClick={() => setActiveTab('history')}
                         >
                             <FormattedMessage defaultMessage='History'/>
-                        </TabButton>
+                        </UnderlineTab>
                     )}
-                </TabsContainer>
+                </ConfigTabs>
 
                 <ViewBody>
-                    {errors.general && <ErrorBanner>{errors.general}</ErrorBanner>}
+                    {errors.general && (
+                        <Notice
+                            type='danger'
+                            title={errors.general}
+                        />
+                    )}
                     {serviceAccountFieldsLocked && (
-                        <WarningBanner>
-                            <FormattedMessage defaultMessage='This agent uses service account authentication. Access and MCP tool grants require a system administrator while that setting is enabled. Other settings can still be saved, or turn the setting off on the MCPs tab.'/>
-                        </WarningBanner>
+                        <div role='status'>
+                            <Notice
+                                type='warning'
+                                title={<FormattedMessage defaultMessage='This agent uses service account authentication. Access and MCP tool grants require a system administrator while that setting is enabled. Other settings can still be saved, or turn the setting off on the MCPs tab.'/>}
+                            />
+                        </div>
                     )}
 
                     {activeTab === 'config' && (
-                        <ConfigTab
-                            draft={draft}
-                            onChange={updateDraft}
-                            onAvatarChange={setAvatarFile}
-                            avatarFile={avatarFile}
-                            botUserId={agent?.botUserID}
-                            services={services}
-                            errors={errors}
-                            usernameLocked={mode === 'edit'}
-                        />
+                        <div
+                            role='tabpanel'
+                            id='agent-config-panel'
+                            aria-labelledby='agent-config-tab'
+                        >
+                            <ConfigTab
+                                draft={draft}
+                                onChange={updateDraft}
+                                onAvatarChange={setAvatarFile}
+                                avatarFile={avatarFile}
+                                botUserId={agent?.botUserID}
+                                services={services}
+                                errors={errors}
+                                savedUsername={savedUsername}
+                            />
+                        </div>
                     )}
                     {activeTab === 'access' && (
-                        <AccessTab
-                            draft={draft}
-                            baselineUserAccessLevel={baselineDraft.userAccessLevel}
-                            onChange={updateDraft}
-                            serviceAccountFieldsLocked={serviceAccountFieldsLocked}
-                            agentId={agent?.id}
-                            abacSupported={abacSupported}
-                            isSystemAdmin={canEditServiceAccountAuth}
-                        />
+                        <div
+                            role='tabpanel'
+                            id='agent-access-panel'
+                            aria-labelledby='agent-access-tab'
+                        >
+                            <AccessTab
+                                draft={draft}
+                                baselineUserAccessLevel={baselineDraft.userAccessLevel}
+                                onChange={updateDraft}
+                                serviceAccountFieldsLocked={serviceAccountFieldsLocked}
+                                agentId={agent?.id}
+                                abacSupported={abacSupported}
+                                isSystemAdmin={canEditServiceAccountAuth}
+                            />
+                        </div>
                     )}
                     {activeTab === 'mcps' && (
-                        <McpsTab
-                            agentId={agent?.id}
-                            enabledTools={draft.enabledTools}
-                            autoEnableNewMCPTools={draft.autoEnableNewMCPTools}
-                            useServiceAccountAuth={draft.useServiceAccountAuth}
-                            serviceAccountFieldsLocked={serviceAccountFieldsLocked}
-                            canEditServiceAccountAuth={canEditServiceAccountAuth}
-                            onChange={(updates) => updateDraft(updates)}
-                            onReconcileEnabledTools={reconcileEnabledTools}
-                        />
+                        <div
+                            role='tabpanel'
+                            id='agent-mcps-panel'
+                            aria-labelledby='agent-mcps-tab'
+                        >
+                            <McpsTab
+                                agentId={agent?.id}
+                                enabledTools={draft.enabledTools}
+                                autoEnableNewMCPTools={draft.autoEnableNewMCPTools}
+                                useServiceAccountAuth={draft.useServiceAccountAuth}
+                                serviceAccountFieldsLocked={serviceAccountFieldsLocked}
+                                canEditServiceAccountAuth={canEditServiceAccountAuth}
+                                onChange={(updates) => updateDraft(updates)}
+                                onReconcileEnabledTools={reconcileEnabledTools}
+                            />
+                        </div>
                     )}
                     {activeTab === 'history' && mode === 'edit' && agent && (
-                        <HistoryTab
-                            agentId={agent.id}
-                            services={services}
-                            isDirty={isDirty}
-                            currentUserAccessLevel={baselineDraft.userAccessLevel}
-                            onRestored={handleVersionRestored}
-                        />
+                        <div
+                            role='tabpanel'
+                            id='agent-history-panel'
+                            aria-labelledby='agent-history-tab'
+                        >
+                            <HistoryTab
+                                agentId={agent.id}
+                                services={services}
+                                isDirty={isDirty}
+                                currentUserAccessLevel={baselineDraft.userAccessLevel}
+                                onRestored={handleVersionRestored}
+                            />
+                        </div>
                     )}
                 </ViewBody>
 
                 {/* History is read-only; a restore saves on its own. */}
                 {activeTab !== 'history' && (
                     <ViewFooter>
-                        <CancelButton
-                            type='button'
+                        <Button
+                            emphasis='tertiary'
                             onClick={requestBack}
                             disabled={saving}
                         >
                             <FormattedMessage defaultMessage='Cancel'/>
-                        </CancelButton>
-                        <SaveButton
+                        </Button>
+                        <Button
+                            emphasis='primary'
                             onClick={handleSave}
-                            disabled={saving}
+                            loading={saving}
                         >
                             {saving ? <FormattedMessage defaultMessage='Saving...'/> : <FormattedMessage defaultMessage='Save'/>
                             }
-                        </SaveButton>
+                        </Button>
                     </ViewFooter>
                 )}
             </ViewContainer>
@@ -582,6 +669,50 @@ const AgentConfigView = (props: Props) => {
                 onConfirm={handleDiscardConfirm}
                 onCancel={handleDiscardCancel}
                 isDestructive={true}
+                managedAccessibility={true}
+                zIndex={2100}
+            />
+            <ConfirmationDialog
+                show={showRenameDialog}
+                titleId={RENAME_AGENT_TITLE_ID}
+                title={<FormattedMessage defaultMessage='Change agent username?'/>}
+                message={(
+                    <>
+                        <FormattedMessage
+                            defaultMessage='The agent will be renamed from <b>@{oldName}</b> to <b>@{newName}</b>. Its direct messages, channel memberships, and conversation history are kept. After the change:'
+                            values={{
+                                oldName: savedUsername,
+                                newName: draft.username,
+                                b: (chunks: React.ReactNode) => <strong>{chunks}</strong>,
+                            }}
+                        />
+                        <RenameConsequences>
+                            <li>
+                                <FormattedMessage
+                                    defaultMessage='Existing messages that mention @{oldName} will no longer link to the agent.'
+                                    values={{oldName: savedUsername}}
+                                />
+                            </li>
+                            <li>
+                                <FormattedMessage
+                                    defaultMessage='People must mention @{newName} to reach the agent, and slash commands, scripts, or integrations that use @{oldName} must be updated.'
+                                    values={{oldName: savedUsername, newName: draft.username}}
+                                />
+                            </li>
+                            <li>
+                                <FormattedMessage
+                                    defaultMessage='@{oldName} becomes available, so another user or bot could claim it.'
+                                    values={{oldName: savedUsername}}
+                                />
+                            </li>
+                        </RenameConsequences>
+                    </>
+                )}
+                confirmButtonText={<FormattedMessage defaultMessage='Change username'/>}
+                cancelButtonText={<FormattedMessage defaultMessage='Keep current username'/>}
+                onConfirm={handleRenameConfirm}
+                onCancel={handleRenameCancel}
+                confirmPending={saving}
                 managedAccessibility={true}
                 zIndex={2100}
             />
@@ -603,22 +734,26 @@ const ViewHeader = styled.div`
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 48px 0 16px 0;
+    padding: var(--spacing-xxxxxl) 0 var(--spacing-l) 0;
     flex-shrink: 0;
+`;
+
+const ConfigTabs = styled(UnderlineTabs)`
+    padding: 0 var(--spacing-l);
 `;
 
 const HeaderLeading = styled.div`
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--spacing-xs);
     min-width: 0;
 `;
 
 const ViewTitle = styled.h1`
-    font-family: 'Metropolis', sans-serif;
-    font-weight: 600;
-    font-size: 22px;
-    line-height: 28px;
+    font-family: var(--font-family-heading, 'Metropolis', sans-serif);
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-500);
+    line-height: var(--line-height-500);
     color: var(--center-channel-color);
     margin: 0;
     white-space: nowrap;
@@ -626,108 +761,39 @@ const ViewTitle = styled.h1`
     text-overflow: ellipsis;
 `;
 
-const BackButton = styled.button`
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 8px;
-    margin-left: -8px;
-    border-radius: 4px;
-    color: rgba(var(--center-channel-color-rgb), 0.64);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    &:hover:not(:disabled) {
-        background: rgba(var(--center-channel-color-rgb), 0.08);
-        color: var(--center-channel-color);
-    }
-
-    &:disabled {
-        cursor: not-allowed;
-        opacity: 0.4;
-    }
-`;
-
-const TabsContainer = styled.div`
-    display: flex;
-    box-sizing: border-box;
-    width: 100%;
-    border-bottom: 1px solid rgba(var(--center-channel-color-rgb), 0.12);
-    flex-shrink: 0;
-`;
-
-const TabButton = styled.button<{$active: boolean}>`
-    padding: 12px 16px;
-    border: none;
-    background: none;
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 600;
-    color: ${(p) => (p.$active ? 'var(--button-bg)' : 'rgba(var(--center-channel-color-rgb), 0.64)')};
-    border-bottom: 2px solid ${(p) => (p.$active ? 'var(--button-bg)' : 'transparent')};
-    transition: color 0.2s ease, border-color 0.2s ease;
-    margin-bottom: -1px;
-
-    &:hover:not(:disabled) {
-        color: ${(p) => (p.$active ? 'var(--button-bg)' : 'var(--center-channel-color)')};
-    }
-
-    &:disabled {
-        opacity: 0.4;
-        cursor: not-allowed;
-    }
+const BackButton = styled(IconButton)`
+    margin-left: calc(-1 * var(--spacing-xs));
 `;
 
 const ViewBody = styled.div`
-    padding: 32px 16px;
+    padding: var(--spacing-xxxl) var(--spacing-l);
     flex: 1;
     min-height: 0;
     overflow-y: auto;
 `;
 
-const ErrorBanner = styled.div`
-    padding: 10px 12px;
-    margin-bottom: 16px;
-    background: rgba(var(--dnd-indicator-rgb, 210, 75, 78), 0.08);
-    border-radius: 4px;
-    border: 1px solid rgba(var(--dnd-indicator-rgb, 210, 75, 78), 0.3);
-    color: var(--dnd-indicator, #D24B4E);
-    font-size: 14px;
+const Notice = styled(SectionNotice)`
+    margin-bottom: var(--spacing-l);
 `;
 
-const WarningBanner = styled.div.attrs({role: 'status'})`
-    padding: 8px 12px;
-    margin-bottom: 16px;
-    background: rgba(var(--away-indicator-rgb, 255, 188, 66), 0.08);
-    border-radius: 4px;
-    border: 1px solid rgba(var(--away-indicator-rgb, 255, 188, 66), 0.3);
-    color: rgba(var(--center-channel-color-rgb), 0.72);
-    font-size: 13px;
+const RenameConsequences = styled.ul`
+    margin: 12px 0 0;
+    padding-left: 20px;
+
+    li + li {
+        margin-top: 4px;
+    }
 `;
 
 const ViewFooter = styled.div`
     display: flex;
     justify-content: flex-end;
     align-items: center;
-    padding: 16px 0;
-    gap: 8px;
+    padding: var(--spacing-l) 0;
+    gap: var(--spacing-xs);
     flex-shrink: 0;
     background: var(--center-channel-bg);
     border-top: 1px solid rgba(var(--center-channel-color-rgb), 0.08);
-`;
-
-const CancelButton = styled(TertiaryButton)`
-    height: 40px;
-`;
-
-const ExportButton = styled(TertiaryButton)`
-    height: 40px;
-    flex-shrink: 0;
-`;
-
-const SaveButton = styled(PrimaryButton)`
-    height: 40px;
 `;
 
 export default AgentConfigView;

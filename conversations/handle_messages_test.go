@@ -25,6 +25,17 @@ func newPassthroughAccessChecker() *accesscontrol.Checker {
 	return accesscontrol.New(accesscontrol.PassthroughClient{}, nil, accesscontrol.NoMCPServerIDs, nil)
 }
 
+// SetBotsWithAccounts replaces svc's registry with registry, each bot's
+// Mattermost account, served by mockAPI, holding the username the registry
+// lists it under.
+func SetBotsWithAccounts(mockAPI *plugintest.API, svc *bots.MMBots, registry ...*bots.Bot) {
+	for _, bot := range registry {
+		mmBot := bot.GetMMBot()
+		mockAPI.On("GetUser", mmBot.UserId).Return(&model.User{Id: mmBot.UserId, Username: mmBot.Username, IsBot: true}, nil).Maybe()
+	}
+	svc.SetBotsForTesting(registry)
+}
+
 type TestEnvironment struct {
 	conversations *Conversations
 	mockAPI       *plugintest.API

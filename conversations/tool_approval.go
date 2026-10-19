@@ -230,8 +230,10 @@ func (c *Conversations) HandleToolCall(ctx context.Context, userID string, post 
 		ctx,
 		bot, user, channel,
 		"Failed to load user tool preferences for tool approval",
-		c.contextBuilder.WithLLMContextInteractive(),
-		c.contextBuilder.WithLLMContextResponseFiles(),
+		append([]llm.ContextOption{
+			c.contextBuilder.WithLLMContextInteractive(),
+			c.contextBuilder.WithLLMContextResponseFiles(),
+		}, c.conversationToolOptions(bot, conv)...)...,
 	)
 	// The clicked post may already carry attachments from an earlier round.
 	llmContext.SetResponseAttachmentBudget(maxResponseAttachments - len(post.FileIds))
@@ -279,7 +281,7 @@ func (c *Conversations) HandleToolCall(ctx context.Context, userID string, post 
 			})
 		case slices.Contains(acceptedToolIDs, block.ID):
 			acceptedToolNames = append(acceptedToolNames, block.Name)
-			result, resolveErr := resolveApprovedToolUseBlock(ctx, llmContext, *block)
+			result, resolveErr := resolveApprovedToolUseBlock(ctx, llmContext, *block, telemetry.ToolExecutionApproved)
 			if resolveErr != nil {
 				block.Status = conversation.StatusError
 				toolResults = append(toolResults, toolrunner.ToolResult{
@@ -319,7 +321,7 @@ func (c *Conversations) HandleToolCall(ctx context.Context, userID string, post 
 			// auto-run a tool the user was asked to approve (or rejected) nor
 			// run one whose policy was since revoked. Shared and terminal, like
 			// any auto-run round.
-			result, resolveErr := resolveApprovedToolUseBlock(ctx, llmContext, *block)
+			result, resolveErr := resolveApprovedToolUseBlock(ctx, llmContext, *block, telemetry.ToolExecutionAuto)
 			autoExecutedNow[block.ID] = true
 			block.Shared = new(true)
 			if resolveErr != nil {
@@ -672,6 +674,7 @@ func (c *Conversations) streamToolFollowUp(
 		channelToolFilterOpts = append(channelToolFilterOpts, c.contextBuilder.WithLLMContextInteractive())
 	}
 	channelToolFilterOpts = append(channelToolFilterOpts, c.contextBuilder.WithLLMContextResponseFiles())
+	channelToolFilterOpts = append(channelToolFilterOpts, c.conversationToolOptions(bot, conv)...)
 	// Build the execution context bound to this conversation.
 	llmContext := c.buildConversationContextWithTools(
 		ctx,
@@ -721,7 +724,7 @@ func (c *Conversations) streamToolFollowUp(
 
 	// Stream onto the same post; finalize demotes the prior anchor so
 	// resolved tool cards remain visible alongside the new round.
-	if err := c.streamToExistingPost(ctx, stream, post, user, channel, true); err != nil {
+	if err := c.streamToExistingPost(ctx, stream, post, user, channel, true, nil); err != nil {
 		return fmt.Errorf("failed to stream tool follow-up: %w", err)
 	}
 
@@ -748,7 +751,9 @@ func (c *Conversations) buildToolFollowUpRequest(conv *store.Conversation, llmCo
 	return c.convService.BuildCompletionRequest(conv, llmContext, buildOpts)
 }
 
-func resolveApprovedToolUseBlock(ctx context.Context, llmContext *llm.Context, block conversation.ContentBlock) (string, error) {
+// execution is telemetry.ToolExecutionApproved for a call the user approved
+// or telemetry.ToolExecutionAuto for one that runs on resume by policy.
+func resolveApprovedToolUseBlock(ctx context.Context, llmContext *llm.Context, block conversation.ContentBlock, execution string) (string, error) {
 	if llmContext == nil || llmContext.Tools == nil {
 		return "", fmt.Errorf("tool %s is no longer available", block.Name)
 	}
@@ -773,9 +778,10 @@ func resolveApprovedToolUseBlock(ctx context.Context, llmContext *llm.Context, b
 		return "", fmt.Errorf("tool %s no longer matches the approved tool metadata", block.Name)
 	}
 
-	return llmContext.Tools.ResolveTool(ctx, lookup.RuntimeName, func(args any) error {
-		return json.Unmarshal(block.Input, args)
-	}, llmContext)
+	return llmContext.Tools.ResolveToolCall(ctx, lookup.RuntimeName,
+		llm.ToolCallInfo{ID: block.ID, Execution: execution},
+		func(args any) error { return json.Unmarshal(block.Input, args) },
+		llmContext)
 }
 
 // findPendingToolTurn returns the assistant turn linked to clickedPostID along

@@ -2,10 +2,12 @@
 // See LICENSE.txt for license information.
 
 import React from 'react';
-import {fireEvent, render, screen, waitFor, within} from '@testing-library/react';
+import {act, fireEvent, render, screen, waitFor, within} from '@testing-library/react';
 
 import {importAgent, previewAgentImport} from '@/client';
 import {AgentExportDocument, AgentImportPreview, ServiceInfo, UserAgent} from '@/types/agents';
+
+import {chooseOption, getSelect, selectedLabel} from '../../../tests/compass_select';
 
 import ImportAgentModal from './import_agent_modal';
 
@@ -121,10 +123,6 @@ function importButton() {
     return screen.getByRole('button', {name: 'Import'}) as HTMLButtonElement;
 }
 
-function mappingSelect(name: string) {
-    return screen.getByLabelText(name) as HTMLSelectElement;
-}
-
 beforeEach(() => {
     jest.clearAllMocks();
 });
@@ -188,17 +186,33 @@ describe('ImportAgentModal', () => {
         expect(screen.queryByText('Unsupported schemaVersion 9')).toBeNull();
     });
 
+    test('ignores the preview of a file superseded by a later selection', async () => {
+        renderModal();
+        let resolveFirst: ((preview: AgentImportPreview) => void) | undefined;
+        mockPreview.mockImplementationOnce(() => new Promise((resolve) => {
+            resolveFirst = resolve;
+        }));
+        chooseFile(JSON.stringify(makeDocument({displayName: 'First'})));
+        await waitFor(() => expect(mockPreview).toHaveBeenCalledTimes(1));
+
+        await loadPreview(makePreview({}, {displayName: 'Second'}));
+        await act(async () => resolveFirst?.(makePreview({}, {displayName: 'First'})));
+
+        expect(within(screen.getByTestId('import-summary')).getByText('Second')).not.toBeNull();
+        expect(within(screen.getByTestId('import-summary')).queryByText('First')).toBeNull();
+    });
+
     test('preselects auto-matched MCP servers and keeps Import disabled until every row is resolved', async () => {
         const {onImported} = renderModal();
         mockImport.mockResolvedValue({id: 'new', name: 'release-helper', displayName: 'Release Helper'} as UserAgent);
 
         await loadPreview(makePreview());
 
-        expect(mappingSelect('Jira').value).toBe('https://mcp.example.com/mcp');
-        expect(mappingSelect('Old').value).toBe('');
+        expect(selectedLabel(getSelect('Jira'))).toBe('Jira (https://mcp.example.com/mcp)');
+        expect(selectedLabel(getSelect('Old'))).toBe('Select a server...');
         expect(importButton().disabled).toBe(true);
 
-        fireEvent.change(mappingSelect('Old'), {target: {value: 'embedded://mattermost'}});
+        chooseOption(getSelect('Old'), 'Mattermost (embedded://mattermost)');
         expect(importButton().disabled).toBe(false);
 
         fireEvent.click(importButton());
@@ -227,8 +241,9 @@ describe('ImportAgentModal', () => {
         renderModal();
         await loadPreview(makePreview());
 
-        fireEvent.change(mappingSelect('Old'), {target: {value: '__remove__'}});
-        fireEvent.change(screen.getByLabelText('AI service'), {target: {value: 'svc_2'}});
+        chooseOption(getSelect('Old'), 'Remove these tools');
+        await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+        chooseOption(getSelect('AI service'), 'Second Service');
         fireEvent.change(screen.getByLabelText('Model (optional)'), {target: {value: ' gpt-x '}});
         fireEvent.change(screen.getByLabelText('Display name'), {target: {value: 'Renamed Helper'}});
         fireEvent.change(screen.getByLabelText('Username'), {target: {value: 'renamed-helper'}});
@@ -286,11 +301,11 @@ describe('ImportAgentModal', () => {
         }));
 
         expect((screen.getByLabelText('Update an existing agent') as HTMLInputElement).checked).toBe(true);
-        expect((screen.getByLabelText('Agent to update') as HTMLSelectElement).value).toBe('agent_1');
+        expect(selectedLabel(getSelect('Agent to update'))).toBe('Release Helper (@release-helper)');
         expect(screen.queryByLabelText('Username')).toBeNull();
         expect(importButton().disabled).toBe(false);
 
-        fireEvent.change(screen.getByLabelText('Agent to update'), {target: {value: 'agent_2'}});
+        chooseOption(getSelect('Agent to update'), 'Other Agent (@other)');
         fireEvent.click(importButton());
 
         await waitFor(() => expect(onImported).toHaveBeenCalledTimes(1));
@@ -335,12 +350,12 @@ describe('ImportAgentModal', () => {
             fireEvent.click(screen.getByLabelText('Update an existing agent'));
         }
 
-        expect((screen.getByLabelText('Agent to update') as HTMLSelectElement).value).toBe('');
+        expect(selectedLabel(getSelect('Agent to update'))).toBe('Select an agent...');
         expect(importButton().disabled).toBe(true);
         fireEvent.click(importButton());
         expect(mockImport).not.toHaveBeenCalled();
 
-        fireEvent.change(screen.getByLabelText('Agent to update'), {target: {value: 'agent_2'}});
+        chooseOption(getSelect('Agent to update'), 'Other Agent (@other)');
         expect(importButton().disabled).toBe(false);
         fireEvent.click(importButton());
 

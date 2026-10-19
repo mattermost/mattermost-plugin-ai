@@ -1,4 +1,5 @@
 import { Page, Locator, expect } from '@playwright/test';
+import { chooseCompassOption } from './compass-select';
 
 /**
  * AgentPageHelper — Page object for the agent listing page and config view.
@@ -131,7 +132,7 @@ export class AgentPageHelper {
     }
 
     getModalTab(tabName: 'Configuration' | 'Access' | 'MCPs' | 'History'): Locator {
-        return this.page.getByRole('button', {name: tabName, exact: true});
+        return this.page.getByRole('tab', {name: tabName, exact: true});
     }
 
     getModalSaveButton(): Locator {
@@ -153,7 +154,7 @@ export class AgentPageHelper {
     }
 
     getAIServiceSelect(): Locator {
-        return this.getExactLabel('AI Service').locator('xpath=following-sibling::*[1]//select[1]');
+        return this.page.getByRole('combobox', {name: 'AI Service', exact: true});
     }
 
     getServiceSelect(): Locator {
@@ -178,11 +179,11 @@ export class AgentPageHelper {
     }
 
     getReasoningEffortSelect(): Locator {
-        return this.getExactLabel('Reasoning Effort').locator('xpath=ancestor::div[1]//select[1]');
+        return this.page.getByRole('combobox', {name: 'Reasoning Effort', exact: true});
     }
 
-    getThinkingBudgetInput(): Locator {
-        return this.getExactLabel('Thinking Budget (tokens)').locator('xpath=following-sibling::input[1]');
+    getThinkingEffortSelect(): Locator {
+        return this.page.getByRole('combobox', {name: 'Thinking Effort', exact: true});
     }
 
     getAdvancedConfigurationToggle(): Locator {
@@ -221,6 +222,14 @@ export class AgentPageHelper {
         return this.getDiscardChangesDialog().getByRole('button', { name: 'Keep editing' });
     }
 
+    getRenameDialog(): Locator {
+        return this.page.getByRole('dialog', { name: 'Change agent username?' });
+    }
+
+    getRenameConfirmButton(): Locator {
+        return this.getRenameDialog().getByRole('button', { name: 'Change username' });
+    }
+
     // --- MCPs Tab ---
 
     getMCPSearchInput(): Locator {
@@ -228,8 +237,7 @@ export class AgentPageHelper {
     }
 
     getToolToggles(): Locator {
-        // Tool toggles are custom button elements styled as switches
-        return this.page.locator('button[class*="Toggle"]');
+        return this.page.getByRole('switch');
     }
 
     // --- Editor header ---
@@ -358,7 +366,7 @@ export class AgentPageHelper {
         await this.getDisplayNameInput().fill(opts.displayName);
         await this.getUsernameInput().fill(opts.username);
         if (opts.serviceLabel) {
-            await this.getServiceSelect().selectOption({ label: opts.serviceLabel });
+            await chooseCompassOption(this.getServiceSelect(), opts.serviceLabel);
         }
         if (opts.instructions) {
             await this.getCustomInstructionsInput().fill(opts.instructions);

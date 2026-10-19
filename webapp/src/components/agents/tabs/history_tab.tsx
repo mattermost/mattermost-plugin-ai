@@ -7,9 +7,12 @@ import {FormattedMessage, useIntl, type IntlShape} from 'react-intl';
 
 import {UserProfile} from '@mattermost/types/users';
 
+import {Button} from '@mattermost/compass-ui/components/button';
+import {SectionNotice} from '@mattermost/compass-ui/components/section-notice';
+import {Tag} from '@mattermost/compass-ui/components/tag';
+
 import {getAgentVersion, getAgentVersions, getProfilesByIds, restoreAgentVersion} from '@/client';
 import {AgentVersionDetail, AgentVersionList, ServiceInfo, UserAgent} from '@/types/agents';
-import {PrimaryButton} from '@/components/assets/buttons';
 import ConfirmationDialog from '@/components/confirmation_dialog';
 import {UserAccessLevel} from '@/components/system_console/bot';
 
@@ -205,7 +208,13 @@ const HistoryTab = ({agentId, services, isDirty, currentUserAccessLevel, onResto
     };
 
     if (listError && !list) {
-        return <ErrorBanner role='alert'>{listError}</ErrorBanner>;
+        return (
+            <SectionNotice
+                type='danger'
+                title={listError}
+                role='alert'
+            />
+        );
     }
 
     if (!list) {
@@ -249,11 +258,7 @@ const HistoryTab = ({agentId, services, isDirty, currentUserAccessLevel, onResto
                                     <VersionTitle>
                                         {intl.formatMessage({defaultMessage: 'Version {version}'}, {version: v.version})}
                                     </VersionTitle>
-                                    {v.version === list.currentVersion && (
-                                        <CurrentBadge>
-                                            <FormattedMessage defaultMessage='Current'/>
-                                        </CurrentBadge>
-                                    )}
+                                    {v.version === list.currentVersion && <CurrentTag/>}
                                 </VersionTitleRow>
                                 <VersionMeta>{versionSourceLabel(intl, v)}</VersionMeta>
                                 <VersionMeta>
@@ -277,21 +282,28 @@ const HistoryTab = ({agentId, services, isDirty, currentUserAccessLevel, onResto
             </VersionList>
 
             <DetailPane>
-                {restoredNotice && <SuccessBanner role='status'>{restoredNotice}</SuccessBanner>}
-                {restoreError && <ErrorBanner role='alert'>{restoreError}</ErrorBanner>}
-                {listError && <ErrorBanner role='alert'>{listError}</ErrorBanner>}
-                {detailError && <ErrorBanner role='alert'>{detailError}</ErrorBanner>}
+                {restoredNotice && (
+                    <SectionNotice
+                        type='success'
+                        title={restoredNotice}
+                        role='status'
+                    />
+                )}
+                {[restoreError, listError, detailError].filter(Boolean).map((message) => (
+                    <SectionNotice
+                        key={message}
+                        type='danger'
+                        title={message}
+                        role='alert'
+                    />
+                ))}
 
                 {selectedSummary && (
                     <DetailHeader>
                         <div>
                             <DetailTitle>
                                 {intl.formatMessage({defaultMessage: 'Version {version}'}, {version: selectedSummary.version})}
-                                {isCurrentSelected && (
-                                    <CurrentBadge>
-                                        <FormattedMessage defaultMessage='Current'/>
-                                    </CurrentBadge>
-                                )}
+                                {isCurrentSelected && <CurrentTag/>}
                             </DetailTitle>
                             <VersionMeta>
                                 {intl.formatMessage(
@@ -305,13 +317,13 @@ const HistoryTab = ({agentId, services, isDirty, currentUserAccessLevel, onResto
                             </VersionMeta>
                         </div>
                         {!isCurrentSelected && (
-                            <PrimaryButton
-                                type='button'
+                            <Button
+                                emphasis='primary'
                                 disabled={!detail || restoring}
                                 onClick={() => setConfirmOpen(true)}
                             >
                                 <FormattedMessage defaultMessage='Restore this version'/>
-                            </PrimaryButton>
+                            </Button>
                         )}
                     </DetailHeader>
                 )}
@@ -416,16 +428,12 @@ const VersionMeta = styled.div`
     color: rgba(var(--center-channel-color-rgb), 0.72);
 `;
 
-const CurrentBadge = styled.span`
-    margin-left: 8px;
-    padding: 1px 8px;
-    border-radius: 10px;
-    font-size: 11px;
-    font-weight: 600;
-    line-height: 16px;
-    color: var(--button-bg);
-    background: rgba(var(--button-bg-rgb, 28, 88, 217), 0.08);
-`;
+const CurrentTag = () => (
+    <Tag
+        type='info'
+        label={<FormattedMessage defaultMessage='Current'/>}
+    />
+);
 
 const DetailPane = styled.div`
     flex: 1;
@@ -445,6 +453,7 @@ const DetailHeader = styled.div`
 const DetailTitle = styled.h2`
     display: flex;
     align-items: center;
+    gap: 8px;
     margin: 0 0 4px;
     font-size: 18px;
     font-weight: 600;
@@ -455,24 +464,6 @@ const DetailTitle = styled.h2`
 const Muted = styled.div`
     font-size: 14px;
     color: rgba(var(--center-channel-color-rgb), 0.64);
-`;
-
-const ErrorBanner = styled.div`
-    padding: 10px 12px;
-    background: rgba(var(--dnd-indicator-rgb, 210, 75, 78), 0.08);
-    border-radius: 4px;
-    border: 1px solid rgba(var(--dnd-indicator-rgb, 210, 75, 78), 0.3);
-    color: var(--dnd-indicator, #D24B4E);
-    font-size: 14px;
-`;
-
-const SuccessBanner = styled.div`
-    padding: 10px 12px;
-    background: rgba(var(--online-indicator-rgb, 6, 214, 160), 0.08);
-    border-radius: 4px;
-    border: 1px solid rgba(var(--online-indicator-rgb, 6, 214, 160), 0.4);
-    color: var(--center-channel-color);
-    font-size: 14px;
 `;
 
 const WarningText = styled.p`

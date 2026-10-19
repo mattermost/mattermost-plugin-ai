@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mattermost/mattermost-plugin-agents/v2/accesscontrol"
 	"github.com/mattermost/mattermost-plugin-agents/v2/config"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmapi"
@@ -390,7 +391,7 @@ func (m *ClientManager) resolveEligibleServers(cfg Config, embeddedClient *Embed
 // buildConnectTasks assembles one flat task list covering remote, embedded, and
 // plugin servers. Keeping them in a single batch is the point: they dial
 // concurrently instead of one category waiting on the previous one.
-func (m *ClientManager) buildConnectTasks(ctx context.Context, userClients *UserClients, servers eligibleServers, embeddedClient *EmbeddedServerClient, forceRefresh bool, sessionID string, sessionErr error) []connectTask {
+func (m *ClientManager) buildConnectTasks(ctx context.Context, userClients *UserClients, servers eligibleServers, embeddedClient *EmbeddedServerClient, forceRefresh bool, session *model.Session, sessionErr error) []connectTask {
 	tasks := make([]connectTask, 0, len(servers.remote)+len(servers.plugins)+1)
 
 	// Remote dials outlive the request that starts them because they warm a
@@ -404,8 +405,8 @@ func (m *ClientManager) buildConnectTasks(ctx context.Context, userClients *User
 		case sessionErr != nil:
 			m.log.Debug("Failed to ensure embedded session for user - embedded MCP tools will not be available",
 				"userID", userClients.userID, "error", sessionErr)
-		case userClients.needsEmbeddedReconnect(sessionID):
-			tasks = append(tasks, userClients.embeddedConnectTask(ctx, sessionID, embeddedClient))
+		case userClients.needsEmbeddedReconnect(session.Id):
+			tasks = append(tasks, userClients.embeddedConnectTask(ctx, session.Id, session, embeddedClient))
 		}
 	}
 
@@ -496,19 +497,19 @@ func (m *ClientManager) getCatalogAccess(ctx context.Context, req CatalogRequest
 		localClients = m.getOrCreateClient(clientKey{userID: req.InvokingUserID, kind: clientKindLocal})
 	}
 
-	var sessionID string
+	var session *model.Session
 	var sessionErr error
 	if servers.embedded {
 		// Mattermost session lookup, not an MCP dial. Kept inside the
 		// lifecycle read lock so task construction stays atomic with plan.
-		sessionID, _, sessionErr = m.ensureEmbeddedSessionID(req.InvokingUserID)
+		session, _, sessionErr = m.ensureEmbeddedSession(req.InvokingUserID)
 	}
 
 	remoteOnly := servers
 	remoteOnly.plugins = nil
 	remoteOnly.embedded = false
 	remotePlans, discarded := remoteClients.planConnections(
-		m.buildConnectTasks(ctx, remoteClients, remoteOnly, embeddedClient, forceRefresh, "", nil),
+		m.buildConnectTasks(ctx, remoteClients, remoteOnly, embeddedClient, forceRefresh, nil, nil),
 	)
 
 	var localPlans []connectPlan
@@ -517,7 +518,7 @@ func (m *ClientManager) getCatalogAccess(ctx context.Context, req CatalogRequest
 		localOnly.remote = nil
 		var localDiscarded []*Client
 		localPlans, localDiscarded = localClients.planConnections(
-			m.buildConnectTasks(ctx, localClients, localOnly, embeddedClient, false, sessionID, sessionErr),
+			m.buildConnectTasks(ctx, localClients, localOnly, embeddedClient, false, session, sessionErr),
 		)
 		discarded = append(discarded, localDiscarded...)
 	}
@@ -561,11 +562,11 @@ func (m *ClientManager) deniedMCPServerOrigins(ctx context.Context, userID strin
 	}
 
 	var denied map[string]bool
-	check := func(origin, serverID string) {
+	check := func(origin, serverID, name string) {
 		if serverID == "" {
 			return
 		}
-		if err := m.accessChecker.CanUseMCPServer(ctx, userID, serverID); err == nil {
+		if err := m.accessChecker.CanUseMCPServer(accesscontrol.WithResourceName(ctx, name), userID, serverID); err == nil {
 			return
 		}
 		if denied == nil {
@@ -577,14 +578,14 @@ func (m *ClientManager) deniedMCPServerOrigins(ctx context.Context, userID strin
 
 	for _, server := range cfg.Servers {
 		if server.Enabled && server.BaseURL != "" {
-			check(server.BaseURL, server.ID)
+			check(server.BaseURL, server.ID, server.Name)
 		}
 	}
 	if embeddedClient != nil {
-		check(EmbeddedClientKey, cfg.EmbeddedServer.ID)
+		check(EmbeddedClientKey, cfg.EmbeddedServer.ID, EmbeddedClientKey)
 	}
 	for _, server := range plugins {
-		check(pluginServerOriginKey(server.PluginID), server.ID)
+		check(pluginServerOriginKey(server.PluginID), server.ID, server.Name)
 	}
 	return denied
 }

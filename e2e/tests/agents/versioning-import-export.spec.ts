@@ -15,6 +15,7 @@ import {
 } from 'helpers/agent-container';
 import { AgentAPIHelper, AgentExportDocument, AgentResponse, EnabledTool } from 'helpers/agent-api';
 import { AgentPageHelper } from 'helpers/agent-page';
+import { chooseCompassOption } from 'helpers/compass-select';
 import { mattermostAIAdminConfigApiFromClient, mattermostAIPluginRoutes } from 'helpers/plugin-http';
 
 /** Matches mcp.EmbeddedClientKey — MCP server origin for the embedded Mattermost tools server. */
@@ -389,8 +390,8 @@ test.describe('Agent versioning, export and import', () => {
         await expect(agentPage.getImportDisplayNameInput()).toHaveValue('Import Source');
         await agentPage.getImportUsernameInput().fill('importedcopy');
         await agentPage.getImportDisplayNameInput().fill('Imported Copy');
-        await agentPage.getImportServiceSelect().selectOption({ label: 'Mock Service' });
-        await expect(agentPage.getImportMCPMappingSelect('Mattermost')).toHaveValue(embeddedMattermostOrigin);
+        await chooseCompassOption(agentPage.getImportServiceSelect(), 'Mock Service');
+        await expect(agentPage.getImportMCPMappingSelect('Mattermost')).toContainText(embeddedMattermostOrigin);
 
         await agentPage.getImportSubmitButton().click();
         await expect(agentPage.getImportDialog()).toBeHidden({ timeout: 10000 });
@@ -453,7 +454,7 @@ test.describe('Agent versioning, export and import', () => {
             buffer: Buffer.from(JSON.stringify(doc)),
         });
         await expect(agentPage.getImportModeRadio('update')).toBeChecked();
-        await expect(agentPage.getImportTargetAgentSelect()).toHaveValue(target.id);
+        await expect(agentPage.getImportTargetAgentSelect()).toContainText('@updatetarget');
         await agentPage.getImportSubmitButton().click();
         await expect(agentPage.getImportDialog()).toBeHidden({ timeout: 10000 });
         await expect(page.getByText('Updated agent Update Target from the imported file.')).toBeVisible({ timeout: 10000 });
@@ -692,12 +693,12 @@ test.describe('Agent versioning, export and import', () => {
         });
 
         await expect(agentPage.getImportModeRadio('create')).toBeChecked();
-        await expect(agentPage.getImportMCPMappingSelect('Jira Elsewhere')).toHaveValue(jiraOrigin);
-        await expect(agentPage.getImportMCPMappingSelect('Mattermost')).toHaveValue(embeddedMattermostOrigin);
-        await expect(agentPage.getImportMCPMappingSelect('Gone Server')).toHaveValue('');
+        await expect(agentPage.getImportMCPMappingSelect('Jira Elsewhere')).toContainText(jiraOrigin);
+        await expect(agentPage.getImportMCPMappingSelect('Mattermost')).toContainText(embeddedMattermostOrigin);
+        await expect(agentPage.getImportMCPMappingSelect('Gone Server')).toContainText('Select a server...');
         await expect(agentPage.getImportSubmitButton()).toBeDisabled();
 
-        await agentPage.getImportMCPMappingSelect('Gone Server').selectOption({ label: 'Remove these tools' });
+        await chooseCompassOption(agentPage.getImportMCPMappingSelect('Gone Server'), 'Remove these tools');
         await expect(agentPage.getImportSubmitButton()).toBeEnabled();
 
         // A server-side rejection is shown in the modal, which stays open for a retry.
@@ -754,10 +755,8 @@ test.describe('Agent versioning, export and import', () => {
         const trackerHeader = page.getByRole('button', { name: new RegExp(`^${trackerServerName}, 1 of 2 tools enabled`) });
         await expect(trackerHeader).toBeVisible({ timeout: 30000 });
         await trackerHeader.click();
-        await expect(page.getByRole('button', { name: `Disable tool create_issue on ${trackerServerName}` }))
-            .toHaveAttribute('aria-checked', 'true');
-        await expect(page.getByRole('button', { name: `Enable tool search_issues on ${trackerServerName}` }))
-            .toHaveAttribute('aria-checked', 'false');
+        await expect(page.getByRole('switch', { name: `Disable tool create_issue on ${trackerServerName}` })).toBeChecked();
+        await expect(page.getByRole('switch', { name: `Enable tool search_issues on ${trackerServerName}` })).not.toBeChecked();
 
         // Saving an unrelated edit sends the reconciled tool list back to the server.
         await agentPage.getModalTab('Configuration').click();

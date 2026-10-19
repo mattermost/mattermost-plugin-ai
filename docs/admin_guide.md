@@ -143,7 +143,7 @@ If you have unsaved changes and try to leave the agent configuration view by sel
 | Setting | Description |
 |---------|-------------|
 | **Display Name** | User-facing name shown in Mattermost |
-| **Agent Username** | The Mattermost username for the agent. @mentions use this name. Set it when creating the agent; it can't be changed later. |
+| **Agent Username** | The Mattermost username for the agent. @mentions use this name. Changing it later renames the existing bot account, so conversations are kept, but old @mentions and integrations that use the previous name stop reaching the agent. See [Renaming an agent](features/managing_agents.md#renaming-an-agent). |
 | **Agent Avatar** | Custom image for the agent |
 | **Service** | Select a configured Service from the dropdown |
 | **Model** | (Optional) Override the service's default model for this agent |
@@ -161,7 +161,7 @@ Some capabilities depend on the selected Service type and, for OpenAI Compatible
 | **Web Search** (native tool) | Available for Anthropic, OpenAI, Google Gemini, and Google Vertex AI. For OpenAI Compatible and Azure, this setting is available when **Use Responses API** is enabled on the Service. Gemini and Vertex map this to Google Search grounding via the provider's Responses API. Allows the Agent to leverage the provider's native web search tool to respond with recent information. Capabilities and pricing are documented by the provider — see Anthropic's [web search tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool) docs. |
 | **Web Fetch** (native tool) | Available for Anthropic. Lets the agent retrieve the full content of specific web pages and PDFs during a response. See Anthropic's [web fetch tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-fetch-tool) docs for capabilities and pricing. |
 | **Code Execution / Code Interpreter** (native tool) | Available for Anthropic, OpenAI, and (with **Use Responses API**) OpenAI Compatible and Azure. Lets the agent run code in the provider's managed sandbox. For Anthropic, enabling this also permits web search and web fetch to post-process results inside that sandbox (Anthropic's [dynamic filtering](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool#dynamic-filtering)); when it is **not** enabled, the plugin pins those tools' `allowed_callers` to `direct` so no sandbox is ever provisioned. Refer to Anthropic's [code execution tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/code-execution-tool) docs for pricing, data-retention, and ZDR implications. |
-| **Reasoning Enabled** | Available for Anthropic, OpenAI, Cohere North, Google Gemini, and Google Vertex AI. For OpenAI Compatible and Azure, this setting is available when **Use Responses API** is enabled on the Service. Enables extended thinking or reasoning capabilities for complex tasks. For Gemini / Vertex, Bifrost maps a token budget to `thinkingConfig.thinkingBudget` and an effort level to `thinkingConfig.thinkingLevel` on Gemini 3.0+. For Cohere North, reasoning is controlled via effort level. See the [Provider Guide](https://docs.mattermost.com/agents/docs/providers.html) for details. |
+| **Reasoning Enabled** | Available for Anthropic, OpenAI, Cohere North, Google Gemini, and Google Vertex AI. For OpenAI Compatible and Azure, this setting is available when **Use Responses API** is enabled on the Service. Enables extended thinking or reasoning capabilities for complex tasks. For Anthropic, a thinking effort (model default, low, medium, high, extra high, or max) is sent natively to adaptive-thinking models and mapped to a thinking budget on older models; models that always think run at low effort with their reasoning hidden when this setting is off. For Gemini / Vertex, Bifrost maps a token budget to `thinkingConfig.thinkingBudget` and an effort level to `thinkingConfig.thinkingLevel` on Gemini 3.0+. For Cohere North, reasoning is controlled via effort level. See the [Provider Guide](https://docs.mattermost.com/agents/docs/providers.html) for details. |
 
 Structured output is not an agent setting. It's configured per service — see [Structured output](#structured-output) — and applies to every request that asks for JSON matching a schema, whichever agent makes it.
 
@@ -174,7 +174,7 @@ Native tool activity (searches performed, pages fetched, code runs) is shown on 
 - Files created in Anthropic's code execution sandbox can be shared by the agent: it copies the ones worth sharing into the sandbox's output directory, and those are attached to its reply automatically. Files it writes elsewhere in the sandbox stay there. The server's file-attachment settings, size limits, the per-post attachment cap, and the requesting user's upload permission all apply. OpenAI code-interpreter files are not yet retrievable, so this applies to Anthropic agents only.
 - Native tool activity is replayed to the model in later requests as a labeled summary (what ran, its output, and how many files were captured for attachment), not as the provider's original result blocks. Long commands and output are truncated, and the sandbox container is not reused, so the model sees a record of the work rather than a resumable session.
 
-For Anthropic services, extended thinking and native structured output can't be used on the same request. Requests that send a JSON schema natively skip extended thinking for that request; all other requests keep using it. Requests served through the prompt fallback don't send a native schema, so they keep extended thinking.
+For Anthropic services, extended thinking and native structured output work together: requests that send a JSON schema keep the agent's extended thinking settings.
 
 If you need an OpenAI-style endpoint without the Responses API path, use an **OpenAI Compatible** service and turn **Use Responses API** off for that service instead of using the **OpenAI** service type.
 
@@ -304,6 +304,8 @@ To obtain Google Custom Search credentials:
 ### Embed search configuration
 
 To enable semantic search capabilities, you'll need to enable the `pgvector` extension in your PostgreSQL database, then configure embeddings provider settings including the provider (OpenAI, etc.), model for embeddings, and dimensions that match your chosen embedding model. Embedding search is available at Enterprise and above (see [license requirements](#license-requirements)) and is available as an [experimental](https://docs.mattermost.com/manage/feature-labels.html#experimental) feature. Performance may vary with large datasets.
+
+Embedding search is optional for Agents search from the search bar and `/ask-channel`: without it, agents search with keyword search; with it, they also get semantic results.
 
 Configure chunking options based on your needs:
 
@@ -505,7 +507,25 @@ The setting can also be configured directly in the plugin configuration JSON:
 }
 ```
 
-Valid values for `telemetryOutput` are `off`, `logs`, and `otlp`. When set to `off` (or omitted), the plugin uses a no-op tracer with zero overhead. The `openTelemetryEndpoint` field is only consulted when the mode is `otlp`.
+Valid values for `telemetryOutput` are `off`, `logs`, and `otlp`. When set to `off` (or omitted), the plugin uses a no-op tracer with zero overhead. The `openTelemetryEndpoint`, `openTelemetryTLS`, and `openTelemetryHeaders` fields are only consulted when the mode is `otlp`.
+
+In **Server Logs** mode each finished span is one `agents trace span` log entry. Span events (such as the four `agent.progress` phases of a reply) are written as a JSON array under the `events` key, and span links (such as the link from a turn to the previous turn) as a JSON array under `links`, so Loki's `| json` can parse both. Spans log at ERROR level only when they record a failure; an access policy denial is an expected decision and logs at INFO.
+
+#### Following one turn
+
+One user message produces one `agent run` trace whose ID is derived from the user turn, so a turn can be found from its post:
+
+1. Find the `message has been posted` span with `agents.post.id` set to the user's post ID. Its `agents.agent.run.trace_id` attribute names the run's trace.
+2. The `agent run` span in that trace carries `agents.post.id`, `agents.channel.id`, `agents.user.id`, `agents.conversation.id`, and `agents.conversation.user_turn.id`, and links back to the message hook span and to the previous turn's trace.
+3. Everything the turn did — `process dm request`, every `llm chat completion` round, `resolve tool`, `stream to post`, and the conversation's title generation — is in the run's trace. `agent run` lasts until the reply finishes streaming.
+
+The agent's own response posts don't start a trace.
+
+HTTP spans are named by method and route template (for example `POST /bridge/v1/completion/agent/:agent`). Requests that match no route aren't traced, and neither is the long-lived `GET /mcp-server/mcp` stream that an MCP client holds open; the MCP `POST` requests that carry tool calls are traced.
+
+#### Access control spans
+
+Per-request access decisions (`abac can_use_agent`, `abac can_use_service`, `abac can_use_mcp_server`) run on nearly every request and would otherwise outnumber all other spans. Both output modes drop decisions that allowed access. Policy administration spans and `abac is_available` (one span per uncached probe, recording `agents.abac.available`) are always kept. Denials (`agents.abac.denied=true`) and failed evaluations (status Error) are kept. Denied resources carry `agents.abac.resource_name` (the agent or MCP server name) next to `agents.abac.resource_id`.
 
 #### Local development with Grafana Tempo
 
@@ -538,7 +558,19 @@ For production, send traces to your existing OpenTelemetry Collector or directly
 - **OpenTelemetry Collector**: Point the endpoint to your collector's OTLP gRPC address. The collector can then export to Jaeger, Zipkin, Datadog, Grafana Tempo, AWS X-Ray, or any other supported backend.
 - **Direct export**: Point the endpoint directly to a backend that supports OTLP gRPC (e.g., Grafana Tempo at `tempo:4317`).
 
-The connection currently uses insecure (non-TLS) gRPC. For TLS-terminated endpoints, route through an OpenTelemetry Collector with TLS configured.
+By default the exporter connects over plaintext gRPC, which suits a collector on the same host or private network. For a collector that requires TLS or credentials, such as hosted Grafana Tempo:
+
+- Enable **Use TLS for OTLP Export** (`openTelemetryTLS`). The endpoint's certificate is verified against the system root certificates.
+- Set **OTLP Export Headers** (`openTelemetryHeaders`) to the headers the collector expects, as comma-separated `key=value` pairs in the `OTEL_EXPORTER_OTLP_HEADERS` format, for example `Authorization=Basic <base64 of instance-id:token>`. Percent-encode commas in values as `%2C`. The value is a credential: it's stored with the plugin configuration like other API keys, and it's never written to logs, spans, or audit records. Use it with TLS, or the credentials are sent in plaintext.
+
+```json
+{
+  "telemetryOutput": "otlp",
+  "openTelemetryEndpoint": "tempo-prod-04-prod-us-east-0.grafana.net:443",
+  "openTelemetryTLS": true,
+  "openTelemetryHeaders": "Authorization=Basic <credentials>"
+}
+```
 
 #### Custom span attributes
 
@@ -557,6 +589,27 @@ Traces include these semantic attributes for filtering and analysis. Cached toke
 | `agents.llm.cost` | Provider-reported request cost, when reported | `0.0123` |
 | `agents.tool.name` | Tool being called | `web_search`, `read_channel` |
 | `agents.tool.id` | Tool call identifier | `call_abc123` |
+| `agents.tool.status` | Tool resolution outcome | `success`, `error` |
+| `agents.tool.execution` | Whether the call ran automatically or after the user approved it | `auto`, `approved` |
+| `agents.tool.result.bytes` | Size of the tool result in bytes (the result itself is never recorded) | `86016` |
+| `agents.tool.result.tokens_estimate` | Estimated tokens in the tool result | `21504` |
+| `agents.tool.returned_names` | Tools returned by `search_tools` | `["jira__get_issue"]` |
+| `agents.tool.loaded_name` | Tool loaded by `load_tool` | `jira__get_issue` |
+| `agents.llm.finish_reason` | Why the LLM round ended | `stop`, `tool_calls`, `length` |
+| `agents.llm.time_to_first_token_ms` | Time from request to the first model output | `850` |
+| `agents.llm.round` | 0-based index of the LLM call within a turn's tool loop | `3` |
+| `agents.stream.outcome` | How streaming a reply ended | `completed`, `canceled`, `errored`, `empty` |
+| `agents.stream.message_length` | Length of the final reply in bytes | `1834` |
+| `agents.conversation.id` | Conversation ID | `abc123def456` |
+| `agents.conversation.user_turn.id` | User turn the run answers | `abc123def456` |
+| `agents.agent.run.trace_id` | On the message hook span: the trace ID of the agent run | `8d5576c0…` |
+| `agents.abac.resource_name` | Name of the agent or MCP server an access check evaluated | `jira` |
+| `agents.abac.denied` | The access check denied access | `true` |
+| `agents.abac.decision_source` | Set when the agent's legacy allow/block lists, not an access policy, made the decision | `legacy` |
+| `agents.abac.available` | On `abac is_available`: whether ABAC is licensed and enabled | `false` |
+| `agents.abac.probe_status_code` / `agents.abac.probe_error_id` | On `abac is_available`: why the probe reported unavailable | `501` / `app.pap.init.app_error` |
+| `agents.bridge.plugin_id` | On LLM bridge HTTP spans: the calling plugin | `com.mattermost.calls` |
+| `agents.service.id` | On LLM bridge service-completion spans: the requested service | `abc123def456` |
 | `agents.mcp.server` | MCP server name | `github-server` |
 | `agents.mcp.tool` | MCP tool name | `search_issues` |
 | `agents.user.id` | Requesting user ID | `abc123def456` |

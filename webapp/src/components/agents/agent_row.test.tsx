@@ -152,29 +152,52 @@ describe('AgentRow inactive badge', () => {
     });
 });
 
-describe('AgentRow overflow menu', () => {
-    test('offers Export to managers and calls onExport without opening the editor', () => {
-        const onExport = jest.fn();
+describe('AgentRow actions menu', () => {
+    test.each([
+        {action: 'Edit', expectEdit: 1, expectDelete: 0, expectExport: 0},
+        {action: 'Export', expectEdit: 0, expectDelete: 0, expectExport: 1},
+        {action: 'Delete', expectEdit: 0, expectDelete: 1, expectExport: 0},
+    ])('$action runs only its own callback', ({action, expectEdit, expectDelete, expectExport}) => {
         const onEdit = jest.fn();
-        const agent = makeAgent();
+        const onDelete = jest.fn();
+        const onExport = jest.fn();
         render(
             <AgentRow
-                agent={agent}
+                agent={makeAgent()}
                 services={[availableService]}
                 servicesLoaded={true}
                 canManage={true}
                 onEdit={onEdit}
-                onDelete={noop}
+                onDelete={onDelete}
                 onExport={onExport}
             />,
         );
 
         fireEvent.click(screen.getByRole('button', {name: 'Agent actions'}));
-        fireEvent.click(screen.getByRole('button', {name: 'Export'}));
+        fireEvent.click(screen.getByRole('button', {name: action}));
 
-        expect(onExport).toHaveBeenCalledWith(agent);
+        expect(onEdit).toHaveBeenCalledTimes(expectEdit);
+        expect(onDelete).toHaveBeenCalledTimes(expectDelete);
+        expect(onExport).toHaveBeenCalledTimes(expectExport);
+    });
+
+    test('Enter on the actions button opens the menu without editing the agent', () => {
+        const onEdit = jest.fn();
+        render(
+            <AgentRow
+                agent={makeAgent()}
+                services={[availableService]}
+                servicesLoaded={true}
+                canManage={true}
+                onEdit={onEdit}
+                onDelete={noop}
+                onExport={noop}
+            />,
+        );
+
+        fireEvent.keyDown(screen.getByRole('button', {name: 'Agent actions'}), {key: 'Enter'});
+
         expect(onEdit).not.toHaveBeenCalled();
-        expect(screen.queryByRole('button', {name: 'Export'})).toBeNull();
     });
 
     test('has no actions menu, and so no Export, for read-only rows', () => {
