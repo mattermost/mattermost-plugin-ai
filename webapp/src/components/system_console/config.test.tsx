@@ -55,15 +55,21 @@ jest.mock('./services', () => ({
     firstNewService: {id: '', name: 'OpenAI Service'},
 }));
 
+type MockMCPConfig = {servers: Array<{id?: string; name: string}> | null};
+const mockMCPServers: {onChange?: (update: MockMCPConfig | ((current: MockMCPConfig) => MockMCPConfig)) => void} = {};
+
 jest.mock('./mcp_servers', () => ({
     __esModule: true,
-    default: ({mcpConfig}: {mcpConfig: {servers: Array<{id?: string; name: string}> | null}}) => (
-        <div>
-            {(mcpConfig.servers ?? []).map((s, i) => (
-                <span key={i}>{`mcp:${s.name}:${s.id || 'unsaved'}`}</span>
-            ))}
-        </div>
-    ),
+    default: ({mcpConfig, onChange}: {mcpConfig: MockMCPConfig; onChange: typeof mockMCPServers.onChange}) => {
+        mockMCPServers.onChange = onChange;
+        return (
+            <div>
+                {(mcpConfig.servers ?? []).map((s, i) => (
+                    <span key={i}>{`mcp:${s.name}:${s.id || 'unsaved'}`}</span>
+                ))}
+            </div>
+        );
+    },
 }));
 
 jest.mock('./embedding_search/embedding_search_panel', () => ({
@@ -196,6 +202,32 @@ describe('Config save flow', () => {
 
         fireEvent.change(screen.getByLabelText('Allowed Link Domains (csv)'), {target: {value: 'example.com'}});
         expect(screen.queryByText('One or more entries are not valid domains.')).toBeNull();
+    });
+});
+
+describe('Config MCP updates', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        (getPluginConfig as jest.Mock).mockResolvedValue(loadedConfig);
+        (getAIBots as jest.Mock).mockResolvedValue({bots: []});
+    });
+
+    it('applies an update function to the configuration as it is when the update lands', async () => {
+        renderConfig();
+        await screen.findByText('mcp:Jira:unsaved');
+
+        act(() => {
+            mockMCPServers.onChange?.({servers: [...loadedConfig.mcp.servers, {name: 'GitHub'}]});
+        });
+        act(() => {
+            mockMCPServers.onChange?.((current) => ({
+                ...current,
+                servers: (current.servers ?? []).map((s) => (s.name === 'Jira' ? {...s, name: 'Jira Cloud'} : s)),
+            }));
+        });
+
+        expect(screen.getByText('mcp:Jira Cloud:unsaved')).toBeTruthy();
+        expect(screen.getByText('mcp:GitHub:unsaved')).toBeTruthy();
     });
 });
 
