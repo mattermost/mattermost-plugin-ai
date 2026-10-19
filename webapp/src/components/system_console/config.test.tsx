@@ -177,6 +177,21 @@ describe('Config save flow', () => {
         expect(screen.getByText('service:My Service:unsaved')).toBeTruthy();
         expect(screen.getByText('mcp:Jira:unsaved')).toBeTruthy();
     });
+
+    it('explains a save rejected for invalid allowed link domains', async () => {
+        const {registerSaveAction} = renderConfig();
+        await screen.findByText('service:My Service:unsaved');
+
+        (savePluginConfig as jest.Mock).mockRejectedValue(Object.assign(new Error(''), {server_error_id: 'invalid_allowed_link_domains'}));
+
+        const save = registerSaveAction.mock.calls.at(-1)?.[0] as SaveAction;
+        let result: {error?: {message?: string}} = {};
+        await act(async () => {
+            result = await save();
+        });
+
+        expect(result.error?.message).toBe('Failed to save configuration: Allowed Link Domains contains an entry that is not a valid domain.');
+    });
 });
 
 describe('Config license gating', () => {

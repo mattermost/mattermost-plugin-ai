@@ -230,6 +230,9 @@ const Config = (props: Props) => {
                 setLocalConfig({...defaultConfig, ...saved});
                 return {};
             } catch (e: any) {
+                if (e?.server_error_id === 'invalid_allowed_link_domains') {
+                    return {error: {message: intl.formatMessage({defaultMessage: 'Failed to save configuration: Allowed Link Domains contains an entry that is not a valid domain.'})}};
+                }
                 return {error: {message: intl.formatMessage({defaultMessage: 'Failed to save configuration.'})}};
             }
         };

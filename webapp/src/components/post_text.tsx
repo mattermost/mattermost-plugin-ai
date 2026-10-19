@@ -1,7 +1,7 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import React from 'react';
+import React, {useMemo} from 'react';
 import {useSelector} from 'react-redux';
 import styled, {keyframes, css} from 'styled-components';
 
@@ -9,8 +9,8 @@ import {GlobalState} from '@mattermost/types/store';
 import {Channel} from '@mattermost/types/channels';
 import {Team} from '@mattermost/types/teams';
 
-import manifest from '@/manifest';
-import {restrictLinksToAllowedDomains} from '@/utils/link_allowlist';
+import {getLinkPolicy} from '@/selectors';
+import {linkRendering} from '@/utils/link_allowlist';
 
 import {insertAnnotationMarkers, replaceCitationMarkers} from './citations/citation_processor';
 import {Annotation} from './citations/types';
@@ -82,14 +82,12 @@ const handleInternalLinkClick = (e: React.MouseEvent<HTMLDivElement>) => {
     history.push(path);
 };
 
-const NO_ALLOWED_LINK_DOMAINS: string[] = [];
-
 const PostText = (props: Props) => {
     const channel = useSelector<GlobalState, Channel>((state) => state.entities.channels.channels[props.channelID]);
     const team = useSelector<GlobalState, Team>((state) => state.entities.teams.teams[channel?.team_id]);
     const siteURL = useSelector<GlobalState, string | undefined>((state) => state.entities.general.config.SiteURL);
-    const allowUnsafeLinks = useSelector<GlobalState, boolean>((state: any) => state['plugins-' + manifest.id]?.allowUnsafeLinks ?? false);
-    const allowedLinkDomains = useSelector<GlobalState, string[]>((state: any) => state['plugins-' + manifest.id]?.allowedLinkDomains ?? NO_ALLOWED_LINK_DOMAINS);
+    const linkPolicy = useSelector(getLinkPolicy);
+    const links = useMemo(() => linkRendering(linkPolicy, siteURL || window.location.origin), [linkPolicy, siteURL]);
 
     // @ts-ignore
     const {formatText, messageHtmlToComponent} = window.PostUtils;
@@ -99,7 +97,7 @@ const PostText = (props: Props) => {
         mentionHighlight: true,
         atMentions: true,
         team,
-        unsafeLinks: !allowUnsafeLinks,
+        unsafeLinks: links.unsafeLinks,
         minimumHashtagLength: 1000000000,
         siteURL,
     };
@@ -117,12 +115,10 @@ const PostText = (props: Props) => {
         processedMessage = insertAnnotationMarkers(props.message, props.annotations);
     }
 
-    let html = formatText(processedMessage, markdownOptions);
-    if (allowUnsafeLinks) {
-        html = restrictLinksToAllowedDomains(html, allowedLinkDomains, siteURL);
-    }
-
-    const text = messageHtmlToComponent(html, messageHtmlToComponentOptions);
+    const text = messageHtmlToComponent(
+        links.restrictLinks(formatText(processedMessage, markdownOptions)),
+        messageHtmlToComponentOptions,
+    );
 
     if (!text) {
         return <TextContainer $showCursor={props.showCursor}>{<p/>}</TextContainer>;

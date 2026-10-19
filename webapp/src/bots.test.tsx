@@ -17,7 +17,7 @@ import {
     LLMBot,
 } from './bots';
 import {ChannelAccessLevel, UserAccessLevel} from './components/system_console/bot';
-import {BotsHandler} from './redux';
+import {BotsHandler, SetLinkPolicyHandler} from './redux';
 import manifest from './manifest';
 
 // mm_webapp reads window.Components/ProductApi at module load, which are absent
@@ -250,23 +250,14 @@ describe('filterBotsByChannelAccess', () => {
 describe('fetchAndStoreBots', () => {
     test('dispatches the bots and feature flags, and returns the bots', async () => {
         const bots = [makeBot('a')];
-        mockGetAIBots.mockResolvedValue({bots, searchEnabled: true, allowUnsafeLinks: 1, allowedLinkDomains: ['example.com']});
+        const linkPolicy = {kind: 'allowlist', allowedDomains: [{host: 'example.com', wildcard: false}]};
+        mockGetAIBots.mockResolvedValue({bots, searchEnabled: true, allowUnsafeLinks: true, linkPolicy});
         const dispatch = jest.fn();
 
         await expect(fetchAndStoreBots(dispatch)).resolves.toBe(bots);
 
         expect(dispatch).toHaveBeenCalledWith({type: BotsHandler, bots});
-        expect(dispatch).toHaveBeenCalledWith({type: 'SET_ALLOW_UNSAFE_LINKS', allowUnsafeLinks: true});
-        expect(dispatch).toHaveBeenCalledWith({type: 'SET_ALLOWED_LINK_DOMAINS', allowedLinkDomains: ['example.com']});
-    });
-
-    test('stores an empty link domain allowlist when the server omits it', async () => {
-        mockGetAIBots.mockResolvedValue({bots: [makeBot('a')], searchEnabled: false, allowUnsafeLinks: true, allowedLinkDomains: null});
-        const dispatch = jest.fn();
-
-        await fetchAndStoreBots(dispatch);
-
-        expect(dispatch).toHaveBeenCalledWith({type: 'SET_ALLOWED_LINK_DOMAINS', allowedLinkDomains: []});
+        expect(dispatch).toHaveBeenCalledWith({type: SetLinkPolicyHandler, linkPolicy});
     });
 
     test('returns null and dispatches nothing when the response is falsy', async () => {

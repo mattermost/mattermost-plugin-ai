@@ -1,9 +1,12 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import {isHostAllowed, isLinkAllowed, restrictLinksToAllowedDomains} from './link_allowlist';
+import {LinkDomainRule, isHostAllowed, linkAllowlist, linkRendering, restrictLinks} from './link_allowlist';
 
 const SITE_URL = 'https://mm.example.org';
+
+const plain = (host: string): LinkDomainRule => ({host, wildcard: false});
+const wildcard = (host: string): LinkDomainRule => ({host, wildcard: true});
 
 // Mirrors the anchor markup core's markdown renderer emits for links.
 const externalLink = (href: string, text: string) =>
@@ -11,39 +14,35 @@ const externalLink = (href: string, text: string) =>
 
 describe('isHostAllowed', () => {
     test.each([
-        ['exact match', 'example.com', ['example.com'], true],
-        ['entries are case-insensitive', 'example.com', ['Example.COM'], true],
-        ['hostnames are case-insensitive', 'Example.COM', ['example.com'], true],
-        ['plain entry does not match subdomains', 'sub.example.com', ['example.com'], false],
-        ['wildcard matches a subdomain', 'sub.example.com', ['*.example.com'], true],
-        ['wildcard matches nested subdomains', 'a.b.example.com', ['*.example.com'], true],
-        ['wildcard does not match the bare domain', 'example.com', ['*.example.com'], false],
-        ['suffix without a dot boundary is rejected', 'evilexample.com', ['*.example.com'], false],
-        ['allowed domain as a prefix of another host is rejected', 'example.com.evil.com', ['example.com'], false],
-        ['entry written as a URL uses its hostname', 'docs.example.com', ['https://docs.example.com/path'], true],
-        ['entry port is ignored', 'example.com', ['example.com:8080'], true],
-        ['trailing dot on the host is ignored', 'example.com.', ['example.com'], true],
-        ['unicode entries match punycode hosts', 'xn--bcher-kva.example', ['bücher.example'], true],
-        ['bare wildcard matches nothing', 'example.com', ['*'], false],
-        ['empty wildcard matches nothing', 'example.com', ['*.'], false],
-        ['mid-label wildcard matches nothing', 'example.com', ['exa*mple.com'], false],
+        ['exact match', 'example.com', [plain('example.com')], true],
+        ['hostnames are case-insensitive', 'Example.COM', [plain('example.com')], true],
+        ['trailing dot on the host is ignored', 'example.com.', [plain('example.com')], true],
+        ['plain rule does not match subdomains', 'sub.example.com', [plain('example.com')], false],
+        ['wildcard matches a subdomain', 'sub.example.com', [wildcard('example.com')], true],
+        ['wildcard matches nested subdomains', 'a.b.example.com', [wildcard('example.com')], true],
+        ['wildcard does not match the bare domain', 'example.com', [wildcard('example.com')], false],
+        ['suffix without a dot boundary is rejected', 'evilexample.com', [wildcard('example.com')], false],
+        ['allowed domain as a prefix of another host is rejected', 'example.com.evil.com', [plain('example.com')], false],
+        ['empty host is rejected', '', [plain('example.com')], false],
         ['empty allowlist matches nothing', 'example.com', [], false],
-        ['any matching entry is enough', 'docs.example.com', ['other.com', '*.example.com'], true],
+        ['any matching rule is enough', 'docs.example.com', [plain('other.com'), wildcard('example.com')], true],
     ])('%s', (_name, hostname, allowedDomains, expected) => {
         expect(isHostAllowed(hostname, allowedDomains)).toBe(expected);
     });
 });
 
-describe('isLinkAllowed', () => {
-    const allowed = ['example.com'];
+describe('linkAllowlist', () => {
+    const allowed = [plain('example.com'), plain('xn--bcher-kva.example')];
 
     test.each([
         ['allowed https host', 'https://example.com/page', SITE_URL, true],
         ['allowed http host', 'http://example.com', SITE_URL, true],
+        ['unicode host matches its punycode rule', 'https://bücher.example/', SITE_URL, true],
         ['other host', 'https://evil.com', SITE_URL, false],
         ['allowed host as userinfo', 'https://example.com@evil.com/', SITE_URL, false],
         ['protocol-relative other host', '//evil.com/x', SITE_URL, false],
         ['backslash before allowed host', 'https://evil.com\\@example.com', SITE_URL, false],
+
         // eslint-disable-next-line no-script-url
         ['javascript scheme', 'javascript:alert(1)', SITE_URL, false],
         ['mailto scheme', 'mailto:someone@example.com', SITE_URL, false],
@@ -56,26 +55,23 @@ describe('isLinkAllowed', () => {
         ['subpath site: link outside the subpath', 'https://host.org/other', 'https://host.org/mm', false],
         ['subpath site: relative link outside the subpath', '/other', 'https://host.org/mm', false],
         ['subpath site: sibling path sharing a prefix', 'https://host.org/mmevil', 'https://host.org/mm', false],
+        ['unusable site URL: absolute allowed link', 'https://example.com', '', true],
+        ['unusable site URL: relative link', '/team/channels/town-square', '', false],
     ])('%s', (_name, href, siteURL, expected) => {
-        expect(isLinkAllowed(href, allowed, siteURL)).toBe(expected);
+        expect(linkAllowlist(allowed, siteURL)(href)).toBe(expected);
     });
 });
 
-describe('restrictLinksToAllowedDomains', () => {
-    const allowed = ['example.com'];
+describe('restrictLinks', () => {
+    const isAllowed = linkAllowlist([plain('example.com')], SITE_URL);
 
     const render = (html: string) => {
         const container = document.createElement('div');
-        container.innerHTML = restrictLinksToAllowedDomains(html, allowed, SITE_URL);
+        container.innerHTML = restrictLinks(html, isAllowed);
         return container;
     };
 
-    test('returns the HTML unchanged when the allowlist is empty', () => {
-        const html = `<p>${externalLink('https://evil.com', 'click')}</p>`;
-        expect(restrictLinksToAllowedDomains(html, [], SITE_URL)).toBe(html);
-    });
-
-    test('keeps links to allowed domains clickable', () => {
+    test('keeps allowed links clickable', () => {
         const container = render(`<p>${externalLink('https://example.com/docs', 'docs')}</p>`);
 
         const anchor = container.querySelector('a');
@@ -83,25 +79,17 @@ describe('restrictLinksToAllowedDomains', () => {
         expect(anchor?.textContent).toBe('docs');
     });
 
-    test('shows disallowed links as text followed by their destination', () => {
-        const container = render(`<p>See ${externalLink('https://evil.com/login', 'the docs')} now</p>`);
+    test.each([
+        ['shows the text followed by the destination', `See ${externalLink('https://evil.com/login', 'the docs')} now`, 'See the docs : https://evil.com/login now'],
+        ['does not repeat a destination equal to the text', externalLink('https://evil.com/login', 'https://evil.com/login'), 'https://evil.com/login'],
+        ['does not repeat the destination of a scheme-less autolink', externalLink('http://www.evil.com', 'www.evil.com'), 'www.evil.com'],
+        ['renders the destination as inert text', externalLink('https://evil.com/&lt;img src=x&gt;', 'x'), 'x : https://evil.com/<img src=x>'],
+    ])('disallowed link: %s', (_name, html, expectedText) => {
+        const container = render(`<p>${html}</p>`);
 
         expect(container.querySelector('a')).toBeNull();
-        expect(container.textContent).toBe('See the docs : https://evil.com/login now');
-    });
-
-    test('does not repeat the destination when the link text is the URL', () => {
-        const container = render(`<p>${externalLink('https://evil.com/login', 'https://evil.com/login')}</p>`);
-
-        expect(container.querySelector('a')).toBeNull();
-        expect(container.textContent).toBe('https://evil.com/login');
-    });
-
-    test('does not repeat the destination for scheme-less autolinks', () => {
-        const container = render(`<p>${externalLink('http://www.evil.com', 'www.evil.com')}</p>`);
-
-        expect(container.querySelector('a')).toBeNull();
-        expect(container.textContent).toBe('www.evil.com');
+        expect(container.querySelector('img')).toBeNull();
+        expect(container.textContent).toBe(expectedText);
     });
 
     test('preserves formatting inside a disallowed link', () => {
@@ -110,14 +98,6 @@ describe('restrictLinksToAllowedDomains', () => {
         expect(container.querySelector('a')).toBeNull();
         expect(container.querySelector('strong')?.textContent).toBe('Click');
         expect(container.textContent).toBe('Click : https://evil.com');
-    });
-
-    test('renders the destination of a disallowed link as inert text', () => {
-        const container = render(`<p>${externalLink('https://evil.com/&lt;img src=x&gt;', 'x')}</p>`);
-
-        expect(container.querySelector('a')).toBeNull();
-        expect(container.querySelector('img')).toBeNull();
-        expect(container.textContent).toBe('x : https://evil.com/<img src=x>');
     });
 
     test('filters each link independently', () => {
@@ -135,8 +115,27 @@ describe('restrictLinksToAllowedDomains', () => {
         expect(container.querySelector('a')?.getAttribute('data-channel-mention')).toBe('town-square');
     });
 
-    test('returns HTML without links unchanged', () => {
-        const html = '<p>No <strong>links</strong> here</p>';
-        expect(restrictLinksToAllowedDomains(html, allowed, SITE_URL)).toBe(html);
+    test('returns HTML without disallowed links unchanged', () => {
+        const html = `<p>No <strong>bad</strong> ${externalLink('https://example.com', 'links')} here</p>`;
+        expect(restrictLinks(html, isAllowed)).toBe(html);
+    });
+});
+
+describe('linkRendering', () => {
+    const html = `<p>${externalLink('https://example.com', 'good')} ${externalLink('https://evil.com', 'bad')}</p>`;
+
+    test.each([
+        {name: 'plain text policy lets core render links as text', policy: {kind: 'plain_text' as const}, unsafeLinks: true, expectedHrefs: ['https://example.com', 'https://evil.com']},
+        {name: 'any domain policy keeps every link', policy: {kind: 'any_domain' as const}, unsafeLinks: false, expectedHrefs: ['https://example.com', 'https://evil.com']},
+        {name: 'allowlist policy keeps only allowed links', policy: {kind: 'allowlist' as const, allowedDomains: [plain('example.com')]}, unsafeLinks: false, expectedHrefs: ['https://example.com']},
+        {name: 'empty allowlist keeps no external links', policy: {kind: 'allowlist' as const, allowedDomains: []}, unsafeLinks: false, expectedHrefs: []},
+    ])('$name', ({policy, unsafeLinks, expectedHrefs}) => {
+        const rendering = linkRendering(policy, SITE_URL);
+
+        const container = document.createElement('div');
+        container.innerHTML = rendering.restrictLinks(html);
+
+        expect(rendering.unsafeLinks).toBe(unsafeLinks);
+        expect(Array.from(container.querySelectorAll('a')).map((a) => a.getAttribute('href'))).toEqual(expectedHrefs);
     });
 });
