@@ -247,6 +247,7 @@ func TestResumeConversationWritesWakeTurnAndFollowsUp(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, conversation.BlockTypeText, blocks[0].Type)
 	require.Equal(t, mmtools.WakeUserMessage, blocks[0].Text)
+	require.Equal(t, conversation.SyntheticKindWake, blocks[0].SyntheticKind)
 
 	require.Len(t, env.lm.requests, 1)
 	// Nobody is present to answer user-interaction tools on a wake.
@@ -356,7 +357,7 @@ func TestResumeConversationDrops(t *testing.T) {
 			}
 			env := newWakeEnv(t, bot)
 			for range tt.priorWakes {
-				require.NoError(t, env.c.convService.AppendSyntheticUserTurn(env.conv.ID, mmtools.WakeUserMessage))
+				require.NoError(t, env.c.convService.AppendSyntheticUserTurn(env.conv.ID, conversation.SyntheticKindWake, mmtools.WakeUserMessage))
 			}
 			channel := dmChannel
 			if tt.channel != nil {
@@ -396,8 +397,8 @@ func TestResumeConversationDrops(t *testing.T) {
 }
 
 func TestCountConsecutiveWakes(t *testing.T) {
-	turn := func(role, text, postID string) store.Turn {
-		content, err := json.Marshal([]conversation.ContentBlock{{Type: conversation.BlockTypeText, Text: text}})
+	turnOfKind := func(role, kind, text, postID string) store.Turn {
+		content, err := json.Marshal([]conversation.ContentBlock{{Type: conversation.BlockTypeText, Text: text, SyntheticKind: kind}})
 		require.NoError(t, err)
 		turn := store.Turn{ID: model.NewId(), Role: role, Content: content}
 		if postID != "" {
@@ -405,7 +406,8 @@ func TestCountConsecutiveWakes(t *testing.T) {
 		}
 		return turn
 	}
-	wake := func() store.Turn { return turn("user", mmtools.WakeUserMessage, "") }
+	turn := func(role, text, postID string) store.Turn { return turnOfKind(role, "", text, postID) }
+	wake := func() store.Turn { return turnOfKind("user", conversation.SyntheticKindWake, "any wording", "") }
 
 	tests := []struct {
 		name      string
@@ -430,7 +432,7 @@ func TestCountConsecutiveWakes(t *testing.T) {
 		},
 		{
 			name:      "steering note neither counts as a wake nor breaks the chain",
-			turns:     []store.Turn{turn("user", "watch it", "p1"), wake(), turn("user", mmtools.WakeCanceledUserMessage, ""), wake()},
+			turns:     []store.Turn{turn("user", "watch it", "p1"), wake(), turnOfKind("user", conversation.SyntheticKindWakeCanceled, mmtools.WakeCanceledUserMessage, ""), wake()},
 			wantWakes: 2,
 		},
 	}
@@ -692,6 +694,7 @@ func TestNewMessageSteersThreadWake(t *testing.T) {
 			blocks, err := conversation.UnmarshalBlocks(invokerTurns[1].Content)
 			require.NoError(t, err)
 			require.Equal(t, mmtools.WakeCanceledUserMessage, blocks[0].Text)
+			require.Equal(t, conversation.SyntheticKindWakeCanceled, blocks[0].SyntheticKind)
 			if result.Conversation.ID != env.conv.ID {
 				requesterTurns, turnsErr := env.convStore.GetTurnsForConversation(env.conv.ID)
 				require.NoError(t, turnsErr)

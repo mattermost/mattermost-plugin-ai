@@ -198,7 +198,7 @@ func (c *Conversations) getOrCreateConversation(params conversation.GetOrCreateP
 		return nil, err
 	}
 	if c.cancelThreadWake(threadWakeMarkerKey(params.RootPostID, params.BotID)) {
-		if err := c.convService.AppendSyntheticUserTurn(result.Conversation.ID, mmtools.WakeCanceledUserMessage); err != nil {
+		if err := c.convService.AppendSyntheticUserTurn(result.Conversation.ID, conversation.SyntheticKindWakeCanceled, mmtools.WakeCanceledUserMessage); err != nil {
 			c.mmClient.LogError("wait_for_async_work: failed to record canceled wait", "error", err, "conversation_id", result.Conversation.ID)
 		}
 	}
@@ -349,7 +349,7 @@ func (c *Conversations) ResumeConversation(ctx context.Context, job WakeJob) (er
 		return fmt.Errorf("failed to create wake response post: %w", err)
 	}
 
-	if err := c.convService.AppendSyntheticUserTurn(conv.ID, mmtools.WakeUserMessage); err != nil {
+	if err := c.convService.AppendSyntheticUserTurn(conv.ID, conversation.SyntheticKindWake, mmtools.WakeUserMessage); err != nil {
 		c.failResponsePlaceholder(wakePost, user.Locale)
 		return err
 	}
@@ -394,7 +394,7 @@ func countConsecutiveWakes(turns []store.Turn) int {
 			break
 		}
 		blocks, err := conversation.UnmarshalBlocks(turn.Content)
-		if err == nil && len(blocks) == 1 && blocks[0].Text == mmtools.WakeUserMessage {
+		if err == nil && len(blocks) == 1 && blocks[0].SyntheticKind == conversation.SyntheticKindWake {
 			count++
 		}
 	}

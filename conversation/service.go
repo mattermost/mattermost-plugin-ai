@@ -344,15 +344,24 @@ func (s *Service) GetOrCreateConversation(params GetOrCreateParams) (*GetOrCreat
 
 // AppendSyntheticUserTurn appends a user turn with no backing Mattermost
 // post: included in the LLM context on the next request, invisible in the
-// thread. Used to re-wake an agent (wait_for_async_work).
-func (s *Service) AppendSyntheticUserTurn(conversationID, message string) error {
-	_, err := s.appendUserTurn(conversationID, message, nil, nil, "")
+// thread. Used to re-wake an agent (wait_for_async_work). The kind is persisted
+// on the text block so callers can identify the turn without matching its text.
+func (s *Service) AppendSyntheticUserTurn(conversationID, kind, message string) error {
+	blocks := textBlocks(message)
+	for i := range blocks {
+		blocks[i].SyntheticKind = kind
+	}
+	_, err := s.appendUserTurnBlocks(conversationID, blocks, nil)
 	return err
 }
 
 // appendUserTurn creates a new user turn at the next available sequence number.
 func (s *Service) appendUserTurn(conversationID, message string, postID *string, fileIDs []string, sessionID string) (string, error) {
-	content, err := marshalBlocks(userBlocksWithAttachments(message, fileIDs, mmapi.WithFilePolicy(s.mmClient, sessionID)))
+	return s.appendUserTurnBlocks(conversationID, userBlocksWithAttachments(message, fileIDs, mmapi.WithFilePolicy(s.mmClient, sessionID)), postID)
+}
+
+func (s *Service) appendUserTurnBlocks(conversationID string, blocks []ContentBlock, postID *string) (string, error) {
+	content, err := marshalBlocks(blocks)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal user message: %w", err)
 	}
