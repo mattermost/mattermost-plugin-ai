@@ -13,6 +13,7 @@ interface PluginState {
     pinnedPromptIds: string[] | null;
     showCustomPromptsModal: boolean;
     linkPolicy: LinkPolicy;
+    htmlArtifactsEnabled?: boolean;
 }
 
 type AppState = GlobalState & {
@@ -34,3 +35,6 @@ export const getShowCustomPromptsModal = (state: AppState): boolean =>
 
 export const getLinkPolicy = (state: AppState): LinkPolicy =>
     state[`plugins-${manifest.id}`]?.linkPolicy ?? PLAIN_TEXT_LINK_POLICY;
+
+export const getHTMLArtifactsEnabled = (state: AppState): boolean =>
+    Boolean(state[`plugins-${manifest.id}`]?.htmlArtifactsEnabled);

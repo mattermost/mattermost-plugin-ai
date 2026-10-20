@@ -252,13 +252,14 @@ describe('fetchAndStoreBots', () => {
     test('dispatches the bots and feature flags, and returns the bots', async () => {
         const bots = [makeBot('a')];
         const linkPolicy = {kind: 'allowlist', allowedDomains: [{host: 'example.com', wildcard: false}]};
-        mockGetAIBots.mockResolvedValue({bots, searchEnabled: true, allowUnsafeLinks: true, linkPolicy});
+        mockGetAIBots.mockResolvedValue({bots, searchEnabled: true, allowUnsafeLinks: true, linkPolicy, htmlArtifactsEnabled: true});
         const dispatch = jest.fn();
 
         await expect(fetchAndStoreBots(dispatch)).resolves.toBe(bots);
 
         expect(dispatch).toHaveBeenCalledWith({type: BotsHandler, bots});
         expect(dispatch).toHaveBeenCalledWith({type: SetLinkPolicyHandler, linkPolicy});
+        expect(dispatch).toHaveBeenCalledWith({type: 'SET_HTML_ARTIFACTS_ENABLED', htmlArtifactsEnabled: true});
     });
 
     test('falls back to the plain text link policy when the server omits linkPolicy', async () => {

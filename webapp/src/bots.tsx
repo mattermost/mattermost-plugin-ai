@@ -88,6 +88,11 @@ export async function fetchAndStoreBots(dispatch: Dispatch): Promise<LLMBot[] | 
         linkPolicy: response.linkPolicy,
     });
 
+    dispatch({
+        type: 'SET_HTML_ARTIFACTS_ENABLED',
+        htmlArtifactsEnabled: Boolean(response.htmlArtifactsEnabled),
+    });
+
     return response.bots;
 }
 

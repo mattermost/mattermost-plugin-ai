@@ -26,6 +26,7 @@ export async function setupRedux(registry: any, store: WebappStore) {
         bots,
         selectedPostId,
         linkPolicy,
+        htmlArtifactsEnabled,
         customPrompts,
         pinnedPromptIds,
         showCustomPromptsModal,
@@ -81,6 +82,15 @@ function linkPolicy(state: LinkPolicy = PLAIN_TEXT_LINK_POLICY, action: any) {
     switch (action.type) {
     case SetLinkPolicyHandler:
         return action.linkPolicy ?? PLAIN_TEXT_LINK_POLICY;
+    default:
+        return state;
+    }
+}
+
+function htmlArtifactsEnabled(state = false, action: any) {
+    switch (action.type) {
+    case 'SET_HTML_ARTIFACTS_ENABLED':
+        return action.htmlArtifactsEnabled;
     default:
         return state;
     }

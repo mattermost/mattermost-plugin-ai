@@ -29,16 +29,30 @@ type Config = PluginConfig;
 
 /** Minimal fields from GET /ai_bots used for the default-bot dropdown. */
 type RuntimeBotOption = {
+    id: string;
     username: string;
     displayName: string;
 };
 
-// The server answers with the first bot when the configured default is empty or unknown.
-export const effectiveDefaultBotName = (configured: string, bots: RuntimeBotOption[]) => {
-    if (bots.some((bot) => bot.username === configured)) {
-        return configured;
+// Resolves an agent reference to a bot ID. The ID wins; the legacy username is
+// only consulted when the ID is empty (installs that haven't migrated yet).
+const resolveBotID = (id: string | undefined, legacyName: string | undefined, bots: RuntimeBotOption[]) => {
+    if (id) {
+        return bots.find((bot) => bot.id === id)?.id ?? '';
     }
-    return bots[0]?.username ?? '';
+    if (legacyName) {
+        return bots.find((bot) => bot.username === legacyName)?.id ?? '';
+    }
+    return '';
+};
+
+// The server answers with the first bot only when no default is configured; a
+// configured default that is unavailable fails requests, so it resolves to ''.
+export const effectiveDefaultBotID = (configuredID: string | undefined, legacyName: string | undefined, bots: RuntimeBotOption[]) => {
+    if (configuredID || legacyName) {
+        return resolveBotID(configuredID, legacyName, bots);
+    }
+    return bots[0]?.id ?? '';
 };
 
 type Props = {
@@ -86,6 +100,8 @@ const LoadingContainer = styled.div`
 const defaultConfig: Config = {
     services: [],
     bots: [],
+    defaultBotUserID: '',
+    transcriptBotUserID: '',
     defaultBotName: '',
     transcriptBackend: '',
     telemetryOutput: 'off',
@@ -97,6 +113,7 @@ const defaultConfig: Config = {
     allowedUpstreamHostnames: '',
     allowUnsafeLinks: false,
     allowedLinkDomains: '',
+    enableHTMLArtifacts: false,
     enableChannelMentionToolCalling: false,
     allowNativeWebSearchInChannels: false,
     embeddingSearchConfig: {
@@ -305,6 +322,7 @@ const Config = (props: Props) => {
 
     // Initialize with default empty config if not provided
     const mcpConfig = value.mcp || defaultConfig.mcp;
+    const defaultBotID = effectiveDefaultBotID(value.defaultBotUserID, value.defaultBotName, runtimeBots);
 
     return (
         <ConfigContainer>
@@ -343,11 +361,12 @@ const Config = (props: Props) => {
                     )}
                     <SelectionItem
                         label={intl.formatMessage({defaultMessage: 'Default bot'})}
-                        value={effectiveDefaultBotName(value.defaultBotName, runtimeBots)}
-                        onChange={(defaultBotName) => {
-                            updateConfig({defaultBotName});
+                        value={defaultBotID}
+                        error={runtimeBots.length > 0 && !defaultBotID ? intl.formatMessage({defaultMessage: 'The configured default agent is not available. Requests that do not choose an agent will fail until you select another one.'}) : ''}
+                        onChange={(defaultBotUserID) => {
+                            updateConfig({defaultBotUserID, defaultBotName: ''});
                         }}
-                        options={runtimeBots.map((bot) => ({value: bot.username, label: bot.displayName}))}
+                        options={runtimeBots.map((bot) => ({value: bot.id, label: bot.displayName}))}
                     />
                     <TextItem
                         label={intl.formatMessage({defaultMessage: 'Allowed Upstream Hostnames (csv)'})}
@@ -376,6 +395,22 @@ const Config = (props: Props) => {
                             placeholder={'example.com, *.mydomain.com'}
                         />
                     )}
+                    <BooleanItem
+                        label={
+                            <Horizontal>
+                                <FormattedMessage defaultMessage='Enable HTML artifacts'/>
+                                <Tag
+                                    type='info'
+                                    label={<FormattedMessage defaultMessage='EXPERIMENTAL'/>}
+                                />
+                            </Horizontal>
+                        }
+                        value={Boolean(value.enableHTMLArtifacts)}
+                        onChange={(to) => {
+                            updateConfig({enableHTMLArtifacts: to});
+                        }}
+                        helpText={intl.formatMessage({defaultMessage: 'When enabled, HTML files that agents attach to their replies are rendered as sandboxed interactive artifacts that run only when a viewer clicks Run. Artifacts have no access to the user\'s Mattermost session, and they read the viewer\'s basic profile only after the viewer explicitly allows it. Network access is blocked, fully only in Chromium 152 or later; in other browsers an artifact can still send its content, any profile data the viewer allowed, and anything the viewer types into it to external sites via WebRTC. An artifact can also place content on the clipboard that differs from what it displays, so treat anything copied from an artifact as untrusted. The Site URL must match the address users open Mattermost at, or artifacts fail to load. Enable only where these risks are acceptable.'})}
+                    />
                     <BooleanItem
                         label={
                             <Horizontal>
