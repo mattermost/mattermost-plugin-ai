@@ -460,10 +460,6 @@ func (p *MMPostStreamService) streamToPostImpl(ctx context.Context, stream *llm.
 				isDM = mmapi.IsDMWith(requesterUserID, ch)
 			}
 			acc = newTurnAccumulator(convID, post.Id, existingAnchorID, isContinuation, isDM)
-		} else {
-			// Every flow that streams into a bot post is expected to own a
-			// conversation; without one no assistant turn is persisted.
-			p.mmClient.LogWarn("Streaming to post without a conversation_id; no assistant turn will be persisted", "post_id", post.Id)
 		}
 	}
 
