@@ -14,9 +14,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/mattermost/mattermost-plugin-agents/v2/audit"
+	"github.com/mattermost/mattermost-plugin-agents/v2/conversation"
+	"github.com/mattermost/mattermost-plugin-agents/v2/conversations"
 	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 	"github.com/mattermost/mattermost-plugin-agents/v2/meetings"
+	"github.com/mattermost/mattermost-plugin-agents/v2/mmapi"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmapi/mocks"
 	"github.com/mattermost/mattermost-plugin-agents/v2/store"
 	"github.com/mattermost/mattermost-plugin-agents/v2/streaming"
@@ -301,10 +304,11 @@ func TestToolApprovalAuditRecords(t *testing.T) {
 		endpoint string
 		event    string
 		// conversationOwner seeds a conversation entity owned by that user.
-		// When empty, the requester owns the conversation; the service then
-		// fails its own conversation lookup with a 500 after the handler and
-		// service enrichment already ran.
+		// When empty, the requester owns the conversation. It has no tool
+		// turns, so the service rejects a tool_call click as stale and treats
+		// a tool_result click as an already-recorded no-op.
 		conversationOwner   string
+		omitConversation    bool
 		body                string
 		expectedStatus      int
 		expectedAcceptedIDs []string // nil asserts the parameter is absent
@@ -315,7 +319,7 @@ func TestToolApprovalAuditRecords(t *testing.T) {
 			endpoint:            "/post/" + postID + "/tool_call",
 			event:               AuditEventToolCallApproval,
 			body:                `{"accepted_tool_ids":["tool-use-1","tool-use-2"]}`,
-			expectedStatus:      http.StatusInternalServerError,
+			expectedStatus:      http.StatusBadRequest,
 			expectedAcceptedIDs: []string{"tool-use-1", "tool-use-2"},
 			expectAgentID:       true,
 		},
@@ -328,11 +332,19 @@ func TestToolApprovalAuditRecords(t *testing.T) {
 			expectedStatus:    http.StatusForbidden,
 		},
 		{
+			name:             "tool_call on a post whose conversation is missing fails closed with 403",
+			endpoint:         "/post/" + postID + "/tool_call",
+			event:            AuditEventToolCallApproval,
+			omitConversation: true,
+			body:             `{"accepted_tool_ids":["tool-use-1"]}`,
+			expectedStatus:   http.StatusForbidden,
+		},
+		{
 			name:                "tool_result reaching the service records the decision objects",
 			endpoint:            "/post/" + postID + "/tool_result",
 			event:               AuditEventToolResultApproval,
 			body:                `{"accepted_tool_ids":["tool-use-1"]}`,
-			expectedStatus:      http.StatusInternalServerError,
+			expectedStatus:      http.StatusOK,
 			expectedAcceptedIDs: []string{"tool-use-1"},
 			expectAgentID:       true,
 		},
@@ -355,11 +367,19 @@ func TestToolApprovalAuditRecords(t *testing.T) {
 				owner = testUserID
 			}
 			post.AddProp(streaming.ConversationIDProp, conversationID)
-			e.conversationStore.conversations[conversationID] = &store.Conversation{
-				ID:     conversationID,
-				UserID: owner,
-				BotID:  testBotUserID,
+			convStore := newMockConvServiceStore()
+			if !test.omitConversation {
+				convStore.conversations[conversationID] = &store.Conversation{
+					ID:     conversationID,
+					UserID: owner,
+					BotID:  testBotUserID,
+				}
 			}
+			mmClient := mmapi.NewClient(e.client)
+			convService := conversation.NewService(convStore, e.api.prompts, mmClient, e.bots)
+			e.api.SetConversationService(convService)
+			e.api.conversationsService = conversations.New(e.api.prompts, mmClient, nil, e.api.contextBuilder, e.bots, nil, nil, nil, e.config)
+			e.api.conversationsService.SetConversationService(convService)
 
 			e.mockAPI.On("GetPost", postID).Return(post, nil)
 			e.mockAPI.On("GetChannel", channelID).Return(&model.Channel{
@@ -395,8 +415,12 @@ func TestToolApprovalAuditRecords(t *testing.T) {
 					"service-layer enrichment must reach the same record via the request context")
 			}
 
-			assert.Equal(t, model.AuditStatusFail, rec.Status)
-			assert.Equal(t, test.expectedStatus, rec.Error.Code)
+			if test.expectedStatus == http.StatusOK {
+				assert.Equal(t, model.AuditStatusSuccess, rec.Status)
+			} else {
+				assert.Equal(t, model.AuditStatusFail, rec.Status)
+				assert.Equal(t, test.expectedStatus, rec.Error.Code)
+			}
 		})
 	}
 }
