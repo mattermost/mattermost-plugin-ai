@@ -1,7 +1,7 @@
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import MattermostContainer from 'helpers/mmcontainer';
 import { MattermostPage } from 'helpers/mm';
-import { expandToolActivity, expectNoToolActivity, expectToolActivityCurrent } from 'helpers/llmbot-post';
+import { TOOL_CARD_SELECTOR, expandToolActivity, expectNoToolActivity, expectToolActivityCurrent } from 'helpers/llmbot-post';
 import {
     OpenAIMockContainer,
     RunOpenAIMocks,
@@ -215,9 +215,8 @@ test.describe('Dynamic MCP Cross-Turn Derivation (Mocked LLM)', () => {
         // The ask-policy business tool needs a decision, so its approval card
         // renders without expanding; the meta-tools that auto-ran before it
         // are folded away, with only the newest naming the collapsed row.
-        // Wait for Accept first so the header is no longer this same label.
+        await expect(firstBotPost.locator(TOOL_CARD_SELECTOR).getByText(businessToolLabel, {exact: true})).toBeVisible({timeout: 45000});
         await expectToolActivityCurrent(firstBotPost, loadToolLabel);
-        await expect(firstBotPost.getByText(businessToolLabel, {exact: true})).toBeVisible();
         await expect(firstBotPost.getByText(searchToolsLabel, {exact: true})).toHaveCount(0);
 
         const firstRounds = await expandToolActivity(firstBotPost);
@@ -257,7 +256,7 @@ test.describe('Dynamic MCP Cross-Turn Derivation (Mocked LLM)', () => {
         // No meta-tool prelude this time. The only round is the one awaiting a
         // decision, which renders in full below the activity area, so there is
         // no activity area at all.
-        await expect(secondBotPost.getByText(businessToolLabel, {exact: true})).toBeVisible({timeout: 45000});
+        await expect(secondBotPost.locator(TOOL_CARD_SELECTOR).getByText(businessToolLabel, {exact: true})).toBeVisible({timeout: 45000});
         await expectNoToolActivity(secondBotPost);
 
         // The deriver restored the tool, so the second turn re-runs neither

@@ -8,6 +8,9 @@ import styled from 'styled-components';
 
 import {GlobalState} from '@mattermost/types/store';
 
+import {ErrorMessage} from '@mattermost/compass-ui/components/error-message';
+import {SectionNotice} from '@mattermost/compass-ui/components/section-notice';
+
 import {doPostbackSummary, doRegenerate, doStopGenerating} from '@/client';
 import {useIsLicensedFor} from '@/license';
 import {PluginWebSocketMessage} from '@/types';
@@ -19,9 +22,8 @@ import {isValidId} from '@/utils/ids';
 
 import {ServerToolUse} from '@/types/conversation';
 
-import {SearchSources, parseSearchSources} from '../search_sources';
 import {needsViewerDecision, selectDecisionToolCalls} from '../tool_decisions';
-import {ToolApprovalStage, ToolCall} from '../tool_types';
+import {ToolApprovalStage, ToolCall, ToolCallStatus} from '../tool_types';
 import {Annotation} from '../citations/types';
 
 import {
@@ -36,8 +38,6 @@ import {extractPermalinkData} from './permalink_data';
 import {FoldingText, useFoldingText} from './folding_text';
 import {RoundView} from './round_view';
 import ToolActivityDisplay from './tool_activity_display';
-
-const SearchResultsPropKey = 'search_results';
 
 // Sentinel id for the in-progress streaming round; persisted rounds use turn ids.
 const LIVE_ROUND_ID = 'live';
@@ -618,13 +618,6 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
     // Accept after finalizeTurn has already persisted the pending turn.
     const anchorStage: ToolApprovalStage = livePendingForRequester ? 'call' : persistedAnchorStage;
 
-    // Parsed defensively: search_results is a free-form post prop, so a
-    // malformed value yields an empty list instead of throwing during render.
-    const searchSources = useMemo(
-        () => parseSearchSources(props.post.props?.[SearchResultsPropKey]),
-        [props.post.props],
-    );
-
     const toggleReasoning = useCallback((roundId: string, collapsed: boolean) => {
         setExpandedReasoning((prev) => ({...prev, [roundId]: !collapsed}));
     }, []);
@@ -634,6 +627,43 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
     const awaitingDecision = anchorRound !== null &&
         needsViewerDecision(anchorRound.toolCalls, anchorStage, mayBeRequester);
     const pendingDecisionRoundId = awaitingDecision ? anchorRound.id : undefined; // eslint-disable-line no-undefined
+
+    // Onlookers owe no decision, but should see that the requester does instead
+    // of an empty post. Tool calls reach them redacted; only statuses are used.
+    const requesterUserId = knownConversation?.user_id ?? (conversationId ? undefined : legacyRequester); // eslint-disable-line no-undefined
+    const isOnlooker = Boolean(requesterUserId) && requesterUserId !== currentUserId;
+    const isLivePending = lastRendered?.id === LIVE_ROUND_ID &&
+        selectDecisionToolCalls(lastRendered.toolCalls, 'call', true).length > 0;
+    let onlookerWaitRound: Round | null = null;
+    let onlookerWaitStage: ToolApprovalStage = 'done';
+    if (isLivePending) {
+        onlookerWaitRound = lastRendered;
+        onlookerWaitStage = 'call';
+    } else if (isPersistedAnchor) {
+        onlookerWaitRound = lastRendered;
+        onlookerWaitStage = persistedAnchorStage;
+    }
+    const awaitingRequester = isOnlooker && !isGenerationInProgress && onlookerWaitRound !== null &&
+        needsViewerDecision(onlookerWaitRound.toolCalls, onlookerWaitStage, true);
+    const requesterUsername = useSelector<GlobalState, string | undefined>(
+        (state) => (requesterUserId ? state.entities.users.profiles?.[requesterUserId]?.username : undefined), // eslint-disable-line no-undefined
+    );
+
+    // A question to the requester is answered, not approved.
+    const awaitingAnswer = awaitingRequester && onlookerWaitRound !== null && onlookerWaitStage === 'call' &&
+        onlookerWaitRound.toolCalls.some((call) => Boolean(call.user_interaction) && call.status === ToolCallStatus.Pending);
+    let awaitingRequesterMessage: string;
+    if (awaitingAnswer) {
+        awaitingRequesterMessage = requesterUsername ? intl.formatMessage(
+            {defaultMessage: 'Waiting for an answer from @{username}'},
+            {username: requesterUsername},
+        ) : intl.formatMessage({defaultMessage: 'Waiting for an answer from the requester'});
+    } else {
+        awaitingRequesterMessage = requesterUsername ? intl.formatMessage(
+            {defaultMessage: 'Waiting for @{username} to approve tool use'},
+            {username: requesterUsername},
+        ) : intl.formatMessage({defaultMessage: 'Waiting for the requester to approve tool use'});
+    }
 
     const reasoningLoadingRoundId = isReasoningLoading ? LIVE_ROUND_ID : undefined; // eslint-disable-line no-undefined
     const activity = useMemo(
@@ -646,6 +676,19 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
     const answerText = activity.answerRounds.map((round) => round.text).filter((text) => text !== '').join('\n\n');
     const foldingText = useFoldingText(answerText, activity.items.length > 0 && !activityExpanded);
 
+    // An onlooker's waiting round keeps its real stage so its cards can show
+    // what the requester owes; onlookers never get decision controls.
+    const onlookerWaitRoundId = awaitingRequester ? onlookerWaitRound?.id ?? null : null;
+    const roundApprovalStage = useCallback((roundId: string): ToolApprovalStage => {
+        if (roundId === anchorRoundId) {
+            return anchorStage;
+        }
+        if (roundId === onlookerWaitRoundId) {
+            return onlookerWaitStage;
+        }
+        return 'done';
+    }, [anchorRoundId, anchorStage, onlookerWaitRoundId, onlookerWaitStage]);
+
     const renderRound = useCallback((round: Round) => {
         const isLiveRound = round.id === LIVE_ROUND_ID;
         return (
@@ -655,7 +698,7 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
                 postID={props.post.id}
                 conversationID={conversationId}
                 channelID={props.post.channel_id}
-                approvalStage={round.id === anchorRoundId ? anchorStage : 'done'}
+                approvalStage={roundApprovalStage(round.id)}
                 canApprove={requesterIsCurrentUser}
                 canExpand={requesterIsCurrentUser}
                 showCursor={generating && isLiveRound && !precontent}
@@ -668,8 +711,7 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
         props.post.id,
         props.post.channel_id,
         conversationId,
-        anchorRoundId,
-        anchorStage,
+        roundApprovalStage,
         requesterIsCurrentUser,
         generating,
         precontent,
@@ -685,29 +727,35 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
         (precontent && (generating || renderedRounds.length === 0)) ||
         (conversationLoading && !generating && renderedRounds.length === 0);
 
+    let statusMessage: string | undefined;
+    if (awaitingRequester) {
+        statusMessage = awaitingRequesterMessage;
+    } else if (showWorking) {
+        statusMessage = precontentMessage;
+    }
+
     return (
         <PostBody
             data-testid='llm-bot-post'
         >
-            {error && <div className='error'>{error}</div>}
+            {error && <ErrorMessage message={error}/>}
             {conversationError && !generating && (
-                <div className='error'>
-                    <FormattedMessage defaultMessage='Failed to load conversation data'/>
-                </div>
+                <ErrorMessage message={<FormattedMessage defaultMessage='Failed to load conversation data'/>}/>
             )}
             {isThreadSummaryPost && permalinkView &&
             <>
                 {permalinkView}
             </>
             }
-            {(showWorking || activity.items.length > 0) && (
+            {(showWorking || awaitingRequester || activity.items.length > 0) && (
                 <ToolActivityDisplay
                     activity={activity}
                     expanded={activityExpanded}
                     onToggleExpanded={setActivityExpanded}
-                    inProgress={isGenerationInProgress || awaitingDecision}
+                    inProgress={isGenerationInProgress || awaitingDecision || awaitingRequester}
                     working={isGenerationInProgress || progressPhase !== null}
-                    statusMessage={showWorking ? precontentMessage : undefined} // eslint-disable-line no-undefined
+                    statusMessage={statusMessage}
+                    statusWaiting={awaitingRequester}
                     renderRound={renderRound}
                 />
             )}
@@ -721,15 +769,12 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
             <AnswerArea $afterActivity={activity.items.length > 0}>
                 {activity.answerRounds.map(renderRound)}
             </AnswerArea>
-            {searchSources.length > 0 && (
-                <SearchSources
-                    sources={searchSources}
-                />
-            )}
             { showPostbackButton &&
-            <PostSummaryHelpMessage data-testid='llm-bot-post-summary-help'>
-                <FormattedMessage defaultMessage='Would you like to post this summary to the original call thread? You can also ask Agents to make changes.'/>
-            </PostSummaryHelpMessage>
+            <PostSummaryHelpMessage
+                data-testid='llm-bot-post-summary-help'
+                type='hint'
+                title={<FormattedMessage defaultMessage='Would you like to post this summary to the original call thread? You can also ask Agents to make changes.'/>}
+            />
             }
             { showControlsBar &&
             <ControlsBarComponent
@@ -756,13 +801,6 @@ const AnswerArea = styled.div<{$afterActivity: boolean}>`
     }
 `;
 
-const PostSummaryHelpMessage = styled.div`
-    font-size: 14px;
-    font-style: italic;
-    font-weight: 400;
-    line-height: 20px;
-    border-top: 1px solid rgba(var(--center-channel-color-rgb), 0.12);
-    padding-top: 8px;
-    padding-bottom: 8px;
+const PostSummaryHelpMessage = styled(SectionNotice)`
     margin-top: 16px;
 `;

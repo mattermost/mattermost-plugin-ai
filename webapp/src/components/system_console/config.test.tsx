@@ -7,7 +7,7 @@ import {IntlProvider} from 'react-intl';
 
 import {getAIBots, getPluginConfig, savePluginConfig} from '@/client';
 
-import Config from './config';
+import Config, {effectiveDefaultBotName} from './config';
 
 jest.mock('react-intl', () => {
     const actual = jest.requireActual('react-intl');
@@ -55,15 +55,21 @@ jest.mock('./services', () => ({
     firstNewService: {id: '', name: 'OpenAI Service'},
 }));
 
+type MockMCPConfig = {servers: Array<{id?: string; name: string}> | null};
+const mockMCPServers: {onChange?: (update: MockMCPConfig | ((current: MockMCPConfig) => MockMCPConfig)) => void} = {};
+
 jest.mock('./mcp_servers', () => ({
     __esModule: true,
-    default: ({mcpConfig}: {mcpConfig: {servers: Array<{id?: string; name: string}> | null}}) => (
-        <div>
-            {(mcpConfig.servers ?? []).map((s, i) => (
-                <span key={i}>{`mcp:${s.name}:${s.id || 'unsaved'}`}</span>
-            ))}
-        </div>
-    ),
+    default: ({mcpConfig, onChange}: {mcpConfig: MockMCPConfig; onChange: typeof mockMCPServers.onChange}) => {
+        mockMCPServers.onChange = onChange;
+        return (
+            <div>
+                {(mcpConfig.servers ?? []).map((s, i) => (
+                    <span key={i}>{`mcp:${s.name}:${s.id || 'unsaved'}`}</span>
+                ))}
+            </div>
+        );
+    },
 }));
 
 jest.mock('./embedding_search/embedding_search_panel', () => ({
@@ -179,6 +185,32 @@ describe('Config save flow', () => {
     });
 });
 
+describe('Config MCP updates', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        (getPluginConfig as jest.Mock).mockResolvedValue(loadedConfig);
+        (getAIBots as jest.Mock).mockResolvedValue({bots: []});
+    });
+
+    it('applies an update function to the configuration as it is when the update lands', async () => {
+        renderConfig();
+        await screen.findByText('mcp:Jira:unsaved');
+
+        act(() => {
+            mockMCPServers.onChange?.({servers: [...loadedConfig.mcp.servers, {name: 'GitHub'}]});
+        });
+        act(() => {
+            mockMCPServers.onChange?.((current) => ({
+                ...current,
+                servers: (current.servers ?? []).map((s) => (s.name === 'Jira' ? {...s, name: 'Jira Cloud'} : s)),
+            }));
+        });
+
+        expect(screen.getByText('mcp:Jira Cloud:unsaved')).toBeTruthy();
+        expect(screen.getByText('mcp:GitHub:unsaved')).toBeTruthy();
+    });
+});
+
 describe('Config license gating', () => {
     const {useIsLicensedFor} = jest.requireMock('@/license') as {useIsLicensedFor: jest.Mock};
 
@@ -233,5 +265,21 @@ describe('Config license gating', () => {
 
         expect(trueRadioFor('Enable Token Usage Logging').disabled).toBe(false);
         expect(trueRadioFor('Allow native web search in channels').disabled).toBe(false);
+    });
+});
+
+describe('effectiveDefaultBotName', () => {
+    const bots = [
+        {username: 'first', displayName: 'First'},
+        {username: 'second', displayName: 'Second'},
+    ];
+
+    it.each([
+        {name: 'a configured bot', configured: 'second', bots, expected: 'second'},
+        {name: 'an empty default', configured: '', bots, expected: 'first'},
+        {name: 'a removed bot', configured: 'gone', bots, expected: 'first'},
+        {name: 'no bots', configured: '', bots: [], expected: ''},
+    ])('resolves $name the way the server does', ({configured, bots: available, expected}) => {
+        expect(effectiveDefaultBotName(configured, available)).toBe(expected);
     });
 });

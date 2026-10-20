@@ -24,6 +24,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/toolrunner"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -149,6 +150,13 @@ func (c *Conversations) buildConversationContextWithTools(
 }
 
 func (c *Conversations) MessageHasBeenPosted(pluginContext *plugin.Context, post *model.Post) {
+	// Our own posts (response placeholders, streamed replies) never trigger a
+	// response. Return before starting a span so each turn does not leave an
+	// extra, unlinked trace behind for its placeholder post.
+	if c.bots.IsAnyBot(post.UserId) {
+		return
+	}
+
 	ctx := context.Background()
 	if pluginContext != nil {
 		ctx = auth.WithSessionID(ctx, pluginContext.SessionId)
@@ -279,6 +287,7 @@ func (c *Conversations) handleMentions(ctx context.Context, bot *bots.Bot, post 
 		return fmt.Errorf("unable to create response placeholder: %w", placeholderErr)
 	}
 	progress := newResponseProgressReporter(ctx, c.mmClient, responsePost)
+	defer progress.Flush()
 	progress.Advance(responseProgressCheckingMCP)
 	defer func() {
 		if err != nil {
@@ -363,8 +372,21 @@ func (c *Conversations) handleMentionViaConversation(
 		c.applyBotChannelAutoEverywhereToolFilter(llmContext)
 	}
 
-	ctx, runSpan := c.startAgentRunSpan(ctx, convResult.Conversation.ID, convResult.UserTurnID)
-	defer runSpan.End()
+	ctx, runSpan := c.startAgentRunSpan(ctx, agentRunInfo{
+		convID:     convResult.Conversation.ID,
+		userTurnID: convResult.UserTurnID,
+		bot:        bot,
+		post:       post,
+		response:   responsePost,
+	}, progress)
+	// Ownership of runSpan passes to the streaming goroutine once streaming
+	// starts, so the run's duration covers the whole response.
+	runHandedOff := false
+	defer func() {
+		if !runHandedOff {
+			runSpan.End()
+		}
+	}()
 
 	threadData, threadErr := mmapi.GetThreadData(c.mmClient, responsePost.RootId)
 	if threadErr != nil {
@@ -410,13 +432,16 @@ func (c *Conversations) handleMentionViaConversation(
 	stream := decorateStreamWithWebSearchAnnotations(result.Stream, llmContext)
 	stream = c.decorateStreamWithCreatedFiles(ctx, bot, stream, responsePost, nil, llmContext, llmContext)
 
-	if streamErr := c.streamToExistingPost(ctx, stream, responsePost, postingUser, channel, false); streamErr != nil {
+	if streamErr := c.streamToExistingPost(ctx, stream, responsePost, postingUser, channel, false, func() { runSpan.End() }); streamErr != nil {
 		return fmt.Errorf("unable to stream response: %w", streamErr)
 	}
+	runHandedOff = true
 
 	if convResult.IsNew {
+		titleCtx := telemetry.DetachContext(ctx)
 		go func() {
 			if genErr := c.convService.GenerateTitle(
+				titleCtx,
 				convResult.Conversation.ID,
 				bot.LLM(),
 				post.Message,
@@ -447,6 +472,7 @@ func (c *Conversations) handleDMs(ctx context.Context, bot *bots.Bot, channel *m
 		return fmt.Errorf("unable to create response placeholder: %w", placeholderErr)
 	}
 	progress := newResponseProgressReporter(ctx, c.mmClient, responsePost)
+	defer progress.Flush()
 	progress.Advance(responseProgressCheckingMCP)
 	defer func() {
 		if err != nil {
@@ -466,6 +492,7 @@ func (c *Conversations) handleDMViaConversation(ctx context.Context, bot *bots.B
 	if webSearchParams := c.extractWebSearchContext(post); len(webSearchParams) > 0 {
 		extraOpts = append(extraOpts, c.contextBuilder.WithLLMContextParameters(webSearchParams))
 	}
+	extraOpts = append(extraOpts, c.threadConversationToolOptions(bot, postingUser, post)...)
 	// Build the context once WITH tools so the system prompt can reference them.
 	llmContext := c.buildConversationContextWithTools(
 		ctx,
@@ -474,19 +501,48 @@ func (c *Conversations) handleDMViaConversation(ctx context.Context, bot *bots.B
 		extraOpts...,
 	)
 	progress.Advance(responseProgressLoadingConversation)
-	ensureDMWebSearchTracking(llmContext)
 
 	convResult, err := c.createOrGetDMConversation(auth.SessionIDFromContext(ctx), bot.GetMMBot().UserId, postingUser, channel, post, llmContext)
 	if err != nil {
 		return fmt.Errorf("unable to create DM conversation: %w", err)
 	}
+
+	return c.streamDMConversation(ctx, bot, channel, postingUser, post, responsePost, progress, llmContext, convResult)
+}
+
+// streamDMConversation runs the tool loop for the conversation's latest user
+// turn and streams the answer onto responsePost.
+func (c *Conversations) streamDMConversation(
+	ctx context.Context,
+	bot *bots.Bot,
+	channel *model.Channel,
+	postingUser *model.User,
+	post, responsePost *model.Post,
+	progress *responseProgressReporter,
+	llmContext *llm.Context,
+	convResult *DMConversationResult,
+) error {
+	ensureDMWebSearchTracking(llmContext)
 	responsePost.AddProp(streaming.ConversationIDProp, convResult.ConversationID)
 	if updateErr := c.mmClient.UpdatePost(responsePost); updateErr != nil {
 		return fmt.Errorf("failed to attach conversation to response placeholder: %w", updateErr)
 	}
 
-	ctx, runSpan := c.startAgentRunSpan(ctx, convResult.ConversationID, convResult.UserTurnID)
-	defer runSpan.End()
+	ctx, runSpan := c.startAgentRunSpan(ctx, agentRunInfo{
+		convID:     convResult.ConversationID,
+		userTurnID: convResult.UserTurnID,
+		bot:        bot,
+		post:       post,
+		response:   responsePost,
+	}, progress)
+	// Ownership of runSpan passes to the streaming goroutine once streaming
+	// starts, so the run's duration covers the whole response.
+	runHandedOff := false
+	defer func() {
+		if !runHandedOff {
+			runSpan.End()
+		}
+	}()
 
 	progress.Advance(responseProgressPreparingRequest)
 	dmStream, err := c.processDMRequest(ctx, convResult.ConversationID, bot.LLM(), llmContext, bot.GetConfig().EffectiveMaxToolTurns(), func() {
@@ -498,13 +554,19 @@ func (c *Conversations) handleDMViaConversation(ctx context.Context, bot *bots.B
 
 	stream := c.decorateStreamWithCreatedFiles(ctx, bot, dmStream.Stream, responsePost, nil, llmContext, llmContext)
 
-	if streamErr := c.streamToExistingPost(ctx, stream, responsePost, postingUser, channel, false); streamErr != nil {
+	if streamErr := c.streamToExistingPost(ctx, stream, responsePost, postingUser, channel, false, func() {
+		dmStream.release()
+		runSpan.End()
+	}); streamErr != nil {
+		dmStream.release()
 		return fmt.Errorf("unable to stream response: %w", streamErr)
 	}
+	runHandedOff = true
 
 	if convResult.IsNew {
+		titleCtx := telemetry.DetachContext(ctx)
 		go func() {
-			if titleErr := c.convService.GenerateTitle(convResult.ConversationID, bot.LLM(), post.Message, llmContext); titleErr != nil {
+			if titleErr := c.convService.GenerateTitle(titleCtx, convResult.ConversationID, bot.LLM(), post.Message, llmContext); titleErr != nil {
 				c.mmClient.LogError("Failed to generate title", "error", titleErr.Error())
 			}
 		}()
@@ -528,19 +590,73 @@ func ensureDMWebSearchTracking(llmContext *llm.Context) {
 	}
 }
 
+// agentRunInfo identifies the turn an agent run answers.
+type agentRunInfo struct {
+	convID     string
+	userTurnID string
+	bot        *bots.Bot
+	post       *model.Post // the user's post
+	response   *model.Post // the bot's response placeholder
+}
+
 // startAgentRunSpan anchors this run's trace to the initiating user turn ID so
 // cross-node resumes can reproduce the same TraceID, and links to the previous
 // user turn (if any) so Tempo renders a clickable jump from this trace back to
-// the prior invocation. The caller must defer End on the returned span.
-func (c *Conversations) startAgentRunSpan(ctx context.Context, convID, userTurnID string) (context.Context, trace.Span) {
-	ctx = telemetry.WithTurnID(ctx, userTurnID)
-	runOpts := []trace.SpanStartOption{trace.WithNewRoot()}
-	if prev, prevErr := c.convService.GetPreviousUserTurn(convID, userTurnID); prevErr == nil && prev != nil {
-		runOpts = append(runOpts, trace.WithLinks(trace.Link{
-			SpanContext: telemetry.SpanContextForTurn(prev.ID),
-		}))
+// the prior invocation. The run is also linked to the span active in ctx (the
+// message hook), and that span records the run's trace ID, so either one leads
+// to the other. Progress events recorded so far move onto the run span. The
+// caller must End the returned span.
+func (c *Conversations) startAgentRunSpan(ctx context.Context, info agentRunInfo, progress *responseProgressReporter) (context.Context, trace.Span) {
+	hookSpan := trace.SpanFromContext(ctx)
+	links := []trace.Link{}
+	if hookSC := hookSpan.SpanContext(); hookSC.IsValid() {
+		links = append(links, trace.Link{SpanContext: hookSC})
 	}
-	return telemetry.Tracer().Start(ctx, "agent run", runOpts...)
+	if prev, prevErr := c.convService.GetPreviousUserTurn(info.convID, info.userTurnID); prevErr == nil && prev != nil {
+		links = append(links, trace.Link{SpanContext: telemetry.SpanContextForTurn(prev.ID)})
+	}
+
+	attrs := []attribute.KeyValue{
+		telemetry.ConversationID.String(info.convID),
+		telemetry.UserTurnID.String(info.userTurnID),
+	}
+	if info.post != nil {
+		attrs = append(attrs,
+			telemetry.PostID.String(info.post.Id),
+			telemetry.ChannelID.String(info.post.ChannelId),
+			telemetry.UserID.String(info.post.UserId),
+		)
+	}
+	if info.response != nil {
+		attrs = append(attrs, telemetry.ResponsePostID.String(info.response.Id))
+		rootID := info.response.RootId
+		if rootID == "" {
+			rootID = info.response.Id
+		}
+		attrs = append(attrs, telemetry.ThreadRootPostID.String(rootID))
+	}
+	if info.bot != nil {
+		attrs = append(attrs,
+			telemetry.AgentID.String(info.bot.GetMMBot().UserId),
+			telemetry.AgentName.String(info.bot.GetMMBot().Username),
+		)
+	}
+
+	ctx = telemetry.WithTurnID(ctx, info.userTurnID)
+	ctx, span := telemetry.Tracer().Start(ctx, "agent run",
+		trace.WithNewRoot(),
+		trace.WithLinks(links...),
+		trace.WithAttributes(attrs...),
+	)
+	hookSpan.SetAttributes(
+		telemetry.ConversationID.String(info.convID),
+		telemetry.UserTurnID.String(info.userTurnID),
+		telemetry.RunTraceID.String(span.SpanContext().TraceID().String()),
+	)
+	if progress != nil {
+		progress.AttachSpan(span)
+	}
+	return ctx, span
 }
 
 // cloneWithAgentMention clones post and rewrites its message to lead with the
@@ -563,7 +679,11 @@ func (c *Conversations) createResponsePlaceholder(botID, requesterUserID string,
 // streamToExistingPost streams an LLM response onto an existing post. With
 // continuation=true it streams a tool-approval follow-up instead (see
 // streamingService.StreamContinuationToPost).
-func (c *Conversations) streamToExistingPost(ctx context.Context, stream *llm.TextStreamResult, post *model.Post, postingUser *model.User, channel *model.Channel, continuation bool) error {
+//
+// onFinish, when non-nil, runs after streaming ends; callers use it to end
+// a span that should cover the whole response. It is not called when an
+// error is returned.
+func (c *Conversations) streamToExistingPost(ctx context.Context, stream *llm.TextStreamResult, post *model.Post, postingUser *model.User, channel *model.Channel, continuation bool, onFinish func()) error {
 	streamCtx, err := c.streamingService.GetStreamingContext(ctx, post.Id)
 	if err != nil {
 		return err
@@ -571,6 +691,9 @@ func (c *Conversations) streamToExistingPost(ctx context.Context, stream *llm.Te
 
 	locale := c.responseLocale(postingUser, channel)
 	go func() {
+		if onFinish != nil {
+			defer onFinish()
+		}
 		defer c.streamingService.FinishStreaming(post.Id)
 		if continuation {
 			c.streamingService.StreamContinuationToPost(streamCtx, stream, post, locale, postingUser.Id)
@@ -583,14 +706,19 @@ func (c *Conversations) streamToExistingPost(ctx context.Context, stream *llm.Te
 }
 
 func (c *Conversations) failResponsePlaceholder(post *model.Post, userLocale string) {
-	message := "Sorry! An error occurred while accessing the LLM. See server logs for details."
+	c.setPlaceholderMessage(post, userLocale, "agents.stream_to_post_access_llm_error",
+		"Sorry! An error occurred while accessing the LLM. See server logs for details.")
+}
+
+func (c *Conversations) setPlaceholderMessage(post *model.Post, userLocale, messageID, fallback string) {
+	message := fallback
 	if c.i18n != nil {
 		T := i18n.LocalizerFunc(c.i18n, c.fallbackLocale(userLocale))
-		message = T("agents.stream_to_post_access_llm_error", message)
+		message = T(messageID, fallback)
 	}
 	post.Message = message
 	if err := c.mmClient.UpdatePost(post); err != nil {
-		c.mmClient.LogError("Failed to update response placeholder after startup error", "error", err)
+		c.mmClient.LogError("Failed to update response placeholder", "error", err)
 	}
 }
 

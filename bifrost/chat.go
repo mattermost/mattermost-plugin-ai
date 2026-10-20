@@ -21,6 +21,7 @@ func (b *LLM) streamChat(ctx context.Context, request llm.CompletionRequest, cfg
 	)
 	bifrostCtx, cancel := schemas.NewBifrostContextWithTimeout(ctx, b.streamingTimeout*10)
 	defer cancel()
+	b.withHopReasoning(bifrostCtx, cfg)
 
 	// Convert to Bifrost request
 	bifrostReq := b.convertToBifrostRequest(request, cfg)
@@ -115,17 +116,14 @@ func (b *LLM) streamChat(ctx context.Context, request llm.CompletionRequest, cfg
 
 				// Check finish reason
 				if choice.FinishReason != nil {
+					span.SetAttributes(telemetry.LLMFinishReason.String(*choice.FinishReason))
 					switch *choice.FinishReason {
 					case "tool_calls":
-						// Convert buffered tool calls in index order
+						// Convert buffered tool calls in index order. They
+						// are emitted once the stream ends: providers send
+						// usage in a chunk after the finish reason, and
+						// returning here would drop it for every tool round.
 						toolCalls = flushToolCallBuffers(toolCallsBuffer, false)
-						if len(toolCalls) > 0 {
-							output <- llm.TextStreamEvent{
-								Type:  llm.EventTypeToolCalls,
-								Value: toolCalls,
-							}
-							return
-						}
 					case "stop":
 						// Emit reasoning end if we accumulated reasoning
 						reasoning.emitEnd(output)
@@ -148,11 +146,20 @@ func (b *LLM) streamChat(ctx context.Context, request llm.CompletionRequest, cfg
 		}
 	}
 
+	// Tool calls completed by a "tool_calls" finish reason.
+	if len(toolCalls) > 0 {
+		output <- llm.TextStreamEvent{
+			Type:  llm.EventTypeToolCalls,
+			Value: toolCalls,
+		}
+		return
+	}
+
 	// Emit any unsent reasoning
 	reasoning.emitEnd(output)
 
 	// If we have pending tool calls, emit them in index order
-	if len(toolCallsBuffer) > 0 && len(toolCalls) == 0 {
+	if len(toolCallsBuffer) > 0 {
 		toolCalls = flushToolCallBuffers(toolCallsBuffer, true)
 		if len(toolCalls) > 0 {
 			output <- llm.TextStreamEvent{
@@ -169,21 +176,29 @@ func (b *LLM) streamChat(ctx context.Context, request llm.CompletionRequest, cfg
 	}
 }
 
-// buildChatReasoning creates a ChatReasoning configuration if reasoning is enabled.
+// buildChatReasoning creates the ChatReasoning configuration for the primary
+// provider, or nil when no reasoning block should be sent.
 func (b *LLM) buildChatReasoning(cfg llm.LanguageModelConfig) *schemas.ChatReasoning {
-	if !b.reasoningEnabled || cfg.ReasoningDisabled || b.thinkingBlockedBySchema(cfg) {
-		return nil
-	}
-	effort, maxTokens, ok := b.providerReasoningBudget(cfg)
+	return b.chatReasoningFor(b.provider, cfg)
+}
+
+// chatReasoningFor creates the ChatReasoning configuration for provider and
+// cfg.Model, or nil when no reasoning block should be sent.
+func (b *LLM) chatReasoningFor(provider schemas.ModelProvider, cfg llm.LanguageModelConfig) *schemas.ChatReasoning {
+	params, ok := b.providerReasoning(provider, cfg)
 	if !ok {
 		return nil
 	}
-	return &schemas.ChatReasoning{Effort: effort, MaxTokens: maxTokens}
+	reasoning := &schemas.ChatReasoning{Effort: params.effort, MaxTokens: params.maxTokens}
+	if params.hideThinking {
+		reasoning.Display = new("omitted")
+	}
+	return reasoning
 }
 
 // convertToBifrostRequest converts our CompletionRequest to Bifrost's format.
 func (b *LLM) convertToBifrostRequest(request llm.CompletionRequest, cfg llm.LanguageModelConfig) *schemas.BifrostChatRequest {
-	messages := b.convertMessages(request.Posts, cfg)
+	messages := b.convertMessages(request.Posts)
 	tools := b.convertTools(request, cfg)
 
 	req := &schemas.BifrostChatRequest{
@@ -223,7 +238,7 @@ func (b *LLM) convertToBifrostRequest(request llm.CompletionRequest, cfg llm.Lan
 }
 
 // convertMessages converts llm.Post messages to Bifrost ChatMessage format.
-func (b *LLM) convertMessages(posts []llm.Post, cfg llm.LanguageModelConfig) []schemas.ChatMessage {
+func (b *LLM) convertMessages(posts []llm.Post) []schemas.ChatMessage {
 	messages := make([]schemas.ChatMessage, 0, len(posts))
 	maxDim := maxImageDimension(b.provider, countRequestImages(posts))
 
@@ -272,11 +287,7 @@ func (b *LLM) convertMessages(posts []llm.Post, cfg llm.LanguageModelConfig) []s
 			// signature arrived, we persist partial reasoning for display only; do
 			// not replay it to Anthropic as an unsigned thinking block. Other
 			// providers may accept unsigned reasoning, so preserve it for them.
-			// Also skip replay when thinking is disabled for this request:
-			// Anthropic rejects input thinking blocks when thinking is off.
-			if post.Reasoning != "" &&
-				(b.provider != schemas.Anthropic || post.ReasoningSignature != "") &&
-				!b.thinkingBlockedBySchema(cfg) {
+			if post.Reasoning != "" && (b.provider != schemas.Anthropic || post.ReasoningSignature != "") {
 				if msg.ChatAssistantMessage == nil {
 					msg.ChatAssistantMessage = &schemas.ChatAssistantMessage{}
 				}
