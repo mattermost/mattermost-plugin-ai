@@ -18,8 +18,11 @@ const fixtureEvals = `package p
 import (
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 )
+
+var _ = syscall.Getpid
 
 func TestAEval(t *testing.T) {
 	wd, _ := os.Getwd()
@@ -60,6 +63,7 @@ func TestRunEvals(t *testing.T) {
 	tests := []struct {
 		name         string
 		extraTest    string
+		unixOnly     bool
 		wantBroken   bool
 		wantComplete bool
 	}{
@@ -74,9 +78,19 @@ func TestRunEvals(t *testing.T) {
 			extraTest:  "\nfunc TestBEval(t *testing.T) { os.Exit(3) }\n",
 			wantBroken: true,
 		},
+		{
+			// The killed go command never prints the package's result line.
+			name:       "a go test killed by a signal is incomplete",
+			extraTest:  "\nfunc TestBEval(t *testing.T) { _ = syscall.Kill(os.Getppid(), syscall.SIGKILL) }\n",
+			unixOnly:   true,
+			wantBroken: true,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.unixOnly && runtime.GOOS == "windows" {
+				t.Skip("needs Unix signals")
+			}
 			dir := writeFixtureModule(t, map[string]string{"p/p_test.go": fixtureEvals + tc.extraTest})
 			t.Chdir(dir)
 

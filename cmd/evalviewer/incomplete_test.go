@@ -163,6 +163,15 @@ func TestUnrecordedFailures(t *testing.T) {
 	}
 }
 
+func exitError(t *testing.T, script string) error {
+	t.Helper()
+	err := exec.Command("sh", "-c", script).Run()
+	if err == nil {
+		t.Fatalf("%s succeeded", script)
+	}
+	return err
+}
+
 func TestEvalRunBroken(t *testing.T) {
 	tests := []struct {
 		name string
@@ -170,9 +179,11 @@ func TestEvalRunBroken(t *testing.T) {
 		want bool
 	}{
 		{name: "evals passed", run: evalRun{}},
-		{name: "evals failed", run: evalRun{err: &exec.ExitError{}}},
+		{name: "evals failed", run: evalRun{err: exitError(t, "exit 1")}},
+		{name: "go test usage error", run: evalRun{err: exitError(t, "exit 2")}, want: true},
+		{name: "go test killed", run: evalRun{err: exitError(t, "kill -9 $$")}, want: true},
 		{name: "go test could not run", run: evalRun{err: errors.New("exec: go: executable file not found")}, want: true},
-		{name: "a package did not finish", run: evalRun{err: &exec.ExitError{}, incomplete: []incompletePackage{{pkg: "p"}}}, want: true},
+		{name: "a package did not finish", run: evalRun{err: exitError(t, "exit 1"), incomplete: []incompletePackage{{pkg: "p"}}}, want: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

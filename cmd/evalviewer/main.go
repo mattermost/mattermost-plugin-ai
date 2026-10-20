@@ -193,10 +193,11 @@ type evalRun struct {
 }
 
 // broken reports that evals did not all run, as opposed to some failing:
-// packages did not finish, or `go test` could not run at all.
+// packages did not finish, or `go test` could not run at all or was killed.
+// Exit status 1 is the only one `go test` uses for failing tests.
 func (r evalRun) broken() bool {
 	var exitErr *exec.ExitError
-	return len(r.incomplete) > 0 || (r.err != nil && !errors.As(r.err, &exitErr))
+	return len(r.incomplete) > 0 || (r.err != nil && !(errors.As(r.err, &exitErr) && exitErr.ExitCode() == 1))
 }
 
 // reportOnlyEnv makes check exit non-zero only when evals did not all run,
