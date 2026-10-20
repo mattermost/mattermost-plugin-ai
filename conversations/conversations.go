@@ -20,7 +20,6 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmtools"
 	"github.com/mattermost/mattermost-plugin-agents/v2/prompts"
 	"github.com/mattermost/mattermost-plugin-agents/v2/streaming"
-	"github.com/mattermost/mattermost-plugin-agents/v2/subtitles"
 	"github.com/mattermost/mattermost-plugin-agents/v2/telemetry"
 	"github.com/mattermost/mattermost-plugin-agents/v2/toolrunner"
 	"github.com/mattermost/mattermost/server/public/model"
@@ -29,6 +28,10 @@ import (
 
 const ThreadIDProp = "referenced_thread"
 const AnalysisTypeProp = "prompt_type"
+
+// AnalyzedChannelIDProp records the channel a channel-summary post analyzed so
+// regeneration can re-bind the analysis tools to it.
+const AnalyzedChannelIDProp = "analyzed_channel_id"
 
 // ConfigProvider provides configuration values for conversation behavior
 type ConfigProvider interface {
@@ -46,17 +49,10 @@ type Conversations struct {
 	db                *mmapi.DBClient
 	licenseChecker    *enterprise.LicenseChecker
 	i18n              *i18n.Bundle
-	meetingsService   MeetingsService
 	configProvider    ConfigProvider
 	toolPolicyChecker mcp.ToolPolicyChecker
 	convService       *conversation.Service
 	autoReplySettings AutoReplySettings
-}
-
-// MeetingsService defines the interface for meetings functionality needed by conversations
-type MeetingsService interface {
-	GetCaptionsFileIDFromProps(post *model.Post) (fileID string, err error)
-	SummarizeTranscription(ctx stdcontext.Context, bot *bots.Bot, transcription *subtitles.Subtitles, context *llm.Context) (*llm.TextStreamResult, error)
 }
 
 func New(
@@ -68,7 +64,6 @@ func New(
 	db *mmapi.DBClient,
 	licenseChecker *enterprise.LicenseChecker,
 	i18nBundle *i18n.Bundle,
-	meetingsService MeetingsService,
 	configProvider ConfigProvider,
 ) *Conversations {
 	return &Conversations{
@@ -80,14 +75,8 @@ func New(
 		db:               db,
 		licenseChecker:   licenseChecker,
 		i18n:             i18nBundle,
-		meetingsService:  meetingsService,
 		configProvider:   configProvider,
 	}
-}
-
-// SetMeetingsService sets the meetings service (used to break circular dependency during initialization)
-func (c *Conversations) SetMeetingsService(meetingsService MeetingsService) {
-	c.meetingsService = meetingsService
 }
 
 // SetToolPolicyChecker sets the per-tool policy checker used for auto-approval
