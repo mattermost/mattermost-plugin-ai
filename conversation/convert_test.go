@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
+	"github.com/mattermost/mattermost-plugin-agents/v2/mmapi"
 	mmapimocks "github.com/mattermost/mattermost-plugin-agents/v2/mmapi/mocks"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/stretchr/testify/assert"
@@ -320,6 +321,11 @@ func TestStatusToStringDefault(t *testing.T) {
 	assert.Equal(t, StatusPending, StatusToString(llm.ToolCallStatus(999)))
 }
 
+const (
+	convertTestUserID    = "convert-test-user"
+	convertTestChannelID = "convert-test-channel"
+)
+
 // fakeReadCloser wraps a strings.Reader as io.ReadCloser so the mock GetFile
 // return type matches mmapi.Client.GetFile.
 type fakeReadCloser struct {
@@ -354,7 +360,7 @@ func TestBlocksToPost_LazyResolvesAttachments(t *testing.T) {
 			enableVision: true,
 			setup: func(m *mmapimocks.MockClient) {
 				m.On("GetFileInfo", "img1").Return(&model.FileInfo{
-					Id: "img1", Name: "shot.png", MimeType: "image/png", Size: 1234,
+					ChannelId: convertTestChannelID, Id: "img1", Name: "shot.png", MimeType: "image/png", Size: 1234,
 				}, nil)
 				m.On("GetFile", "img1").Return(newFakeReadCloser("PNGDATA"), nil)
 			},
@@ -394,7 +400,7 @@ func TestBlocksToPost_LazyResolvesAttachments(t *testing.T) {
 			enableVision: true,
 			setup: func(m *mmapimocks.MockClient) {
 				m.On("GetFileInfo", "img1").Return(&model.FileInfo{
-					Id: "img1", Name: "vector.svg", MimeType: "image/svg+xml", Size: 1234,
+					ChannelId: convertTestChannelID, Id: "img1", Name: "vector.svg", MimeType: "image/svg+xml", Size: 1234,
 				}, nil)
 			},
 			blocks: []ContentBlock{
@@ -413,7 +419,7 @@ func TestBlocksToPost_LazyResolvesAttachments(t *testing.T) {
 			enableVision: true,
 			setup: func(m *mmapimocks.MockClient) {
 				m.On("GetFileInfo", "doc1").Return(&model.FileInfo{
-					Id: "doc1", Name: "foo.txt", MimeType: "text/plain", Size: 11,
+					ChannelId: convertTestChannelID, Id: "doc1", Name: "foo.txt", MimeType: "text/plain", Size: 11,
 				}, nil)
 				m.On("GetFile", "doc1").Return(newFakeReadCloser("hello world"), nil)
 			},
@@ -432,7 +438,7 @@ func TestBlocksToPost_LazyResolvesAttachments(t *testing.T) {
 			enableVision: true,
 			setup: func(m *mmapimocks.MockClient) {
 				m.On("GetFileInfo", "doc1").Return(&model.FileInfo{
-					Id: "doc1", Name: "doc.pdf", MimeType: "application/pdf", Content: "pre-extracted content",
+					ChannelId: convertTestChannelID, Id: "doc1", Name: "doc.pdf", MimeType: "application/pdf", Content: "pre-extracted content",
 				}, nil)
 				// No GetFile expectation — mockery fails if it is called.
 			},
@@ -449,7 +455,7 @@ func TestBlocksToPost_LazyResolvesAttachments(t *testing.T) {
 			enableVision: true,
 			setup: func(m *mmapimocks.MockClient) {
 				m.On("GetFileInfo", "doc1").Return(&model.FileInfo{
-					Id: "doc1", Name: "bigdoc.txt", MimeType: "text/plain", Size: InlineFileMaxBytes + 1,
+					ChannelId: convertTestChannelID, Id: "doc1", Name: "bigdoc.txt", MimeType: "text/plain", Size: InlineFileMaxBytes + 1,
 				}, nil)
 				// No GetFile expectation — the inline-vs-descriptor decision is
 				// made from metadata alone, so a large file is never downloaded.
@@ -473,7 +479,7 @@ func TestBlocksToPost_LazyResolvesAttachments(t *testing.T) {
 			enableVision: true,
 			setup: func(m *mmapimocks.MockClient) {
 				m.On("GetFileInfo", "doc1").Return(&model.FileInfo{
-					Id: "doc1", Name: "huge.pdf", MimeType: "application/pdf", Content: bigContent,
+					ChannelId: convertTestChannelID, Id: "doc1", Name: "huge.pdf", MimeType: "application/pdf", Content: bigContent,
 				}, nil)
 				// No GetFile expectation — pre-extracted content is measured directly.
 			},
@@ -493,7 +499,7 @@ func TestBlocksToPost_LazyResolvesAttachments(t *testing.T) {
 			enableVision: true,
 			setup: func(m *mmapimocks.MockClient) {
 				m.On("GetFileInfo", "doc1").Return(&model.FileInfo{
-					Id: "doc1", Name: "archive.zip", MimeType: "application/zip",
+					ChannelId: convertTestChannelID, Id: "doc1", Name: "archive.zip", MimeType: "application/zip",
 				}, nil)
 				// No GetFile expectation — a binary with no extractable text still
 				// gets a metadata descriptor so the LLM is aware of it.
@@ -514,11 +520,11 @@ func TestBlocksToPost_LazyResolvesAttachments(t *testing.T) {
 			enableVision: true,
 			setup: func(m *mmapimocks.MockClient) {
 				m.On("GetFileInfo", "img1").Return(&model.FileInfo{
-					Id: "img1", Name: "shot.png", MimeType: "image/png", Size: 500,
+					ChannelId: convertTestChannelID, Id: "img1", Name: "shot.png", MimeType: "image/png", Size: 500,
 				}, nil)
 				m.On("GetFile", "img1").Return(newFakeReadCloser("PNGDATA"), nil)
 				m.On("GetFileInfo", "doc1").Return(&model.FileInfo{
-					Id: "doc1", Name: "foo.txt", MimeType: "text/plain", Size: 5,
+					ChannelId: convertTestChannelID, Id: "doc1", Name: "foo.txt", MimeType: "text/plain", Size: 5,
 				}, nil)
 				m.On("GetFile", "doc1").Return(newFakeReadCloser("hello"), nil)
 			},
@@ -552,11 +558,11 @@ func TestBlocksToPost_LazyResolvesAttachments(t *testing.T) {
 			enableVision: true,
 			setup: func(m *mmapimocks.MockClient) {
 				m.On("GetFileInfo", "doc-a").Return(&model.FileInfo{
-					Id: "doc-a", Name: "a.txt", MimeType: "text/plain", Size: 5,
+					ChannelId: convertTestChannelID, Id: "doc-a", Name: "a.txt", MimeType: "text/plain", Size: 5,
 				}, nil)
 				m.On("GetFile", "doc-a").Return(newFakeReadCloser("AAAAA"), nil)
 				m.On("GetFileInfo", "doc-b").Return(&model.FileInfo{
-					Id: "doc-b", Name: "b.txt", MimeType: "text/plain", Size: 5,
+					ChannelId: convertTestChannelID, Id: "doc-b", Name: "b.txt", MimeType: "text/plain", Size: 5,
 				}, nil)
 				m.On("GetFile", "doc-b").Return(newFakeReadCloser("BBBBB"), nil)
 			},
@@ -579,7 +585,7 @@ func TestBlocksToPost_LazyResolvesAttachments(t *testing.T) {
 			enableVision: true,
 			setup: func(m *mmapimocks.MockClient) {
 				m.On("GetFileInfo", "img1").Return(&model.FileInfo{
-					Id: "img1", Name: "broken.png", MimeType: "image/png",
+					ChannelId: convertTestChannelID, Id: "img1", Name: "broken.png", MimeType: "image/png",
 				}, nil)
 				m.On("GetFile", "img1").Return(nil, errors.New("file store offline"))
 				// LogError must actually be invoked — without .Maybe() this fails
@@ -609,7 +615,7 @@ func TestBlocksToPost_LazyResolvesAttachments(t *testing.T) {
 			enableVision: true,
 			setup: func(m *mmapimocks.MockClient) {
 				m.On("GetFileInfo", "doc1").Return(&model.FileInfo{
-					Id: "doc1", Name: "boundary.txt", MimeType: "text/plain", Size: int64(len(boundaryBody)),
+					ChannelId: convertTestChannelID, Id: "doc1", Name: "boundary.txt", MimeType: "text/plain", Size: int64(len(boundaryBody)),
 				}, nil)
 				m.On("GetFile", "doc1").Return(newFakeReadCloser(boundaryBody), nil)
 			},
@@ -651,7 +657,7 @@ func TestBlocksToPost_LazyResolvesAttachments(t *testing.T) {
 			enableVision: true,
 			setup: func(m *mmapimocks.MockClient) {
 				m.On("GetFileInfo", "doc1").Return(&model.FileInfo{
-					Id: "doc1", Name: "weird.png", MimeType: "image/png",
+					ChannelId: convertTestChannelID, Id: "doc1", Name: "weird.png", MimeType: "image/png",
 				}, nil)
 				// No GetFile expectation — mockery fails the test if production
 				// fetches bytes anyway (which would happen if dispatch went by
@@ -675,7 +681,7 @@ func TestBlocksToPost_LazyResolvesAttachments(t *testing.T) {
 			enableVision: true,
 			setup: func(m *mmapimocks.MockClient) {
 				m.On("GetFileInfo", "doc1").Return(&model.FileInfo{
-					Id: "doc1", Name: "extracted.pdf", MimeType: "application/pdf",
+					ChannelId: convertTestChannelID, Id: "doc1", Name: "extracted.pdf", MimeType: "application/pdf",
 					Content: "server-extracted text",
 				}, nil)
 				// No GetFile expectation: when fileInfo.Content is non-empty,
@@ -706,12 +712,113 @@ func TestBlocksToPost_LazyResolvesAttachments(t *testing.T) {
 			}
 
 			mmClient := mmapimocks.NewMockClient(t)
+			mmClient.On("HasPermissionToChannel", convertTestUserID, convertTestChannelID, model.PermissionReadChannel).Return(true).Maybe()
 			if tt.setup != nil {
 				tt.setup(mmClient)
 			}
 
-			post := BlocksToPost(tt.blocks, role, PostConversionOptions{MMClient: mmClient, EnableVision: tt.enableVision})
+			post := BlocksToPost(tt.blocks, role, PostConversionOptions{MMClient: mmClient, UserID: convertTestUserID, EnableVision: tt.enableVision})
 			tt.assert(t, mmClient, post)
+		})
+	}
+}
+
+func TestBlocksToPost_RequiresFileChannelReadAccess(t *testing.T) {
+	const (
+		readableChannelID   = "readable-channel"
+		unreadableChannelID = "unreadable-channel"
+	)
+
+	tests := []struct {
+		name         string
+		userID       string
+		enableVision bool
+		fileInfo     *model.FileInfo
+		fileInfoErr  error
+		block        ContentBlock
+		wantInlined  bool
+		wantImage    bool
+	}{
+		{
+			name:        "file in readable channel is inlined",
+			userID:      convertTestUserID,
+			fileInfo:    &model.FileInfo{Id: "doc1", ChannelId: readableChannelID, Name: "notes.txt", MimeType: "text/plain", Size: 6},
+			block:       ContentBlock{Type: BlockTypeFile, FileID: "doc1"},
+			wantInlined: true,
+		},
+		{
+			name:     "file in unreadable channel is skipped",
+			userID:   convertTestUserID,
+			fileInfo: &model.FileInfo{Id: "doc1", ChannelId: unreadableChannelID, Name: "notes.txt", MimeType: "text/plain", Size: 6},
+			block:    ContentBlock{Type: BlockTypeFile, FileID: "doc1"},
+		},
+		{
+			name:     "large file in unreadable channel is not described either",
+			userID:   convertTestUserID,
+			fileInfo: &model.FileInfo{Id: "doc1", ChannelId: unreadableChannelID, Name: "notes.txt", MimeType: "text/plain", Size: InlineFileMaxBytes + 1},
+			block:    ContentBlock{Type: BlockTypeFile, FileID: "doc1"},
+		},
+		{
+			name:         "image in readable channel is attached",
+			userID:       convertTestUserID,
+			enableVision: true,
+			fileInfo:     &model.FileInfo{Id: "img1", ChannelId: readableChannelID, Name: "shot.png", MimeType: "image/png", Size: 6},
+			block:        ContentBlock{Type: BlockTypeImage, FileID: "img1"},
+			wantImage:    true,
+		},
+		{
+			name:         "image in unreadable channel is skipped",
+			userID:       convertTestUserID,
+			enableVision: true,
+			fileInfo:     &model.FileInfo{Id: "img1", ChannelId: unreadableChannelID, Name: "shot.png", MimeType: "image/png", Size: 6},
+			block:        ContentBlock{Type: BlockTypeImage, FileID: "img1"},
+		},
+		{
+			name:     "file without a channel is skipped",
+			userID:   convertTestUserID,
+			fileInfo: &model.FileInfo{Id: "doc1", Name: "notes.txt", MimeType: "text/plain", Size: 6},
+			block:    ContentBlock{Type: BlockTypeFile, FileID: "doc1"},
+		},
+		{
+			name:     "file is skipped when no user is supplied",
+			fileInfo: &model.FileInfo{Id: "doc1", ChannelId: readableChannelID, Name: "notes.txt", MimeType: "text/plain", Size: 6},
+			block:    ContentBlock{Type: BlockTypeFile, FileID: "doc1"},
+		},
+		{
+			name:        "file denied by the file policy is skipped without logging",
+			userID:      convertTestUserID,
+			fileInfoErr: mmapi.ErrFileActionForbidden,
+			block:       ContentBlock{Type: BlockTypeFile, FileID: "doc1"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mmClient := mmapimocks.NewMockClient(t)
+			mmClient.On("GetFileInfo", tt.block.FileID).Return(tt.fileInfo, tt.fileInfoErr)
+			mmClient.On("HasPermissionToChannel", convertTestUserID, readableChannelID, model.PermissionReadChannel).Return(true).Maybe()
+			mmClient.On("HasPermissionToChannel", convertTestUserID, unreadableChannelID, model.PermissionReadChannel).Return(false).Maybe()
+			if tt.wantInlined || tt.wantImage {
+				mmClient.On("GetFile", tt.block.FileID).Return(newFakeReadCloser("SECRET"), nil)
+			}
+
+			blocks := []ContentBlock{{Type: BlockTypeText, Text: "question"}, tt.block}
+			post := BlocksToPost(blocks, "user", PostConversionOptions{MMClient: mmClient, UserID: tt.userID, EnableVision: tt.enableVision})
+
+			if tt.wantInlined {
+				assert.Contains(t, post.Message, "Content: SECRET")
+			} else {
+				assert.Equal(t, "question", post.Message, "a withheld file must leave no content or descriptor behind")
+			}
+			if tt.wantImage {
+				require.Len(t, post.Files, 1)
+				assert.Equal(t, []byte("SECRET"), post.Files[0].Data)
+			} else {
+				assert.Empty(t, post.Files)
+			}
+			if !tt.wantInlined && !tt.wantImage {
+				mmClient.AssertNotCalled(t, "GetFile", mock.Anything)
+			}
 		})
 	}
 }

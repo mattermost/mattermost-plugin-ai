@@ -484,6 +484,7 @@ func AssembleRequest(
 	conversionOpts := PostConversionOptions{
 		RedactUnshared: redactUnshared,
 		MMClient:       mmClient,
+		UserID:         conv.UserID,
 		EnableVision:   enableVision,
 		MaxFileSize:    maxFileSize,
 	}
@@ -812,6 +813,7 @@ func (s *Service) BuildChannelMentionRequest(
 	conversionOpts := PostConversionOptions{
 		RedactUnshared: redactUnshared,
 		MMClient:       mmClient,
+		UserID:         conv.UserID,
 		EnableVision:   enableVision,
 		MaxFileSize:    maxFileSize,
 	}
@@ -844,7 +846,7 @@ func (s *Service) BuildChannelMentionRequest(
 				username = user.Username
 			}
 			blocks := userBlocksWithAttachments(format.AuthoredPost(threadPost, username), threadPost.FileIds, mmClient)
-			posts = append(posts, BlocksToPost(blocks, "user", PostConversionOptions{RedactUnshared: redactUnshared, MMClient: mmClient, EnableVision: enableVision, MaxFileSize: maxFileSize}))
+			posts = append(posts, BlocksToPost(blocks, "user", PostConversionOptions{RedactUnshared: redactUnshared, MMClient: mmClient, UserID: conv.UserID, EnableVision: enableVision, MaxFileSize: maxFileSize}))
 		}
 		if latestPostLinkedRole == "user" && threadPost.Id == latestPostLinkedPostID {
 			break

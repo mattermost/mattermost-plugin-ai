@@ -122,6 +122,8 @@ type transcriptFile struct {
 	postType string
 	allowed  map[string]bool
 	reads    int
+	// channelRevoked denies the owner read access to the meeting channel.
+	channelRevoked bool
 }
 
 func (f *transcriptFile) register(mm *mocks.MockClient) {
@@ -141,7 +143,8 @@ func (f *transcriptFile) register(mm *mocks.MockClient) {
 		return io.NopCloser(strings.NewReader(f.content)), nil
 	}).Maybe()
 	mm.EXPECT().GetPost(summaryFilePost).Return(&model.Post{Id: summaryFilePost, ChannelId: summaryChannelID, Type: f.postType}, nil).Maybe()
-	mm.EXPECT().HasPermissionToChannel(summaryUserID, summaryChannelID, model.PermissionReadChannel).Return(true).Maybe()
+	mm.EXPECT().HasPermissionToChannel(summaryUserID, summaryChannelID, model.PermissionReadChannel).
+		RunAndReturn(func(string, string, *model.Permission) bool { return !f.channelRevoked }).Maybe()
 	mm.EXPECT().LogError(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Maybe()
 }
 
@@ -370,34 +373,59 @@ func TestRegenerateSummary(t *testing.T) {
 
 func TestMeetingSummaryFollowUpReferencesTranscriptFile(t *testing.T) {
 	convStore := newSummaryStore(t)
-	file := &transcriptFile{id: model.NewId(), content: longVTT(), allowed: map[string]bool{initialSession: true, regenSession: true}}
-	mm := mocks.NewMockClient(t)
-	file.register(mm)
-	lm := &summaryLLM{}
-	s := newSummaryService(t, convStore, mm)
-	conv, _ := startSummary(t, s, convStore, lm, file)
+	shortVTT := "WEBVTT\n\n1\n00:00:00.000 --> 00:00:02.000\n<v Alice>" + transcriptPhrase + ".\n"
 
-	followUpPostID := model.NewId()
-	_, err := s.convService.GetOrCreateConversation(conversation.GetOrCreateParams{
-		UserID:      summaryUserID,
-		SessionID:   regenSession,
-		BotID:       summaryBotID,
-		RootPostID:  *conv.RootPostID,
-		UserMessage: "Who writes the release notes?",
-		UserPostID:  &followUpPostID,
-	})
-	require.NoError(t, err)
-
-	req, err := s.convService.BuildCompletionRequest(conv, summaryContext(), conversation.BuildOptions{SessionID: regenSession})
-	require.NoError(t, err)
-
-	var all strings.Builder
-	for _, post := range req.Posts {
-		all.WriteString(post.Message)
+	tests := []struct {
+		name           string
+		content        string
+		channelRevoked bool
+		wantInlined    bool
+		wantDescriptor bool
+	}{
+		{name: "long transcript is referenced for read_file", content: longVTT(), wantDescriptor: true},
+		{name: "short transcript is inlined", content: shortVTT, wantInlined: true},
+		{name: "short transcript is withheld once the meeting channel is unreadable", content: shortVTT, channelRevoked: true},
+		{name: "long transcript is not described once the meeting channel is unreadable", content: longVTT(), channelRevoked: true},
 	}
-	require.NotContains(t, all.String(), transcriptPhrase, "follow-ups must not replay the transcript")
-	require.Len(t, req.Posts, 4)
-	require.Contains(t, req.Posts[1].Message, file.id)
-	require.Contains(t, req.Posts[1].Message, "read_file")
-	require.Equal(t, "Who writes the release notes?", req.Posts[3].Message)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file := &transcriptFile{id: model.NewId(), content: tt.content, allowed: map[string]bool{initialSession: true, regenSession: true}}
+			mm := mocks.NewMockClient(t)
+			file.register(mm)
+			lm := &summaryLLM{}
+			s := newSummaryService(t, convStore, mm)
+			conv, _ := startSummary(t, s, convStore, lm, file)
+			file.channelRevoked = tt.channelRevoked
+
+			followUpPostID := model.NewId()
+			_, err := s.convService.GetOrCreateConversation(conversation.GetOrCreateParams{
+				UserID:      summaryUserID,
+				SessionID:   regenSession,
+				BotID:       summaryBotID,
+				RootPostID:  *conv.RootPostID,
+				UserMessage: "Who writes the release notes?",
+				UserPostID:  &followUpPostID,
+			})
+			require.NoError(t, err)
+
+			req, err := s.convService.BuildCompletionRequest(conv, summaryContext(), conversation.BuildOptions{SessionID: regenSession})
+			require.NoError(t, err)
+
+			require.Len(t, req.Posts, 4)
+			require.Equal(t, "old summary", req.Posts[2].Message)
+			require.Equal(t, "Who writes the release notes?", req.Posts[3].Message)
+			if tt.wantInlined {
+				require.Contains(t, req.Posts[1].Message, transcriptPhrase)
+			} else {
+				require.NotContains(t, req.Posts[1].Message, transcriptPhrase)
+			}
+			if tt.wantDescriptor {
+				require.Contains(t, req.Posts[1].Message, file.id)
+				require.Contains(t, req.Posts[1].Message, "read_file")
+			} else {
+				require.NotContains(t, req.Posts[1].Message, "read_file")
+			}
+		})
+	}
 }
