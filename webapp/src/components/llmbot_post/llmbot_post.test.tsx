@@ -1428,4 +1428,24 @@ describe('LLMBotPost meetings license gating', () => {
 
         expect(screen.queryByText('Post summary')).toBeNull();
     });
+
+    test('shows Post summary for a summary posted without a conversation', () => {
+        mockUseConversation.mockReturnValue({conversation: null, loading: false, error: null});
+        renderPost(makePost('Call summary', {conversation_id: ''}));
+
+        expect(screen.getByText('Post summary')).not.toBeNull();
+    });
+
+    test('hides Post summary outside a DM', () => {
+        mockUseSelector.mockImplementation((selector) => selector({
+            entities: {
+                channels: {channels: {channel_1: {type: 'O'}}},
+                posts: {posts: {root_1: {props: {referenced_transcript_post_id: 'transcript_1'}}}},
+                users: {currentUserId: 'user_1'},
+            },
+        }));
+        renderPost(makePost('Call summary'));
+
+        expect(screen.queryByText('Post summary')).toBeNull();
+    });
 });

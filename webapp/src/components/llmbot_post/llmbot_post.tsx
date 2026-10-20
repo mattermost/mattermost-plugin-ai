@@ -588,7 +588,9 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
 
     const showRegenerate = isDM && !isGenerationInProgress && requesterIsCurrentUser && !isNoShowRegen;
     const meetingsLicensed = useIsLicensedFor('meetings');
-    const showPostbackButton = meetingsLicensed && !isGenerationInProgress && requesterIsCurrentUser && isTranscriptionResult;
+
+    // The server authorizes postback by DM membership, not conversation ownership.
+    const showPostbackButton = meetingsLicensed && !isGenerationInProgress && isDM && isTranscriptionResult;
     const showStopGeneratingButton = isGenerationInProgress && requesterIsCurrentUser;
     const hasContent = renderedRounds.length > 0;
     const showControlsBar = ((showRegenerate || showPostbackButton) && hasContent) || showStopGeneratingButton;
