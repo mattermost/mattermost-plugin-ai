@@ -787,19 +787,22 @@ func (c *UserClients) clearOAuthNeededForServer(client *Client) {
 	}
 }
 
-func (c *UserClients) rememberOAuthNeededForToolCall(client *Client, err error) {
+// rememberOAuthNeededForToolCall records that a failed tool call needs the
+// user to authorize the server again. It reports false when the failure is not
+// an authorization failure.
+func (c *UserClients) rememberOAuthNeededForToolCall(client *Client, err error) bool {
 	if c.oauthManager == nil || client == nil || client.config.Name == "" || err == nil {
-		return
+		return false
 	}
 
 	oauthErr := client.oauthNeededError(err)
 	if oauthErr == nil {
-		return
+		return false
 	}
 
 	needed, ok := errors.AsType[*OAuthNeededError](oauthErr)
 	if !ok {
-		return
+		return false
 	}
 
 	authURL := needed.AuthURL()
@@ -807,7 +810,7 @@ func (c *UserClients) rememberOAuthNeededForToolCall(client *Client, err error) 
 		authURL = c.oauthManager.StartURL(client.config.Name)
 	}
 	if authURL == "" {
-		return
+		return false
 	}
 
 	if storeErr := c.oauthManager.StoreAuthNeededState(c.userID, client.config.Name, authURL); storeErr != nil {
@@ -816,6 +819,7 @@ func (c *UserClients) rememberOAuthNeededForToolCall(client *Client, err error) 
 			"serverID", client.config.Name,
 			"error", storeErr)
 	}
+	return true
 }
 
 // createToolResolver creates a resolver function for the given tool
@@ -830,8 +834,7 @@ func (c *UserClients) createToolResolver(client *Client, toolName string) llm.To
 
 		result, err := client.CallToolWithMetadata(ctx, toolName, args, metadata)
 		if err != nil {
-			c.rememberOAuthNeededForToolCall(client, err)
-			return result, err
+			return result, c.toolCallError(client, err)
 		}
 
 		c.clearOAuthNeededForServer(client)
