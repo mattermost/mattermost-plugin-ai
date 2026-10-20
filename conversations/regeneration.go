@@ -14,6 +14,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mcpserver/auth"
+	"github.com/mattermost/mattermost-plugin-agents/v2/meetings"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmapi"
 	"github.com/mattermost/mattermost-plugin-agents/v2/store"
 	"github.com/mattermost/mattermost-plugin-agents/v2/streaming"
@@ -22,6 +23,59 @@ import (
 	"github.com/mattermost/mattermost/server/public/model"
 	"go.opentelemetry.io/otel/trace"
 )
+
+// MeetingSummaryRegenerator re-runs a meeting summary from the transcript
+// file its conversation references.
+type MeetingSummaryRegenerator interface {
+	RegenerateSummary(ctx stdcontext.Context, bot *bots.Bot, llmContext *llm.Context, conv *store.Conversation, postID string) (*llm.TextStreamResult, error)
+}
+
+// SetMeetingSummaryRegenerator sets the service that regenerates meeting
+// summaries. Meeting summaries cannot be regenerated while it is unset.
+func (c *Conversations) SetMeetingSummaryRegenerator(r MeetingSummaryRegenerator) {
+	c.meetingSummaries = r
+}
+
+type regeneratePath int
+
+const (
+	regenerateConversation regeneratePath = iota
+	regenerateThreadAnalysis
+	regenerateChannelSummary
+	regenerateMeetingSummary
+)
+
+// selectRegeneratePath picks how post is regenerated from server-stored state
+// and props of the bot-authored post only. Follow-up replies in an
+// operation's conversation regenerate as ordinary conversation turns.
+func selectRegeneratePath(conv *store.Conversation, post *model.Post) (regeneratePath, error) {
+	isOperationRoot := conv.RootPostID != nil && *conv.RootPostID == post.Id
+	switch conv.Operation {
+	case "", llm.OperationConversation, llm.OperationSearch:
+		return regenerateConversation, nil
+	case llm.OperationThreadAnalysis:
+		if isOperationRoot {
+			return regenerateThreadAnalysis, nil
+		}
+		return regenerateConversation, nil
+	case llm.OperationChannelSummary:
+		if isOperationRoot {
+			return regenerateChannelSummary, nil
+		}
+		return regenerateConversation, nil
+	case llm.OperationMeetingSummary:
+		// Summary posts reply under the request post, so the conversation
+		// root never matches them. The prop only selects the path; the
+		// transcript comes from the conversation.
+		recording, _ := post.GetProp(meetings.ReferencedRecordingFileID).(string)
+		transcript, _ := post.GetProp(meetings.ReferencedTranscriptPostID).(string)
+		if recording != "" || transcript != "" {
+			return regenerateMeetingSummary, nil
+		}
+		return regenerateConversation, nil
+	}
+	return 0, fmt.Errorf("regenerate is not supported for %q conversations", conv.Operation)
+}
 
 // HandleRegenerate handles post regeneration requests
 func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, post *model.Post, channel *model.Channel) error {
@@ -54,26 +108,22 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 	if conv.UserID != userID {
 		return errors.New("only the original poster can regenerate")
 	}
+	// Props select the regenerate path and its sources, so they are only
+	// trusted on a post the conversation's own bot authored.
+	if post.UserId != conv.BotID {
+		return errors.New("post was not authored by the conversation's bot")
+	}
 
 	if post.GetProp(streaming.NoRegen) != nil {
 		return errors.New("tagged no regen")
 	}
 
-	// Follow-up replies share the analysis/meeting conversation but are
-	// ordinary conversation responses; only the operation's initial response
-	// is regenerated through the operation-specific path.
-	operation := conv.Operation
-	if operation != "" {
-		turns, turnsErr := c.convService.GetTurns(conv.ID)
-		if turnsErr != nil {
-			return fmt.Errorf("failed to get turns for regeneration: %w", turnsErr)
-		}
-		if !isInitialResponse(turns, post.Id) {
-			operation = ""
-		}
+	if err = c.checkRegenerateLicense(conv.Operation); err != nil {
+		return err
 	}
 
-	if err = c.checkRegenerateLicense(operation); err != nil {
+	path, err := selectRegeneratePath(conv, post)
+	if err != nil {
 		return err
 	}
 
@@ -89,65 +139,34 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 	defer c.streamingService.FinishStreaming(post.Id)
 
 	var result *llm.TextStreamResult
-	switch operation {
-	case llm.OperationThreadAnalysis:
-		// The stored user turn holds the thread content; re-check the
-		// requester can still read the analyzed thread.
-		if threadID, _ := post.GetProp(ThreadIDProp).(string); threadID != "" {
-			threadPost, getPostErr := c.mmClient.GetPost(threadID)
-			if getPostErr != nil {
-				return fmt.Errorf("could not get thread post on regen: %w", getPostErr)
-			}
-			if !c.mmClient.HasPermissionToChannel(userID, threadPost.ChannelId, model.PermissionReadChannel) {
-				return errors.New("user doesn't have permission to read the channel of the original thread")
-			}
+	switch path {
+	case regenerateThreadAnalysis:
+		if err = c.checkAnalyzedThreadAccess(userID, post); err != nil {
+			return err
 		}
 		result, err = c.regenerateSingleShot(ctx, bot, user, channel, conv, post)
-		if err != nil {
-			return fmt.Errorf("could not regenerate thread analysis: %w", err)
-		}
 
-	case llm.OperationMeetingSummary:
-		// The stored user turn is derived from a recording or captions file;
-		// the requester must still be allowed to download that source.
-		if accessErr := CheckMeetingSourceAccess(ctx, c.mmClient, userID, post); accessErr != nil {
-			return accessErr
+	case regenerateMeetingSummary:
+		if c.meetingSummaries == nil {
+			return errors.New("meeting summary regeneration not available")
 		}
-		post.Message = ""
-		result, err = c.regenerateSingleShot(ctx, bot, user, channel, conv, post)
-		if err != nil {
-			return fmt.Errorf("could not regenerate %s: %w", conv.Operation, err)
-		}
+		llmContext := c.contextBuilder.BuildLLMContextUserRequest(bot, user, channel, c.contextBuilder.WithLLMContextNoTools())
+		result, err = c.meetingSummaries.RegenerateSummary(ctx, bot, llmContext, conv, post.Id)
 
-	case llm.OperationChannelInterval:
-		// The stored user turn already holds the formatted source (meeting
-		// transcription or channel posts), so no source files are re-read.
-		post.Message = ""
-		result, err = c.regenerateSingleShot(ctx, bot, user, channel, conv, post)
-		if err != nil {
-			return fmt.Errorf("could not regenerate %s: %w", conv.Operation, err)
-		}
-
-	case llm.OperationChannelSummary:
-		post.Message = ""
+	case regenerateChannelSummary:
 		result, err = c.regenerateChannelAnalysis(ctx, bot, user, conv, post)
-		if err != nil {
-			return fmt.Errorf("could not regenerate channel summary: %w", err)
-		}
 
 	default:
-		post.Message = ""
-
-		respondingToPostID, ok := post.GetProp(streaming.RespondingToProp).(string)
-		if !ok {
+		if _, ok := post.GetProp(streaming.RespondingToProp).(string); !ok {
 			return errors.New("post missing responding to prop")
 		}
-
-		result, err = c.regenerateViaConversation(ctx, bot, user, channel, post, respondingToPostID)
-		if err != nil {
-			return fmt.Errorf("could not regenerate via conversation: %w", err)
-		}
+		result, err = c.regenerateViaConversation(ctx, bot, user, channel, conv, post)
 	}
+	if err != nil {
+		return fmt.Errorf("could not regenerate %s post: %w", conv.Operation, err)
+	}
+
+	post.Message = ""
 
 	if mmapi.IsDMWith(bot.GetMMBot().UserId, channel) {
 		if channel.Name == bot.GetMMBot().UserId+"__"+user.Id || channel.Name == user.Id+"__"+bot.GetMMBot().UserId {
@@ -162,100 +181,41 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 	return nil
 }
 
-// Meeting post props, mirrored from the meetings package (which imports this
-// package, so it cannot be imported here).
-const (
-	meetingRecordingFileIDProp  = "referenced_recording_file_id"
-	meetingTranscriptPostIDProp = "referenced_transcript_post_id"
-)
-
-// HasMeetingSourceReference reports whether post carries the reference to the
-// recording or captions a meeting summary was built from.
-func HasMeetingSourceReference(post *model.Post) bool {
-	recording, _ := post.GetProp(meetingRecordingFileIDProp).(string)
-	transcript, _ := post.GetProp(meetingTranscriptPostIDProp).(string)
-	return recording != "" || transcript != ""
-}
-
-// CheckMeetingSourceAccess fails closed unless userID can read the channel of
-// the recording or captions file the meeting summary post was built from and
-// the session in ctx may download it.
-func CheckMeetingSourceAccess(ctx stdcontext.Context, mmClient mmapi.Client, userID string, post *model.Post) error {
-	fileID, _ := post.GetProp(meetingRecordingFileIDProp).(string)
-	if fileID == "" {
-		transcriptPostID, _ := post.GetProp(meetingTranscriptPostIDProp).(string)
-		if transcriptPostID == "" {
-			return errors.New("meeting summary post missing its source reference")
-		}
-		transcriptPost, err := mmClient.GetPost(transcriptPostID)
-		if err != nil {
-			return fmt.Errorf("could not get transcription post: %w", err)
-		}
-		fileID = captionsFileID(transcriptPost)
-		if fileID == "" {
-			return errors.New("transcription post has no captions file")
-		}
+// checkAnalyzedThreadAccess fails unless userID can still read the thread a
+// thread analysis post was built from.
+func (c *Conversations) checkAnalyzedThreadAccess(userID string, post *model.Post) error {
+	threadID, _ := post.GetProp(ThreadIDProp).(string)
+	if threadID == "" {
+		return errors.New("thread analysis post missing its referenced thread")
 	}
-
-	mm := mmapi.WithFilePolicy(mmClient, auth.SessionIDFromContext(ctx))
-	fileInfo, err := mm.GetFileInfo(fileID)
+	threadPost, err := c.mmClient.GetPost(threadID)
 	if err != nil {
-		return fmt.Errorf("could not access meeting source file: %w", err)
+		return fmt.Errorf("could not get thread post on regen: %w", err)
 	}
-	if !mmClient.HasPermissionToChannel(userID, fileInfo.ChannelId, model.PermissionReadChannel) {
-		return errors.New("user can't read the meeting source file's channel")
+	if !c.mmClient.HasPermissionToChannel(userID, threadPost.ChannelId, model.PermissionReadChannel) {
+		return errors.New("user doesn't have permission to read the channel of the original thread")
 	}
 	return nil
 }
 
-// captionsFileID returns the first captions file id on a calls transcription
-// post, or "" when absent or malformed.
-func captionsFileID(post *model.Post) string {
-	captions, _ := post.GetProp("captions").([]any)
-	if len(captions) == 0 {
-		return ""
-	}
-	caption, _ := captions[0].(map[string]any)
-	fileID, _ := caption["file_id"].(string)
-	return fileID
-}
-
-// isInitialResponse reports whether the assistant turn anchored to postID
-// answers the conversation's first user turn. A post with no anchored turn is
-// treated as initial only while the conversation has a single user turn, so an
-// unpersisted follow-up still uses ordinary conversation regeneration.
-func isInitialResponse(turns []store.Turn, postID string) bool {
-	userTurns := 0
-	for _, turn := range turns {
-		if turn.Role == "assistant" && turn.PostID != nil && *turn.PostID == postID {
-			return userTurns <= 1
-		}
-		if turn.Role == "user" {
-			userTurns++
-		}
-	}
-	return userTurns <= 1
-}
-
-// checkRegenerateLicense gates regenerating a post by the capability of the
-// operation that produced it. Thread summaries are available at Professional
-// and above, channel summaries at Professional and above, and transcription
-// summaries at Enterprise and above. Other conversation posts are not gated.
+// checkRegenerateLicense gates regenerating any post of a conversation by the
+// capability of the operation that started it. Thread and channel summaries
+// are available at Professional and above, meeting summaries at Enterprise
+// and above. Other conversations are not gated.
 func (c *Conversations) checkRegenerateLicense(operation string) error {
 	switch operation {
 	case llm.OperationMeetingSummary:
 		return c.licenseChecker.Check(enterprise.CapMeetings)
 	case llm.OperationThreadAnalysis:
 		return c.licenseChecker.Check(enterprise.CapThreadSummarization)
-	case llm.OperationChannelSummary, llm.OperationChannelInterval:
+	case llm.OperationChannelSummary:
 		return c.licenseChecker.Check(enterprise.CapChannelSummarization)
 	}
 	return nil
 }
 
-// regenerateSingleShot re-runs a tool-less, single-turn conversation (thread
-// analysis, meeting summary, channel interval) from its stored system prompt
-// and user turn, scrubbing the prior response anchored to post.
+// regenerateSingleShot re-runs a tool-less thread analysis from its stored
+// system prompt and user turn, scrubbing the prior response anchored to post.
 func (c *Conversations) regenerateSingleShot(
 	ctx stdcontext.Context,
 	bot *bots.Bot,
@@ -271,18 +231,11 @@ func (c *Conversations) regenerateSingleShot(
 		c.contextBuilder.WithLLMContextNoTools(),
 	)
 
-	// Build before scrubbing: ExcludeAfterPostID needs the anchor.
-	completionReq, err := c.convService.BuildCompletionRequest(conv, llmContext, conversation.BuildOptions{
-		ExcludeAfterPostID: post.Id,
-		SessionID:          auth.SessionIDFromContext(ctx),
+	completionReq, err := c.convService.BuildRegenerateRequest(conv, llmContext, post.Id, conversation.BuildOptions{
+		SessionID: auth.SessionIDFromContext(ctx),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to build completion request for regen: %w", err)
-	}
-	completionReq.OperationSubType = llm.SubTypeRegenerate
-
-	if delErr := c.convService.DeleteResponseTurns(conv.ID, post.Id); delErr != nil {
-		c.mmClient.LogError("Failed to scrub prior response turns on regen", "error", delErr.Error(), "post_id", post.Id, "conversation_id", conv.ID)
+		return nil, err
 	}
 
 	return bot.LLM().ChatCompletion(ctx, *completionReq, llm.WithToolsDisabled())
@@ -308,6 +261,9 @@ func (c *Conversations) regenerateChannelAnalysis(
 	if err != nil {
 		return nil, fmt.Errorf("could not get analyzed channel: %w", err)
 	}
+	if err = c.bots.CheckUsageRestrictionsForChannel(bot, analyzedChannel); err != nil {
+		return nil, err
+	}
 
 	toolBot := channels.ToolBot(bot)
 	llmContext := c.contextBuilder.BuildLLMContextUserRequest(
@@ -329,19 +285,9 @@ func (c *Conversations) regenerateViaConversation(
 	bot *bots.Bot,
 	user *model.User,
 	channel *model.Channel,
+	conv *store.Conversation,
 	post *model.Post,
-	respondingToPostID string,
 ) (*llm.TextStreamResult, error) {
-	convIDProp, _ := post.GetProp(streaming.ConversationIDProp).(string)
-	if convIDProp == "" {
-		return nil, errors.New("post missing conversation_id for regeneration")
-	}
-
-	conv, err := c.convService.GetConversation(convIDProp)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get conversation for regen: %w", err)
-	}
-
 	// Regeneration is triggered by the requester clicking the regen control,
 	// so the user is interactively present.
 	llmContext := c.buildConversationContextWithTools(
@@ -356,26 +302,19 @@ func (c *Conversations) regenerateViaConversation(
 	isDM := mmapi.IsDMWith(bot.GetMMBot().UserId, channel)
 	toolsDisabled := applyToolAvailability(llmContext, isDM, c.channelMentionToolCallingEnabled())
 
-	// Build the request BEFORE scrubbing — ExcludeAfterPostID needs the anchor.
 	// AllowUnsharedToolContent on DMs is a no-op (DM tool_results are shared)
 	// but documents intent.
-	completionReq, buildErr := c.convService.BuildCompletionRequest(conv, llmContext, conversation.BuildOptions{
-		ExcludeAfterPostID:       post.Id,
+	completionReq, err := c.convService.BuildRegenerateRequest(conv, llmContext, post.Id, conversation.BuildOptions{
 		AllowUnsharedToolContent: isDM,
 		SessionID:                auth.SessionIDFromContext(ctx),
 	})
-	if buildErr != nil {
-		return nil, fmt.Errorf("failed to build completion request for regen: %w", buildErr)
-	}
-
-	// Scrub the prior generation so the stream runs identically to a first.
-	if delErr := c.convService.DeleteResponseTurns(conv.ID, post.Id); delErr != nil {
-		c.mmClient.LogError("Failed to scrub prior response turns on regen", "error", delErr.Error(), "post_id", post.Id, "conversation_id", conv.ID)
+	if err != nil {
+		return nil, err
 	}
 
 	// Clear prior attachments so the regenerated response starts clean.
 	// Safe: conversation-flow bot posts only ever carry CreateFile
-	// attachments (meeting-summary regen never reaches this path).
+	// attachments (meeting summaries regenerate through their own path).
 	// An explicit empty list — not nil — tells the server's UpdatePost
 	// file-change processing to detach the previous generation's attachments
 	// even if the new run creates none; nil could be treated as "no change".

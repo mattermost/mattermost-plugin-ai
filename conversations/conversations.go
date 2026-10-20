@@ -53,6 +53,7 @@ type Conversations struct {
 	toolPolicyChecker mcp.ToolPolicyChecker
 	convService       *conversation.Service
 	autoReplySettings AutoReplySettings
+	meetingSummaries  MeetingSummaryRegenerator
 }
 
 func New(

@@ -534,11 +534,10 @@ func (p *Plugin) OnActivate() error {
 		i18nBundle,
 		metricsService,
 		contextBuilder,
-		conversationsService,
+		convService,
 		licenseChecker,
 	)
-
-	meetingsService.SetConversationService(convService)
+	conversationsService.SetMeetingSummaryRegenerator(meetingsService)
 
 	// Wire per-tool policy checker for auto-approval in streaming and conversations.
 	policyChecker := mcp.NewConfigToolPolicyChecker(p.configuration.MCP, func() bool {

@@ -771,8 +771,8 @@ func TestRegenerateRestoresLoadsBeforeAnchorButDropsLoadsInScrubbedGeneration(t 
 		bot,
 		&model.User{Id: "user-id", Username: "user"},
 		&model.Channel{Id: "dm-channel", Type: model.ChannelTypeDirect, Name: "bot-id__user-id"},
+		conv,
 		post,
-		"root-post-id",
 	)
 	require.NoError(t, err)
 	_, readErr := streamResult.ReadAll()
