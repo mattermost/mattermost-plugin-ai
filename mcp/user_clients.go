@@ -19,6 +19,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/config"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmapi"
+	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 )
 
@@ -215,7 +216,7 @@ func (c *UserClients) ConnectToEmbeddedServerIfAvailable(ctx context.Context, se
 		return nil
 	}
 
-	task := c.embeddedConnectTask(ctx, sessionID, embeddedClient)
+	task := c.embeddedConnectTask(ctx, sessionID, nil, embeddedClient)
 	task.silent = false
 	return firstConnectError(c.ensureConnections(ctx, []connectTask{task}))
 }
@@ -389,8 +390,15 @@ func (c *UserClients) recordConnectFailure(mcpErrors *Errors, plan connectPlan) 
 	}
 
 	if plan.task.silent {
-		c.log.Debug("MCP server unavailable for user",
-			"userID", c.userID, "serverID", plan.task.serverID, "error", plan.err)
+		// Silent failures are not surfaced to the user, so the dialing caller
+		// warns: otherwise a turn quietly runs without these tools.
+		if plan.dialing {
+			c.log.Warn("MCP server unavailable for user; continuing without its tools",
+				"userID", c.userID, "serverID", plan.task.serverID, "error", plan.err)
+		} else {
+			c.log.Debug("MCP server unavailable for user",
+				"userID", c.userID, "serverID", plan.task.serverID, "error", plan.err)
+		}
 		return mcpErrors
 	}
 
@@ -472,8 +480,9 @@ func remoteOriginIdentityForMode(server ServerConfig, conflicting, serviceAccoun
 
 // embeddedConnectTask builds the task for the embedded Mattermost MCP server.
 // It replaces any cached session because the caller only schedules it when the
-// user's embedded session ID changed.
-func (c *UserClients) embeddedConnectTask(ctx context.Context, sessionID string, embeddedClient *EmbeddedServerClient) connectTask {
+// user's embedded session ID changed. A non-nil session is one the caller has
+// already validated and is used as-is instead of being read back.
+func (c *UserClients) embeddedConnectTask(ctx context.Context, sessionID string, session *model.Session, embeddedClient *EmbeddedServerClient) connectTask {
 	var server EmbeddedMCPServer
 	if embeddedClient != nil {
 		server = embeddedClient.server
@@ -490,7 +499,13 @@ func (c *UserClients) embeddedConnectTask(ctx context.Context, sessionID string,
 			dialCtx, cancel := context.WithTimeout(ctx, embeddedConnectTimeout)
 			defer cancel()
 
-			client, err := embeddedClient.CreateClient(dialCtx, c.userID, sessionID)
+			var client *Client
+			var err error
+			if session != nil {
+				client, err = embeddedClient.CreateClientForSession(dialCtx, c.userID, session)
+			} else {
+				client, err = embeddedClient.CreateClient(dialCtx, c.userID, sessionID)
+			}
 			if err != nil {
 				return nil, fmt.Errorf("failed to connect to embedded server: %w", err)
 			}
@@ -608,7 +623,7 @@ func closeDetachedClients(log pluginapi.LogService, detached []*Client) {
 			continue
 		}
 		if err := client.Close(); err != nil {
-			log.Error("Failed to close detached MCP client", "serverID", client.config.Name, "error", err)
+			log.Warn("Failed to close detached MCP client", "serverID", client.config.Name, "error", err)
 		}
 	}
 }
@@ -772,19 +787,22 @@ func (c *UserClients) clearOAuthNeededForServer(client *Client) {
 	}
 }
 
-func (c *UserClients) rememberOAuthNeededForToolCall(client *Client, err error) {
+// rememberOAuthNeededForToolCall records that a failed tool call needs the
+// user to authorize the server again. It reports false when the failure is not
+// an authorization failure.
+func (c *UserClients) rememberOAuthNeededForToolCall(client *Client, err error) bool {
 	if c.oauthManager == nil || client == nil || client.config.Name == "" || err == nil {
-		return
+		return false
 	}
 
 	oauthErr := client.oauthNeededError(err)
 	if oauthErr == nil {
-		return
+		return false
 	}
 
 	needed, ok := errors.AsType[*OAuthNeededError](oauthErr)
 	if !ok {
-		return
+		return false
 	}
 
 	authURL := needed.AuthURL()
@@ -792,7 +810,7 @@ func (c *UserClients) rememberOAuthNeededForToolCall(client *Client, err error) 
 		authURL = c.oauthManager.StartURL(client.config.Name)
 	}
 	if authURL == "" {
-		return
+		return false
 	}
 
 	if storeErr := c.oauthManager.StoreAuthNeededState(c.userID, client.config.Name, authURL); storeErr != nil {
@@ -801,6 +819,7 @@ func (c *UserClients) rememberOAuthNeededForToolCall(client *Client, err error) 
 			"serverID", client.config.Name,
 			"error", storeErr)
 	}
+	return true
 }
 
 // createToolResolver creates a resolver function for the given tool
@@ -815,8 +834,7 @@ func (c *UserClients) createToolResolver(client *Client, toolName string) llm.To
 
 		result, err := client.CallToolWithMetadata(ctx, toolName, args, metadata)
 		if err != nil {
-			c.rememberOAuthNeededForToolCall(client, err)
-			return result, err
+			return result, c.toolCallError(client, err)
 		}
 
 		c.clearOAuthNeededForServer(client)

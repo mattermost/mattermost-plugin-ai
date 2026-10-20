@@ -73,7 +73,7 @@ func NewService(
 
 	service.ffmpegPath = resolveFFMPEGPath()
 	if service.ffmpegPath == "" {
-		service.pluginAPI.Log.Error("ffmpeg not installed, transcriptions will be disabled.")
+		service.pluginAPI.Log.Info("ffmpeg not installed, transcriptions will be disabled.")
 	}
 
 	return service
