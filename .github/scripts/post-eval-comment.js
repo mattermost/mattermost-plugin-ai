@@ -16,7 +16,7 @@ async function findEvalComment(github, context) {
         per_page: 100,
     });
     // Only the workflow's own comments: another bot may quote the marker.
-    return comments.find((comment) => comment.user.login === 'github-actions[bot]' && (comment.body || '').includes(MARKER));
+    return comments.find((comment) => comment.user?.login === 'github-actions[bot]' && (comment.body || '').includes(MARKER));
 }
 
 async function saveEvalComment(github, context, path) {
