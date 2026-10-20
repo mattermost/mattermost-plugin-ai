@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -62,6 +63,7 @@ type Config interface {
 	GetDefaultBotName() string
 	MCP() mcp.Config
 	AllowUnsafeLinks() bool
+	EnableHTMLArtifacts() bool
 	EmbeddingSearchConfig() embeddings.EmbeddingSearchConfig
 	EnableChannelMentionToolCalling() bool
 
@@ -198,6 +200,11 @@ type API struct {
 	autoReplyStore        ChannelAutoReplyStore
 	accessChecker         *accesscontrol.Checker
 	mcpRequestLimiter     *mcpRequestLimiter
+
+	// artifactSecretCache caches the HTML artifact bridge secret after
+	// its first load from the KV store.
+	artifactSecretMu    sync.Mutex
+	artifactSecretCache []byte
 
 	// auditEvents maps gin handler names to audit event names for routes
 	// that emit server audit records. Built once in New; read-only after.
@@ -354,6 +361,8 @@ func (a *API) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Reques
 	router.GET("/oauth/callback", a.handleOAuthCallback)
 	router.GET("/ai_threads", a.handleGetAIThreads)
 	router.GET("/ai_bots", a.handleGetAIBots)
+	router.GET("/artifacts/:fileid", a.handleGetArtifact)
+	router.GET("/artifacts/:fileid/token", a.handleGetArtifactToken)
 	router.GET("/mcp/tools", a.handleGetUserMCPTools)
 	router.POST("/mcp/tools/refresh", a.handleRefreshUserMCPTools)
 	router.GET("/mcp/oauth/:serverName/start", a.handleOAuthStart)
@@ -453,6 +462,7 @@ func (a *API) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Reques
 	adminRouter.GET("/services/:serviceid/access_policy", a.handleGetServicePolicy)
 	adminRouter.PUT("/services/:serviceid/access_policy", a.handlePutServicePolicy)
 	adminRouter.DELETE("/services/:serviceid/access_policy", a.handleDeleteServicePolicy)
+	adminRouter.GET("/mcp/:serverid/suggested-description", a.handleGetMCPSuggestedDescription)
 	adminRouter.GET("/mcp/:serverid/access_policy", a.handleGetMCPPolicy)
 	adminRouter.PUT("/mcp/:serverid/access_policy", a.handlePutMCPPolicy)
 	adminRouter.DELETE("/mcp/:serverid/access_policy", a.handleDeleteMCPPolicy)
@@ -698,9 +708,10 @@ type AIBotInfo struct {
 }
 
 type AIBotsResponse struct {
-	Bots             []AIBotInfo `json:"bots"`
-	SearchEnabled    bool        `json:"searchEnabled"`
-	AllowUnsafeLinks bool        `json:"allowUnsafeLinks"`
+	Bots                 []AIBotInfo `json:"bots"`
+	SearchEnabled        bool        `json:"searchEnabled"`
+	AllowUnsafeLinks     bool        `json:"allowUnsafeLinks"`
+	HTMLArtifactsEnabled bool        `json:"htmlArtifactsEnabled"`
 }
 
 // usesServiceAccountAuth reports the effective service account mode for a bot:
@@ -789,9 +800,10 @@ func (a *API) handleGetAIBots(c *gin.Context) {
 	searchEnabled := a.searchService.Enabled()
 
 	c.JSON(http.StatusOK, AIBotsResponse{
-		Bots:             bots,
-		SearchEnabled:    searchEnabled,
-		AllowUnsafeLinks: a.config.AllowUnsafeLinks(),
+		Bots:                 bots,
+		SearchEnabled:        searchEnabled,
+		AllowUnsafeLinks:     a.config.AllowUnsafeLinks(),
+		HTMLArtifactsEnabled: a.config.EnableHTMLArtifacts(),
 	})
 }
 

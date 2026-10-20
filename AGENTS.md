@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Canonical agent instructions for this repository. Humans should read `README.md` and `docs/`. `CLAUDE.md` and `mcpserver/CLAUDE.md` are thin imports — do not duplicate content there.
+> Canonical agent instructions for this repository. Humans should read `README.md` and `docs/`. `CLAUDE.md` and every nested `<dir>/CLAUDE.md` are thin imports — do not duplicate content there.
 
 ## Project
 
@@ -56,6 +56,22 @@ Linters (golangci-lint, ESLint, gofmt/goimports, header check, editorconfig) alr
 - All formatting of Mattermost entities (posts, users, channels, teams, members) for LLM consumption or tool output must go through the `format/` package. Never `fmt.Sprintf` model types inline; add a formatter to `format/` instead.
 - E2E shard maintenance: when adding a new spec that should run in CI, assign it in `e2e/scripts/ci-test-groups.mjs` in the same change. `make check-shards` validates coverage and is part of `make check`. Use the lightest `e2e-shard-*` group and balance by expected runtime, not alphabetically.
 - Test for behavior that could break due to a real bug. Before writing a test ask: "If this test fails, does it indicate a real bug in our code?" In particular, do not assert on implementation details like validation order or which error appears first.
+- A bug fix includes a test that fails without the fix and runs through the production wiring (route, hook, registration), not only the helper that changed.
+- Never call `require`/`t.Fatal` outside the test goroutine (e.g. in `httptest` handlers); use `assert` there.
+
+## Correctness and security
+
+- Enforce authorization and request scope in code, never in prompt text: when a request is scoped to a channel, thread, or user, bind or validate that parameter on every tool the request can call.
+- Fail closed: when a lookup of an agent, bot, user, tool policy, or license misses or errors, return an error or deny; never fall back to a default or first match, or to a permissive default.
+- Propagate store and API errors; never turn them into an empty list, "none", or "not found" result.
+- Persist references to agents, bots, services, users, and channels by ID, never by name; names are display-only.
+- Errors and stream events sent to clients, and span attributes, never carry raw upstream response bodies, request content, or credentials.
+- Apply every change to turn behavior or tool policy (license gates, tool filters, round caps, permissions) to each entry point that starts or resumes a turn: DM message, channel @mention, channel auto-reply, loop-in from the mention reminder, regenerate, tool approve/reject, ask-user answers, sharing tool results, search, thread and channel analysis, meeting summarization, and LLM Bridge agent completions.
+- Make state transitions that can race (double clicks, retries, HA peers, background sweeps, regenerate during a stream) conditional on the expected prior state; never blind-write.
+- Key per-conversation state (KV keys, claims, caches) by conversation or user, never by a provider-generated ID alone; tool call IDs repeat across conversations.
+- Goroutines that relay between channels select on `ctx.Done()` for both send and receive; never hold a mutex across network or DB I/O; bound every outbound HTTP call with `http.Client.Timeout`, or a context deadline for streams.
+- Recompute derived state (active agents, caches, migrated config) on config change and license change, on every HA node, not only the node that made the change.
+- JSON returned to the webapp encodes empty slices as `[]`, not `null`, unless the TS type allows `null`; expose state as an explicit field instead of making the client infer it from an empty value.
 
 ## Audit logging
 
@@ -94,6 +110,10 @@ The plugin emits OpenTelemetry traces. Agent-relevant rules:
 - `webapp/node_modules/` contains stray Go files that `./...` matches; for sweeping Go commands use `$(go list ./... | grep -v node_modules)`.
 - Bumping the Go version: update the `go` directive in all three modules AND the `FIPS_IMAGE` tag in `build/fips.mk` — set the new tag without a digest, open a PR so the `build-fips` CI job pulls it, then pin the digest CI resolves. **Check the image exists first** (tag-listing procedure in `build/fips.mk`): the `go` directive is held at 1.26.x until `cgr.dev/mattermost.com/go-msft-fips` publishes a 1.27 toolchain — do not bump past what that registry offers. If `bin/golangci-lint` starts failing everywhere with "export data version N is greater than maximum supported version", the pinned linter predates the toolchain: bump `GOLANGCI_LINT_VERSION` in the Makefile and rerun `make install-go-tools`.
 
+## Cursor Cloud specific instructions
+
+- Run e2e with `TESTCONTAINERS_HOST_OVERRIDE=localhost` (e.g. `cd e2e && TESTCONTAINERS_HOST_OVERRIDE=localhost npx playwright test tests/agents/html-artifact.spec.ts --reporter=list`). On Cloud VMs testcontainers reports the Docker gateway IP (e.g. `172.18.0.1`) as the Mattermost host, and browsers send Fetch Metadata (`Sec-Fetch-*`) headers only to HTTPS or `localhost` origins, so without the override the HTML artifact specs only ever get the "can only be viewed inside Mattermost" page.
+
 ## Pull requests and commits
 
 - Commit subject: one succinct line. Optional Jira prefix (`MM-12345:`) or short scope (`fix:`, `docs:`, `webapp:`) is fine.
@@ -105,5 +125,10 @@ The plugin emits OpenTelemetry traces. Agent-relevant rules:
 Read these only when the trigger applies:
 
 - Working inside `mcpserver/` (config-vs-runtime, search service wiring, adding optional capabilities): `mcpserver/AGENTS.md`.
+- Changing how a turn runs, replays, stops, or regenerates (`conversations/`, `toolrunner/`, `streaming/`, or their `api/` routes): `conversations/AGENTS.md`.
+- Building or changing LLM requests (`bifrost/`, or `llm/` types that feed it): `bifrost/AGENTS.md`.
+- Working inside `mcp/` (MCP client, OAuth, tool caches): `mcp/AGENTS.md`.
+- Working inside `webapp/`: `webapp/AGENTS.md`.
+- Writing or editing Playwright specs in `e2e/`: `e2e/AGENTS.md`.
 - Configuring providers, agents, or the admin UI: `docs/admin_guide.md`.
 - When working on prompt evals or modifying the eval harness: `cmd/evalviewer/README.md`.
