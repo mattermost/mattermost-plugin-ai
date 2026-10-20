@@ -314,6 +314,10 @@ func (a *API) handleRegenerate(c *gin.Context) {
 			abortNotLicensed(c, err)
 			return
 		}
+		if errors.Is(err, streaming.ErrAlreadyStreamingToPost) {
+			c.AbortWithError(http.StatusConflict, err)
+			return
+		}
 		if errors.Is(err, mmapi.ErrFileActionForbidden) {
 			c.AbortWithError(http.StatusForbidden, err)
 			return

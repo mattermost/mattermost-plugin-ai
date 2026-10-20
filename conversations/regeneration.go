@@ -7,6 +7,7 @@ import (
 	stdcontext "context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/bots"
 	"github.com/mattermost/mattermost-plugin-agents/v2/channels"
@@ -59,18 +60,24 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 		return errors.New("tagged no regen")
 	}
 
+	turns, err := c.convService.GetTurns(conv.ID)
+	if err != nil {
+		return fmt.Errorf("failed to get turns for regeneration: %w", err)
+	}
+
+	// The local stream map only covers this node. A fresh heartbeat on the
+	// post's turn means a stream (and possibly its tool loop) is still running
+	// on some node, so refuse rather than start a second run.
+	if hasLiveStreamingTurn(turns, post.Id, time.Now()) {
+		return fmt.Errorf("unable to regenerate post: %w", streaming.ErrAlreadyStreamingToPost)
+	}
+
 	// Follow-up replies share the analysis/meeting conversation but are
 	// ordinary conversation responses; only the operation's initial response
 	// is regenerated through the operation-specific path.
 	operation := conv.Operation
-	if operation != "" {
-		turns, turnsErr := c.convService.GetTurns(conv.ID)
-		if turnsErr != nil {
-			return fmt.Errorf("failed to get turns for regeneration: %w", turnsErr)
-		}
-		if !isInitialResponse(turns, post.Id) {
-			operation = ""
-		}
+	if operation != "" && !isInitialResponse(turns, post.Id) {
+		operation = ""
 	}
 
 	if err = c.checkRegenerateLicense(operation); err != nil {
@@ -235,6 +242,21 @@ func isInitialResponse(turns []store.Turn, postID string) bool {
 		}
 	}
 	return userTurns <= 1
+}
+
+// hasLiveStreamingTurn reports whether postID's turn is still streaming with a
+// heartbeat newer than streaming.StaleStreamThreshold. An older one belongs to
+// a dead node and must not block regenerate.
+func hasLiveStreamingTurn(turns []store.Turn, postID string, now time.Time) bool {
+	for _, turn := range turns {
+		if turn.PostID == nil || *turn.PostID != postID || turn.Status != store.TurnStatusStreaming {
+			continue
+		}
+		if now.UnixMilli()-turn.UpdatedAt < streaming.StaleStreamThreshold.Milliseconds() {
+			return true
+		}
+	}
+	return false
 }
 
 // checkRegenerateLicense gates regenerating a post by the capability of the

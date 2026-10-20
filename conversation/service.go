@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/format"
@@ -448,6 +449,7 @@ func AssembleRequest(
 			}
 		}
 	}
+	turns = ExcludeStreamingTurns(turns)
 
 	if context != nil {
 		RestoreLoadedMCPToolsFromTurns(context.Tools, turns)
@@ -717,6 +719,15 @@ func (s *Service) BuildChannelMentionRequest(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get turns: %w", err)
 	}
+	// A reply still streaming in this thread is neither history nor user
+	// content: skip its turn and its thread post.
+	streamingPostIDs := map[string]bool{}
+	for _, t := range turns {
+		if isStreamingTurn(t) && t.PostID != nil {
+			streamingPostIDs[*t.PostID] = true
+		}
+	}
+	turns = ExcludeStreamingTurns(turns)
 
 	if context != nil {
 		RestoreLoadedMCPToolsFromTurns(context.Tools, turns)
@@ -807,6 +818,9 @@ func (s *Service) BuildChannelMentionRequest(
 	posts = append(posts, leadingPosts...)
 
 	for _, threadPost := range threadData.Posts {
+		if streamingPostIDs[threadPost.Id] {
+			continue
+		}
 		if turnPostIDs[threadPost.Id] {
 			// Render the post-linked turn and any trailing tool-round turns
 			// as a single contiguous run so tool_result merges into the
@@ -838,4 +852,25 @@ func (s *Service) BuildChannelMentionRequest(
 		Context:   context,
 		Operation: conv.Operation,
 	}, nil
+}
+
+// ExcludeStreamingTurns drops turns whose response is still being generated
+// (possibly on another node). Their content is partial and still changing,
+// so they must not be fed into a new LLM request. Interrupted turns are kept:
+// their partial content is real output the user saw.
+func ExcludeStreamingTurns(turns []store.Turn) []store.Turn {
+	if !slices.ContainsFunc(turns, isStreamingTurn) {
+		return turns
+	}
+	out := make([]store.Turn, 0, len(turns))
+	for _, t := range turns {
+		if !isStreamingTurn(t) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+func isStreamingTurn(t store.Turn) bool {
+	return t.Status == store.TurnStatusStreaming
 }

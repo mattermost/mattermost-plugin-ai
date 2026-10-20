@@ -2574,3 +2574,117 @@ func TestGetPreviousUserTurn(t *testing.T) {
 		assert.Nil(t, got)
 	})
 }
+
+func TestBuildCompletionRequest_TurnStatus(t *testing.T) {
+	tests := []struct {
+		name          string
+		status        string
+		wantAssistant bool
+	}{
+		{name: "complete turn is included", status: store.TurnStatusComplete, wantAssistant: true},
+		{name: "interrupted turn is included with its partial content", status: store.TurnStatusInterrupted, wantAssistant: true},
+		{name: "streaming turn is skipped", status: store.TurnStatusStreaming, wantAssistant: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, s := setupTestService(t)
+			result, err := svc.CreateConversation(CreateConversationParams{
+				UserID:       model.NewId(),
+				BotID:        model.NewId(),
+				Operation:    "conversation",
+				SystemPrompt: "system",
+				UserMessage:  "question",
+			})
+			require.NoError(t, err)
+
+			postID := model.NewId()
+			require.NoError(t, s.CreateTurnAutoSequence(&store.Turn{
+				ID:             model.NewId(),
+				ConversationID: result.ConversationID,
+				PostID:         &postID,
+				Role:           "assistant",
+				Content:        json.RawMessage(`[{"type":"text","text":"partial answer"}]`),
+				CreatedAt:      model.GetMillis(),
+				Status:         tc.status,
+			}))
+
+			conv, err := svc.GetConversation(result.ConversationID)
+			require.NoError(t, err)
+			req, err := svc.BuildCompletionRequest(conv, &llm.Context{})
+			require.NoError(t, err)
+
+			var assistant []string
+			for _, p := range req.Posts {
+				if p.Role == llm.PostRoleBot {
+					assistant = append(assistant, p.Message)
+				}
+			}
+			if tc.wantAssistant {
+				assert.Equal(t, []string{"partial answer"}, assistant)
+			} else {
+				assert.Empty(t, assistant)
+			}
+		})
+	}
+}
+
+func TestBuildChannelMentionRequest_SkipsStreamingReply(t *testing.T) {
+	svc, s := setupTestService(t)
+
+	botID := model.NewId()
+	rootPostID := "chan_root"
+	result, err := svc.CreateConversation(CreateConversationParams{
+		UserID:       model.NewId(),
+		BotID:        botID,
+		RootPostID:   &rootPostID,
+		Operation:    "conversation",
+		SystemPrompt: "system prompt",
+		UserMessage:  "hello bot",
+		UserPostID:   new("post1"),
+	})
+	require.NoError(t, err)
+
+	content, _ := json.Marshal([]ContentBlock{{Type: BlockTypeText, Text: "partial reply"}})
+	require.NoError(t, s.CreateTurn(&store.Turn{
+		ID:             model.NewId(),
+		ConversationID: result.ConversationID,
+		PostID:         new("post2"),
+		Role:           "assistant",
+		Content:        content,
+		Sequence:       2,
+		CreatedAt:      model.GetMillis(),
+		Status:         store.TurnStatusStreaming,
+	}))
+	// A newer question in the same conversation, asked while the reply streams.
+	question, _ := json.Marshal([]ContentBlock{{Type: BlockTypeText, Text: "another question"}})
+	require.NoError(t, s.CreateTurn(&store.Turn{
+		ID:             model.NewId(),
+		ConversationID: result.ConversationID,
+		PostID:         new("post3"),
+		Role:           "user",
+		Content:        question,
+		Sequence:       3,
+		CreatedAt:      model.GetMillis(),
+	}))
+
+	conv, err := s.GetConversation(result.ConversationID)
+	require.NoError(t, err)
+	threadData := &mmapi.ThreadData{
+		Posts: []*model.Post{
+			{Id: "post1", UserId: "someuser", CreateAt: 1000, Message: "hello bot"},
+			{Id: "post2", UserId: botID, CreateAt: 2000, Message: "partial reply"},
+			{Id: "post3", UserId: "someuser", CreateAt: 3000, Message: "another question"},
+		},
+		UsersByID: map[string]*model.User{
+			"someuser": {Id: "someuser", Username: "alice"},
+			botID:      {Id: botID, Username: "aibot"},
+		},
+	}
+	svc.bots = &testBotLookup{botUserIDs: map[string]bool{botID: true}}
+
+	req, err := svc.BuildChannelMentionRequest(conv, &llm.Context{}, threadData)
+	require.NoError(t, err)
+	for _, p := range req.Posts {
+		assert.NotContains(t, p.Message, "partial reply", "a reply still streaming must not reach the LLM")
+	}
+}
