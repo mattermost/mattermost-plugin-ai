@@ -63,6 +63,11 @@ func selectRegeneratePath(conv *store.Conversation, post *model.Post) (regenerat
 			return regenerateChannelSummary, nil
 		}
 		return regenerateConversation, nil
+	case llm.OperationChannelInterval:
+		if isOperationRoot {
+			return 0, errors.New("interval summary posts cannot be regenerated")
+		}
+		return regenerateConversation, nil
 	case llm.OperationMeetingSummary:
 		// Summary posts reply under the request post, so the conversation
 		// root never matches them. The prop only selects the path; the
@@ -208,7 +213,7 @@ func (c *Conversations) checkRegenerateLicense(operation string) error {
 		return c.licenseChecker.Check(enterprise.CapMeetings)
 	case llm.OperationThreadAnalysis:
 		return c.licenseChecker.Check(enterprise.CapThreadSummarization)
-	case llm.OperationChannelSummary:
+	case llm.OperationChannelSummary, llm.OperationChannelInterval:
 		return c.licenseChecker.Check(enterprise.CapChannelSummarization)
 	}
 	return nil

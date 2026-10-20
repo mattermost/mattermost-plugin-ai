@@ -34,6 +34,12 @@ func TestCheckRegenerateLicense(t *testing.T) {
 			minLevel:  enterprise.LevelProfessional,
 		},
 		{
+			name:      "channel interval summary",
+			operation: llm.OperationChannelInterval,
+			cap:       enterprise.CapChannelSummarization,
+			minLevel:  enterprise.LevelProfessional,
+		},
+		{
 			name:      "meeting summary",
 			operation: llm.OperationMeetingSummary,
 			cap:       enterprise.CapMeetings,

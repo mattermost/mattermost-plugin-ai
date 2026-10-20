@@ -240,10 +240,23 @@ func TestHandleRegenerate(t *testing.T) {
 			wantErr:    "not authored by the conversation's bot",
 		},
 		{
-			name:      "channel interval conversation fails closed",
+			name:      "interval summary follow-up regenerates as a conversation",
 			operation: llm.OperationChannelInterval,
 			postProps: followUpProps,
-			wantErr:   "not supported",
+			wantPath:  pathConversation,
+		},
+		{
+			name:       "interval summary post tagged no-regen is rejected",
+			operation:  llm.OperationChannelInterval,
+			rootIsPost: true,
+			postProps:  map[string]any{streaming.NoRegen: "true"},
+			wantErr:    "tagged no regen",
+		},
+		{
+			name:       "interval summary post without its no-regen tag still fails closed",
+			operation:  llm.OperationChannelInterval,
+			rootIsPost: true,
+			wantErr:    "cannot be regenerated",
 		},
 		{
 			name:      "unknown operation fails closed",
@@ -280,6 +293,13 @@ func TestHandleRegenerate(t *testing.T) {
 			postProps:    followUpProps,
 			licenseLevel: enterprise.LevelProfessional,
 			wantLicense:  enterprise.CapMeetings,
+		},
+		{
+			name:         "interval summary follow-up below Professional",
+			operation:    llm.OperationChannelInterval,
+			postProps:    followUpProps,
+			licenseLevel: enterprise.LevelUnlicensed,
+			wantLicense:  enterprise.CapChannelSummarization,
 		},
 		{
 			name:         "thread analysis follow-up below Professional",
