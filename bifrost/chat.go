@@ -345,7 +345,7 @@ func (b *LLM) convertMessages(posts []llm.Post) []schemas.ChatMessage {
 						},
 					}
 					if toolResultIsError(tc) {
-						toolResultMsg.ChatToolMessage.IsError = new(true)
+						toolResultMsg.IsError = new(true)
 					}
 					messages = append(messages, toolResultMsg)
 				}
