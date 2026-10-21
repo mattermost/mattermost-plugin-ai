@@ -48,6 +48,7 @@ const groups = {
         'tests/llmbot-post-component/combined-features.spec.ts',
         'tests/llmbot-post-component/debug-test.spec.ts',
         'tests/agents/create-file-attachment.spec.ts',
+        'tests/agents/html-artifact.spec.ts',
         'tests/tool-activity/collapsed-activity.spec.ts',
     ],
     'e2e-shard-3': [
@@ -89,6 +90,7 @@ const groups = {
         'tests/tool-config/mock-api/dynamic_mcp_approval.spec.ts',
         'tests/tool-config/mock-api/dynamic_mcp_cross_turn_derivation.spec.ts',
         'tests/tool-config/mock-api/ask_user_question.spec.ts',
+        'tests/tool-config/mock-api/mcp_connection_request.spec.ts',
         'tests/tool-config/real-api/ask-policy.spec.ts',
         'tests/tool-config/real-api/auto-run-policy.spec.ts',
         'tests/tool-config/real-api/channel-auto-run.spec.ts',

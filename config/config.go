@@ -20,9 +20,14 @@ const (
 	tokenUsageLogToFileEnvKey   = "MM_FEATUREFLAGS_AI_TOKEN_USAGE_LOG_TO_FILE"   // #nosec G101 -- env var key name, not a credential
 )
 
+// Config is the plugin configuration. DefaultBotName and TranscriptGenerator
+// are legacy username references, read only when the matching bot user ID
+// field is empty.
 type Config struct {
 	Services                        []llm.ServiceConfig              `json:"services"`
 	Bots                            []llm.BotConfig                  `json:"bots"`
+	DefaultBotUserID                string                           `json:"defaultBotUserID"`
+	TranscriptBotUserID             string                           `json:"transcriptBotUserID"`
 	DefaultBotName                  string                           `json:"defaultBotName"`
 	TranscriptGenerator             string                           `json:"transcriptBackend"`
 	EnableTokenUsageLogging         bool                             `json:"enableTokenUsageLogging"`
@@ -31,6 +36,7 @@ type Config struct {
 	EnableTokenUsageLogToFile       *bool                            `json:"enableTokenUsageLogToFile,omitempty"`
 	AllowedUpstreamHostnames        string                           `json:"allowedUpstreamHostnames"`
 	AllowUnsafeLinks                bool                             `json:"allowUnsafeLinks"`
+	EnableHTMLArtifacts             bool                             `json:"enableHTMLArtifacts"`
 	EnableChannelMentionToolCalling bool                             `json:"enableChannelMentionToolCalling"`
 	AllowNativeWebSearchInChannels  bool                             `json:"allowNativeWebSearchInChannels"`
 	EmbeddingSearchConfig           embeddings.EmbeddingSearchConfig `json:"embeddingSearchConfig"`
@@ -116,12 +122,20 @@ func (c *Container) GetTranscriptGenerator() string {
 	return c.Config().TranscriptGenerator
 }
 
+func (c *Container) GetTranscriptBotUserID() string {
+	return c.Config().TranscriptBotUserID
+}
+
 func (c *Container) GetBots() []llm.BotConfig {
 	return c.Config().Bots
 }
 
 func (c *Container) GetDefaultBotName() string {
 	return c.Config().DefaultBotName
+}
+
+func (c *Container) GetDefaultBotUserID() string {
+	return c.Config().DefaultBotUserID
 }
 
 func (c *Container) EnableTokenUsageLogging() bool {
@@ -172,6 +186,12 @@ func (c *Container) MCP() MCPConfig {
 
 func (c *Container) AllowUnsafeLinks() bool {
 	return c.Config().AllowUnsafeLinks
+}
+
+// EnableHTMLArtifacts reports whether agent-created HTML files are rendered
+// as sandboxed interactive artifacts.
+func (c *Container) EnableHTMLArtifacts() bool {
+	return c.Config().EnableHTMLArtifacts
 }
 
 func (c *Container) EnableChannelMentionToolCalling() bool {

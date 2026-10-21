@@ -6,8 +6,6 @@ import styled from 'styled-components';
 import {FormattedMessage, useIntl} from 'react-intl';
 import {useSelector} from 'react-redux';
 import {ImportIcon, PlusIcon} from '@mattermost/compass-icons/components';
-//eslint-disable-next-line import/no-unresolved -- react-bootstrap is external
-import {OverlayTrigger, Tooltip} from 'react-bootstrap';
 
 import {GlobalState} from '@mattermost/types/store';
 
@@ -18,6 +16,7 @@ import {SearchInput} from '@mattermost/compass-ui/components/search-input';
 import {SectionNotice} from '@mattermost/compass-ui/components/section-notice';
 import {Spinner} from '@mattermost/compass-ui/components/spinner';
 import {Tabs} from '@mattermost/compass-ui/components/tabs';
+import {WithTooltip} from '@mattermost/shared/components/tooltip';
 
 import {getAgents, getServices, deleteAgent as deleteAgentAPI} from '@/client';
 import {userHasSystemPermission} from '@/utils/permissions';
@@ -270,13 +269,9 @@ const AgentsList = () => {
                             )}
                             {userCanCreateAgent && (
                                 createQuotaReached ? (
-                                    <OverlayTrigger
-                                        placement='bottom'
-                                        overlay={
-                                            <Tooltip id='create-agent-quota-tooltip'>
-                                                {createQuotaMessage}
-                                            </Tooltip>
-                                        }
+                                    <WithTooltip
+                                        title={createQuotaMessage}
+                                        forcedPlacement='bottom'
                                     >
                                         {/* Wrapper receives hover events; a disabled button does not fire them itself. */}
                                         <CreateButtonWrapper>
@@ -289,7 +284,7 @@ const AgentsList = () => {
                                                 <FormattedMessage defaultMessage='Create agent'/>
                                             </Button>
                                         </CreateButtonWrapper>
-                                    </OverlayTrigger>
+                                    </WithTooltip>
                                 ) : (
                                     <Button
                                         emphasis='primary'
