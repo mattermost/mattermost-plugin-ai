@@ -33,14 +33,15 @@ server-fips: generate
 	    $(GO_BUILD_FLAGS) $(GO_BUILD_GCFLAGS) $(FIPS_GO_BUILD_LDFLAGS) \
 	    -o dist-fips/plugin-linux-amd64-fips'
 
-# GOFIPS140=certified is recorded as the resolved module version (v1.x), so
-# reject unset, "off", "latest", and "inprocess". Each check is its own recipe
+# GOFIPS140=certified is recorded as the resolved module version; compare it to
+# the toolchain's certified.txt (go.mod pins the same Go as FIPS_IMAGE) so
+# "inprocess", "latest", and "off" builds are rejected. Each check is its own recipe
 # line so a failure exits with the right status; joined with `; \`, only
 # the last command's exit propagates and a failed check would be masked.
 .PHONY: verify-fips
 verify-fips:
 	@test -f $(FIPS_BIN) || (echo "verify-fips: $(FIPS_BIN) not built" && exit 1)
-	$(GO) version -m $(FIPS_BIN) | grep -qE "build[[:space:]]+GOFIPS140=v1\." || (echo "ERROR: not built against a certified GOFIPS140 module" && exit 1)
+	$(GO) version -m $(FIPS_BIN) | grep -qxE "[[:space:]]*build[[:space:]]+GOFIPS140=$$(cat "$$($(GO) env GOROOT)/lib/fips140/certified.txt")" || (echo "ERROR: not built against the certified GOFIPS140 module" && exit 1)
 	$(GO) version -m $(FIPS_BIN) | grep -E "build[[:space:]]+DefaultGODEBUG=" | grep -qE "(^|[=,])fips140=on(,|$$)" || (echo "ERROR: missing DefaultGODEBUG fips140=on" && exit 1)
 	@echo "verify-fips: OK"
 
