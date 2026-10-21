@@ -299,59 +299,50 @@ export class AgentPageHelper {
         await this.getVersionSnapshot().waitFor({ state: 'visible', timeout: 10000 });
     }
 
-    // --- Import Modal ---
+    /** Checkbox that selects a non-current version for deletion. */
+    getVersionCheckbox(version: number): Locator {
+        return this.getVersionList().getByRole('checkbox', { name: `Select version ${version}`, exact: true });
+    }
 
+    getDeleteSelectedVersionsButton(): Locator {
+        return this.page.getByRole('button', { name: /^Delete selected \(\d+\)$/ });
+    }
+
+    getDeleteAllPreviousVersionsButton(): Locator {
+        return this.page.getByRole('button', { name: 'Delete all previous', exact: true });
+    }
+
+    /** Confirms the open version delete dialog. */
+    async confirmVersionDelete(): Promise<void> {
+        const dialog = this.page.getByRole('dialog', { name: /^Delete / });
+        await dialog.getByRole('button', { name: 'Delete', exact: true }).click();
+        await expect(dialog).toBeHidden({ timeout: 10000 });
+    }
+
+    // --- Import ---
+
+    /** Import agent button on the Agents list. */
     getImportButton(): Locator {
         return this.page.getByRole('button', { name: 'Import agent' });
     }
 
-    getImportDialog(): Locator {
-        return this.page.getByRole('dialog', { name: 'Import agent' });
+    /** Import from file button in the editor header. */
+    getEditorImportButton(): Locator {
+        return this.page.getByRole('button', { name: 'Import from file', exact: true });
     }
 
-    getImportSummary(): Locator {
-        return this.getImportDialog().getByTestId('import-summary');
+    /** Clicks an import button and picks file in the file chooser it opens. */
+    async importAgentFile(button: Locator, file: string | { name: string; mimeType: string; buffer: Buffer }): Promise<void> {
+        const [chooser] = await Promise.all([
+            this.page.waitForEvent('filechooser'),
+            button.click(),
+        ]);
+        await chooser.setFiles(file);
     }
 
-    getImportModeRadio(mode: 'create' | 'update'): Locator {
-        const label = mode === 'create' ? 'Create a new agent' : 'Update an existing agent';
-        return this.getImportDialog().getByRole('radio', { name: label });
-    }
-
-    getImportUsernameInput(): Locator {
-        return this.getImportDialog().getByLabel('Username', { exact: true });
-    }
-
-    getImportDisplayNameInput(): Locator {
-        return this.getImportDialog().getByLabel('Display name', { exact: true });
-    }
-
-    getImportServiceSelect(): Locator {
-        return this.getImportDialog().getByLabel('AI service', { exact: true });
-    }
-
-    getImportTargetAgentSelect(): Locator {
-        return this.getImportDialog().getByLabel('Agent to update', { exact: true });
-    }
-
-    /** The MCP mapping select for a document server, labelled by its source name. */
-    getImportMCPMappingSelect(sourceName: string): Locator {
-        return this.getImportDialog().getByTestId('import-mcp-mappings').getByLabel(sourceName, { exact: true });
-    }
-
-    getImportSubmitButton(): Locator {
-        return this.getImportDialog().getByRole('button', { name: /^Import$|^Importing/ });
-    }
-
-    async openImportModal(): Promise<void> {
-        await this.getImportButton().click();
-        await this.getImportDialog().waitFor({ state: 'visible', timeout: 10000 });
-    }
-
-    /** Choose an export file in the import modal and wait for the server preview. */
-    async chooseImportFile(file: string | { name: string; mimeType: string; buffer: Buffer }): Promise<void> {
-        await this.getImportDialog().getByTestId('import-agent-file-input').setInputFiles(file);
-        await this.getImportSummary().waitFor({ state: 'visible', timeout: 10000 });
+    /** The notice the editor shows once an agent file is loaded into the form. */
+    getImportedNotice(): Locator {
+        return this.page.getByRole('status').filter({ hasText: 'Settings from the agent file are loaded' });
     }
 
     // --- Convenience Methods ---
