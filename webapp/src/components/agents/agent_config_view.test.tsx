@@ -5,9 +5,9 @@ import React from 'react';
 import {act, fireEvent, render, screen, waitFor, waitForElementToBeRemoved, within} from '@testing-library/react';
 import {IntlProvider} from 'react-intl';
 
-import {createAgent, getAgentVersion, getAgentVersions, getProfilesByIds, restoreAgentVersion, updateAgent} from '@/client';
-import {AgentVersionDetail, AgentVersionList, EnabledTool, MaxCustomInstructionsRunes, ServiceInfo, UserAgent} from '@/types/agents';
-import {downloadAgentExport} from '@/utils/download_agent_export';
+import {createAgent, getAgentVersion, getAgentVersions, getProfilesByIds, getUserMCPTools, restoreAgentVersion, updateAgent} from '@/client';
+import {AgentExportDocument, AgentVersionDetail, AgentVersionList, EnabledTool, MaxCustomInstructionsRunes, ServiceInfo, UserAgent} from '@/types/agents';
+import {downloadAgentExport} from '@/utils/agent_export';
 import {useCurrentUserHasSystemPermission} from '@/utils/permissions';
 
 import AgentConfigView, {AgentDraft} from './agent_config_view';
@@ -52,7 +52,8 @@ jest.mock('@/client', () => ({
     getProfilesByIds: jest.fn(),
 }));
 
-jest.mock('@/utils/download_agent_export', () => ({
+jest.mock('@/utils/agent_export', () => ({
+    ...jest.requireActual('@/utils/agent_export'),
     downloadAgentExport: jest.fn(),
 }));
 
@@ -1398,7 +1399,7 @@ describe('AgentConfigView history and export', () => {
 
         fireEvent.click(screen.getByRole('button', {name: 'Export'}));
 
-        await waitFor(() => expect(mockDownloadAgentExport).toHaveBeenCalledWith('agent_1', 'existingagent'));
+        await waitFor(() => expect(mockDownloadAgentExport).toHaveBeenCalledWith('agent_1'));
     });
 
     test('Export shows the server error when the download fails', async () => {
@@ -1408,5 +1409,133 @@ describe('AgentConfigView history and export', () => {
         fireEvent.click(screen.getByRole('button', {name: 'Export'}));
 
         expect(await screen.findByText('You do not have permission to export this agent.')).not.toBeNull();
+    });
+});
+
+describe('AgentConfigView import from file', () => {
+    const mockGetUserMCPTools = getUserMCPTools as jest.MockedFunction<typeof getUserMCPTools>;
+
+    const exported: AgentExportDocument = {
+        kind: 'mattermost-agent',
+        schemaVersion: 1,
+        exportedAt: 1,
+        agentVersion: 4,
+        agent: {
+            name: 'releasehelper',
+            displayName: 'Release Helper',
+            customInstructions: 'Imported instructions',
+            disableTools: false,
+            maxToolTurns: 12,
+            mcpDynamicToolLoading: false,
+            autoEnableNewMCPTools: false,
+            mcpTools: [
+                {serverOrigin: 'https://jira.example.com/mcp', toolName: 'search'},
+                {serverOrigin: 'https://linear.example.com', toolName: 'issues'},
+            ],
+        },
+    };
+
+    const existingAgent: UserAgent = {...savedAgent, name: 'existingagent', displayName: 'Existing Agent', customInstructions: 'old instructions', autoEnableNewMCPTools: true};
+
+    function renderWith(props: Partial<React.ComponentProps<typeof AgentConfigView>>) {
+        return render(
+            <IntlProvider locale='en'>
+                <AgentConfigView
+                    mode='create'
+                    services={services}
+                    onBack={jest.fn()}
+                    onSaved={jest.fn()}
+                    {...props}
+                />
+            </IntlProvider>,
+        );
+    }
+
+    function pickFile(content: unknown) {
+        const file = new File([JSON.stringify(content)], 'agent.json', {type: 'application/json'});
+        fireEvent.change(screen.getByTestId('agent-import-file-input'), {target: {files: [file]}});
+    }
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+        mockedUseCurrentUserHasSystemPermission.mockReturnValue(true);
+        mockGetUserMCPTools.mockResolvedValue({servers: [
+            {name: 'Jira', serverOrigin: 'https://jira.example.com/mcp/', tools: []},
+        ]} as never);
+    });
+
+    test('a file opened from the Agents list fills the new agent and saves through create', async () => {
+        mockCreateAgent.mockResolvedValue({...savedAgent, id: 'agent_new'});
+        renderWith({importedDocument: exported});
+
+        expect(await screen.findByText(/Tools from MCP servers that are not available here were left out: https:\/\/linear.example.com/)).not.toBeNull();
+        expect((screen.getByLabelText('Username') as HTMLInputElement).value).toBe('releasehelper');
+        expect((screen.getByLabelText('Display Name') as HTMLInputElement).value).toBe('Release Helper');
+        expect((screen.getByLabelText('Custom instructions') as HTMLTextAreaElement).value).toBe('Imported instructions');
+        expect(mockGetUserMCPTools).toHaveBeenCalledWith({agentId: undefined, serviceAccount: false});
+
+        fireEvent.click(screen.getByRole('button', {name: 'Save'}));
+
+        await waitFor(() => expect(mockCreateAgent).toHaveBeenCalledTimes(1));
+        expect(mockCreateAgent.mock.calls[0][0]).toEqual(expect.objectContaining({
+            username: 'releasehelper',
+            displayName: 'Release Helper',
+            serviceID: 'svc_1',
+            customInstructions: 'Imported instructions',
+            maxToolTurns: 12,
+            mcpDynamicToolLoading: false,
+            autoEnableNewMCPTools: false,
+            enabledMCPTools: [{server_origin: 'https://jira.example.com/mcp/', tool_name: 'search'}],
+        }));
+    });
+
+    test('importing into an existing agent replaces only the transferable settings', async () => {
+        mockUpdateAgent.mockResolvedValue(existingAgent);
+        renderWith({mode: 'edit', agent: existingAgent});
+
+        pickFile(exported);
+
+        await waitFor(() => expect((screen.getByLabelText('Custom instructions') as HTMLTextAreaElement).value).toBe('Imported instructions'));
+        expect((screen.getByLabelText('Username') as HTMLInputElement).value).toBe('existingagent');
+        expect((screen.getByLabelText('Display Name') as HTMLInputElement).value).toBe('Existing Agent');
+        expect(mockGetUserMCPTools).toHaveBeenCalledWith({agentId: 'agent_1', serviceAccount: false});
+        expect(mockUpdateAgent).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('button', {name: 'Save'}));
+
+        await waitFor(() => expect(mockUpdateAgent).toHaveBeenCalledTimes(1));
+        expect(mockUpdateAgent.mock.calls[0][1]).toEqual(expect.objectContaining({
+            username: 'existingagent',
+            displayName: 'Existing Agent',
+            customInstructions: 'Imported instructions',
+            autoEnableNewMCPTools: false,
+            enabledMCPTools: [{server_origin: 'https://jira.example.com/mcp/', tool_name: 'search'}],
+        }));
+    });
+
+    test('a file that enables every MCP tool does not look up MCP servers', async () => {
+        renderWith({importedDocument: {...exported, agent: {...exported.agent, autoEnableNewMCPTools: true}}});
+
+        expect(await screen.findByText('Settings from the agent file are loaded. Review them, then save to apply them.')).not.toBeNull();
+        expect(mockGetUserMCPTools).not.toHaveBeenCalled();
+    });
+
+    test('leaves the form unchanged when MCP servers cannot be loaded', async () => {
+        mockGetUserMCPTools.mockRejectedValue(new Error('offline'));
+        renderWith({mode: 'edit', agent: existingAgent});
+
+        pickFile(exported);
+
+        expect(await screen.findByText('Failed to load your MCP servers, so the agent file was not imported. Please try again.')).not.toBeNull();
+        expect((screen.getByLabelText('Custom instructions') as HTMLTextAreaElement).value).toBe('old instructions');
+    });
+
+    test('shows why a file cannot be imported', async () => {
+        renderWith({mode: 'edit', agent: existingAgent});
+
+        pickFile({kind: 'something-else'});
+
+        expect(await screen.findByText('This file is not a valid Mattermost agent export.')).not.toBeNull();
+        expect(mockGetUserMCPTools).not.toHaveBeenCalled();
     });
 });

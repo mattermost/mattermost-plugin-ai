@@ -11,8 +11,9 @@ import {Icon} from '@mattermost/compass-ui/components/icon';
 import {IconButton} from '@mattermost/compass-ui/components/icon-button';
 import {SectionNotice} from '@mattermost/compass-ui/components/section-notice';
 
-import {createAgent, updateAgent, uploadAgentAvatar} from '@/client';
+import {createAgent, getUserMCPTools, updateAgent, uploadAgentAvatar} from '@/client';
 import {
+    AgentExportDocument,
     UserAgent,
     CreateAgentRequest,
     UpdateAgentRequest,
@@ -30,9 +31,9 @@ import {UnderlineTab, UnderlineTabs} from '@/components/underline_tabs';
 import {useIsLicensedFor} from '@/license';
 import {useABACSupport} from '@/utils/access_control';
 import {useCurrentUserHasSystemPermission} from '@/utils/permissions';
-import {downloadAgentExport} from '@/utils/download_agent_export';
+import {downloadAgentExport, matchImportedMCPTools} from '@/utils/agent_export';
 
-import {agentUsernameError} from './agent_username';
+import {useAgentFilePicker} from './use_agent_file_picker';
 import ConfigTab from './tabs/config_tab';
 import AccessTab from './tabs/access_tab';
 import McpsTab from './tabs/mcps_tab';
@@ -206,13 +207,16 @@ type Props = {
     onBack: () => void;
     onSaved: (agent: UserAgent) => void; // called after successful create or update
     onRestored?: (agent: UserAgent) => void; // called after a version was restored; the editor stays open
+
+    /** An agent export file to load into the form when the view opens. */
+    importedDocument?: AgentExportDocument;
 }
 
 const DISCARD_CHANGES_TITLE_ID = 'discard-agent-changes-title';
 const RENAME_AGENT_TITLE_ID = 'rename-agent-title';
 
 const AgentConfigView = (props: Props) => {
-    const {mode, agent, services, onBack, onSaved, onRestored} = props;
+    const {mode, agent, services, onBack, onSaved, onRestored, importedDocument} = props;
     const intl = useIntl();
 
     // Parent owns the manage_system check via useCurrentUserHasSystemPermission.
@@ -245,6 +249,12 @@ const AgentConfigView = (props: Props) => {
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [showDiscardDialog, setShowDiscardDialog] = useState(false);
     const [showRenameDialog, setShowRenameDialog] = useState(false);
+    const [importing, setImporting] = useState(false);
+
+    // MCP server origins whose tools the last imported file referenced but
+    // this server does not list; null until a file is imported.
+    const [importMissingServers, setImportMissingServers] = useState<string[] | null>(null);
+    const importRequestRef = useRef(0);
     const dialogOpenRef = useRef(false);
     dialogOpenRef.current = showDiscardDialog || showRenameDialog;
 
@@ -346,11 +356,70 @@ const AgentConfigView = (props: Props) => {
         setBaselineDraft(cloneDraft(restoredDraft));
         setAvatarFile(null);
         setErrors({});
+        setImportMissingServers(null);
         if (needsAccessPolicy) {
             setActiveTab('access');
         }
         onRestored?.(restored);
     }, [baselineDraft.userAccessLevel, onRestored, services]);
+
+    useEffect(() => {
+        return () => {
+            importRequestRef.current += 1;
+        };
+    }, []);
+
+    // Loads the file's transferable settings into the form; saving applies
+    // them through the normal create or update. The name and display name are
+    // only suggestions for a new agent.
+    const applyImport = useCallback(async (doc: AgentExportDocument) => {
+        importRequestRef.current += 1;
+        const request = importRequestRef.current;
+        const imported = doc.agent;
+        setImporting(true);
+        try {
+            let enabledTools: EnabledTool[] = [];
+            let missingServerOrigins: string[] = [];
+            if (!imported.autoEnableNewMCPTools && imported.mcpTools.length > 0) {
+                const {servers} = await getUserMCPTools({agentId: agent?.id, serviceAccount: draft.useServiceAccountAuth});
+                ({enabledTools, missingServerOrigins} = matchImportedMCPTools(imported.mcpTools, servers ?? []));
+            }
+            if (request !== importRequestRef.current) {
+                return;
+            }
+            updateDraft({
+                ...(mode === 'create' && imported.name ? {username: imported.name} : {}),
+                ...(mode === 'create' && imported.displayName ? {displayName: imported.displayName} : {}),
+                customInstructions: imported.customInstructions,
+                disableTools: imported.disableTools,
+                maxToolTurns: imported.maxToolTurns > 0 ? imported.maxToolTurns : DefaultMaxToolTurns,
+                mcpDynamicToolLoading: imported.mcpDynamicToolLoading,
+                autoEnableNewMCPTools: imported.autoEnableNewMCPTools,
+                enabledTools,
+            });
+            setImportMissingServers(missingServerOrigins);
+            setActiveTab('config');
+        } catch {
+            if (request === importRequestRef.current) {
+                setErrors({general: intl.formatMessage({defaultMessage: 'Failed to load your MCP servers, so the agent file was not imported. Please try again.'})});
+            }
+        } finally {
+            if (request === importRequestRef.current) {
+                setImporting(false);
+            }
+        }
+    }, [agent?.id, draft.useServiceAccountAuth, intl, mode, updateDraft]);
+
+    const filePicker = useAgentFilePicker(applyImport, (message) => setErrors({general: message}));
+
+    const initialImportRef = useRef(importedDocument);
+    useEffect(() => {
+        const doc = initialImportRef.current;
+        initialImportRef.current = undefined;
+        if (doc) {
+            applyImport(doc);
+        }
+    }, [applyImport]);
 
     const handleExport = useCallback(async () => {
         if (!agent || exporting) {
@@ -358,7 +427,7 @@ const AgentConfigView = (props: Props) => {
         }
         setExporting(true);
         try {
-            await downloadAgentExport(agent.id, agent.name);
+            await downloadAgentExport(agent.id);
         } catch (e: any) {
             const message = (typeof e?.message === 'string' ? e.message : '').trim();
             setErrors({general: message || intl.formatMessage({defaultMessage: 'Failed to export agent. Please try again.'})});
@@ -372,9 +441,10 @@ const AgentConfigView = (props: Props) => {
         if (!draft.displayName.trim()) {
             errs.displayName = intl.formatMessage({defaultMessage: 'Display name is required'});
         }
-        const usernameError = agentUsernameError(intl, draft.username);
-        if (usernameError) {
-            errs.username = usernameError;
+        if (!draft.username.trim()) {
+            errs.username = intl.formatMessage({defaultMessage: 'Username is required'});
+        } else if (!(/^[a-z][a-z0-9.\-_]*$/).test(draft.username)) {
+            errs.username = intl.formatMessage({defaultMessage: 'Username must start with a letter and contain only lowercase letters, numbers, periods, hyphens, and underscores'});
         }
         if (!draft.serviceId) {
             errs.serviceId = intl.formatMessage({defaultMessage: 'AI Service is required'});
@@ -483,16 +553,27 @@ const AgentConfigView = (props: Props) => {
                         />
                         <ViewTitle>{title}</ViewTitle>
                     </HeaderLeading>
-                    {mode === 'edit' && agent && (
+                    <HeaderActions>
                         <Button
                             emphasis='tertiary'
-                            onClick={handleExport}
-                            loading={exporting}
+                            onClick={filePicker.open}
+                            loading={importing}
                             disabled={saving}
                         >
-                            {exporting ? <FormattedMessage defaultMessage='Exporting...'/> : <FormattedMessage defaultMessage='Export'/>}
+                            <FormattedMessage defaultMessage='Import from file'/>
                         </Button>
-                    )}
+                        {filePicker.input}
+                        {mode === 'edit' && agent && (
+                            <Button
+                                emphasis='tertiary'
+                                onClick={handleExport}
+                                loading={exporting}
+                                disabled={saving}
+                            >
+                                {exporting ? <FormattedMessage defaultMessage='Exporting...'/> : <FormattedMessage defaultMessage='Export'/>}
+                            </Button>
+                        )}
+                    </HeaderActions>
                 </ViewHeader>
 
                 <ConfigTabs role='tablist'>
@@ -555,6 +636,18 @@ const AgentConfigView = (props: Props) => {
                         <Notice
                             type='danger'
                             title={errors.general}
+                        />
+                    )}
+                    {importMissingServers !== null && (
+                        <Notice
+                            type={importMissingServers.length > 0 ? 'warning' : 'info'}
+                            title={importMissingServers.length > 0 ? intl.formatMessage(
+                                {defaultMessage: 'Settings from the agent file are loaded. Tools from MCP servers that are not available here were left out: {servers}. Review the settings, then save to apply them.'},
+                                {servers: importMissingServers.join(', ')},
+                            ) : intl.formatMessage({defaultMessage: 'Settings from the agent file are loaded. Review them, then save to apply them.'})}
+                            role='status'
+                            onDismiss={() => setImportMissingServers(null)}
+                            dismissLabel={intl.formatMessage({defaultMessage: 'Dismiss'})}
                         />
                     )}
                     {serviceAccountFieldsLocked && (
@@ -735,6 +828,13 @@ const ViewHeader = styled.div`
     align-items: center;
     justify-content: space-between;
     padding: var(--spacing-xxxxxl) 0 var(--spacing-l) 0;
+    flex-shrink: 0;
+`;
+
+const HeaderActions = styled.div`
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
     flex-shrink: 0;
 `;
 

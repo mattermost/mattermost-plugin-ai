@@ -15,12 +15,9 @@ import {
     doLoopInAgent,
     doRunSearch,
     doThreadAnalysis,
-    exportAgent,
+    deleteAgentVersions,
     getAgentVersion,
     getAgentVersions,
-    importAgent,
-    parseContentDispositionFilename,
-    previewAgentImport,
     restoreAgentVersion,
     getArtifactToken,
     getChannelAutoReply,
@@ -443,32 +440,14 @@ describe('license denial errors', () => {
     });
 });
 
-describe('agent versioning and import/export client', () => {
+describe('agent versioning client', () => {
     const agentBase = `${siteURL}/plugins/${manifest.id}/agents`;
-    const document = {
-        kind: 'mattermost-agent',
-        schemaVersion: 1,
-        exportedAt: 1,
-        agentVersion: 2,
-        agent: {
-            name: 'helper',
-            displayName: 'Helper',
-            customInstructions: '',
-            disableTools: false,
-            maxToolTurns: 30,
-            mcpDynamicToolLoading: true,
-            autoEnableNewMCPTools: false,
-            mcpTools: [],
-        },
-    };
 
-    function jsonResponse(body: unknown, init: {ok?: boolean; status?: number; headers?: Record<string, string>} = {}): Response {
+    function jsonResponse(body: unknown, init: {ok?: boolean; status?: number} = {}): Response {
         return {
             ok: init.ok ?? true,
             status: init.status ?? 200,
             json: () => Promise.resolve(body),
-            blob: () => Promise.resolve(new Blob([JSON.stringify(body)])),
-            headers: {get: (name: string) => init.headers?.[name] ?? null},
         } as unknown as Response;
     }
 
@@ -478,8 +457,7 @@ describe('agent versioning and import/export client', () => {
         {name: 'list a page of versions', call: () => getAgentVersions('a1', {before: 51, limit: 20}), url: `${agentBase}/a1/versions?before=51&limit=20`, method: 'GET'},
         {name: 'get one version', call: () => getAgentVersion('a1', 3), url: `${agentBase}/a1/versions/3`, method: 'GET'},
         {name: 'restore a version', call: () => restoreAgentVersion('a1', 3), url: `${agentBase}/a1/versions/3/restore`, method: 'POST'},
-        {name: 'preview an import', call: () => previewAgentImport(document), url: `${agentBase}/import/preview`, method: 'POST'},
-        {name: 'import an agent', call: () => importAgent({document, mode: 'update', agentID: 'a1', mcpServerMappings: []}), url: `${agentBase}/import`, method: 'POST'},
+        {name: 'delete versions', call: () => deleteAgentVersions('a1', [1, 2]), url: `${agentBase}/a1/versions`, method: 'DELETE'},
     ])('$name uses the contract route', async ({call, url, method}) => {
         mockFetch.mockResolvedValue(jsonResponse({}));
 
@@ -490,55 +468,26 @@ describe('agent versioning and import/export client', () => {
         expect(options).toEqual(expect.objectContaining({method}));
     });
 
-    test('preview wraps the document and import sends the request as-is', async () => {
-        await previewAgentImport(document);
-        expect(JSON.parse(mockFetch.mock.calls[0][1].body as string)).toEqual({document});
+    test.each([
+        {name: 'selected versions', versions: [1, 4] as number[] | 'all', body: {versions: [1, 4]}},
+        {name: 'every previous version', versions: 'all' as number[] | 'all', body: {all: true}},
+    ])('deleteAgentVersions sends $name and returns the count', async ({versions, body}) => {
+        mockFetch.mockResolvedValue(jsonResponse({deleted: 2}));
 
-        const request = {
-            document,
-            mode: 'create' as const,
-            username: 'helper',
-            displayName: 'Helper',
-            serviceID: 'svc',
-            model: '',
-            mcpServerMappings: [{sourceOrigin: 'https://a.example/mcp', targetOrigin: ''}],
-        };
-        await importAgent(request);
-        expect(JSON.parse(mockFetch.mock.calls[1][1].body as string)).toEqual(request);
+        await expect(deleteAgentVersions('a1', versions)).resolves.toBe(2);
+        expect(JSON.parse(mockFetch.mock.calls[0][1].body as string)).toEqual(body);
     });
 
     test.each([
         {name: 'restore', call: () => restoreAgentVersion('a1', 3)},
-        {name: 'import', call: () => importAgent({document, mode: 'update', agentID: 'a1', mcpServerMappings: []})},
-        {name: 'preview', call: () => previewAgentImport(document)},
-        {name: 'export', call: () => exportAgent('a1')},
+        {name: 'delete', call: () => deleteAgentVersions('a1', [3])},
         {name: 'list versions', call: () => getAgentVersions('a1')},
     ])('$name surfaces the server error message and status', async ({call}) => {
-        mockFetch.mockResolvedValue(jsonResponse({error: 'MCP server "Jira" must be mapped'}, {ok: false, status: 400}));
+        mockFetch.mockResolvedValue(jsonResponse({error: 'the current version of an agent cannot be deleted'}, {ok: false, status: 400}));
 
         await expect(call()).rejects.toMatchObject({
             status_code: 400,
-            message: 'MCP server "Jira" must be mapped',
+            message: 'the current version of an agent cannot be deleted',
         });
-    });
-
-    test('exportAgent returns the blob and the Content-Disposition filename', async () => {
-        mockFetch.mockResolvedValue(jsonResponse(document, {
-            headers: {'Content-Disposition': 'attachment; filename="helper-v2.agent.json"'},
-        }));
-
-        const result = await exportAgent('a1');
-
-        expect(mockFetch.mock.calls[0][0]).toBe(`${agentBase}/a1/export`);
-        expect(result.filename).toBe('helper-v2.agent.json');
-        expect(result.blob).toBeInstanceOf(Blob);
-    });
-
-    test.each([
-        {header: null, expected: null},
-        {header: 'attachment', expected: null},
-        {header: 'attachment; filename="a-v1.agent.json"', expected: 'a-v1.agent.json'},
-    ])('parseContentDispositionFilename($header)', ({header, expected}) => {
-        expect(parseContentDispositionFilename(header)).toBe(expected);
     });
 });

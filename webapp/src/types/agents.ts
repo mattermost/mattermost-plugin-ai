@@ -170,7 +170,7 @@ export type ServiceInfo = {
 }
 
 // Mirrors the Source column of the agent versions table on the backend.
-export type AgentVersionSource = 'initial' | 'create' | 'update' | 'restore' | 'import' | 'system';
+export type AgentVersionSource = 'initial' | 'create' | 'update' | 'restore' | 'system';
 
 // AgentVersionSummary is one entry of GET /agents/:id/versions (newest first).
 // changedFields holds BotConfig JSON keys (e.g. "customInstructions"); names only.
@@ -198,15 +198,17 @@ export type AgentVersionDetail = AgentVersionSummary & {
 }
 
 export const AgentExportKind = 'mattermost-agent';
+export const AgentExportSchemaVersion = 1;
 
-// MCP tool reference inside an export document. Matching on import is by serverOrigin.
+// MCP tool reference inside an export document. Imports match it to a server
+// on this instance by serverOrigin.
 export type AgentExportMCPTool = {
     serverOrigin: string;
-    serverName: string;
     toolName: string;
 }
 
-// The `agent` section of an export document (schemaVersion 1).
+// The `agent` section of an export document: only configuration that means
+// the same thing on every server.
 export type AgentExportAgent = {
     name: string;
     displayName: string;
@@ -219,53 +221,9 @@ export type AgentExportAgent = {
 }
 
 export type AgentExportDocument = {
-    kind: string;
-    schemaVersion: number;
+    kind: typeof AgentExportKind;
+    schemaVersion: typeof AgentExportSchemaVersion;
     exportedAt: number;
     agentVersion: number;
     agent: AgentExportAgent;
-}
-
-export type AgentImportMCPServer = {
-    sourceOrigin: string;
-    sourceName: string;
-    toolNames: string[];
-    autoTargetOrigin: string; // '' when no server on this instance matches
-}
-
-export type AgentImportAvailableMCPServer = {
-    origin: string;
-    name: string;
-}
-
-export type AgentImportExistingAgent = {
-    id: string;
-    displayName: string;
-    username: string;
-}
-
-export type AgentImportPreview = {
-    document: AgentExportDocument;
-    mcpServers: AgentImportMCPServer[] | null;
-    availableMCPServers: AgentImportAvailableMCPServer[] | null;
-    existingAgent?: AgentImportExistingAgent | null;
-}
-
-// targetOrigin '' means "remove these tools".
-export type AgentImportMCPServerMapping = {
-    sourceOrigin: string;
-    targetOrigin: string;
-}
-
-export type AgentImportMode = 'create' | 'update';
-
-export type AgentImportRequest = {
-    document: AgentExportDocument;
-    mode: AgentImportMode;
-    agentID?: string;
-    username?: string;
-    displayName?: string;
-    serviceID?: string;
-    model?: string;
-    mcpServerMappings: AgentImportMCPServerMapping[];
 }

@@ -21,8 +21,6 @@ export function versionSourceLabel(intl: IntlShape, summary: Pick<AgentVersionSu
             );
         }
         return intl.formatMessage({defaultMessage: 'Restored'});
-    case 'import':
-        return intl.formatMessage({defaultMessage: 'Imported'});
     case 'system':
         return intl.formatMessage({defaultMessage: 'System'});
     default:

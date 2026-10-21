@@ -17,9 +17,6 @@ import {
     ServiceInfo,
     AgentVersionList,
     AgentVersionDetail,
-    AgentExportDocument,
-    AgentImportPreview,
-    AgentImportRequest,
 } from '@/types/agents';
 import {isValidId} from '@/utils/ids';
 
@@ -1158,9 +1155,9 @@ export async function deleteAgent(id: string): Promise<void> {
     });
 }
 
-// fetchAgentRoute sends an authenticated request to an agent route and throws
+// fetchAgentJSON sends an authenticated request to an agent route and throws
 // a ClientError carrying the server's message for any non-2xx response.
-async function fetchAgentRoute(url: string, init: {method: string; body?: string}): Promise<Response> {
+async function fetchAgentJSON<T>(url: string, init: {method: string; body?: string}): Promise<T> {
     const response = await fetch(url, Client4.getOptions(init));
     if (!response.ok) {
         throw new ClientError(Client4.url, {
@@ -1169,11 +1166,7 @@ async function fetchAgentRoute(url: string, init: {method: string; body?: string
             url,
         });
     }
-    return response;
-}
-
-async function fetchAgentJSON<T>(url: string, init: {method: string; body?: string}): Promise<T> {
-    return (await fetchAgentRoute(url, init)).json();
+    return response.json();
 }
 
 // getAgentVersions fetches one page of versions, newest first: those older
@@ -1198,33 +1191,12 @@ export function restoreAgentVersion(agentId: string, version: number): Promise<U
     return fetchAgentJSON(`${agentRoute(agentId)}/versions/${version}/restore`, {method: 'POST'});
 }
 
-export type AgentExportFile = {
-    blob: Blob;
-
-    // Filename from Content-Disposition, or null when the header is absent.
-    filename: string | null;
-}
-
-// parseContentDispositionFilename reads the quoted filename the export route sends.
-export function parseContentDispositionFilename(header: string | null): string | null {
-    const match = header ? (/filename="([^"]+)"/).exec(header) : null;
-    return match ? match[1] : null;
-}
-
-export async function exportAgent(agentId: string): Promise<AgentExportFile> {
-    const response = await fetchAgentRoute(`${agentRoute(agentId)}/export`, {method: 'GET'});
-    return {
-        blob: await response.blob(),
-        filename: parseContentDispositionFilename(response.headers.get('Content-Disposition')),
-    };
-}
-
-export function previewAgentImport(document: AgentExportDocument): Promise<AgentImportPreview> {
-    return fetchAgentJSON(`${baseRoute()}/agents/import/preview`, {method: 'POST', body: JSON.stringify({document})});
-}
-
-export function importAgent(request: AgentImportRequest): Promise<UserAgent> {
-    return fetchAgentJSON(`${baseRoute()}/agents/import`, {method: 'POST', body: JSON.stringify(request)});
+// deleteAgentVersions permanently deletes the given versions, or with 'all'
+// every version except the current one, and resolves to how many were deleted.
+export async function deleteAgentVersions(agentId: string, versions: number[] | 'all'): Promise<number> {
+    const body = versions === 'all' ? {all: true} : {versions};
+    const result: {deleted: number} = await fetchAgentJSON(`${agentRoute(agentId)}/versions`, {method: 'DELETE', body: JSON.stringify(body)});
+    return result.deleted;
 }
 
 export async function uploadAgentAvatar(agentId: string, file: File): Promise<void> {

@@ -1,7 +1,7 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import React, {useCallback, useEffect, useMemo, useState} from 'react';
+import React, {useCallback, useEffect, useState} from 'react';
 import styled from 'styled-components';
 import {FormattedMessage, useIntl} from 'react-intl';
 import {useSelector} from 'react-redux';
@@ -20,18 +20,16 @@ import {WithTooltip} from '@mattermost/shared/components/tooltip';
 
 import {getAgents, getServices, deleteAgent as deleteAgentAPI} from '@/client';
 import {userHasSystemPermission} from '@/utils/permissions';
-import {downloadAgentExport} from '@/utils/download_agent_export';
-import {UserAgent, ServiceInfo} from '@/types/agents';
+import {downloadAgentExport} from '@/utils/agent_export';
+import {AgentExportDocument, UserAgent, ServiceInfo} from '@/types/agents';
 import {LicenseLevel, useAgentLimit, useLicenseLevel, useLicenseLevelName} from '@/license';
 
 import AgentRow from './agent_row';
 import DeleteAgentDialog from './delete_agent_dialog';
 import AgentConfigView from './agent_config_view';
-import ImportAgentModal, {ImportedAgentResult} from './import_agent_modal';
+import {useAgentFilePicker} from './use_agent_file_picker';
 
 type Tab = 'all' | 'yours';
-
-type Notice = {kind: 'success' | 'error'; message: string};
 
 const AgentsList = () => {
     const intl = useIntl();
@@ -65,8 +63,8 @@ const AgentsList = () => {
     const [viewMode, setViewMode] = useState<'create' | 'edit'>('create');
     const [editingAgent, setEditingAgent] = useState<UserAgent | null>(null);
     const [activeAgentCount, setActiveAgentCount] = useState<number | null>(null);
-    const [importOpen, setImportOpen] = useState(false);
-    const [notice, setNotice] = useState<Notice | null>(null);
+    const [importedDocument, setImportedDocument] = useState<AgentExportDocument | null>(null);
+    const [actionError, setActionError] = useState('');
 
     const serverAgentCount = activeAgentCount ?? agents.length;
     const createQuotaReached = agentLimit !== null && serverAgentCount >= agentLimit;
@@ -150,14 +148,26 @@ const AgentsList = () => {
         setViewOpen(true);
     }, [createButtonDisabled]);
 
+    const handleImportedDocument = useCallback((doc: AgentExportDocument) => {
+        setActionError('');
+        setImportedDocument(doc);
+        setEditingAgent(null);
+        setViewMode('create');
+        setViewOpen(true);
+    }, []);
+
+    const importPicker = useAgentFilePicker(handleImportedDocument, setActionError);
+
     const handleViewBack = useCallback(() => {
         setViewOpen(false);
         setEditingAgent(null);
+        setImportedDocument(null);
     }, []);
 
     const handleViewSaved = useCallback(() => {
         setViewOpen(false);
         setEditingAgent(null);
+        setImportedDocument(null);
         fetchAgents();
     }, [fetchAgents]);
 
@@ -172,48 +182,15 @@ const AgentsList = () => {
         return Boolean(!a.creatorID && hasManageSystem);
     }, [currentUserId, hasManageOthersAgent, hasManageSystem]);
 
-    const manageableAgents = useMemo(
-        () => agents.filter(userCanManageAgent),
-        [agents, userCanManageAgent],
-    );
-    const canImportAgent = userCanCreateAgent || manageableAgents.length > 0;
-
     const handleExportAgent = useCallback(async (agent: UserAgent) => {
-        setNotice(null);
+        setActionError('');
         try {
-            await downloadAgentExport(agent.id, agent.name);
+            await downloadAgentExport(agent.id);
         } catch (e: any) {
             const message = (typeof e?.message === 'string' ? e.message : '').trim();
-            setNotice({
-                kind: 'error',
-                message: message || intl.formatMessage({defaultMessage: 'Failed to export agent.'}),
-            });
+            setActionError(message || intl.formatMessage({defaultMessage: 'Failed to export agent.'}));
         }
     }, [intl]);
-
-    const handleImportOpen = useCallback(() => {
-        setNotice(null);
-        setImportOpen(true);
-    }, []);
-
-    const handleImportClose = useCallback(() => {
-        setImportOpen(false);
-    }, []);
-
-    const handleImported = useCallback(({agent, mode}: ImportedAgentResult) => {
-        setImportOpen(false);
-        setNotice({
-            kind: 'success',
-            message: mode === 'create' ? intl.formatMessage(
-                {defaultMessage: 'Imported agent {name}.'},
-                {name: agent.displayName || agent.name},
-            ) : intl.formatMessage(
-                {defaultMessage: 'Updated agent {name} from the imported file.'},
-                {name: agent.displayName || agent.name},
-            ),
-        });
-        fetchAgents();
-    }, [fetchAgents, intl]);
 
     const filteredAgents = agents.filter((a) => {
         if (activeTab === 'yours' && a.creatorID !== currentUserId) {
@@ -237,6 +214,7 @@ const AgentsList = () => {
                         onBack={handleViewBack}
                         onSaved={handleViewSaved}
                         onRestored={fetchAgents}
+                        {...(importedDocument ? {importedDocument} : {})}
                     />
                 </ContentColumn>
             </ConfigViewFrame>
@@ -257,16 +235,17 @@ const AgentsList = () => {
                             </Subtitle>
                         </TitleRow>
                         <HeaderActions>
-                            {canImportAgent && (
+                            {userCanCreateAgent && (
                                 <Button
                                     emphasis='tertiary'
                                     leadingIcon={<Icon glyph={<ImportIcon/>}/>}
-                                    onClick={handleImportOpen}
-                                    disabled={loading}
+                                    onClick={importPicker.open}
+                                    disabled={createButtonDisabled}
                                 >
                                     <FormattedMessage defaultMessage='Import agent'/>
                                 </Button>
                             )}
+                            {importPicker.input}
                             {userCanCreateAgent && (
                                 createQuotaReached ? (
                                     <WithTooltip
@@ -336,12 +315,12 @@ const AgentsList = () => {
                         />
                     )}
 
-                    {notice && (
+                    {actionError && (
                         <Notice
-                            type={notice.kind === 'error' ? 'danger' : 'success'}
-                            title={notice.message}
-                            role={notice.kind === 'error' ? 'alert' : 'status'}
-                            onDismiss={() => setNotice(null)}
+                            type='danger'
+                            title={actionError}
+                            role='alert'
+                            onDismiss={() => setActionError('')}
                             dismissLabel={intl.formatMessage({defaultMessage: 'Dismiss'})}
                         />
                     )}
@@ -400,17 +379,6 @@ const AgentsList = () => {
                 onConfirm={handleDeleteConfirm}
                 onCancel={handleDeleteCancel}
             />
-
-            {importOpen && (
-                <ImportAgentModal
-                    services={services}
-                    manageableAgents={manageableAgents}
-                    canCreate={userCanCreateAgent}
-                    createDisabledReason={createQuotaReached ? createQuotaMessage : ''}
-                    onClose={handleImportClose}
-                    onImported={handleImported}
-                />
-            )}
 
             <FixedChrome>
                 <ContentColumn>
