@@ -1,18 +1,17 @@
 # FIPS-compliant Linux/amd64 build. Linux/amd64 is the only platform
 # mattermost-server's FIPS release path supports.
 
-# Microsoft Go FIPS toolchain image, digest-pinned. The Go version must satisfy
-# the go directive in go.mod — the go directive is held at 1.26.x until this
-# registry publishes a 1.27 toolchain. To bump: set the new tag without a
-# digest, let the build-fips CI job pull it, then pin the digest CI resolves.
-# Tags follow microsoft/go releases (vX.Y.Z-N -> X.Y.Z.N-dev, plus X.Y.Z-dev
-# convenience tags). To list available tags, the registry needs CI's Chainguard
+# Go FIPS toolchain image, digest-pinned. The Go version must satisfy the go
+# directive in go.mod; don't bump the go directive past what this registry
+# offers. To bump: set the new tag without a digest, let the build-fips CI job
+# pull it, then pin the digest CI resolves. Tags follow upstream Go (X.Y.Z,
+# plus X.Y.Z.N image rebuilds and -dev/-slim variants). To list available tags, the registry needs CI's Chainguard
 # credentials; temporarily add this recipe line to server-fips:
 #   CREDS=$$(printf 'cgr.dev' | docker-credential-cgr get); \
 #   TOKEN=$$(curl -s -u "$$(echo $$CREDS | jq -r .Username):$$(echo $$CREDS | jq -r .Secret)" \
-#     "https://cgr.dev/token?scope=repository:mattermost.com/go-msft-fips:pull" | jq -r .token); \
-#   curl -s -H "Authorization: Bearer $$TOKEN" "https://cgr.dev/v2/mattermost.com/go-msft-fips/tags/list"
-FIPS_IMAGE ?= cgr.dev/mattermost.com/go-openssl-fips:1.27.3
+#     "https://cgr.dev/token?scope=repository:mattermost.com/go-openssl-fips:pull" | jq -r .token); \
+#   curl -s -H "Authorization: Bearer $$TOKEN" "https://cgr.dev/v2/mattermost.com/go-openssl-fips/tags/list"
+FIPS_IMAGE ?= cgr.dev/mattermost.com/go-openssl-fips:1.27.3@sha256:849f5a4f2301f74abd31d7b3ba31701481f80c4c6a28d281fc81d01676589bf6
 BUNDLE_NAME_FIPS ?= $(PLUGIN_ID)-$(PLUGIN_VERSION)-fips.tar.gz
 FIPS_BIN := server/dist-fips/plugin-linux-amd64-fips
 
@@ -26,11 +25,6 @@ FIPS_GO_BUILD_LDFLAGS ?=
 # splitting on values with embedded quotes like `-gcflags "all=-N -l"`.
 .PHONY: server-fips
 server-fips: generate
-	CREDS=$$(printf 'cgr.dev' | docker-credential-cgr get); \
-	TOKEN=$$(curl -s -u "$$(echo $$CREDS | jq -r .Username):$$(echo $$CREDS | jq -r .Secret)" \
-	  "https://cgr.dev/token?scope=repository:mattermost.com/go-openssl-fips:pull" | jq -r .token); \
-	curl -s -H "Authorization: Bearer $$TOKEN" "https://cgr.dev/v2/mattermost.com/go-openssl-fips/tags/list"
-	docker run --rm --entrypoint="" $(FIPS_IMAGE) /bin/sh -c 'go version; go env GOEXPERIMENT GOFIPS140 CGO_ENABLED'
 	mkdir -p server/dist-fips
 	docker run --rm \
 	  --entrypoint="" \
