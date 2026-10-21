@@ -143,6 +143,7 @@ func TestHandleToolCallAnswersUserQuestion(t *testing.T) {
 
 			streamingService := &loadedStateStreamingService{}
 			c := &Conversations{
+				configProvider:   &channelFollowUpTestConfig{enableChannelMentionToolCalling: true},
 				mmClient:         mmClient,
 				contextBuilder:   loadedStateBuilder(t),
 				bots:             botsService,
@@ -264,9 +265,10 @@ func TestHandleToolCallMixedBatchInChannelAwaitsShareDecision(t *testing.T) {
 
 	mmClient := mocks.NewMockClient(t)
 	mmClient.On("LogDebug", mock.Anything, mock.Anything).Maybe().Return()
-	mmClient.On("GetUser", testRequesterID).Maybe().Return(&model.User{Id: testRequesterID, Username: "user"}, nil)
+	seedRequesterInitiator(t, convStore, conv.ID, mmClient)
 
 	c := &Conversations{
+		configProvider:   &channelFollowUpTestConfig{enableChannelMentionToolCalling: true},
 		mmClient:         mmClient,
 		contextBuilder:   loadedStateBuilder(t),
 		bots:             botsService,
@@ -284,17 +286,17 @@ func TestHandleToolCallMixedBatchInChannelAwaitsShareDecision(t *testing.T) {
 
 	turns, err := convStore.GetTurnsForConversation(conv.ID)
 	require.NoError(t, err)
-	require.Len(t, turns, 4)
+	require.Len(t, turns, 5)
 
 	var updatedBlocks []conversation.ContentBlock
-	require.NoError(t, json.Unmarshal(turns[2].Content, &updatedBlocks))
+	require.NoError(t, json.Unmarshal(turns[3].Content, &updatedBlocks))
 	assert.Equal(t, conversation.StatusSuccess, updatedBlocks[0].Status)
 	assert.False(t, *updatedBlocks[0].Shared, "normal tool must not be auto-shared")
 	assert.Equal(t, conversation.StatusSuccess, updatedBlocks[1].Status)
 	assert.True(t, *updatedBlocks[1].Shared, "answered question is user-authored and shared")
 
 	var resultBlocks []conversation.ContentBlock
-	require.NoError(t, json.Unmarshal(turns[3].Content, &resultBlocks))
+	require.NoError(t, json.Unmarshal(turns[4].Content, &resultBlocks))
 	require.Len(t, resultBlocks, 2)
 	assert.Nil(t, resultBlocks[0].DecidedAt, "normal result awaits the share decision")
 	assert.False(t, *resultBlocks[0].Shared)
@@ -314,39 +316,89 @@ func passthroughBotsService(bot *bots.Bot) *bots.MMBots {
 
 // TestStreamToolFollowUpInteractiveFlag pins when the follow-up context offers
 // user-interaction tools: a requester-driven follow-up is interactive, while a
-// bot activate_ai conversation stays constrained to unattended tools.
+// run a bot or automation started stays unattended, in a DM or a channel.
 func TestStreamToolFollowUpInteractiveFlag(t *testing.T) {
-	t.Run("requester follow-up is interactive", func(t *testing.T) {
-		convStore, conv := loadedStateConversationStore()
-		nextSeq := 1
-		seedLoadToolPair(t, convStore, conv.ID, "load-1", "jira__get_issue", &nextSeq)
+	dmCases := []struct {
+		name            string
+		initiator       *model.Post
+		initiatingUser  *model.User
+		wantInteractive bool
+	}{
+		{
+			name:            "requester follow-up in a DM is interactive",
+			initiator:       &model.Post{Id: "initiator-post", UserId: testRequesterID},
+			initiatingUser:  &model.User{Id: testRequesterID, Username: "user"},
+			wantInteractive: true,
+		},
+		{
+			name: "DM follow-up of a run a bot activate_ai started is not interactive",
+			initiator: func() *model.Post {
+				p := &model.Post{Id: "initiator-post", UserId: testRequesterID}
+				p.AddProp(ActivateAIProp, true)
+				p.AddProp(FromBotProp, "true")
+				return p
+			}(),
+			initiatingUser: &model.User{Id: testRequesterID, Username: "user"},
+		},
+		{
+			name: "DM follow-up of a run a webhook started is not interactive",
+			initiator: func() *model.Post {
+				p := &model.Post{Id: "initiator-post", UserId: testRequesterID}
+				p.AddProp(FromWebhookProp, "true")
+				return p
+			}(),
+			initiatingUser: &model.User{Id: testRequesterID, Username: "user"},
+		},
+	}
+	for _, tc := range dmCases {
+		t.Run(tc.name, func(t *testing.T) {
+			convStore, conv := loadedStateConversationStore()
+			initiatorPostID := tc.initiator.Id
+			require.NoError(t, convStore.CreateTurn(&store.Turn{
+				ID: "initiating-turn", ConversationID: conv.ID, PostID: &initiatorPostID, Role: "user", Sequence: 0,
+			}))
+			nextSeq := 1
+			seedLoadToolPair(t, convStore, conv.ID, "load-1", "jira__get_issue", &nextSeq)
+			botPostID := "bot-post-id"
+			require.NoError(t, convStore.CreateTurn(&store.Turn{
+				ID: "bot-turn", ConversationID: conv.ID, PostID: &botPostID, Role: "assistant", Sequence: nextSeq,
+			}))
 
-		lm := &loadedStateLLM{}
-		bot := loadedStateBot(lm)
-		streamingService := &loadedStateStreamingService{}
-		c := &Conversations{
-			contextBuilder:   loadedStateBuilder(t),
-			bots:             passthroughBotsService(bot),
-			convService:      conversation.NewService(convStore, nil, nil, nil),
-			streamingService: streamingService,
-		}
+			mmClient := mocks.NewMockClient(t)
+			mmClient.On("LogDebug", mock.Anything, mock.Anything).Maybe().Return()
+			mmClient.On("GetConfig").Maybe().Return(&model.Config{})
+			mmClient.On("KVGet", mock.Anything, mock.Anything).Maybe().Return(nil)
+			mmClient.On("GetPost", initiatorPostID).Return(tc.initiator, nil).Maybe()
+			mmClient.On("GetUser", tc.initiator.UserId).Return(tc.initiatingUser, nil).Maybe()
 
-		post := &model.Post{Id: "root-post-id"}
-		policy, err := c.resolveTurnPolicy(context.Background(), turnRequest{
-			bot:     bot,
-			user:    &model.User{Id: testRequesterID, Username: "user"},
-			channel: &model.Channel{Id: "dm-channel", Type: model.ChannelTypeDirect, Name: "bot-id__" + testRequesterID},
-			conv:    conv,
-			post:    post,
+			lm := &loadedStateLLM{}
+			bot := loadedStateBot(lm)
+			streamingService := &loadedStateStreamingService{}
+			c := &Conversations{
+				mmClient:         mmClient,
+				contextBuilder:   loadedStateBuilder(t),
+				bots:             passthroughBotsService(bot),
+				convService:      conversation.NewService(convStore, nil, nil, nil),
+				streamingService: streamingService,
+			}
+
+			post := &model.Post{Id: botPostID, UserId: "bot-id"}
+			policy, err := c.resolveTurnPolicy(context.Background(), turnRequest{
+				bot:     bot,
+				user:    &model.User{Id: testRequesterID, Username: "user"},
+				channel: &model.Channel{Id: "dm-channel", Type: model.ChannelTypeDirect, Name: "bot-id__" + testRequesterID},
+				conv:    conv,
+				post:    post,
+			})
+			require.NoError(t, err)
+
+			err = c.streamToolFollowUp(context.Background(), policy, post, conv, false, nil)
+			require.NoError(t, err)
+			streamingService.waitForStreaming()
+			require.Len(t, lm.requests, 1)
+			assert.Equal(t, tc.wantInteractive, lm.requests[0].Context.ToolCatalog.InteractiveUserPresent)
 		})
-		require.NoError(t, err)
-
-		err = c.streamToolFollowUp(context.Background(), policy, post, conv, false, nil)
-		require.NoError(t, err)
-		streamingService.waitForStreaming()
-		require.Len(t, lm.requests, 1)
-		assert.True(t, lm.requests[0].Context.ToolCatalog.InteractiveUserPresent)
-	})
+	}
 
 	t.Run("activate_ai channel follow-up is not interactive", func(t *testing.T) {
 		convStore, conv := loadedStateConversationStore()

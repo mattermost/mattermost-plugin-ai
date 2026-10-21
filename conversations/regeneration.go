@@ -27,6 +27,12 @@ const (
 	ReferencedTranscriptPostID = "referenced_transcript_post_id"
 )
 
+// ErrChannelAnalysisRegenerateUnsupported is returned when regenerating the
+// post that answered a channel analysis. That answer was produced with tools
+// bound to the analyzed channel, which regeneration cannot rebuild. The HTTP
+// layer maps it to 400.
+var ErrChannelAnalysisRegenerateUnsupported = errors.New("a channel analysis cannot be regenerated; run it again instead")
+
 // HandleRegenerate handles post regeneration requests
 func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, post *model.Post, channel *model.Channel) error {
 	// Resume into the originating run's trace so the regenerated work shows
@@ -74,6 +80,11 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 		return errors.New("tagged no regen")
 	}
 
+	threadID, _ := post.GetProp(ThreadIDProp).(string)
+	if threadID == "" && isAnalysisPost(post) {
+		return ErrChannelAnalysisRegenerateUnsupported
+	}
+
 	if err := c.checkRegenerateLicense(post); err != nil {
 		return err
 	}
@@ -94,20 +105,12 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 	}
 	defer c.streamingService.FinishStreaming(post.Id)
 
-	threadIDProp := post.GetProp(ThreadIDProp)
-	analysisTypeProp := post.GetProp(AnalysisTypeProp)
 	referenceRecordingFileIDProp := post.GetProp(ReferencedRecordingFileID)
 	referencedTranscriptPostProp := post.GetProp(ReferencedTranscriptPostID)
 	var result *llm.TextStreamResult
 	switch {
-	case threadIDProp != nil:
-		analysisType := analysisTypeProp.(string)
-		threadPost, sourceErr := c.threadAnalysisSource(userID, post)
-		if sourceErr != nil {
-			return fmt.Errorf("could not regenerate thread analysis: %w", sourceErr)
-		}
-		threadID := threadPost.Id
-
+	case threadID != "":
+		analysisType, _ := post.GetProp(AnalysisTypeProp).(string)
 		llmContext := c.contextBuilder.BuildLLMContextUserRequest(
 			bot,
 			user,
@@ -244,8 +247,7 @@ func (c *Conversations) checkRegenerateLicense(post *model.Post) error {
 	if post.GetProp(ReferencedRecordingFileID) != nil || post.GetProp(ReferencedTranscriptPostID) != nil {
 		return c.licenseChecker.Check(enterprise.CapMeetings)
 	}
-	threadID, _ := post.GetProp(ThreadIDProp).(string)
-	if threadID != "" {
+	if threadID, _ := post.GetProp(ThreadIDProp).(string); threadID != "" {
 		return c.licenseChecker.Check(enterprise.CapThreadSummarization)
 	}
 	if post.GetProp(AnalysisTypeProp) != nil {

@@ -19,6 +19,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/mcp"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin/plugintest"
+	"github.com/mattermost/mattermost/server/public/pluginapi"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -52,6 +53,9 @@ type fakeMMClient struct {
 	websocketEvents      []fakeWebSocketEvent
 	// dmChannelID, when set, is the channel DM posts are created in.
 	dmChannelID string
+	dmPosts     []*model.Post
+	// postErrors are returned by GetPost for their post IDs.
+	postErrors map[string]error
 	// unreadableChannels are channels HasPermissionToChannel denies.
 	unreadableChannels map[string]bool
 
@@ -162,12 +166,15 @@ func (c *fakeMMClient) AddReaction(*model.Reaction) error {
 }
 
 func (c *fakeMMClient) GetPost(postID string) (*model.Post, error) {
+	if err := c.postErrors[postID]; err != nil {
+		return nil, err
+	}
 	if c.posts != nil {
 		if post, ok := c.posts[postID]; ok {
 			return post, nil
 		}
 	}
-	return nil, errors.New("post not found")
+	return nil, pluginapi.ErrNotFound
 }
 
 func (c *fakeMMClient) GetPostsSince(string, int64) (*model.PostList, error) {
@@ -187,6 +194,7 @@ func (c *fakeMMClient) DM(senderID, _ string, post *model.Post) error {
 	}
 	post.UserId = senderID
 	post.ChannelId = c.dmChannelID
+	c.dmPosts = append(c.dmPosts, post)
 	return nil
 }
 
@@ -204,7 +212,10 @@ func (c *fakeMMClient) GetChannel(channelID string) (*model.Channel, error) {
 }
 
 func (c *fakeMMClient) GetDirectChannel(string, string) (*model.Channel, error) {
-	return nil, errors.New("not implemented")
+	if c.dmChannelID == "" {
+		return nil, errors.New("not implemented")
+	}
+	return c.GetChannel(c.dmChannelID)
 }
 
 func (c *fakeMMClient) PublishWebSocketEvent(event string, payload map[string]any, broadcast *model.WebsocketBroadcast) {

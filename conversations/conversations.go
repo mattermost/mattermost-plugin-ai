@@ -29,6 +29,10 @@ import (
 const ThreadIDProp = "referenced_thread"
 const AnalysisTypeProp = "prompt_type"
 
+// AnalyzedChannelIDProp records, on a channel analysis response, the channel
+// that was analyzed, so continuing the conversation can re-check access to it.
+const AnalyzedChannelIDProp = "analyzed_channel_id"
+
 // ConfigProvider provides configuration values for conversation behavior
 type ConfigProvider interface {
 	EnableChannelMentionToolCalling() bool
@@ -114,7 +118,7 @@ type DMConversationResult struct {
 }
 
 // CreateOrGetDMConversation creates or retrieves a conversation for a DM.
-// This is separated from ProcessDMRequest so the conversation_id can be
+// This is separated from processDMRequest so the conversation_id can be
 // set on the response post before it is created. Callers without a session
 // fail closed on attachments.
 func (c *Conversations) CreateOrGetDMConversation(
@@ -197,7 +201,7 @@ func (c *Conversations) createOrGetDMConversation(
 	return &DMConversationResult{ConversationID: result.Conversation.ID, IsNew: result.IsNew, UserTurnID: result.UserTurnID}, nil
 }
 
-// DMStreamResult is the return value of ProcessDMRequest.
+// DMStreamResult is the return value of processDMRequest.
 type DMStreamResult struct {
 	Stream *llm.TextStreamResult
 	// release ends the request's span, stops forwarding Stream and cancels
@@ -206,42 +210,9 @@ type DMStreamResult struct {
 	release func()
 }
 
-// ProcessDMRequest builds a completion request from the DM conversation and
-// runs the tool loop, returning the final stream. The conversation must
-// already exist (created via CreateOrGetDMConversation).
-func (c *Conversations) ProcessDMRequest(ctx stdcontext.Context, convID string, llmCtx *llm.Context) (*DMStreamResult, error) {
-	if c.convService == nil {
-		return nil, fmt.Errorf("conversation service not configured")
-	}
-	conv, err := c.convService.GetConversation(convID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get conversation: %w", err)
-	}
-	if conv.ChannelID == nil {
-		return nil, fmt.Errorf("conversation %s has no channel", convID)
-	}
-	bot := c.bots.GetBotByID(conv.BotID)
-	if bot == nil {
-		return nil, fmt.Errorf("agent %s not available", conv.BotID)
-	}
-	user, err := c.mmClient.GetUser(conv.UserID)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get user: %w", err)
-	}
-	channel, err := c.mmClient.GetChannel(*conv.ChannelID)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get channel: %w", err)
-	}
-	policy, err := c.resolveTurnPolicy(ctx, turnRequest{bot: bot, user: user, channel: channel, conv: conv})
-	if err != nil {
-		return nil, err
-	}
-	if !policy.isDM {
-		return nil, fmt.Errorf("conversation %s is not a direct message with its agent", convID)
-	}
-	return c.processDMRequest(ctx, convID, policy, llmCtx, nil)
-}
-
+// processDMRequest builds a completion request from the DM conversation and
+// runs the tool loop under policy, returning the final stream. The
+// conversation must already exist.
 func (c *Conversations) processDMRequest(
 	ctx stdcontext.Context,
 	convID string,

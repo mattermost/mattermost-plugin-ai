@@ -245,8 +245,7 @@ func (c *Conversations) handleMessages(ctx context.Context, post *model.Post) er
 func (c *Conversations) handleMentions(ctx context.Context, bot *bots.Bot, post *model.Post, postingUser *model.User, channel *model.Channel) (err error) {
 	policy, policyErr := c.resolveTurnPolicy(ctx, turnRequest{bot: bot, user: postingUser, channel: channel, trigger: post})
 	if policyErr != nil {
-		var licErr *enterprise.LicenseError
-		if errors.As(policyErr, &licErr) {
+		if _, ok := errors.AsType[*enterprise.LicenseError](policyErr); ok {
 			c.postMultiplayerChannelsUnavailable(bot, channel, post)
 			return fmt.Errorf("%w: %w", policyErr, ErrNoResponse)
 		}
@@ -391,7 +390,7 @@ func (c *Conversations) handleMentionViaConversation(
 
 func (c *Conversations) handleDMs(ctx context.Context, bot *bots.Bot, channel *model.Channel, postingUser *model.User, post *model.Post) (err error) {
 	policy, policyErr := c.resolveTurnPolicy(ctx, turnRequest{bot: bot, user: postingUser, channel: channel, trigger: post})
-	if policyErr != nil && !errors.Is(policyErr, ErrThreadSourceUnavailable) {
+	if errors.Is(policyErr, bots.ErrUsageRestriction) {
 		return policyErr
 	}
 
@@ -409,9 +408,9 @@ func (c *Conversations) handleDMs(ctx context.Context, bot *bots.Bot, channel *m
 	progress := newResponseProgressReporter(ctx, c.mmClient, responsePost)
 	defer progress.Flush()
 	progress.Advance(responseProgressCheckingMCP)
-	if errors.Is(policyErr, ErrThreadSourceUnavailable) {
-		c.setPlaceholderMessage(responsePost, postingUser.Locale, "agents.thread_analysis_source_unavailable",
-			"I can't continue this conversation because you no longer have access to the thread it is about.")
+	if errors.Is(policyErr, ErrAnalysisSourceUnavailable) {
+		c.setPlaceholderMessage(responsePost, postingUser.Locale, "agents.analysis_source_unavailable",
+			"I can't continue this conversation because you no longer have access to what it is about.")
 		return fmt.Errorf("%w: %w", policyErr, ErrNoResponse)
 	}
 	defer func() {
@@ -419,6 +418,9 @@ func (c *Conversations) handleDMs(ctx context.Context, bot *bots.Bot, channel *m
 			c.failResponsePlaceholder(responsePost, postingUser.Locale)
 		}
 	}()
+	if policyErr != nil {
+		return policyErr
+	}
 
 	return c.handleDMViaConversation(ctx, policy, post, responsePost, progress)
 }

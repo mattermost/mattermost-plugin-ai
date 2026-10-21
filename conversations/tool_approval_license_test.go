@@ -97,12 +97,14 @@ func toolLicenseConversationsAt(t *testing.T, convStore *loadedStateFlowStore, l
 	botsService.SetBotsForTesting([]*bots.Bot{toolLicenseTestBot(lm)})
 
 	mmClient := mocks.NewMockClient(t)
+	seedRequesterInitiator(t, convStore, "conv-id", mmClient)
 	mmClient.On("LogDebug", mock.Anything, mock.Anything).Maybe().Return()
 	mmClient.On("GetUser", testRequesterID).Return(&model.User{Id: testRequesterID, Username: "user"}, nil).Maybe()
 	mmClient.On("GetConfig").Maybe().Return(&model.Config{})
 	mmClient.On("KVGet", "user_tool_providers_"+testRequesterID, mock.Anything).Return(nil).Maybe()
 
 	return &Conversations{
+		configProvider:   &channelFollowUpTestConfig{enableChannelMentionToolCalling: true},
 		mmClient:         mmClient,
 		contextBuilder:   toolLicenseTestBuilderAt(t, level),
 		bots:             botsService,
@@ -279,23 +281,23 @@ func TestHandleToolCallLicenseGate(t *testing.T) {
 
 				// The pending decision must be left untouched so the user
 				// can act again once the server is licensed.
-				require.Len(t, turns, 1)
+				require.Len(t, turns, 2)
 				var untouched []conversation.ContentBlock
-				require.NoError(t, json.Unmarshal(turns[0].Content, &untouched))
+				require.NoError(t, json.Unmarshal(turns[1].Content, &untouched))
 				require.Equal(t, conversation.StatusPending, untouched[0].Status)
 				require.Empty(t, lm.requests)
 				return
 			}
 
 			require.NoError(t, err)
-			require.Len(t, turns, 2)
+			require.Len(t, turns, 3)
 
 			var updatedBlocks []conversation.ContentBlock
-			require.NoError(t, json.Unmarshal(turns[0].Content, &updatedBlocks))
+			require.NoError(t, json.Unmarshal(turns[1].Content, &updatedBlocks))
 			require.Equal(t, tc.wantStatus, updatedBlocks[0].Status)
 
 			var resultBlocks []conversation.ContentBlock
-			require.NoError(t, json.Unmarshal(turns[1].Content, &resultBlocks))
+			require.NoError(t, json.Unmarshal(turns[2].Content, &resultBlocks))
 			require.Equal(t, conversation.BlockTypeToolResult, resultBlocks[0].Type)
 			require.Equal(t, tc.wantResult, resultBlocks[0].Content)
 
@@ -416,9 +418,9 @@ func TestHandleToolResultLicenseGate(t *testing.T) {
 
 			turns, turnsErr := convStore.GetTurnsForConversation(conv.ID)
 			require.NoError(t, turnsErr)
-			require.Len(t, turns, 2)
+			require.Len(t, turns, 3)
 			var updatedResults []conversation.ContentBlock
-			require.NoError(t, json.Unmarshal(turns[1].Content, &updatedResults))
+			require.NoError(t, json.Unmarshal(turns[2].Content, &updatedResults))
 
 			if tc.wantErr != nil {
 				require.ErrorIs(t, err, tc.wantErr)
@@ -588,12 +590,12 @@ func TestHandleToolCallAutoResumeRefusesUnlicensedRemoteMCP(t *testing.T) {
 
 			turns, err := convStore.GetTurnsForConversation(conv.ID)
 			require.NoError(t, err)
-			require.Len(t, turns, 2)
+			require.Len(t, turns, 3)
 			var updated []conversation.ContentBlock
-			require.NoError(t, json.Unmarshal(turns[0].Content, &updated))
+			require.NoError(t, json.Unmarshal(turns[1].Content, &updated))
 			require.Equal(t, tc.wantStatus, updated[0].Status)
 			var results []conversation.ContentBlock
-			require.NoError(t, json.Unmarshal(turns[1].Content, &results))
+			require.NoError(t, json.Unmarshal(turns[2].Content, &results))
 			require.Equal(t, tc.wantResult, results[0].Content)
 		})
 	}

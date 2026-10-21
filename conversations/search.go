@@ -65,22 +65,22 @@ type SearchRequest struct {
 // in the background with a tool-calling conversation that searches
 // Mattermost. ctx must outlive the request and carry the user's session ID.
 func (c *Conversations) HandleSearch(ctx context.Context, bot *bots.Bot, user *model.User, req SearchRequest) (*model.Post, error) {
-	questionPost := &model.Post{
-		UserId:  user.Id,
-		Message: req.Query,
-	}
-	if err := c.mmClient.DM(user.Id, bot.GetMMBot().UserId, questionPost); err != nil {
-		return nil, fmt.Errorf("failed to create question post: %w", err)
-	}
-
-	channel, err := c.mmClient.GetChannel(questionPost.ChannelId)
+	channel, err := c.mmClient.GetDirectChannel(user.Id, bot.GetMMBot().UserId)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get DM channel: %w", err)
 	}
 
+	questionPost := &model.Post{
+		UserId:  user.Id,
+		Message: req.Query,
+	}
 	policy, err := c.resolveTurnPolicy(ctx, turnRequest{bot: bot, user: user, channel: channel, trigger: questionPost})
 	if err != nil {
 		return nil, err
+	}
+
+	if err := c.mmClient.DM(user.Id, bot.GetMMBot().UserId, questionPost); err != nil {
+		return nil, fmt.Errorf("failed to create question post: %w", err)
 	}
 
 	go func() {

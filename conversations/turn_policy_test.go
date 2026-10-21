@@ -6,6 +6,7 @@ package conversations_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -26,11 +27,10 @@ import (
 )
 
 const (
-	policyToolOrigin     = "https://mcp.example.com"
-	policyToolName       = "get_weather"
-	policyDMChannelID    = "ardmchannel-id"
-	policySecretChannel  = "arsecret-channel-id"
-	threadSourceDeniedEN = "I can't continue this conversation because you no longer have access to the thread it is about."
+	policyToolOrigin    = "https://mcp.example.com"
+	policyToolName      = "get_weather"
+	policyDMChannelID   = "ardmchannel-id"
+	policySecretChannel = "arsecret-channel-id"
 )
 
 var policyWeatherCall = llm.ToolCall{
@@ -188,139 +188,30 @@ func botActivatePost(message string) *model.Post {
 	return post
 }
 
-// resumeEntryPoint drives one way of resuming a run on botPost as
-// autoReplyUserID. accept approves (or shares) the run's tool call instead of
-// declining it; regenerate ignores it.
-type resumeEntryPoint struct {
-	name string
-	// seed returns the assistant and tool_result turn content for a run this
-	// entry point can resume.
-	seed   func() ([]conversation.ContentBlock, []conversation.ContentBlock)
-	resume func(env *policyEnv, botPost *model.Post, channel *model.Channel, accept bool) error
+// policyEnvState is the stored conversation state a denied turn must leave as
+// it was.
+type policyEnvState struct {
+	conversations map[string]store.Conversation
+	turns         map[string][]store.Turn
 }
 
-func acceptedWeatherCall(accept bool) []string {
-	if accept {
-		return []string{policyWeatherCall.ID}
-	}
-	return []string{}
+func (env *policyEnv) state() policyEnvState {
+	convs, turns := env.convStore.snapshot()
+	return policyEnvState{conversations: convs, turns: turns}
 }
 
-var resumeEntryPoints = []resumeEntryPoint{
-	{
-		name: "regenerate",
-		seed: func() ([]conversation.ContentBlock, []conversation.ContentBlock) {
-			return []conversation.ContentBlock{{Type: conversation.BlockTypeText, Text: "earlier answer"}}, nil
-		},
-		resume: func(env *policyEnv, botPost *model.Post, channel *model.Channel, _ bool) error {
-			return env.conversations.HandleRegenerate(context.Background(), autoReplyUserID, botPost, channel)
-		},
-	},
-	{
-		name: "tool approval",
-		seed: func() ([]conversation.ContentBlock, []conversation.ContentBlock) {
-			return pendingWeatherBlock(), nil
-		},
-		resume: func(env *policyEnv, botPost *model.Post, channel *model.Channel, accept bool) error {
-			return env.conversations.HandleToolCall(context.Background(), autoReplyUserID, botPost, channel, acceptedWeatherCall(accept), nil)
-		},
-	},
-	{
-		name: "tool result share",
-		seed: executedWeatherBlocks,
-		resume: func(env *policyEnv, botPost *model.Post, channel *model.Channel, accept bool) error {
-			return env.conversations.HandleToolResult(context.Background(), autoReplyUserID, botPost, channel, acceptedWeatherCall(accept))
-		},
-	},
-}
-
-// requireRunUntouched asserts a denied resume called no LLM, ran no tool, and
-// left every persisted turn of the run as it was.
-func requireRunUntouched(t *testing.T, env *policyEnv, botPost *model.Post, before []store.Turn) {
+// requireNothingRan asserts a denied turn called no LLM, ran no tool, and
+// left every stored conversation and turn as it was.
+func requireNothingRan(t *testing.T, env *policyEnv, before policyEnvState) {
 	t.Helper()
-	assert.Empty(t, env.llmRequests(), "a denied resume must not call the LLM")
-	assert.Zero(t, env.executions.Load(), "a denied resume must not run tools")
-	convID, _ := botPost.GetProp(streaming.ConversationIDProp).(string)
-	assert.Equal(t, before, env.convStore.turnsFor(convID), "a denied resume must not change the run")
-}
-
-// TestResumeChecksUsageRestrictionsForThePostsAgent pins that every resume
-// re-checks whether the requester may still use the agent that wrote the post
-// (bug 1): an agent that now blocks the user cannot be regenerated, approved,
-// or shared, in a DM or a channel.
-func TestResumeChecksUsageRestrictionsForThePostsAgent(t *testing.T) {
-	for _, entry := range resumeEntryPoints {
-		for _, inDM := range []bool{true, false} {
-			name := entry.name + "/channel"
-			if inDM {
-				name = entry.name + "/DM"
-			}
-			t.Run(name, func(t *testing.T) {
-				cfg := policyBotConfig()
-				cfg.UserAccessLevel = llm.UserAccessLevelBlock
-				cfg.UserIDs = []string{autoReplyUserID}
-				env := setupPolicyEnv(t, []llm.BotConfig{cfg}, dmMakeTextStream("regenerated"))
-				env.config.enableChannelMentionToolCalling = true
-				channel := env.channel
-				if inDM {
-					channel = env.dm
-				}
-
-				toolUse, toolResults := entry.seed()
-				botPost := env.seedRun(t, channel, nil, humanPost("what is the weather"), toolUse, toolResults)
-				convID, _ := botPost.GetProp(streaming.ConversationIDProp).(string)
-				before := env.convStore.turnsFor(convID)
-
-				err := entry.resume(env, botPost, channel, true)
-
-				require.ErrorIs(t, err, bots.ErrUsageRestriction)
-				requireRunUntouched(t, env, botPost, before)
-			})
-		}
-	}
-}
-
-// TestResumeInChannelRequiresMultiplayerLicense pins that resuming a channel
-// run needs the same license as starting one (bug 4), while DM resumes do
-// not.
-func TestResumeInChannelRequiresMultiplayerLicense(t *testing.T) {
-	for _, entry := range resumeEntryPoints {
-		t.Run(entry.name, func(t *testing.T) {
-			env := setupPolicyEnv(t, []llm.BotConfig{policyBotConfig()}, dmMakeTextStream("regenerated"))
-			env.overrideLicense(nil)
-			env.config.enableChannelMentionToolCalling = true
-
-			toolUse, toolResults := entry.seed()
-			botPost := env.seedRun(t, env.channel, nil, humanPost("what is the weather"), toolUse, toolResults)
-			convID, _ := botPost.GetProp(streaming.ConversationIDProp).(string)
-			before := env.convStore.turnsFor(convID)
-
-			// Declining needs no remote MCP license, so only the channel
-			// license can deny it.
-			err := entry.resume(env, botPost, env.channel, false)
-
-			var licErr *enterprise.LicenseError
-			require.ErrorAs(t, err, &licErr)
-			assert.Equal(t, enterprise.CapMultiplayerChannels, licErr.Capability)
-			requireRunUntouched(t, env, botPost, before)
-		})
-	}
-
-	t.Run("regenerate in a DM", func(t *testing.T) {
-		env := setupPolicyEnv(t, []llm.BotConfig{policyBotConfig()}, dmMakeTextStream("regenerated"))
-		env.overrideLicense(nil)
-
-		toolUse, _ := resumeEntryPoints[0].seed()
-		botPost := env.seedRun(t, env.dm, nil, humanPost("what is the weather"), toolUse, nil)
-
-		require.NoError(t, env.conversations.HandleRegenerate(context.Background(), autoReplyUserID, botPost, env.dm))
-		assert.Len(t, env.llmRequests(), 1)
-	})
+	assert.Empty(t, env.llmRequests(), "a denied turn must not call the LLM")
+	assert.Zero(t, env.executions.Load(), "a denied turn must not run tools")
+	assert.Equal(t, before, env.state(), "a denied turn must not change any conversation")
 }
 
 // TestDMMentionOfTheDMAgentIsADMTurn pins that @-mentioning an agent inside
-// its own DM runs a DM turn with DM tool rules (bug 2), while mentioning a
-// different agent in that DM still runs a channel-style mention turn.
+// its own DM runs a DM turn with DM tool rules, while mentioning a different
+// agent in that DM still runs a channel-style mention turn.
 func TestDMMentionOfTheDMAgentIsADMTurn(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -352,49 +243,106 @@ func TestDMMentionOfTheDMAgentIsADMTurn(t *testing.T) {
 	}
 }
 
-// TestToolApprovalUsesTheRunsActivation pins that whether a resumed channel
-// run is limited to unattended tools follows the post that started that run,
-// not the thread root (bug 3): approving a tool call from a run a bot started
-// with activate_ai cannot run tools that run would not have been offered, and
-// a run whose initiator cannot be verified fails closed.
+// TestDMTurnInteractivityFollowsWhoStartedIt pins that a DM turn is
+// interactive only when a person started it: a bot or plugin that posts in
+// its DM with the agent gets no user-interaction tools, because nobody is
+// there to answer them.
+func TestDMTurnInteractivityFollowsWhoStartedIt(t *testing.T) {
+	tests := []struct {
+		name            string
+		userID          string
+		props           map[string]any
+		wantInteractive bool
+	}{
+		{name: "a person", userID: autoReplyUserID, wantInteractive: true},
+		{name: "a bot with activate_ai", userID: autoReplyForeignBotID, props: map[string]any{conversations.ActivateAIProp: true}},
+		{name: "a plugin with activate_ai", userID: autoReplyUserID, props: map[string]any{conversations.FromPluginProp: "true", conversations.ActivateAIProp: true}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			env := setupPolicyEnv(t, []llm.BotConfig{policyBotConfig()}, dmMakeTextStream("answer"))
+			dm := &model.Channel{Id: model.NewId(), Type: model.ChannelTypeDirect, Name: autoReplyBotUserID + "__" + tc.userID}
+			env.mmClient.channels[dm.Id] = dm
+
+			post := &model.Post{Id: model.NewId(), UserId: tc.userID, ChannelId: dm.Id, Message: "what is the weather"}
+			for key, value := range tc.props {
+				post.AddProp(key, value)
+			}
+			env.setThread(post.Id, post)
+			env.conversations.MessageHasBeenPosted(nil, post)
+			env.waitForStream(t)
+
+			requests := env.llmRequests()
+			require.Len(t, requests, 1)
+			assert.Equal(t, tc.wantInteractive, requests[0].Context.ToolCatalog.InteractiveUserPresent)
+		})
+	}
+}
+
+// TestToolApprovalUsesTheRunsActivation pins that what approving a tool call
+// may run follows the post that started that run, not the thread root: a run
+// a bot started with activate_ai cannot run tools that run would not have
+// been offered, a run whose initiator cannot be verified fails closed, and a
+// run with tool calling off (an automated invoker, or channel tool calling
+// disabled) refuses the approval without changing it.
 func TestToolApprovalUsesTheRunsActivation(t *testing.T) {
 	tests := []struct {
-		name           string
-		root           func() *model.Post
-		initiator      func() *model.Post
-		hideInitiator  bool
-		wantExecutions int32
+		name               string
+		root               func() *model.Post
+		initiator          func() *model.Post
+		hideInitiator      bool
+		channelToolCalling bool
+		wantErr            error
+		wantExecutions     int32
 	}{
 		{
-			name:           "human run in a human thread",
-			initiator:      func() *model.Post { return humanPost("what is the weather") },
-			wantExecutions: 1,
+			name:               "human run in a human thread",
+			initiator:          func() *model.Post { return humanPost("what is the weather") },
+			channelToolCalling: true,
+			wantExecutions:     1,
 		},
 		{
-			name:           "human run in a thread a bot started",
-			root:           func() *model.Post { return botActivatePost("weather report please") },
-			initiator:      func() *model.Post { return humanPost("what is the weather") },
-			wantExecutions: 1,
+			name:               "human run in a thread a bot started",
+			root:               func() *model.Post { return botActivatePost("weather report please") },
+			initiator:          func() *model.Post { return humanPost("what is the weather") },
+			channelToolCalling: true,
+			wantExecutions:     1,
 		},
 		{
-			name:           "bot activate_ai run in a human thread",
-			root:           func() *model.Post { return humanPost("hello") },
-			initiator:      func() *model.Post { return botActivatePost("what is the weather") },
-			wantExecutions: 0,
+			name:               "bot activate_ai run in a human thread",
+			root:               func() *model.Post { return humanPost("hello") },
+			initiator:          func() *model.Post { return botActivatePost("what is the weather") },
+			channelToolCalling: true,
 		},
 		{
-			name:           "run whose initiating post is gone",
-			root:           func() *model.Post { return humanPost("hello") },
-			initiator:      func() *model.Post { return humanPost("what is the weather") },
-			hideInitiator:  true,
-			wantExecutions: 0,
+			name:               "run whose initiating post is gone",
+			root:               func() *model.Post { return humanPost("hello") },
+			initiator:          func() *model.Post { return humanPost("what is the weather") },
+			hideInitiator:      true,
+			channelToolCalling: true,
+		},
+		{
+			name: "run a webhook started",
+			initiator: func() *model.Post {
+				post := humanPost("what is the weather")
+				post.AddProp(conversations.FromWebhookProp, "true")
+				return post
+			},
+			channelToolCalling: true,
+			wantErr:            conversations.ErrToolCallingDisabled,
+		},
+		{
+			name:      "human run with channel tool calling off",
+			initiator: func() *model.Post { return humanPost("what is the weather") },
+			wantErr:   conversations.ErrToolCallingDisabled,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			env := setupPolicyEnv(t, []llm.BotConfig{policyBotConfig()})
-			env.config.enableChannelMentionToolCalling = true
+			env.config.enableChannelMentionToolCalling = tc.channelToolCalling
 			env.checker.setPolicy(policyToolOrigin, policyToolName, mcp.ToolPolicyAsk)
 
 			var root *model.Post
@@ -406,72 +354,171 @@ func TestToolApprovalUsesTheRunsActivation(t *testing.T) {
 			if tc.hideInitiator {
 				delete(env.mmClient.posts, initiator.Id)
 			}
+			before := env.state()
 
-			require.NoError(t, env.conversations.HandleToolCall(context.Background(), autoReplyUserID, botPost, env.channel, []string{policyWeatherCall.ID}, nil))
+			err := env.conversations.HandleToolCall(context.Background(), autoReplyUserID, botPost, env.channel, []string{policyWeatherCall.ID}, nil)
 
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+				requireNothingRan(t, env, before)
+				return
+			}
+			require.NoError(t, err)
 			assert.Equal(t, tc.wantExecutions, env.executions.Load())
 		})
 	}
 }
 
-// TestThreadAnalysisFollowUpRechecksSourceAccess pins that continuing a
-// thread summary re-checks that the user can still read the summarized
-// thread (bug 5), and fails closed when the thread cannot be found.
-func TestThreadAnalysisFollowUpRechecksSourceAccess(t *testing.T) {
-	const threadPostID = "arthread-post-id"
+const (
+	policyThreadPostID = "arthread-post-id"
 
+	analysisSourceDeniedEN = "I can't continue this conversation because you no longer have access to what it is about."
+	genericLLMErrorEN      = "Sorry! An error occurred while accessing the LLM. See server logs for details."
+)
+
+// analysisSource is what a seeded analysis analyzed.
+type analysisSource int
+
+const (
+	analyzedThread analysisSource = iota
+	analyzedChannel
+	analyzedNothingRecorded
+)
+
+// seedAnalysis persists a DM conversation that analyzed source, as
+// produced by the thread or channel analysis routes, and returns its
+// analysis post. Without a conversation the post only records who requested
+// it, like legacy analysis posts.
+func (env *policyEnv) seedAnalysis(t *testing.T, source analysisSource, withConversation bool) *model.Post {
+	t.Helper()
+	analysisPost := &model.Post{Id: model.NewId(), UserId: autoReplyBotUserID, ChannelId: env.dm.Id, Message: "summary of secret plans"}
+	operation := llm.OperationChannelSummary
+	switch source {
+	case analyzedThread:
+		analysisPost.AddProp(conversations.ThreadIDProp, policyThreadPostID)
+		analysisPost.AddProp(conversations.AnalysisTypeProp, "summarize_thread")
+		operation = llm.OperationThreadAnalysis
+	case analyzedChannel:
+		analysisPost.AddProp(conversations.AnalyzedChannelIDProp, policySecretChannel)
+		analysisPost.AddProp(conversations.AnalysisTypeProp, "summarize_channel")
+	case analyzedNothingRecorded:
+		analysisPost.AddProp(conversations.AnalysisTypeProp, "summarize_channel")
+	}
+	env.mmClient.posts[analysisPost.Id] = analysisPost
+	if !withConversation {
+		analysisPost.AddProp(streaming.LLMRequesterUserIDProp, autoReplyUserID)
+		return analysisPost
+	}
+
+	channelID := env.dm.Id
+	analysisID := analysisPost.Id
+	conv := &store.Conversation{
+		ID:           model.NewId(),
+		UserID:       autoReplyUserID,
+		BotID:        autoReplyBotUserID,
+		ChannelID:    &channelID,
+		RootPostID:   &analysisID,
+		Operation:    operation,
+		SystemPrompt: "system",
+	}
+	require.NoError(t, env.convStore.CreateConversation(conv))
+	analysisPost.AddProp(streaming.ConversationIDProp, conv.ID)
+	userContent, err := json.Marshal([]conversation.ContentBlock{{Type: conversation.BlockTypeText, Text: "summarize"}})
+	require.NoError(t, err)
+	summaryContent, err := json.Marshal([]conversation.ContentBlock{{Type: conversation.BlockTypeText, Text: analysisPost.Message}})
+	require.NoError(t, err)
+	require.NoError(t, env.convStore.CreateTurn(&store.Turn{ID: model.NewId(), ConversationID: conv.ID, Role: "user", Content: userContent, Sequence: 1}))
+	require.NoError(t, env.convStore.CreateTurn(&store.Turn{ID: model.NewId(), ConversationID: conv.ID, PostID: &analysisID, Role: "assistant", Content: summaryContent, Sequence: 2}))
+	return analysisPost
+}
+
+// seedAnalysisFollowUpAnswer records a follow-up question in analysisPost's
+// thread and the agent's answer to it, and returns the answer.
+func (env *policyEnv) seedAnalysisFollowUpAnswer(t *testing.T, analysisPost *model.Post) *model.Post {
+	t.Helper()
+	convID, _ := analysisPost.GetProp(streaming.ConversationIDProp).(string)
+	question := &model.Post{Id: model.NewId(), UserId: autoReplyUserID, ChannelId: env.dm.Id, RootId: analysisPost.Id, Message: "what should we do next?"}
+	answer := &model.Post{Id: model.NewId(), UserId: autoReplyBotUserID, ChannelId: env.dm.Id, RootId: analysisPost.Id, Message: "plan it"}
+	answer.AddProp(streaming.ConversationIDProp, convID)
+	answer.AddProp(streaming.RespondingToProp, question.Id)
+	env.mmClient.posts[question.Id] = question
+	env.mmClient.posts[answer.Id] = answer
+
+	questionContent, err := json.Marshal([]conversation.ContentBlock{{Type: conversation.BlockTypeText, Text: question.Message}})
+	require.NoError(t, err)
+	answerContent, err := json.Marshal([]conversation.ContentBlock{{Type: conversation.BlockTypeText, Text: answer.Message}})
+	require.NoError(t, err)
+	questionID, answerID := question.Id, answer.Id
+	require.NoError(t, env.convStore.CreateTurn(&store.Turn{ID: model.NewId(), ConversationID: convID, PostID: &questionID, Role: "user", Content: questionContent, Sequence: 3}))
+	require.NoError(t, env.convStore.CreateTurn(&store.Turn{ID: model.NewId(), ConversationID: convID, PostID: &answerID, Role: "assistant", Content: answerContent, Sequence: 4}))
+	return answer
+}
+
+// TestAnalysisFollowUpRechecksSourceAccess pins that continuing or
+// regenerating a thread or channel analysis re-checks that the user can still
+// read what it analyzed. Losing access, the content being deleted, or the
+// analysis not recording what it analyzed all deny without replaying the
+// content to the LLM; failing to look the content up is an error, not a
+// denial.
+func TestAnalysisFollowUpRechecksSourceAccess(t *testing.T) {
 	tests := []struct {
-		name         string
-		unreadable   bool
-		threadGone   bool
-		regenerate   bool
-		wantAnswered bool
+		name   string
+		source analysisSource
+		// noConversation seeds a legacy analysis post with no conversation.
+		noConversation bool
+		unreadable     bool
+		threadGone     bool
+		lookupFails    bool
+		// regenerate regenerates the analysis post, or with
+		// regenerateFollowUp, the agent's answer to a follow-up, instead of
+		// asking a follow-up.
+		regenerate         bool
+		regenerateFollowUp bool
+		wantAnswered       bool
+		wantPlaceholder    string
+		wantErr            error
 	}{
-		{name: "follow-up while the thread is readable", wantAnswered: true},
-		{name: "follow-up after losing access to the thread", unreadable: true},
-		{name: "follow-up after the thread was deleted", threadGone: true},
-		{name: "regenerate after losing access to the thread", unreadable: true, regenerate: true},
+		{name: "thread follow-up while the thread is readable", source: analyzedThread, wantAnswered: true},
+		{name: "thread follow-up after losing access to the thread", source: analyzedThread, unreadable: true, wantPlaceholder: analysisSourceDeniedEN},
+		{name: "thread follow-up after the thread was deleted", source: analyzedThread, threadGone: true, wantPlaceholder: analysisSourceDeniedEN},
+		{name: "thread follow-up when the thread cannot be looked up", source: analyzedThread, lookupFails: true, wantPlaceholder: genericLLMErrorEN},
+		{name: "thread regenerate after losing access to the thread", source: analyzedThread, unreadable: true, regenerate: true, wantErr: conversations.ErrAnalysisSourceUnavailable},
+		{name: "thread regenerate when the thread cannot be looked up", source: analyzedThread, lookupFails: true, regenerate: true},
+		{name: "legacy thread regenerate after losing access to the thread", source: analyzedThread, noConversation: true, unreadable: true, regenerate: true, wantErr: conversations.ErrAnalysisSourceUnavailable},
+		{name: "channel follow-up while the channel is readable", source: analyzedChannel, wantAnswered: true},
+		{name: "channel follow-up after losing access to the channel", source: analyzedChannel, unreadable: true, wantPlaceholder: analysisSourceDeniedEN},
+		{name: "follow-up of an analysis that records no source", source: analyzedNothingRecorded, wantPlaceholder: analysisSourceDeniedEN},
+		{name: "channel regenerate of the analysis", source: analyzedChannel, regenerate: true, wantErr: conversations.ErrChannelAnalysisRegenerateUnsupported},
+		{name: "channel regenerate of a follow-up answer after losing access", source: analyzedChannel, unreadable: true, regenerate: true, regenerateFollowUp: true, wantErr: conversations.ErrAnalysisSourceUnavailable},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			env := setupPolicyEnv(t, []llm.BotConfig{policyBotConfig()}, dmMakeTextStream("follow-up answer"))
-
 			if !tc.threadGone {
-				env.mmClient.posts[threadPostID] = &model.Post{Id: threadPostID, ChannelId: policySecretChannel, UserId: autoReplyOtherUserID, Message: "secret plans"}
+				env.mmClient.posts[policyThreadPostID] = &model.Post{Id: policyThreadPostID, ChannelId: policySecretChannel, UserId: autoReplyOtherUserID, Message: "secret plans"}
+			}
+			if tc.lookupFails {
+				env.mmClient.postErrors = map[string]error{policyThreadPostID: errors.New("database unavailable")}
 			}
 			if tc.unreadable {
 				env.mmClient.unreadableChannels = map[string]bool{policySecretChannel: true}
 			}
-
-			analysisPost := &model.Post{Id: model.NewId(), UserId: autoReplyBotUserID, ChannelId: env.dm.Id, Message: "summary of secret plans"}
-			analysisPost.AddProp(conversations.ThreadIDProp, threadPostID)
-			analysisPost.AddProp(conversations.AnalysisTypeProp, "summarize_thread")
-			channelID := env.dm.Id
-			analysisID := analysisPost.Id
-			conv := &store.Conversation{
-				ID:           model.NewId(),
-				UserID:       autoReplyUserID,
-				BotID:        autoReplyBotUserID,
-				ChannelID:    &channelID,
-				RootPostID:   &analysisID,
-				Operation:    llm.OperationThreadAnalysis,
-				SystemPrompt: "system",
-			}
-			require.NoError(t, env.convStore.CreateConversation(conv))
-			analysisPost.AddProp(streaming.ConversationIDProp, conv.ID)
-			env.mmClient.posts[analysisPost.Id] = analysisPost
-			userContent, err := json.Marshal([]conversation.ContentBlock{{Type: conversation.BlockTypeText, Text: "summarize"}})
-			require.NoError(t, err)
-			summaryContent, err := json.Marshal([]conversation.ContentBlock{{Type: conversation.BlockTypeText, Text: analysisPost.Message}})
-			require.NoError(t, err)
-			require.NoError(t, env.convStore.CreateTurn(&store.Turn{ID: model.NewId(), ConversationID: conv.ID, Role: "user", Content: userContent, Sequence: 1}))
-			require.NoError(t, env.convStore.CreateTurn(&store.Turn{ID: model.NewId(), ConversationID: conv.ID, PostID: &analysisID, Role: "assistant", Content: summaryContent, Sequence: 2}))
+			analysisPost := env.seedAnalysis(t, tc.source, !tc.noConversation)
 
 			if tc.regenerate {
-				err = env.conversations.HandleRegenerate(context.Background(), autoReplyUserID, analysisPost, env.dm)
+				target := analysisPost
+				if tc.regenerateFollowUp {
+					target = env.seedAnalysisFollowUpAnswer(t, analysisPost)
+				}
+				err := env.conversations.HandleRegenerate(context.Background(), autoReplyUserID, target, env.dm)
 				require.Error(t, err)
-				assert.Empty(t, env.llmRequests())
+				if tc.wantErr != nil {
+					assert.ErrorIs(t, err, tc.wantErr)
+				} else {
+					assert.NotErrorIs(t, err, conversations.ErrAnalysisSourceUnavailable, "a failed lookup is not a denial")
+				}
+				assert.Empty(t, env.llmRequests(), "the analyzed content must not be replayed to the LLM")
 				return
 			}
 
@@ -483,10 +530,10 @@ func TestThreadAnalysisFollowUpRechecksSourceAccess(t *testing.T) {
 				assert.Len(t, env.llmRequests(), 1)
 				return
 			}
-			assert.Empty(t, env.llmRequests(), "the summarized thread must not be replayed to the LLM")
+			assert.Empty(t, env.llmRequests(), "the analyzed content must not be replayed to the LLM")
 			require.NotEmpty(t, env.mmClient.updatedPosts, "the placeholder must explain why there is no answer")
 			placeholder := env.mmClient.updatedPosts[len(env.mmClient.updatedPosts)-1]
-			assert.Equal(t, threadSourceDeniedEN, placeholder.Message)
+			assert.Equal(t, tc.wantPlaceholder, placeholder.Message)
 		})
 	}
 }
@@ -494,24 +541,37 @@ func TestThreadAnalysisFollowUpRechecksSourceAccess(t *testing.T) {
 const policyTimeToolName = "get_time"
 
 // turnEntryPoint starts or resumes a turn the way one production entry point
-// does. Every run asks about the weather, so the LLM's canned responses apply
-// to each.
+// does. Every run asks about the weather or the time, so the LLM's canned
+// responses apply to each.
 type turnEntryPoint struct {
 	name string
 	dm   bool
 	// returnsErr is set for entry points that report a denial to their
 	// caller; message hooks only decline.
 	returnsErr bool
-	start      func(t *testing.T, env *policyEnv) error
+	// toolDecision is set for approvals, rejections, answers, and shares of
+	// a pending tool call.
+	toolDecision bool
+	// noAnswer is set for entry points whose turn ends waiting on the
+	// requester instead of streaming an answer.
+	noAnswer bool
+	// autoReply is set for channel auto-reply, which needs Enterprise
+	// Advanced and so never runs without the remote MCP license.
+	autoReply bool
+	// seed prepares what the entry point acts on and returns the call that
+	// starts the turn.
+	seed func(t *testing.T, env *policyEnv) func() error
 }
 
 func policyBot(env *policyEnv) *bots.Bot {
 	return env.botService.GetBotByID(autoReplyBotUserID)
 }
 
-func postMessage(env *policyEnv, post *model.Post) error {
-	env.conversations.MessageHasBeenPosted(nil, post)
-	return nil
+func postMessage(env *policyEnv, post *model.Post) func() error {
+	return func() error {
+		env.conversations.MessageHasBeenPosted(nil, post)
+		return nil
+	}
 }
 
 func dmMessage(env *policyEnv, message string) *model.Post {
@@ -544,30 +604,35 @@ func pendingQuestionBlock() []conversation.ContentBlock {
 	}}
 }
 
+func earlierAnswer() []conversation.ContentBlock {
+	return []conversation.ContentBlock{{Type: conversation.BlockTypeText, Text: "earlier answer"}}
+}
+
 var turnEntryPoints = []turnEntryPoint{
 	{
 		name: "DM message",
 		dm:   true,
-		start: func(_ *testing.T, env *policyEnv) error {
+		seed: func(_ *testing.T, env *policyEnv) func() error {
 			return postMessage(env, dmMessage(env, "what is the weather"))
 		},
 	},
 	{
 		name: "@agent in its own DM",
 		dm:   true,
-		start: func(_ *testing.T, env *policyEnv) error {
+		seed: func(_ *testing.T, env *policyEnv) func() error {
 			return postMessage(env, dmMessage(env, "@"+autoReplyBotUsername+" what is the weather"))
 		},
 	},
 	{
 		name: "channel mention",
-		start: func(_ *testing.T, env *policyEnv) error {
+		seed: func(_ *testing.T, env *policyEnv) func() error {
 			return postMessage(env, env.rootPost(autoReplyUserID, "@"+autoReplyBotUsername+" what is the weather"))
 		},
 	},
 	{
-		name: "channel auto-reply",
-		start: func(_ *testing.T, env *policyEnv) error {
+		name:      "channel auto-reply",
+		autoReply: true,
+		seed: func(_ *testing.T, env *policyEnv) func() error {
 			env.settings.set(autoreply.Setting{ChannelID: autoReplyChannelID, BotID: autoReplyBotUserID, Mode: autoreply.ModeRootPosts})
 			return postMessage(env, env.rootPost(autoReplyUserID, "what is the weather"))
 		},
@@ -575,14 +640,16 @@ var turnEntryPoints = []turnEntryPoint{
 	{
 		name:       "loop-in from the mention reminder",
 		returnsErr: true,
-		start: func(_ *testing.T, env *policyEnv) error {
+		seed: func(_ *testing.T, env *policyEnv) func() error {
 			reply := env.threadReply(autoReplyUserID, "what is the weather", true)
-			return env.conversations.HandleLoopInAgent(context.Background(), autoReplyUserID, policyBot(env), reply, env.channel)
+			return func() error {
+				return env.conversations.HandleLoopInAgent(context.Background(), autoReplyUserID, policyBot(env), reply, env.channel)
+			}
 		},
 	},
 	{
 		name: "bot activate_ai mention",
-		start: func(_ *testing.T, env *policyEnv) error {
+		seed: func(_ *testing.T, env *policyEnv) func() error {
 			post := env.rootPost(autoReplyForeignBotID, "@"+autoReplyBotUsername+" what is the weather")
 			post.AddProp(conversations.ActivateAIProp, true)
 			return postMessage(env, post)
@@ -592,64 +659,105 @@ var turnEntryPoints = []turnEntryPoint{
 		name:       "regenerate in a DM",
 		dm:         true,
 		returnsErr: true,
-		start: func(t *testing.T, env *policyEnv) error {
-			botPost := env.seedRun(t, env.dm, nil, humanPost("what is the weather"), []conversation.ContentBlock{{Type: conversation.BlockTypeText, Text: "earlier answer"}}, nil)
-			return env.conversations.HandleRegenerate(context.Background(), autoReplyUserID, botPost, env.dm)
+		seed: func(t *testing.T, env *policyEnv) func() error {
+			botPost := env.seedRun(t, env.dm, nil, humanPost("what is the weather"), earlierAnswer(), nil)
+			return func() error {
+				return env.conversations.HandleRegenerate(context.Background(), autoReplyUserID, botPost, env.dm)
+			}
 		},
 	},
 	{
 		name:       "regenerate in a channel",
 		returnsErr: true,
-		start: func(t *testing.T, env *policyEnv) error {
-			botPost := env.seedRun(t, env.channel, nil, humanPost("what is the weather"), []conversation.ContentBlock{{Type: conversation.BlockTypeText, Text: "earlier answer"}}, nil)
-			return env.conversations.HandleRegenerate(context.Background(), autoReplyUserID, botPost, env.channel)
+		seed: func(t *testing.T, env *policyEnv) func() error {
+			botPost := env.seedRun(t, env.channel, nil, humanPost("what is the weather"), earlierAnswer(), nil)
+			return func() error {
+				return env.conversations.HandleRegenerate(context.Background(), autoReplyUserID, botPost, env.channel)
+			}
 		},
 	},
 	{
-		name:       "tool approve",
-		dm:         true,
-		returnsErr: true,
-		start: func(t *testing.T, env *policyEnv) error {
+		name:         "tool approve in a DM",
+		dm:           true,
+		returnsErr:   true,
+		toolDecision: true,
+		seed: func(t *testing.T, env *policyEnv) func() error {
 			botPost := env.seedRun(t, env.dm, nil, humanPost("what time is it"), pendingTimeBlock(), nil)
-			return env.conversations.HandleToolCall(context.Background(), autoReplyUserID, botPost, env.dm, []string{"tc-time"}, nil)
+			return func() error {
+				return env.conversations.HandleToolCall(context.Background(), autoReplyUserID, botPost, env.dm, []string{"tc-time"}, nil)
+			}
 		},
 	},
 	{
-		name:       "ask-user answer",
-		returnsErr: true,
-		start: func(t *testing.T, env *policyEnv) error {
+		name:         "tool approve in a channel",
+		returnsErr:   true,
+		toolDecision: true,
+		noAnswer:     true,
+		seed: func(t *testing.T, env *policyEnv) func() error {
+			botPost := env.seedRun(t, env.channel, nil, humanPost("what time is it"), pendingTimeBlock(), nil)
+			return func() error {
+				return env.conversations.HandleToolCall(context.Background(), autoReplyUserID, botPost, env.channel, []string{"tc-time"}, nil)
+			}
+		},
+	},
+	{
+		name:         "tool reject in a channel",
+		returnsErr:   true,
+		toolDecision: true,
+		seed: func(t *testing.T, env *policyEnv) func() error {
+			botPost := env.seedRun(t, env.channel, nil, humanPost("what is the weather"), pendingWeatherBlock(), nil)
+			return func() error {
+				return env.conversations.HandleToolCall(context.Background(), autoReplyUserID, botPost, env.channel, []string{}, nil)
+			}
+		},
+	},
+	{
+		name:         "ask-user answer",
+		returnsErr:   true,
+		toolDecision: true,
+		seed: func(t *testing.T, env *policyEnv) func() error {
 			botPost := env.seedRun(t, env.channel, nil, humanPost("what is the weather"), pendingQuestionBlock(), nil)
 			answers := map[string]mmtools.UserInteractionAnswer{"q-1": {Selected: []string{"NYC"}}}
-			return env.conversations.HandleToolCall(context.Background(), autoReplyUserID, botPost, env.channel, []string{"q-1"}, answers)
+			return func() error {
+				return env.conversations.HandleToolCall(context.Background(), autoReplyUserID, botPost, env.channel, []string{"q-1"}, answers)
+			}
 		},
 	},
 	{
-		name:       "WouldAutoExecute auto-resume",
-		returnsErr: true,
-		start: func(t *testing.T, env *policyEnv) error {
+		name:         "WouldAutoExecute auto-resume",
+		returnsErr:   true,
+		toolDecision: true,
+		seed: func(t *testing.T, env *policyEnv) func() error {
 			marked := pendingWeatherBlock()
 			marked[0].WouldAutoExecute = true
 			botPost := env.seedRun(t, env.channel, nil, humanPost("what is the weather"), append(marked, pendingQuestionBlock()...), nil)
 			answers := map[string]mmtools.UserInteractionAnswer{"q-1": {Selected: []string{"NYC"}}}
-			return env.conversations.HandleToolCall(context.Background(), autoReplyUserID, botPost, env.channel, []string{"q-1"}, answers)
+			return func() error {
+				return env.conversations.HandleToolCall(context.Background(), autoReplyUserID, botPost, env.channel, []string{"q-1"}, answers)
+			}
 		},
 	},
 	{
-		name:       "share follow-up",
-		returnsErr: true,
-		start: func(t *testing.T, env *policyEnv) error {
+		name:         "share follow-up",
+		returnsErr:   true,
+		toolDecision: true,
+		seed: func(t *testing.T, env *policyEnv) func() error {
 			toolUse, toolResults := executedWeatherBlocks()
 			botPost := env.seedRun(t, env.channel, nil, humanPost("what is the weather"), toolUse, toolResults)
-			return env.conversations.HandleToolResult(context.Background(), autoReplyUserID, botPost, env.channel, []string{policyWeatherCall.ID})
+			return func() error {
+				return env.conversations.HandleToolResult(context.Background(), autoReplyUserID, botPost, env.channel, []string{policyWeatherCall.ID})
+			}
 		},
 	},
 	{
 		name:       "search",
 		dm:         true,
 		returnsErr: true,
-		start: func(_ *testing.T, env *policyEnv) error {
-			_, err := env.conversations.HandleSearch(context.Background(), policyBot(env), env.mmClient.users[autoReplyUserID], conversations.SearchRequest{Query: "what is the weather"})
-			return err
+		seed: func(_ *testing.T, env *policyEnv) func() error {
+			return func() error {
+				_, err := env.conversations.HandleSearch(context.Background(), policyBot(env), env.mmClient.users[autoReplyUserID], conversations.SearchRequest{Query: "what is the weather"})
+				return err
+			}
 		},
 	},
 }
@@ -672,8 +780,9 @@ func setupInvariantEnv(t *testing.T, cfg llm.BotConfig, llmResponses ...*llm.Tex
 
 // TestTurnEntryPointPolicyInvariants pins that every entry point that starts
 // or resumes a turn applies the same turn policy: the requester's access to
-// the agent, the multiplayer license for channel turns, and DM-only auto-run
-// tool policy.
+// the agent, the multiplayer license for channel turns, the remote MCP
+// license, channel tool calling, and DM-only auto-run tool policy. A turn
+// that is denied leaves the conversation as it was.
 func TestTurnEntryPointPolicyInvariants(t *testing.T) {
 	for _, entry := range turnEntryPoints {
 		t.Run(entry.name, func(t *testing.T) {
@@ -682,29 +791,34 @@ func TestTurnEntryPointPolicyInvariants(t *testing.T) {
 				cfg.UserAccessLevel = llm.UserAccessLevelBlock
 				cfg.UserIDs = []string{autoReplyUserID, autoReplyForeignBotID}
 				env := setupInvariantEnv(t, cfg, dmMakeTextStream("answer"))
+				start := entry.seed(t, env)
+				before := env.state()
 
-				err := entry.start(t, env)
+				err := start()
 
 				if entry.returnsErr {
 					require.ErrorIs(t, err, bots.ErrUsageRestriction)
 				}
-				assert.Empty(t, env.llmRequests())
-				assert.Zero(t, env.executions.Load())
+				requireNothingRan(t, env, before)
+				assert.Empty(t, env.mmClient.createdPosts, "a blocked requester gets no reply")
+				assert.Empty(t, env.mmClient.dmPosts, "a blocked requester gets no DM")
 			})
 
 			t.Run("only DM turns run without the multiplayer license", func(t *testing.T) {
 				env := setupInvariantEnv(t, policyBotConfig(), dmMakeTextStream("answer"))
 				env.overrideLicense(nil)
+				start := entry.seed(t, env)
+				before := env.state()
 
-				err := entry.start(t, env)
+				err := start()
 
 				if !entry.dm {
 					if entry.returnsErr {
-						var licErr *enterprise.LicenseError
-						require.ErrorAs(t, err, &licErr)
+						licErr, ok := errors.AsType[*enterprise.LicenseError](err)
+						require.True(t, ok, "want a license error, got %v", err)
 						assert.Equal(t, enterprise.CapMultiplayerChannels, licErr.Capability)
 					}
-					assert.Empty(t, env.llmRequests())
+					requireNothingRan(t, env, before)
 					return
 				}
 				require.NoError(t, err)
@@ -719,7 +833,12 @@ func TestTurnEntryPointPolicyInvariants(t *testing.T) {
 				)
 				env.checker.setPolicy(policyToolOrigin, policyToolName, mcp.ToolPolicyAutoRunInDM)
 
-				require.NoError(t, entry.start(t, env))
+				require.NoError(t, entry.seed(t, env)())
+				if entry.noAnswer {
+					assert.Empty(t, env.llmRequests())
+					assert.Zero(t, env.executions.Load())
+					return
+				}
 				env.waitForStream(t)
 
 				require.NotEmpty(t, env.llmRequests())
@@ -728,6 +847,54 @@ func TestTurnEntryPointPolicyInvariants(t *testing.T) {
 					want = 1
 				}
 				assert.Equal(t, want, env.executions.Load())
+			})
+
+			t.Run("an unlicensed remote MCP tool never executes", func(t *testing.T) {
+				env := setupInvariantEnv(t, policyBotConfig(),
+					dmMakeToolCallStream([]llm.ToolCall{policyWeatherCall}),
+					dmMakeTextStream("It's sunny"),
+				)
+				env.overrideLicense(&model.License{SkuShortName: model.LicenseShortSkuProfessional})
+				env.checker.setPolicy(policyToolOrigin, policyToolName, mcp.ToolPolicyAutoRunEverywhere)
+				start := entry.seed(t, env)
+				before := env.state()
+
+				err := start()
+
+				if entry.autoReply || errors.Is(err, conversations.ErrRemoteMCPNotLicensed) {
+					requireNothingRan(t, env, before)
+					return
+				}
+				require.NoError(t, err)
+				if !entry.noAnswer {
+					env.waitForStream(t)
+				}
+				assert.Zero(t, env.executions.Load())
+			})
+
+			if entry.dm {
+				return
+			}
+			t.Run("channel tool calling off runs nothing", func(t *testing.T) {
+				env := setupInvariantEnv(t, policyBotConfig(),
+					dmMakeToolCallStream([]llm.ToolCall{policyWeatherCall}),
+					dmMakeTextStream("It's sunny"),
+				)
+				env.config.enableChannelMentionToolCalling = false
+				env.checker.setPolicy(policyToolOrigin, policyToolName, mcp.ToolPolicyAutoRunEverywhere)
+				start := entry.seed(t, env)
+				before := env.state()
+
+				err := start()
+
+				if entry.toolDecision {
+					require.ErrorIs(t, err, conversations.ErrToolCallingDisabled)
+					requireNothingRan(t, env, before)
+					return
+				}
+				require.NoError(t, err)
+				env.waitForStream(t)
+				assert.Zero(t, env.executions.Load())
 			})
 		})
 	}

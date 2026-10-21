@@ -44,7 +44,7 @@
     "translation": "Sure, I will summarize this transcription: %s/_redirect/pl/%s\n"
   },
   {
-    "id": "agents.thread_analysis_source_unavailable",
-    "translation": "I can't continue this conversation because you no longer have access to the thread it is about."
+    "id": "agents.analysis_source_unavailable",
+    "translation": "I can't continue this conversation because you no longer have access to what it is about."
   }
 ]

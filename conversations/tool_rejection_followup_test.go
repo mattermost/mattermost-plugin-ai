@@ -172,10 +172,10 @@ func TestHandleToolCallRejectionFollowsUp(t *testing.T) {
 
 			turns, turnsErr := convStore.GetTurnsForConversation(conv.ID)
 			require.NoError(t, turnsErr)
-			require.GreaterOrEqual(t, len(turns), 4)
+			require.GreaterOrEqual(t, len(turns), 5)
 
 			var updatedBlocks []conversation.ContentBlock
-			require.NoError(t, json.Unmarshal(turns[2].Content, &updatedBlocks))
+			require.NoError(t, json.Unmarshal(turns[3].Content, &updatedBlocks))
 			require.Len(t, updatedBlocks, len(tc.wantToolUseShared))
 			for i, wantShared := range tc.wantToolUseShared {
 				require.NotNil(t, updatedBlocks[i].Shared)
@@ -183,7 +183,7 @@ func TestHandleToolCallRejectionFollowsUp(t *testing.T) {
 			}
 
 			var resultBlocks []conversation.ContentBlock
-			require.NoError(t, json.Unmarshal(turns[3].Content, &resultBlocks))
+			require.NoError(t, json.Unmarshal(turns[4].Content, &resultBlocks))
 			require.Len(t, resultBlocks, len(tc.wantResultContents))
 			for i, wantContent := range tc.wantResultContents {
 				assert.Equal(t, wantContent, resultBlocks[i].Content)
@@ -298,7 +298,7 @@ func TestHandleToolCallMixedChannelRejectionGuidanceAfterShare(t *testing.T) {
 			turns, err := convStore.GetTurnsForConversation(conv.ID)
 			require.NoError(t, err)
 			var resultBlocks []conversation.ContentBlock
-			require.NoError(t, json.Unmarshal(turns[3].Content, &resultBlocks))
+			require.NoError(t, json.Unmarshal(turns[4].Content, &resultBlocks))
 			require.Len(t, resultBlocks, 2)
 			assert.Nil(t, resultBlocks[0].DecidedAt)
 			assert.False(t, *resultBlocks[0].Shared)
@@ -400,6 +400,7 @@ func newRejectionFollowUpConversations(
 	botsService.SetBotsForTesting([]*bots.Bot{loadedStateBot(lm)})
 
 	mmClient := mocks.NewMockClient(t)
+	seedRequesterInitiator(t, convStore, "conv-id", mmClient)
 	mmClient.On("LogDebug", mock.Anything, mock.Anything).Maybe().Return()
 	mmClient.On("GetUser", testRequesterID).Maybe().Return(&model.User{Id: testRequesterID, Username: "user"}, nil)
 	mmClient.On("KVGet", mock.Anything, mock.Anything).Maybe().Return(nil)
@@ -415,6 +416,7 @@ func newRejectionFollowUpConversations(
 	}
 
 	return &Conversations{
+		configProvider:   &channelFollowUpTestConfig{enableChannelMentionToolCalling: true},
 		mmClient:         mmClient,
 		contextBuilder:   newChannelFollowUpTestBuilder(t, tools, &channelFollowUpTestConfig{}),
 		bots:             botsService,

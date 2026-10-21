@@ -105,8 +105,9 @@ type toolDecision struct {
 // fresh trace when the post or its assistant turn is missing), open a new-root
 // span named spanName, resolve the bot and conversation for the clicked post,
 // tag the request's audit record with the agent ID, verify the caller is the
-// conversation requester, load the turns, and resolve the run's policy. On
-// error the span is ended before returning; on success the caller must defer
+// conversation requester, load the turns, resolve the run's policy, and
+// refuse channel decisions while channel tool calling is off. On error the
+// span is ended before returning; on success the caller must defer
 // span.End().
 func (c *Conversations) beginToolDecision(ctx context.Context, spanName, logMsg, userID string, post *model.Post, channel *model.Channel, acceptedCount int) (*toolDecision, error) {
 	ctx = c.rehydrateRunTrace(ctx, post)
@@ -165,6 +166,9 @@ func (c *Conversations) beginToolDecision(ctx context.Context, spanName, logMsg,
 	if err != nil {
 		return fail(err)
 	}
+	if !policy.isDM && !c.channelMentionToolCallingEnabled() {
+		return fail(ErrToolCallingDisabled)
+	}
 
 	return &toolDecision{
 		ctx:      ctx,
@@ -198,11 +202,12 @@ func (c *Conversations) HandleToolCall(ctx context.Context, userID string, post 
 		return err
 	}
 
-	// Accepting tools from remote/external MCP servers is available at
-	// Enterprise and above. Built-in and embedded Mattermost MCP tools are
-	// available at every license level. Rejections are always allowed —
-	// they execute nothing. Blocks marked WouldAutoExecute are not gated
-	// here: their resume re-checks the policy's auto-execute decision,
+	// Accepting a tool executes it, which a run with tools disabled must
+	// never do. Accepting tools from remote/external MCP servers is
+	// available at Enterprise and above. Built-in and embedded Mattermost MCP
+	// tools are available at every license level. Rejections are always
+	// allowed — they execute nothing. Blocks marked WouldAutoExecute are not
+	// gated here: their resume re-checks the policy's auto-execute decision,
 	// which refuses them on the same license, so they resolve to a
 	// rejection instead of blocking the whole submission on a possibly
 	// stale marker.
@@ -213,7 +218,10 @@ func (c *Conversations) HandleToolCall(ctx context.Context, userID string, post 
 		if b.Status != conversation.StatusPending && b.Status != conversation.StatusAccepted {
 			continue
 		}
-		if licenseErr := policy.remoteMCPDecisionAllowed(b.ServerOrigin); licenseErr != nil {
+		if b.UserInteraction == "" && !policy.toolsEnabled {
+			return ErrToolCallingDisabled
+		}
+		if licenseErr := c.remoteMCPDecisionAllowed(b.ServerOrigin); licenseErr != nil {
 			return licenseErr
 		}
 	}
@@ -229,11 +237,7 @@ func (c *Conversations) HandleToolCall(ctx context.Context, userID string, post 
 	// Validate answers for accepted interaction blocks before mutating any
 	// state, so a malformed or missing answer leaves the question pending and
 	// answerable instead of burning it as an error result.
-	connectionCtx, usableInConversation := llmContext, (func(llm.Tool) bool)(nil)
-	if acceptsConnectionRequest(pendingBlocks, acceptedToolIDs) {
-		connectionCtx, usableInConversation = policy.connectionCheck(ctx, llmContext)
-	}
-	interactionResults, err := resolveInteractionAnswers(pendingBlocks, acceptedToolIDs, toolAnswers, connectionCtx, usableInConversation)
+	interactionResults, err := resolveInteractionAnswers(pendingBlocks, acceptedToolIDs, toolAnswers, llmContext, policy.interactive)
 	if err != nil {
 		return err
 	}
@@ -448,10 +452,10 @@ func (c *Conversations) HandleToolCall(ctx context.Context, userID string, post 
 // pending user-interaction block and returns the tool result content keyed by
 // block ID. Any invalid or missing answer fails the whole request with
 // ErrInvalidToolAnswer before any state is mutated. Connection requests carry
-// no answer: their result reports whether connectionCtx, built after the
-// user's decision, has the requested server's tools, and whether any of them
-// pass usableInConversation (nil keeps every tool).
-func resolveInteractionAnswers(blocks []conversation.ContentBlock, acceptedToolIDs []string, toolAnswers map[string]mmtools.UserInteractionAnswer, connectionCtx *llm.Context, usableInConversation func(llm.Tool) bool) (map[string]string, error) {
+// no answer: when the run is interactive their result reports whether
+// llmContext, built after the user's decision, has the requested server's
+// tools; otherwise the run cannot use them, which the result says.
+func resolveInteractionAnswers(blocks []conversation.ContentBlock, acceptedToolIDs []string, toolAnswers map[string]mmtools.UserInteractionAnswer, llmContext *llm.Context, interactive bool) (map[string]string, error) {
 	results := make(map[string]string)
 	for _, b := range blocks {
 		if b.Type != conversation.BlockTypeToolUse || b.UserInteraction == "" {
@@ -465,9 +469,12 @@ func resolveInteractionAnswers(blocks []conversation.ContentBlock, acceptedToolI
 		}
 		var result string
 		var err error
-		if b.UserInteraction == llm.UserInteractionConnect {
-			result, err = mcp.ResolveConnectionRequest(b.Input, connectionCtx, usableInConversation)
-		} else {
+		switch {
+		case b.UserInteraction == llm.UserInteractionConnect && interactive:
+			result, err = mcp.ResolveConnectionRequest(b.Input, llmContext)
+		case b.UserInteraction == llm.UserInteractionConnect:
+			result, err = mcp.ConnectionRequestUnusableResult(b.Input)
+		default:
 			result, err = mmtools.ResolveUserInteractionAnswer(b.UserInteraction, b.Input, toolAnswers[b.ID])
 		}
 		if err != nil {
@@ -476,14 +483,6 @@ func resolveInteractionAnswers(blocks []conversation.ContentBlock, acceptedToolI
 		results[b.ID] = result
 	}
 	return results, nil
-}
-
-func acceptsConnectionRequest(blocks []conversation.ContentBlock, acceptedToolIDs []string) bool {
-	return slices.ContainsFunc(blocks, func(b conversation.ContentBlock) bool {
-		return b.Type == conversation.BlockTypeToolUse && b.UserInteraction == llm.UserInteractionConnect &&
-			(b.Status == conversation.StatusPending || b.Status == conversation.StatusAccepted) &&
-			slices.Contains(acceptedToolIDs, b.ID)
-	})
 }
 
 func skippedInteractionResult(block conversation.ContentBlock) string {
@@ -553,7 +552,7 @@ func (c *Conversations) HandleToolResult(ctx context.Context, userID string, pos
 				clickedPostUserRejected = true
 			}
 			if acceptedSet[b.ID] && shareLicenseErr == nil {
-				shareLicenseErr = policy.remoteMCPDecisionAllowed(b.ServerOrigin)
+				shareLicenseErr = c.remoteMCPDecisionAllowed(b.ServerOrigin)
 			}
 		}
 	}

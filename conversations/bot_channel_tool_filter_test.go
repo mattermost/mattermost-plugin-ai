@@ -412,7 +412,8 @@ func TestBotChannelAutoEverywhereFilterDenormalizesNamespacedTool(t *testing.T) 
 
 // TestChannelFollowUpStrictRegistry pins which catalog a resumed run gets:
 // a channel run whose initiator cannot be confirmed as a present human is
-// limited to auto_run_everywhere tools, and DMs are never limited.
+// limited to auto_run_everywhere tools, and DMs are never limited, whoever
+// started the run.
 func TestChannelFollowUpStrictRegistry(t *testing.T) {
 	const origin = "https://mcp.atlassian.com"
 
@@ -480,9 +481,23 @@ func TestChannelFollowUpStrictRegistry(t *testing.T) {
 			expectAskTool: true,
 		},
 		{
-			name:          "DM is not limited",
-			channel:       dmChannel,
-			postID:        "bot-post",
+			name:    "DM is not limited",
+			channel: dmChannel,
+			postID:  "bot-post",
+			setupMMClient: func(mmClient *mocks.MockClient) {
+				mmClient.On("GetPost", "initiator-post").Return(&model.Post{Id: "initiator-post", UserId: testRequesterID}, nil).Maybe()
+				mmClient.On("GetUser", testRequesterID).Return(&model.User{Id: testRequesterID}, nil).Maybe()
+			},
+			expectAskTool: true,
+		},
+		{
+			name:    "DM started by a bot activate_ai is not limited",
+			channel: dmChannel,
+			postID:  "bot-post",
+			setupMMClient: func(mmClient *mocks.MockClient) {
+				mmClient.On("GetPost", "initiator-post").Return(activateAIPost, nil).Maybe()
+				mmClient.On("GetUser", "bot-user").Return(&model.User{Id: "bot-user", IsBot: true}, nil).Maybe()
+			},
 			expectAskTool: true,
 		},
 	}
