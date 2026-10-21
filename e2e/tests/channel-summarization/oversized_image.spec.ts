@@ -68,7 +68,6 @@ let mattermost: MattermostContainer;
 let openAIMock: OpenAIMockContainer;
 
 test.beforeAll(async () => {
-    test.setTimeout(180000);
     mattermost = await RunAIMockContainer({
         bot: {
             enableVision: true,

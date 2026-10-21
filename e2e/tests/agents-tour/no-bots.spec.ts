@@ -10,7 +10,6 @@ import { MattermostPage } from 'helpers/mm';
 let mattermost: MattermostContainer;
 
 test.beforeAll(async () => {
-    test.setTimeout(180000);
     mattermost = await RunSystemConsoleContainer({
         services: [{
             id: 'mock-service',

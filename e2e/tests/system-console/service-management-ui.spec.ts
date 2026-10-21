@@ -20,7 +20,6 @@ let openAIMock: OpenAIMockContainer;
 
 test.describe('Service Management', () => {
     test.beforeAll(async () => {
-        test.setTimeout(180000);
         // Start container with NO pre-configured services
         mattermost = await RunSystemConsoleContainer({
             services: [],

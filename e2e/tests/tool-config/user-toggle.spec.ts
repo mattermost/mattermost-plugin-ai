@@ -19,7 +19,6 @@ let openAIMock: OpenAIMockContainer;
 
 test.describe('User Provider Toggle', () => {
     test.beforeAll(async () => {
-        test.setTimeout(180000);
         mattermost = await RunToolConfigContainer();
         openAIMock = await RunOpenAIMocks(mattermost.network);
         await openAIMock.addCompletionMock(responseTest);

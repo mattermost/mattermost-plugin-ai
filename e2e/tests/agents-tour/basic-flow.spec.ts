@@ -56,7 +56,6 @@ const expectTourFinished = async (page: Page, pulsatingDot: Locator, tourPopover
 
 // Setup for all tests in the file
 test.beforeAll(async () => {
-    test.setTimeout(180000);
     mattermost = await RunContainer();
     openAIMock = await RunOpenAIMocks(mattermost.network);
 });

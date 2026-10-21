@@ -14,7 +14,6 @@ let mattermost: MattermostContainer;
 // RunAIMockContainer configures no embedding search, so semantic search is
 // unavailable while the license still allows Agents search.
 test.beforeAll(async () => {
-    test.setTimeout(180000);
     mattermost = await RunAIMockContainer();
 });
 

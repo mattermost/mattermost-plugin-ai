@@ -78,7 +78,6 @@ test.describe('aimock sidecar HTTP', () => {
     let aimock: AIMockContainer;
 
     test.beforeAll(async () => {
-        test.setTimeout(180000);
         network = await new Network().start();
         aimock = await RunAIMockSidecar(network, {
             fixtures: buildTextResponse({

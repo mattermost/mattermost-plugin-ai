@@ -21,7 +21,6 @@ const READ_POST_TOOL_NAME = 'read_post';
 
 test.describe('Per-Tool Enable/Disable', () => {
     test.beforeAll(async () => {
-        test.setTimeout(180000);
         mattermost = await RunToolConfigContainer();
         openAIMock = await RunOpenAIMocks(mattermost.network);
     });

@@ -18,7 +18,6 @@ let openAIMock: OpenAIMockContainer;
 
 test.describe('Tools Tab Display', () => {
     test.beforeAll(async () => {
-        test.setTimeout(180000);
         mattermost = await RunToolConfigContainer();
         openAIMock = await RunOpenAIMocks(mattermost.network);
     });

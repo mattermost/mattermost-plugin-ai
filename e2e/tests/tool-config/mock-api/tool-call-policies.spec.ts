@@ -161,7 +161,6 @@ async function waitForChannelReady(page: Page, channelDisplayName: string): Prom
 
 test.describe('Tool Call Policies (Mocked LLM)', () => {
     test.beforeAll(async () => {
-        test.setTimeout(180000);
         mattermost = await RunToolConfigContainerWithPolicies();
         openAIMock = await RunOpenAIMocks(mattermost.network);
         await setEmbeddedToolPolicies([

@@ -3,6 +3,7 @@ import type {StartedTestContainer, StartedNetwork} from 'testcontainers';
 import type {StartedPostgreSqlContainer} from '@testcontainers/postgresql';
 import {Client4} from "@mattermost/client";
 import { Client } from 'pg'
+import { test } from '@playwright/test';
 import { pluginAdminConfigApiFromClient } from './plugin-http';
 
 if (typeof globalThis.File === 'undefined') {
@@ -271,6 +272,7 @@ export default class MattermostContainer {
     }
 
     start = async (): Promise<MattermostContainer> => {
+        test.slow(); // triples a beforeAll's 60 s timeout, which container startup can exceed
         const image = mattermostImage();
         const isCustomImage = !!process.env.MM_IMAGE;
         console.log(`\n🚀 Starting Mattermost container`);

@@ -58,7 +58,6 @@ async function waitForSentPost(page: Page, message: string, timeout = 30000): Pr
 
 test.describe('AskUserQuestion with malformed arguments (Mocked LLM)', () => {
     test.beforeAll(async () => {
-        test.setTimeout(180000);
         mattermost = await RunToolConfigContainerWithPolicies();
         openAIMock = await RunOpenAIMocks(mattermost.network);
     });

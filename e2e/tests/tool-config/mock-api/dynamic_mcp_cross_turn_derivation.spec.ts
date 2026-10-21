@@ -54,7 +54,6 @@ async function mentionBotAndOpenThread(page: Page, mmPage: MattermostPage, botNa
 
 test.describe('Dynamic MCP Cross-Turn Derivation (Mocked LLM)', () => {
     test.beforeAll(async () => {
-        test.setTimeout(180000);
         mattermost = await RunToolConfigContainerWithDynamicPolicies();
         openAIMock = await RunOpenAIMocks(mattermost.network);
     });

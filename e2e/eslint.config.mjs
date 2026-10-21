@@ -11,7 +11,6 @@ export default [
         linterOptions: {reportUnusedDisableDirectives: 'error'},
         rules: {
             'e2e/container-exec-exit-code': 'error',
-            'e2e/container-hook-timeout': 'error',
         },
     },
     {

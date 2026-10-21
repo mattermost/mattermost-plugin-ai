@@ -15,7 +15,6 @@ let openAIMock: OpenAIMockContainer;
 
 // Setup for all tests in the file
 test.beforeAll(async () => {
-  test.setTimeout(180000);
   mattermost = await RunContainer();
   openAIMock = await RunOpenAIMocks(mattermost.network);
 });

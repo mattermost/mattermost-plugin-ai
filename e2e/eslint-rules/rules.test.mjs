@@ -30,20 +30,6 @@ tester.run('scoped-tool-label', plugin.rules['scoped-tool-label'], {
     ],
 });
 
-tester.run('container-hook-timeout', plugin.rules['container-hook-timeout'], {
-    valid: [
-        'test.beforeAll(async () => { test.setTimeout(180000); mattermost = await RunContainer(); });',
-        'test.describe("x", () => { test.beforeAll(async () => { test.setTimeout(180000); stack = await startAIMockCitationStack({}); }); });',
-        'test.beforeAll(async () => { await mattermost.mmctl("config", "set", "A", "b"); });',
-        'test.beforeEach(async () => { await RunContainer(); });',
-    ],
-    invalid: [
-        {code: 'test.beforeAll(async () => { mattermost = await RunContainer(); });', errors: [{messageId: 'missing'}]},
-        {code: 'test.beforeAll(async () => { mattermost = await RunContainer(); test.setTimeout(180000); });', errors: [{messageId: 'missing'}]},
-        {code: 'test.describe("x", () => { test.beforeAll(async () => { if (ready) { mock = await RunOpenAIMocks(net); } }); });', errors: [{messageId: 'missing'}]},
-    ],
-});
-
 tester.run('container-exec-exit-code', plugin.rules['container-exec-exit-code'], {
     valid: [
         'const {output, exitCode} = await this.container.exec(["mmctl", "--local", "system", "version"]);',

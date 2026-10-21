@@ -7,7 +7,6 @@ import { mattermostAIAdminConfigApiFromClient, mattermostAIPluginRoutes } from '
 let mattermost: MattermostContainer;
 
 test.beforeAll(async () => {
-    test.setTimeout(180000);
     mattermost = await RunContainer();
 });
 
