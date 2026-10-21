@@ -11,7 +11,20 @@ function isContainerExec(call) {
     return typeof name === 'string' && /container$/i.test(name);
 }
 
+// withDeadline(step, ms, () => container.exec(...)) resolves to the exec result,
+// so the exit code has to be read where the withDeadline call lands.
+function passedThroughDeadline(call) {
+    const arrow = call.parent;
+    const outer = arrow.parent;
+    return arrow.type === 'ArrowFunctionExpression' && arrow.body === call &&
+        outer.type === 'CallExpression' && outer.callee.type === 'Identifier' && outer.callee.name === 'withDeadline' &&
+        outer.arguments.at(-1) === arrow;
+}
+
 function readsExitCode(call) {
+    if (passedThroughDeadline(call)) {
+        return readsExitCode(call.parent.parent);
+    }
     let node = call.parent;
     if (node.type === 'AwaitExpression') {
         node = node.parent;

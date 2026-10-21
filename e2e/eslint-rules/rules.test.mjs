@@ -36,10 +36,13 @@ tester.run('container-exec-exit-code', plugin.rules['container-exec-exit-code'],
         'const {exitCode} = await mattermost.container.exec(["true"]);',
         'if ((await container.exec(["true"])).exitCode !== 0) { throw new Error("failed"); }',
         'const [, id] = ARTIFACT_URL.exec(src);',
+        'const {output, exitCode} = await withDeadline("mmctl", 60000, () => this.container.exec(["mmctl"]));',
     ],
     invalid: [
         {code: 'await mattermost.container.exec(["mmctl", "--local", "config", "set", "A", "b"]);', errors: [{messageId: 'unchecked'}]},
         {code: 'const {output} = await this.container.exec(["mmctl", "--local", "logs"]);', errors: [{messageId: 'unchecked'}]},
         {code: 'const result = await pgContainer.exec(["psql"]);', errors: [{messageId: 'unchecked'}]},
+        {code: 'await withDeadline("mmctl", 60000, () => this.container.exec(["mmctl"]));', errors: [{messageId: 'unchecked'}]},
+        {code: 'const {output} = await withDeadline("mmctl", 60000, () => this.container.exec(["mmctl"]));', errors: [{messageId: 'unchecked'}]},
     ],
 });
