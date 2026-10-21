@@ -203,7 +203,7 @@ func setupNoToolsAPI(t *testing.T, mcpProvider *noToolsTestMCPProvider, mmClient
 		&model.Bot{UserId: testBotUserID, Username: "matty", DisplayName: "Matty"},
 		fakeLLM,
 	)
-	e.bots.SetBotsForTesting([]*bots.Bot{bot})
+	e.setBots(bot)
 
 	return e, streamingService, convStore
 }

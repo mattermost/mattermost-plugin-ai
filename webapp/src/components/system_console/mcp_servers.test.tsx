@@ -1,8 +1,8 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import React from 'react';
-import {fireEvent, render, screen, waitFor} from '@testing-library/react';
+import React, {useState} from 'react';
+import {act, fireEvent, render, screen, waitFor} from '@testing-library/react';
 
 // Minimal react-intl shim: ts-jest bypasses babel, so FormattedMessage needs an id at runtime.
 jest.mock('react-intl', () => {
@@ -56,6 +56,7 @@ jest.mock('../../client', () => ({
     clearMCPToolsCache: jest.fn(),
     getVettedToolSeed: jest.fn().mockResolvedValue([]),
     updatePluginServer: jest.fn().mockResolvedValue({}),
+    getMCPSuggestedDescription: jest.fn(),
 }));
 
 jest.mock('./mcp_tools_viewer', () => ({
@@ -75,14 +76,16 @@ import {IntlProvider} from 'react-intl';
 
 import {useIsLicensedFor} from '@/license';
 
-import {getMCPTools} from '../../client';
+import {getMCPSuggestedDescription, getMCPTools, getVettedToolSeed} from '../../client';
 
-import MCPServers, {type MCPConfig, type MCPServerConfig} from './mcp_servers';
+import MCPServers, {type MCPConfig, type MCPConfigUpdate, type MCPServerConfig} from './mcp_servers';
 import type {PluginServerConfig} from './mcp_types';
 /* eslint-enable import/first, import/order */
 
 const mockUseIsLicensedFor = useIsLicensedFor as jest.Mock;
 const mockGetMCPTools = getMCPTools as jest.Mock;
+const mockGetSuggestion = getMCPSuggestedDescription as jest.Mock;
+const mockGetVettedToolSeed = getVettedToolSeed as jest.Mock;
 
 const STABLE_ID = 'abcdefghijklmnopqrstuvwxyz';
 
@@ -109,13 +112,14 @@ function makeRemoteServer(overrides: Partial<MCPServerConfig> = {}): MCPServerCo
     };
 }
 
-function renderServers(mcpConfig: MCPConfig) {
+function renderServers(mcpConfig: MCPConfig, savedServers?: MCPServerConfig[]) {
     const onChange = jest.fn();
     return {
         ...render(
             <IntlProvider locale='en'>
                 <MCPServers
                     mcpConfig={mcpConfig}
+                    savedServers={savedServers}
                     onChange={onChange}
                 />
             </IntlProvider>,
@@ -485,5 +489,181 @@ describe('MCPServers built-in & plugin section', () => {
         const config: MCPConfig = onChange.mock.calls[onChange.mock.calls.length - 1][0];
         expect(config.plugin_servers).toEqual(pluginServers);
         expect(config.enablePluginServer).toBe(true);
+    });
+});
+
+describe('MCPServers description auto-fill', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        mockUseIsLicensedFor.mockReturnValue(true);
+        mockGetMCPTools.mockReturnValue(new Promise(() => null));
+    });
+
+    const autoFillButton = () => screen.getByRole('button', {name: 'Auto-fill from server'}) as HTMLButtonElement;
+
+    test('is available for a server that matches its saved configuration', () => {
+        renderServers(makeMCPConfig([existingServer]), [existingServer]);
+
+        expect(autoFillButton().disabled).toBe(false);
+    });
+
+    test.each([
+        ['a server that was never saved', makeRemoteServer(), []],
+        ['a server whose URL has unsaved changes', {...existingServer, baseURL: 'https://jira-new.example.com'}, [existingServer]],
+    ])('is unavailable for %s', (_name, server, saved) => {
+        renderServers(makeMCPConfig([server]), saved);
+
+        expect(autoFillButton().disabled).toBe(true);
+    });
+
+    test('editing the description keeps the server id', () => {
+        const {onChange} = renderServers(makeMCPConfig([existingServer]), [existingServer]);
+
+        fireEvent.change(screen.getByPlaceholderText(/What this integration is for/), {target: {value: 'Jira issues'}});
+
+        const servers = lastChangedServers(onChange);
+        expect(servers[0].description).toBe('Jira issues');
+        expect(servers[0].id).toBe(STABLE_ID);
+    });
+});
+
+// Late results must land on the configuration as it is when they arrive, not
+// as it was when the request started.
+describe('MCPServers results that arrive after further edits', () => {
+    const github: MCPServerConfig = {
+        id: 'zyxwvutsrqponmlkjihgfedcba',
+        name: 'GitHub',
+        enabled: true,
+        baseURL: 'https://github.example.com',
+        headers: {},
+    };
+
+    // Holds the configuration the way config.tsx does, resolving update
+    // functions against the current state.
+    const StatefulServers = ({initial, saved}: {initial: MCPConfig; saved: MCPServerConfig[]}) => {
+        const [mcpConfig, setMCPConfig] = useState(initial);
+        latestConfig = mcpConfig;
+        return (
+            <IntlProvider locale='en'>
+                <MCPServers
+                    mcpConfig={mcpConfig}
+                    savedServers={saved}
+                    onChange={(update: MCPConfigUpdate) => setMCPConfig((current) => (typeof update === 'function' ? update(current) : update))}
+                />
+            </IntlProvider>
+        );
+    };
+    let latestConfig: MCPConfig;
+
+    const deferred = <T, >() => {
+        let resolve: (value: T) => void = () => null;
+        const promise = new Promise<T>((r) => {
+            resolve = r;
+        });
+        return {promise, resolve};
+    };
+
+    const urlInputs = () => screen.getAllByPlaceholderText('https://mcp.example.com');
+    const deleteGitHub = () => fireEvent.click(screen.getAllByRole('button', {name: 'Delete Server'})[1]);
+    const editGitHubURL = () => fireEvent.change(urlInputs()[1], {target: {value: 'https://gh2.example.com'}});
+    const editJiraURL = () => fireEvent.change(urlInputs()[0], {target: {value: 'https://jira2.example.com'}});
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+        mockUseIsLicensedFor.mockReturnValue(true);
+        mockGetMCPTools.mockReturnValue(new Promise(() => null));
+        mockGetVettedToolSeed.mockResolvedValue([]);
+    });
+
+    describe('description auto-fill', () => {
+        test.each([
+            ['another server is deleted', deleteGitHub, (servers: MCPServerConfig[]) => expect(servers.map((s) => s.name)).toEqual(['Jira'])],
+            ['another server is edited', editGitHubURL, (servers: MCPServerConfig[]) => expect(servers[1].baseURL).toBe('https://gh2.example.com')],
+        ])('fills the description and keeps the change when %s meanwhile', async (_name, edit, check) => {
+            const suggestion = deferred<unknown>();
+            mockGetSuggestion.mockReturnValue(suggestion.promise);
+            render(
+                <StatefulServers
+                    initial={makeMCPConfig([existingServer, github])}
+                    saved={[existingServer, github]}
+                />,
+            );
+
+            fireEvent.click(screen.getAllByRole('button', {name: 'Auto-fill from server'})[0]);
+            edit();
+            suggestion.resolve({description: 'Jira issues', source: 'description', needsOAuth: false});
+
+            await waitFor(() => expect(latestConfig.servers?.[0].description).toBe('Jira issues'));
+            check(latestConfig.servers ?? []);
+        });
+
+        test('drops the description when the server is reached differently by then', async () => {
+            const suggestion = deferred<unknown>();
+            mockGetSuggestion.mockReturnValue(suggestion.promise);
+            render(
+                <StatefulServers
+                    initial={makeMCPConfig([existingServer, github])}
+                    saved={[existingServer, github]}
+                />,
+            );
+
+            fireEvent.click(screen.getAllByRole('button', {name: 'Auto-fill from server'})[0]);
+            editJiraURL();
+            await act(async () => {
+                suggestion.resolve({description: 'Jira issues', source: 'description', needsOAuth: false});
+            });
+
+            expect(mockGetSuggestion).toHaveBeenCalledWith(STABLE_ID);
+            expect(latestConfig.servers?.[0].description).toBeFalsy();
+            expect(latestConfig.servers?.[0].baseURL).toBe('https://jira2.example.com');
+        });
+    });
+
+    describe('tool seeding after a URL change', () => {
+        const seededTools = [{name: 'search', policy: 'ask' as const, enabled: true}];
+
+        test.each([
+            ['another server is deleted', deleteGitHub, (servers: MCPServerConfig[]) => expect(servers.map((s) => s.name)).toEqual(['Jira'])],
+            ['another server is edited', editGitHubURL, (servers: MCPServerConfig[]) => expect(servers[1].baseURL).toBe('https://gh2.example.com')],
+        ])('seeds the tools and keeps the change when %s meanwhile', async (_name, edit, check) => {
+            const seed = deferred<unknown>();
+            mockGetVettedToolSeed.mockReturnValue(seed.promise);
+            render(
+                <StatefulServers
+                    initial={makeMCPConfig([existingServer, github])}
+                    saved={[existingServer, github]}
+                />,
+            );
+
+            editJiraURL();
+            fireEvent.blur(urlInputs()[0]);
+            edit();
+            seed.resolve(seededTools);
+
+            await waitFor(() => expect(latestConfig.servers?.[0].tool_configs).toEqual(seededTools));
+            check(latestConfig.servers ?? []);
+        });
+
+        test('drops the seeded tools when the URL has changed again by then', async () => {
+            const seed = deferred<unknown>();
+            mockGetVettedToolSeed.mockReturnValue(seed.promise);
+            render(
+                <StatefulServers
+                    initial={makeMCPConfig([existingServer, github])}
+                    saved={[existingServer, github]}
+                />,
+            );
+
+            editJiraURL();
+            fireEvent.blur(urlInputs()[0]);
+            fireEvent.change(urlInputs()[0], {target: {value: 'https://jira3.example.com'}});
+            await act(async () => {
+                seed.resolve(seededTools);
+            });
+
+            expect(mockGetVettedToolSeed).toHaveBeenCalledWith('https://jira2.example.com');
+            expect(latestConfig.servers?.[0].baseURL).toBe('https://jira3.example.com');
+            expect(latestConfig.servers?.[0].tool_configs).toBeUndefined();
+        });
     });
 });

@@ -370,7 +370,7 @@ func TestChannelAutoReplyIndependentOfDefaultBot(t *testing.T) {
 			name:   "GET works when the default agent is restricted",
 			method: http.MethodGet,
 			envSetup: func(e *TestEnvironment) {
-				e.bots.SetBotsForTesting([]*bots.Bot{restrictedDefaultBot(), permittedBot()})
+				e.setBots(restrictedDefaultBot(), permittedBot())
 				e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionReadChannel).Return(true)
 			},
 			expectedStatus: http.StatusOK,
@@ -381,7 +381,7 @@ func TestChannelAutoReplyIndependentOfDefaultBot(t *testing.T) {
 			method: http.MethodPut,
 			body:   fmt.Sprintf(`{"bot_id":%q,"mode":"root_posts"}`, testBotUserID),
 			envSetup: func(e *TestEnvironment) {
-				e.bots.SetBotsForTesting([]*bots.Bot{restrictedDefaultBot(), permittedBot()})
+				e.setBots(restrictedDefaultBot(), permittedBot())
 				e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionReadChannel).Return(true)
 				e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionManagePublicChannelProperties).Return(true)
 			},
@@ -392,7 +392,7 @@ func TestChannelAutoReplyIndependentOfDefaultBot(t *testing.T) {
 			name:   "GET works with zero configured agents",
 			method: http.MethodGet,
 			envSetup: func(e *TestEnvironment) {
-				e.bots.SetBotsForTesting(nil)
+				e.setBots()
 				e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionReadChannel).Return(true)
 			},
 			expectedStatus: http.StatusOK,
@@ -403,7 +403,7 @@ func TestChannelAutoReplyIndependentOfDefaultBot(t *testing.T) {
 			method: http.MethodPut,
 			body:   `{"bot_id":"","mode":"off"}`,
 			envSetup: func(e *TestEnvironment) {
-				e.bots.SetBotsForTesting(nil)
+				e.setBots()
 				e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionReadChannel).Return(true)
 				e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionManagePublicChannelProperties).Return(true)
 			},

@@ -141,6 +141,30 @@ describe('ConfigTab', () => {
         ).toBe(false);
     });
 
+    test.each([
+        {name: 'creating an agent', savedUsername: '', username: 'testagent', warns: false},
+        {name: 'editing without renaming', savedUsername: 'testagent', username: 'testagent', warns: false},
+        {name: 'editing with a new username', savedUsername: 'testagent', username: 'renamed', warns: true},
+    ])('username stays editable and warns about renames only when one is pending: $name', async ({savedUsername, username, warns}) => {
+        render(
+            <IntlProvider locale='en'>
+                <ConfigTab
+                    draft={makeDraft({username})}
+                    onChange={jest.fn()}
+                    onAvatarChange={jest.fn()}
+                    services={[openaiService]}
+                    savedUsername={savedUsername}
+                />
+            </IntlProvider>,
+        );
+
+        await waitFor(() => expect(screen.getByText('Agent username')).not.toBeNull());
+
+        const usernameInput = within(formRowForLabel('Agent username')).getByRole('textbox') as HTMLInputElement;
+        expect(usernameInput.disabled).toBe(false);
+        expect(screen.queryByText(/people and integrations using @testagent will need to switch/) !== null).toBe(warns);
+    });
+
     test('shows vision and effort reasoning for north without native tools', async () => {
         const northService: ServiceInfo = {
             id: 'svc_north',
@@ -277,5 +301,30 @@ describe('ConfigTab license gating', () => {
         rerender(renderTab(openaiService.id));
 
         expect(onChange).toHaveBeenCalledWith(expect.objectContaining({enabledNativeTools: expected}));
+    });
+
+    test.each([
+        {from: 'openai', to: 'anthropic', expected: ''},
+        {from: 'anthropic', to: 'openai', expected: 'medium'},
+    ])('switching from $from to $to resets reasoning effort to "$expected"', async ({from, to, expected}) => {
+        const anthropicService: ServiceInfo = {...openaiService, id: 'svc_anthropic', name: 'Anthropic Mock', type: 'anthropic'};
+        const serviceIDs: Record<string, string> = {openai: openaiService.id, anthropic: anthropicService.id};
+        const onChange = jest.fn();
+        const renderTab = (serviceId: string) => (
+            <IntlProvider locale='en'>
+                <ConfigTab
+                    draft={makeDraft({serviceId, reasoningEffort: 'low'})}
+                    onChange={onChange}
+                    onAvatarChange={jest.fn()}
+                    services={[openaiService, anthropicService]}
+                />
+            </IntlProvider>
+        );
+
+        const {rerender} = render(renderTab(serviceIDs[from]));
+        await screen.findByText('AI Service');
+        rerender(renderTab(serviceIDs[to]));
+
+        expect(onChange).toHaveBeenCalledWith(expect.objectContaining({reasoningEffort: expected}));
     });
 });
