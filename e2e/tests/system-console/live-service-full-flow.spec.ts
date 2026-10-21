@@ -134,16 +134,13 @@ async function selectModelFromDropdown(
     await expect(dropdownInput).toBeVisible({timeout: 90000});
     await dropdownInput.click();
 
-    const options = page.getByRole('listbox').getByRole('option');
-    await expect(options.first()).toBeVisible({timeout: 90000});
+    // The listbox first shows the built-in model list and is replaced once the fetched
+    // models arrive, so wait for the preferred option instead of indexing a snapshot.
+    const option = page.getByRole('listbox').getByRole('option', {name: preferredModel}).first();
+    await expect(option).toBeVisible({timeout: 90000});
 
-    const optionTexts = (await options.allTextContents()).map((text) => text.trim());
-    const preferredIndex = optionTexts.findIndex((text) => text.toLowerCase().includes(preferredModel.toLowerCase()));
-    const selectedIndex = preferredIndex >= 0 ? preferredIndex : 0;
-    const model = optionTexts[selectedIndex] || preferredModel;
-
-    expect(model.length).toBeGreaterThan(0);
-    await options.nth(selectedIndex).click();
+    const model = (await option.textContent())?.trim() || preferredModel;
+    await option.click();
 
     return model;
 }
