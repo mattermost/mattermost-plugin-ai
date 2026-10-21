@@ -6,6 +6,7 @@ package llm
 import (
 	"context"
 	"math"
+	"slices"
 )
 
 const FunctionsTokenBudget = 200
@@ -50,7 +51,7 @@ func (w *TruncationWrapper) maybeTruncate(ctx context.Context, request *Completi
 
 	heuristicEstimate := 0
 	for _, post := range request.Posts {
-		heuristicEstimate += EstimateTokens(post.Message)
+		heuristicEstimate += postTokens(post, EstimateTokens)
 	}
 	if heuristicEstimate < int(SafetyCheckThreshold*float64(budget)) {
 		return
@@ -74,12 +75,14 @@ func (w *TruncationWrapper) maybeTruncate(ctx context.Context, request *Completi
 	}
 }
 
+// dropOldestNonSystemPost replaces Posts rather than editing it in place, since
+// it may still share a backing array with the caller's request.
 func dropOldestNonSystemPost(request *CompletionRequest) bool {
 	for i, post := range request.Posts {
-		if post.Role == PostRoleSystem {
+		if post.Role == PostRoleSystem || isTruncatedHistoryNote(post) {
 			continue
 		}
-		request.Posts = append(request.Posts[:i], request.Posts[i+1:]...)
+		request.Posts = withTruncatedHistoryNote(slices.Delete(slices.Clone(request.Posts), i, i+1))
 		return true
 	}
 	return false
