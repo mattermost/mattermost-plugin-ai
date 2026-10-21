@@ -264,7 +264,7 @@ func fetchJSONLenient[T any](ctx context.Context, httpClient *http.Client, metad
 	req.Header.Set("Accept", "application/json")
 
 	if httpClient == nil {
-		httpClient = http.DefaultClient //nolint:gocritic // nil only in tests; production injects the httpservice client, which sets Timeout
+		httpClient = http.DefaultClient
 	}
 	resp, err := httpClient.Do(req)
 	if err != nil {

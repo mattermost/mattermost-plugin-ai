@@ -53,7 +53,7 @@ func (l *limitedReadCloser) Close() error               { return l.closer.Close(
 // whose responses are size-capped, for use with SDK calls (like dynamic
 // client registration) that would otherwise read the body unbounded.
 func (m *OAuthManager) bodyLimitedHTTPClient() *http.Client {
-	base := http.DefaultClient //nolint:gocritic // nil only in tests; production injects the httpservice client, which sets Timeout
+	base := http.DefaultClient
 	if m.httpClient != nil {
 		base = m.httpClient
 	}

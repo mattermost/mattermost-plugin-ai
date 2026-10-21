@@ -82,7 +82,7 @@ func (s *MattermostInMemoryMCPServer) CreateConnectionForUser(userID, sessionID 
 	}
 
 	// Create context with sessionID and resolver
-	ctx := context.Background() //nolint:gocritic // connection-lifetime context for the in-memory session, which outlives the request
+	ctx := context.Background()
 	if sessionID != "" && tokenResolver != nil {
 		ctx = context.WithValue(ctx, auth.SessionIDContextKey, sessionID)
 		ctx = context.WithValue(ctx, auth.TokenResolverContextKey, tokenResolver)

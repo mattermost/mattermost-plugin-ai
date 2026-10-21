@@ -174,5 +174,5 @@ func SpanFromContext(ctx context.Context) trace.Span {
 // request context's cancellation propagates into the background goroutine
 // and truncates the work.
 func DetachContext(ctx context.Context) context.Context {
-	return trace.ContextWithSpan(context.Background(), trace.SpanFromContext(ctx)) //nolint:gocritic // DetachContext is the sanctioned detach point; it re-attaches the span
+	return trace.ContextWithSpan(context.Background(), trace.SpanFromContext(ctx))
 }

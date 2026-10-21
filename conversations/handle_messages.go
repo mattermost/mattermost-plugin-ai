@@ -157,7 +157,7 @@ func (c *Conversations) MessageHasBeenPosted(pluginContext *plugin.Context, post
 		return
 	}
 
-	ctx := context.Background() //nolint:gocritic // plugin hook entry point; the hook API passes no context
+	ctx := context.Background()
 	if pluginContext != nil {
 		ctx = auth.WithSessionID(ctx, pluginContext.SessionId)
 	}

@@ -273,9 +273,7 @@ func TestToolCreatePostWithInlineFiles(t *testing.T) {
 			})
 			mux.HandleFunc("/api/v4/posts", func(w http.ResponseWriter, r *http.Request) {
 				postHit = true
-				if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&postedPost)) {
-					return
-				}
+				assert.NoError(t, json.NewDecoder(r.Body).Decode(&postedPost))
 				postedPost.Id = model.NewId()
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode(&postedPost)
@@ -435,9 +433,7 @@ func TestPostToolsCombinedAttachmentCap(t *testing.T) {
 				})
 				mux.HandleFunc("/api/v4/posts", func(w http.ResponseWriter, r *http.Request) {
 					postHit = true
-					if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&postedPost)) {
-						return
-					}
+					assert.NoError(t, json.NewDecoder(r.Body).Decode(&postedPost))
 					postedPost.Id = model.NewId()
 					encode(w, &postedPost)
 				})
@@ -496,9 +492,7 @@ func TestToolDMWithInlineFiles(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(&model.FileUploadResponse{FileInfos: []*model.FileInfo{{Id: id}}})
 	})
 	mux.HandleFunc("/api/v4/posts", func(w http.ResponseWriter, r *http.Request) {
-		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&postedPost)) {
-			return
-		}
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&postedPost))
 		postedPost.Id = model.NewId()
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(&postedPost)
@@ -615,9 +609,7 @@ func TestToolCreatePostDisplayNameValidation(t *testing.T) {
 			mux.HandleFunc("/api/v4/posts", func(w http.ResponseWriter, r *http.Request) {
 				postHit = true
 				var post model.Post
-				if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&post)) {
-					return
-				}
+				assert.NoError(t, json.NewDecoder(r.Body).Decode(&post))
 				post.Id = model.NewId()
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode(&post)
@@ -721,9 +713,7 @@ func TestUserLookupAcceptsUserID(t *testing.T) {
 	})
 	mux.HandleFunc("/api/v4/posts", func(w http.ResponseWriter, r *http.Request) {
 		var post model.Post
-		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&post)) {
-			return
-		}
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&post))
 		post.Id = model.NewId()
 		writeJSON(w, &post)
 	})
@@ -797,9 +787,7 @@ func TestCreatePostAcceptsGetChannelInfoNames(t *testing.T) {
 			})
 			mux.HandleFunc("/api/v4/posts", func(w http.ResponseWriter, r *http.Request) {
 				var post model.Post
-				if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&post)) {
-					return
-				}
+				assert.NoError(t, json.NewDecoder(r.Body).Decode(&post))
 				post.Id = model.NewId()
 				writeJSON(w, &post)
 			})

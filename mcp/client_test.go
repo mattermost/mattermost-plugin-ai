@@ -186,9 +186,7 @@ func connectToolListRewritingSession(t *testing.T, rawResult string) *mcp.Client
 
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reqBody, err := io.ReadAll(r.Body)
-		if !assert.NoError(t, err) {
-			return
-		}
+		assert.NoError(t, err)
 		r.Body = io.NopCloser(bytes.NewReader(reqBody))
 
 		var jsonReq struct {

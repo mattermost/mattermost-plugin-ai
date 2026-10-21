@@ -201,7 +201,7 @@ func (s *Service) newCallTranscriptionSummaryThread(bot *bots.Bot, requestingUse
 			channel,
 			s.contextBuilder.WithLLMContextNoTools(),
 		)
-		summaryStream, err := s.SummarizeTranscription(stdcontext.Background(), bot, text, requestContext) //nolint:gocritic // detached summarization; callers pass no ctx yet
+		summaryStream, err := s.SummarizeTranscription(stdcontext.Background(), bot, text, requestContext)
 		if err != nil {
 			return fmt.Errorf("unable to summarize transcription: %w", err)
 		}
@@ -212,7 +212,7 @@ func (s *Service) newCallTranscriptionSummaryThread(bot *bots.Bot, requestingUse
 			Message:   "",
 		}
 		summaryPost.AddProp(ReferencedTranscriptPostID, transcriptionPost.Id)
-		if err := s.streamingService.StreamToNewPost(stdcontext.Background(), bot.GetMMBot().UserId, requestingUser.Id, summaryStream, summaryPost, transcriptionPost.Id); err != nil { //nolint:gocritic // detached summarization; callers pass no ctx yet
+		if err := s.streamingService.StreamToNewPost(stdcontext.Background(), bot.GetMMBot().UserId, requestingUser.Id, summaryStream, summaryPost, transcriptionPost.Id); err != nil {
 			return fmt.Errorf("unable to stream result to post: %w", err)
 		}
 
@@ -271,7 +271,7 @@ func (s *Service) summarizeCallRecording(bot *bots.Bot, rootID string, requestin
 			channel,
 			s.contextBuilder.WithLLMContextNoTools(),
 		)
-		summaryStream, err := s.SummarizeTranscription(stdcontext.Background(), bot, transcription, llmContext) //nolint:gocritic // detached summarization; callers pass no ctx yet
+		summaryStream, err := s.SummarizeTranscription(stdcontext.Background(), bot, transcription, llmContext)
 		if err != nil {
 			return fmt.Errorf("unable to summarize transcription: %w", err)
 		}
@@ -280,7 +280,7 @@ func (s *Service) summarizeCallRecording(bot *bots.Bot, rootID string, requestin
 			return fmt.Errorf("unable to update transcript post: %w", err)
 		}
 
-		ctx, err := s.streamingService.GetStreamingContext(stdcontext.Background(), transcriptPost.Id) //nolint:gocritic // detached summarization; callers pass no ctx yet
+		ctx, err := s.streamingService.GetStreamingContext(stdcontext.Background(), transcriptPost.Id)
 		if err != nil {
 			return fmt.Errorf("unable to get post streaming context: %w", err)
 		}

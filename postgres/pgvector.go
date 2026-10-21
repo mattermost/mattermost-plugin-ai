@@ -97,7 +97,7 @@ func NewPGVector(db *sqlx.DB, config PGVectorConfig) (*PGVector, error) {
 		skipVectorIndex: config.SkipVectorIndex,
 	}
 
-	ctx := context.Background() //nolint:gocritic // constructor runs at activation with no caller context
+	ctx := context.Background()
 	existingType, existingDims, err := pv.embeddingColumnTypmod(ctx)
 	if err != nil {
 		return nil, err
@@ -567,7 +567,7 @@ func (pv *PGVector) FinalizeBulkIndex(ctx context.Context) error {
 	}
 	// Reset GUC on every exit; caller's ctx may already be done.
 	defer func() {
-		resetCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second) //nolint:gocritic // cleanup must run after the caller's ctx is done; bounded by the timeout
+		resetCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		_, _ = conn.ExecContext(resetCtx, "RESET statement_timeout")
 	}()

@@ -397,7 +397,7 @@ func (p *Plugin) OnActivate() error {
 	}
 
 	// Reconcile leftover deferred-index state (never auto-build on activate).
-	if reconcileErr := indexerService.ReconcileVectorIndexState(context.Background()); reconcileErr != nil { //nolint:gocritic // OnActivate has no context
+	if reconcileErr := indexerService.ReconcileVectorIndexState(context.Background()); reconcileErr != nil {
 		pluginAPI.Log.Warn("Failed to reconcile vector index state", "error", reconcileErr)
 	}
 
@@ -626,7 +626,7 @@ func (p *Plugin) OnDeactivate() error {
 	// Flush pending telemetry spans
 	p.telemetryMu.Lock()
 	if p.telemetryShutdown != nil {
-		if err := p.telemetryShutdown(context.Background()); err != nil { //nolint:gocritic // OnDeactivate has no context
+		if err := p.telemetryShutdown(context.Background()); err != nil {
 			p.pluginAPI.Log.Error("Failed to shutdown OpenTelemetry", "error", err)
 		}
 		p.telemetryShutdown = nil
@@ -690,13 +690,13 @@ func (p *Plugin) applyTelemetryConfig() {
 	}
 
 	if p.telemetryShutdown != nil {
-		if err := p.telemetryShutdown(context.Background()); err != nil { //nolint:gocritic // config-change path has no request context
+		if err := p.telemetryShutdown(context.Background()); err != nil {
 			p.pluginAPI.Log.Error("Failed to shutdown previous OpenTelemetry provider", "error", err)
 		}
 		p.telemetryShutdown = nil
 	}
 
-	shutdown, err := telemetry.Init(context.Background(), telemetry.Options{ //nolint:gocritic // telemetry provider lifetime, not a request
+	shutdown, err := telemetry.Init(context.Background(), telemetry.Options{
 		ServiceName:    "mattermost-ai-agents",
 		ServiceVersion: manifest.Version,
 		Mode:           mode,
@@ -740,7 +740,7 @@ func (p *Plugin) MessageHasBeenPosted(c *plugin.Context, post *model.Post) {
 		if err != nil {
 			p.pluginAPI.Log.Error("Failed to get channel for post indexing", "error", err)
 		} else {
-			if err := p.indexerService.IndexPost(context.Background(), post, channel); err != nil { //nolint:gocritic // plugin hook; the hook API passes no context
+			if err := p.indexerService.IndexPost(context.Background(), post, channel); err != nil {
 				p.pluginAPI.Log.Error("Failed to index post in vector database", "error", err)
 			}
 		}
@@ -753,7 +753,7 @@ func (p *Plugin) MessageHasBeenUpdated(c *plugin.Context, newPost, oldPost *mode
 		if err != nil {
 			p.pluginAPI.Log.Error("Failed to get channel for post indexing", "error", err)
 		} else {
-			if err := p.indexerService.IndexPost(context.Background(), newPost, channel); err != nil { //nolint:gocritic // plugin hook; the hook API passes no context
+			if err := p.indexerService.IndexPost(context.Background(), newPost, channel); err != nil {
 				p.pluginAPI.Log.Error("Failed to index updated post in vector database", "error", err)
 			}
 		}
@@ -765,7 +765,7 @@ func (p *Plugin) MessageHasBeenDeleted(c *plugin.Context, post *model.Post) {
 		return
 	}
 	if p.indexerService != nil {
-		if err := p.indexerService.DeletePost(context.Background(), post.Id); err != nil { //nolint:gocritic // plugin hook; the hook API passes no context
+		if err := p.indexerService.DeletePost(context.Background(), post.Id); err != nil {
 			p.pluginAPI.Log.Error("Failed to delete post from vector database", "error", err)
 		}
 	}
@@ -781,7 +781,7 @@ func (p *Plugin) RunDataRetention(nowTime, batchSize int64) (int64, error) {
 		return 0, nil
 	}
 
-	count, err := p.indexerService.RunDataRetention(context.Background(), nowTime, batchSize) //nolint:gocritic // plugin hook; the hook API passes no context
+	count, err := p.indexerService.RunDataRetention(context.Background(), nowTime, batchSize)
 	if err != nil {
 		p.pluginAPI.Log.Error("Failed to run data retention for embeddings", "error", err)
 		return 0, err

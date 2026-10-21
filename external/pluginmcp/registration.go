@@ -124,14 +124,14 @@ func (s *Server) Unregister() error {
 		s.regWG.Wait()
 		close(done)
 	}()
-	waitCtx, waitCancel := context.WithTimeout(context.Background(), unregisterTimeout) //nolint:gocritic // runs after regCancel, so it needs its own bounded context
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), unregisterTimeout)
 	defer waitCancel()
 	select {
 	case <-done:
 	case <-waitCtx.Done():
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), unregisterTimeout) //nolint:gocritic // runs after regCancel, so it needs its own bounded context
+	ctx, cancel := context.WithTimeout(context.Background(), unregisterTimeout)
 	defer cancel()
 	_, err := s.postRegistration(ctx, unregisterPath, s.config)
 	return err

@@ -181,7 +181,7 @@ func fetchNorthModels(ctx context.Context, apiURL, apiKey string) ([]llm.ModelIn
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 		req.Header.Set("Accept", "application/json")
 
-		resp, err := http.DefaultClient.Do(req) //nolint:gocritic // bounded by the northModelsTimeout context above
+		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return nil, llm.SanitizeProviderError(fmt.Errorf("north models request failed: %w", err), apiKey)
 		}

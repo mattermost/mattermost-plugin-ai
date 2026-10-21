@@ -131,9 +131,7 @@ func TestBatchCreateEmbeddingsSplitsLargeBatches(t *testing.T) {
 		var req struct {
 			Input []string `json:"input"`
 		}
-		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&req)) {
-			return
-		}
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 		assert.LessOrEqual(t, len(req.Input), maxEmbeddingRequestInputs,
 			"a single upstream request must stay within the input cap")
 
@@ -142,9 +140,7 @@ func TestBatchCreateEmbeddingsSplitsLargeBatches(t *testing.T) {
 		data := make([]map[string]any, len(req.Input))
 		for i, text := range req.Input {
 			idx, err := strconv.Atoi(strings.TrimPrefix(text, "text-"))
-			if !assert.NoError(t, err) {
-				return
-			}
+			assert.NoError(t, err)
 			data[i] = map[string]any{
 				"object":    "embedding",
 				"index":     i,

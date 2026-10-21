@@ -588,9 +588,7 @@ func TestDCRHonorsServerAuthMethods(t *testing.T) {
 			}))
 		case "/register":
 			var body map[string]any
-			if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&body)) {
-				return
-			}
+			assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
 			registeredMethod, _ = body["token_endpoint_auth_method"].(string)
 			// Reject anything the server doesn't support, like Mattermost does.
 			if registeredMethod != "none" && registeredMethod != "client_secret_post" {
@@ -671,9 +669,7 @@ func TestDCRSendsApplicationType(t *testing.T) {
 			return
 		}
 		var body map[string]any
-		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&body)) {
-			return
-		}
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
 		gotAppType, _ = body["application_type"].(string)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)

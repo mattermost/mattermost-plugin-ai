@@ -28,15 +28,11 @@ func newModelRecordingAnthropicServer(t *testing.T) (*httptest.Server, func() []
 	var models []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
-		if !assert.NoError(t, err) {
-			return
-		}
+		assert.NoError(t, err)
 		var req struct {
 			Model string `json:"model"`
 		}
-		if !assert.NoError(t, json.Unmarshal(body, &req)) {
-			return
-		}
+		assert.NoError(t, json.Unmarshal(body, &req))
 		mu.Lock()
 		models = append(models, req.Model)
 		mu.Unlock()

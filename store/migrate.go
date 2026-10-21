@@ -45,7 +45,7 @@ func (s *Store) RunMigrations() error {
 		return fmt.Errorf("failed to create morph embedded source: %w", err)
 	}
 
-	engine, err := morph.New(context.Background(), driver, source, //nolint:gocritic // migrations run at activation with no caller context
+	engine, err := morph.New(context.Background(), driver, source,
 		morph.WithLock("agents-plugin-lock-key"),
 		morph.SetMigrationTableName("Agents_DB_Migrations"),
 		morph.SetStatementTimeoutInSeconds(300),

@@ -71,9 +71,7 @@ func newInlineFileUploadServer(t *testing.T, failFilename string) (*httptest.Ser
 			return
 		}
 		body, err := io.ReadAll(r.Body)
-		if !assert.NoError(t, err) {
-			return
-		}
+		assert.NoError(t, err)
 		id := model.NewId()
 		rec.filenames = append(rec.filenames, filename)
 		rec.contents = append(rec.contents, string(body))
