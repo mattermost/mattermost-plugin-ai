@@ -23,7 +23,7 @@ const PHASE3_STOP_GENERATING_TAIL = 'large scale application development.';
 const REQUESTER_USERNAME = 'regularuser';
 const ONLOOKER_USERNAME = 'seconduser';
 const REQUESTER_STOPPED_NOTICE = 'You stopped generating this response.';
-const ONLOOKER_STOPPED_NOTICE = `@${REQUESTER_USERNAME} stopped generating this response.`;
+const ONLOOKER_STOPPED_NOTICE = `${REQUESTER_USERNAME} stopped generating this response.`;
 
 async function openReplyThread(page: Page): Promise<void> {
     const replyIndicator = page.getByText(/\d+ repl/).last();
