@@ -272,7 +272,7 @@ MATTERMOST_GOVET_VERSION ?= 2fbfca354651528bffd39e63d7c5a2b32e6adf3e
 
 # `go install pkg@version` ignores our go.mod, so pin the toolchain explicitly;
 # golangci-lint refuses to lint code targeting a newer Go than it was built with.
-GO_TOOLS_TOOLCHAIN := go$(shell $(GO) list -m -f '{{.GoVersion}}')
+GO_TOOLS_TOOLCHAIN := go$(shell GOWORK=off $(GO) list -m -f '{{.GoVersion}}')
 
 ## Install go tools.
 install-go-tools: export GOTOOLCHAIN = $(GO_TOOLS_TOOLCHAIN)
