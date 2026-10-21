@@ -286,8 +286,10 @@ install-go-tools:
 
 ## Runs eslint and golangci-lint
 .PHONY: check-style
-check-style: manifest-check apply webapp/node_modules install-go-tools
+check-style: manifest-check apply webapp/node_modules e2e/node_modules install-go-tools
 	@echo Checking for style guide compliance
+
+	cd e2e && $(NPM) run lint
 
 ifneq ($(HAS_WEBAPP),)
 	cd webapp && npm run lint
@@ -632,7 +634,7 @@ logs-watch:
 help:
 	@printf "\nUsage: make \033[36m<target>\033[0m\n\nMost-used targets first; run 'make help | sort' for alphabetical:\n\n"
 	@printf "  \033[36m%-22s\033[0m %s\n" "check" "Lint + unit tests + e2e shard coverage (recommended pre-PR)"
-	@printf "  \033[36m%-22s\033[0m %s\n" "check-style" "Lint Go and webapp"
+	@printf "  \033[36m%-22s\033[0m %s\n" "check-style" "Lint Go, webapp, and e2e"
 	@printf "  \033[36m%-22s\033[0m %s\n" "check-style-fix" "Lint and auto-fix what's fixable; re-extracts i18n strings"
 	@printf "  \033[36m%-22s\033[0m %s\n" "test" "Run all unit tests"
 	@printf "  \033[36m%-22s\033[0m %s\n" "e2e" "Run Playwright e2e suite (slow, defer to CI when possible)"
