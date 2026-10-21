@@ -21,6 +21,7 @@ import {useConversation, invalidateConversation} from '@/hooks/use_conversation'
 import {PostMessagePreview} from '@/mm_webapp';
 
 import {isValidId} from '@/utils/ids';
+import {displayNameFor, selectTeammateNameDisplay} from '@/utils/teammate_name';
 
 import {ServerToolUse} from '@/types/conversation';
 
@@ -671,13 +672,17 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
     // Only the requester can stop, so the requester is who stopped it.
     // A regenerate leaves the prior run's marker on the post until it finishes.
     const generationStopped = (stopped || (props.post.props?.generation_stopped === true && !regenerating)) && !isGenerationInProgress;
+    const requesterDisplayName = useSelector<GlobalState, string | undefined>((state) => {
+        const profile = requesterUserId ? state.entities.users.profiles?.[requesterUserId] : undefined; // eslint-disable-line no-undefined
+        return profile ? displayNameFor(profile, selectTeammateNameDisplay(state)) : undefined; // eslint-disable-line no-undefined
+    });
     let generationStoppedMessage: string;
     if (requesterIsCurrentUser) {
         generationStoppedMessage = intl.formatMessage({defaultMessage: 'You stopped generating this response.'});
-    } else if (requesterUsername) {
+    } else if (requesterDisplayName) {
         generationStoppedMessage = intl.formatMessage(
-            {defaultMessage: '@{username} stopped generating this response.'},
-            {username: requesterUsername},
+            {defaultMessage: '{name} stopped generating this response.'},
+            {name: requesterDisplayName},
         );
     } else {
         generationStoppedMessage = intl.formatMessage({defaultMessage: 'The requester stopped generating this response.'});
@@ -790,7 +795,7 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
             </AnswerArea>
             {generationStopped && (
                 <GenerationStoppedNotice data-testid='llm-bot-generation-stopped'>
-                    <CancelIcon
+                    <GenerationStoppedIcon
                         size={14}
                         aria-hidden={true}
                     />
@@ -835,12 +840,18 @@ const AnswerArea = styled.div<{$afterActivity: boolean}>`
 
 const GenerationStoppedNotice = styled.div`
     display: flex;
-    align-items: center;
+    align-items: start;
     gap: 4px;
     margin-top: 8px;
     font-size: 12px;
     line-height: 16px;
     color: rgba(var(--center-channel-color-rgb), 0.64);
+`;
+
+// Lines the 14px icon up with the first line of 16px text when the notice wraps.
+const GenerationStoppedIcon = styled(CancelIcon)`
+    flex-shrink: 0;
+    margin-top: 1px;
 `;
 
 const PostSummaryHelpMessage = styled(SectionNotice)`

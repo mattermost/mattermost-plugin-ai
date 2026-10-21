@@ -745,7 +745,9 @@ describe('LLMBotPost rounds awaiting a decision', () => {
         mockUseSelector.mockImplementation((selector) => selector({
             entities: {
                 channels: {channels: {channel_1: {type: 'O'}}},
+                general: {config: {}, license: {}},
                 posts: {posts: {}},
+                preferences: {myPreferences: {}},
                 users: {currentUserId: 'user_1', profiles: {requester_1: {username: 'alice'}}},
             },
         }));
@@ -1388,12 +1390,17 @@ describe('LLMBotPost conversation_id prop handling', () => {
 });
 
 describe('LLMBotPost stopped generation notice', () => {
-    function inChannelWithRequester() {
+    function inChannelWithRequester(teammateNameDisplay = 'username') {
         mockUseSelector.mockImplementation((selector) => selector({
             entities: {
                 channels: {channels: {channel_1: {type: 'O'}}},
+                general: {config: {TeammateNameDisplay: teammateNameDisplay}, license: {}},
                 posts: {posts: {}},
-                users: {currentUserId: 'user_1', profiles: {requester_1: {username: 'alice'}}},
+                preferences: {myPreferences: {}},
+                users: {
+                    currentUserId: 'user_1',
+                    profiles: {requester_1: {username: 'alice', nickname: '', first_name: 'Alice', last_name: 'Smith'}},
+                },
             },
         }));
     }
@@ -1403,11 +1410,12 @@ describe('LLMBotPost stopped generation notice', () => {
     }
 
     test.each([
-        {name: 'the requester', requester: 'user_1', expected: 'You stopped generating this response.'},
-        {name: 'an onlooker', requester: 'requester_1', expected: '@alice stopped generating this response.'},
-        {name: 'an onlooker without the requester profile', requester: 'requester_2', expected: 'The requester stopped generating this response.'},
-    ])('tells $name that the response was stopped', ({requester, expected}) => {
-        inChannelWithRequester();
+        {name: 'the requester', requester: 'user_1', nameDisplay: 'username', expected: 'You stopped generating this response.'},
+        {name: 'an onlooker', requester: 'requester_1', nameDisplay: 'username', expected: 'alice stopped generating this response.'},
+        {name: 'an onlooker who shows full names', requester: 'requester_1', nameDisplay: 'full_name', expected: 'Alice Smith stopped generating this response.'},
+        {name: 'an onlooker without the requester profile', requester: 'requester_2', nameDisplay: 'username', expected: 'The requester stopped generating this response.'},
+    ])('tells $name that the response was stopped', ({requester, nameDisplay, expected}) => {
+        inChannelWithRequester(nameDisplay);
         mockUseConversation.mockReturnValue({conversation: makeConversation([], requester), loading: false, error: null});
 
         renderPost(makePost('Partial answer', {generation_stopped: true}));
@@ -1431,7 +1439,7 @@ describe('LLMBotPost stopped generation notice', () => {
 
         renderPost(makePost('', {generation_stopped: true}));
 
-        expect(stoppedNotice()).toBe('@alice stopped generating this response.');
+        expect(stoppedNotice()).toBe('alice stopped generating this response.');
         expect(screen.queryByText('Working...')).toBeNull();
     });
 
