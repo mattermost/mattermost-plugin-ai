@@ -281,6 +281,7 @@ func (b *LLM) responsesReasoningFor(provider schemas.ModelProvider, cfg llm.Lang
 
 // convertToBifrostResponsesRequest converts our CompletionRequest to Bifrost's Responses API format.
 func (b *LLM) convertToBifrostResponsesRequest(request llm.CompletionRequest, cfg llm.LanguageModelConfig) (*schemas.BifrostResponsesRequest, error) {
+	cfg = configForModel(cfg, cfg.Model)
 	request, chain := b.prepareRequest(request)
 	messages := convertToResponsesMessages(request.Posts, chain)
 	tools := b.convertToResponsesTools(request, cfg)
@@ -292,10 +293,7 @@ func (b *LLM) convertToBifrostResponsesRequest(request llm.CompletionRequest, cf
 	}
 
 	// Set parameters
-	params := &schemas.ResponsesParameters{}
-	if cfg.MaxGeneratedTokens > 0 {
-		params.MaxOutputTokens = new(cfg.MaxGeneratedTokens)
-	}
+	params := &schemas.ResponsesParameters{MaxOutputTokens: maxTokensParam(cfg)}
 	if len(tools) > 0 {
 		params.Tools = tools
 		if cfg.ToolsDisabled {
@@ -338,7 +336,7 @@ func (b *LLM) streamResponses(ctx context.Context, request llm.CompletionRequest
 	bifrostCtx, cancel := schemas.NewBifrostContextWithTimeout(ctx, b.streamingTimeout*10)
 	defer cancel()
 	b.applyCompletionBetaHeaders(bifrostCtx)
-	b.withHopReasoning(bifrostCtx, cfg)
+	b.withHopParams(bifrostCtx, cfg)
 
 	// Convert to Bifrost Responses API request
 	bifrostReq, err := b.convertToBifrostResponsesRequest(request, cfg)

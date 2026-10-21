@@ -25,7 +25,6 @@ import (
 	"time"
 
 	bifrostcore "github.com/maximhq/bifrost/core"
-	providerutils "github.com/maximhq/bifrost/core/providers/utils"
 	"github.com/maximhq/bifrost/core/schemas"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -300,13 +299,14 @@ func (b *LLM) GetDefaultConfig() llm.LanguageModelConfig {
 	}
 }
 
+// createConfig applies opts to the default config. MaxGeneratedTokens stays
+// the requested value; each request builder and fallback hop clamps it to its
+// own model's limit.
 func (b *LLM) createConfig(opts []llm.LanguageModelOption) llm.LanguageModelConfig {
 	cfg := b.GetDefaultConfig()
 	for _, opt := range opts {
 		opt(&cfg)
 	}
-	modelOutputLimit := providerutils.GetMaxOutputTokensOrDefault(cfg.Model, cfg.MaxGeneratedTokens)
-	cfg.MaxGeneratedTokens = min(cfg.MaxGeneratedTokens, modelOutputLimit)
 	return cfg
 }
 

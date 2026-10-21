@@ -21,7 +21,7 @@ func (b *LLM) streamChat(ctx context.Context, request llm.CompletionRequest, cfg
 	)
 	bifrostCtx, cancel := schemas.NewBifrostContextWithTimeout(ctx, b.streamingTimeout*10)
 	defer cancel()
-	b.withHopReasoning(bifrostCtx, cfg)
+	b.withHopParams(bifrostCtx, cfg)
 
 	// Convert to Bifrost request
 	bifrostReq := b.convertToBifrostRequest(request, cfg)
@@ -198,6 +198,7 @@ func (b *LLM) chatReasoningFor(provider schemas.ModelProvider, cfg llm.LanguageM
 
 // convertToBifrostRequest converts our CompletionRequest to Bifrost's format.
 func (b *LLM) convertToBifrostRequest(request llm.CompletionRequest, cfg llm.LanguageModelConfig) *schemas.BifrostChatRequest {
+	cfg = configForModel(cfg, cfg.Model)
 	request, chain := b.prepareRequest(request)
 	messages := convertMessages(request.Posts, chain)
 	tools := b.convertTools(request, cfg)
@@ -209,10 +210,7 @@ func (b *LLM) convertToBifrostRequest(request llm.CompletionRequest, cfg llm.Lan
 	}
 
 	// Set parameters
-	params := &schemas.ChatParameters{}
-	if cfg.MaxGeneratedTokens > 0 {
-		params.MaxCompletionTokens = new(cfg.MaxGeneratedTokens)
-	}
+	params := &schemas.ChatParameters{MaxCompletionTokens: maxTokensParam(cfg)}
 	if len(tools) > 0 {
 		params.Tools = tools
 		if cfg.ToolsDisabled {
