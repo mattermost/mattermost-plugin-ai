@@ -266,11 +266,16 @@ apply:
 # Pinned tool versions. Bump these here, not at the install site — keeping the
 # pins in one place lets contributors update a tool with a single edit and
 # makes Go-version-skew fixes obvious.
-GOLANGCI_LINT_VERSION    ?= v2.13.1
+GOLANGCI_LINT_VERSION    ?= v2.15.0
 GOTESTSUM_VERSION        ?= v1.7.0
 MATTERMOST_GOVET_VERSION ?= 2fbfca354651528bffd39e63d7c5a2b32e6adf3e
 
+# `go install pkg@version` ignores our go.mod, so pin the toolchain explicitly;
+# golangci-lint refuses to lint code targeting a newer Go than it was built with.
+GO_TOOLS_TOOLCHAIN := go$(shell $(GO) mod edit -json | sed -n 's/^\t"Go": "\(.*\)",$$/\1/p')
+
 ## Install go tools.
+install-go-tools: export GOTOOLCHAIN = $(GO_TOOLS_TOOLCHAIN)
 install-go-tools:
 	@echo Installing go tools
 	$(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)

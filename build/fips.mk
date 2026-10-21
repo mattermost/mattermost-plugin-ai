@@ -12,7 +12,7 @@
 #   TOKEN=$$(curl -s -u "$$(echo $$CREDS | jq -r .Username):$$(echo $$CREDS | jq -r .Secret)" \
 #     "https://cgr.dev/token?scope=repository:mattermost.com/go-msft-fips:pull" | jq -r .token); \
 #   curl -s -H "Authorization: Bearer $$TOKEN" "https://cgr.dev/v2/mattermost.com/go-msft-fips/tags/list"
-FIPS_IMAGE ?= cgr.dev/mattermost.com/go-msft-fips:1.26.7-dev@sha256:97396159540df27abea3abc617afb82c80a01df2298d7de306435f64eb119949
+FIPS_IMAGE ?= cgr.dev/mattermost.com/go-openssl-fips:1.27.3
 BUNDLE_NAME_FIPS ?= $(PLUGIN_ID)-$(PLUGIN_VERSION)-fips.tar.gz
 FIPS_BIN := server/dist-fips/plugin-linux-amd64-fips
 
@@ -26,6 +26,11 @@ FIPS_GO_BUILD_LDFLAGS ?=
 # splitting on values with embedded quotes like `-gcflags "all=-N -l"`.
 .PHONY: server-fips
 server-fips: generate
+	CREDS=$$(printf 'cgr.dev' | docker-credential-cgr get); \
+	TOKEN=$$(curl -s -u "$$(echo $$CREDS | jq -r .Username):$$(echo $$CREDS | jq -r .Secret)" \
+	  "https://cgr.dev/token?scope=repository:mattermost.com/go-openssl-fips:pull" | jq -r .token); \
+	curl -s -H "Authorization: Bearer $$TOKEN" "https://cgr.dev/v2/mattermost.com/go-openssl-fips/tags/list"
+	docker run --rm --entrypoint="" $(FIPS_IMAGE) /bin/sh -c 'go version; go env GOEXPERIMENT GOFIPS140 CGO_ENABLED'
 	mkdir -p server/dist-fips
 	docker run --rm \
 	  --entrypoint="" \
