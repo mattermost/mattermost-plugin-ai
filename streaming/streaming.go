@@ -75,9 +75,9 @@ type postStreamContext struct {
 	cancel context.CancelCauseFunc
 }
 
-// ErrStoppedByUser is the cancellation cause of a stream the requester
+// errStoppedByUser is the cancellation cause of a stream the requester
 // stopped, distinguishing it from shutdown or a superseded run.
-var ErrStoppedByUser = errors.New("generation stopped by user")
+var errStoppedByUser = errors.New("generation stopped by user")
 
 // TurnStore is the subset of store operations needed by the streaming layer.
 // Finalize either creates a fresh anchor (first stream / regen, with the caller
@@ -251,7 +251,7 @@ func (p *MMPostStreamService) sendPostStreamingEvent(post *model.Post, broadcast
 // StopStreaming cancels any in-flight stream to the given post on behalf of
 // the requester; the post is marked as stopped.
 func (p *MMPostStreamService) StopStreaming(postID string) {
-	p.endStreaming(postID, ErrStoppedByUser)
+	p.endStreaming(postID, errStoppedByUser)
 }
 
 func (p *MMPostStreamService) GetStreamingContext(inCtx context.Context, postID string) (context.Context, error) {
@@ -489,9 +489,27 @@ func (p *MMPostStreamService) streamToPostImpl(ctx context.Context, stream *llm.
 	var reasoningBuffer strings.Builder
 	attachmentCapWarned := false
 
+	handleCancel := func() {
+		outcome = telemetry.StreamOutcomeCancelled
+		if errors.Is(context.Cause(ctx), errStoppedByUser) {
+			post.AddProp(GenerationStoppedProp, true)
+		}
+		if err := p.mmClient.UpdatePost(post); err != nil {
+			p.mmClient.LogError("Error updating post on stop signaled", "error", err)
+			return
+		}
+		p.sendPostStreamingEvent(post, broadcast, map[string]any{"control": PostStreamingControlCancel})
+	}
+
 	for {
 		select {
 		case event, ok := <-stream.Stream:
+			// When the upstream shares this context it closes or errors on
+			// cancel too, and select may pick that over ctx.Done().
+			if (!ok || event.Type == llm.EventTypeError) && ctx.Err() != nil {
+				handleCancel()
+				return
+			}
 			if !ok {
 				// Stream channel closed - persist final state
 				if err := p.mmClient.UpdatePost(post); err != nil {
@@ -723,15 +741,7 @@ func (p *MMPostStreamService) streamToPostImpl(ctx context.Context, stream *llm.
 				}
 			}
 		case <-ctx.Done():
-			outcome = telemetry.StreamOutcomeCancelled
-			if errors.Is(context.Cause(ctx), ErrStoppedByUser) {
-				post.AddProp(GenerationStoppedProp, true)
-			}
-			if err := p.mmClient.UpdatePost(post); err != nil {
-				p.mmClient.LogError("Error updating post on stop signaled", "error", err)
-				return
-			}
-			p.sendPostStreamingEvent(post, broadcast, map[string]any{"control": PostStreamingControlCancel})
+			handleCancel()
 			return
 		}
 	}

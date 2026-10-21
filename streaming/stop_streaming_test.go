@@ -19,21 +19,45 @@ func TestStreamToPostMarksUserStop(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		end         func(service *MMPostStreamService, cancelParent context.CancelFunc)
+		drive       func(s *MMPostStreamService, cancelParent context.CancelFunc, stream chan<- llm.TextStreamEvent)
 		wantStopped bool
 	}{
 		{
-			name:        "requester stops the stream",
-			end:         func(s *MMPostStreamService, _ context.CancelFunc) { s.StopStreaming(postID) },
+			name: "requester stops the stream",
+			drive: func(s *MMPostStreamService, _ context.CancelFunc, _ chan<- llm.TextStreamEvent) {
+				s.StopStreaming(postID)
+			},
+			wantStopped: true,
+		},
+		{
+			// Regenerate hands the stream context to the upstream, which
+			// errors and closes on the same cancel.
+			name: "requester stops and the upstream errors and closes",
+			drive: func(s *MMPostStreamService, _ context.CancelFunc, stream chan<- llm.TextStreamEvent) {
+				s.StopStreaming(postID)
+				stream <- llm.TextStreamEvent{Type: llm.EventTypeError, Value: context.Canceled}
+				close(stream)
+			},
 			wantStopped: true,
 		},
 		{
 			name: "run finishes without a user stop",
-			end:  func(s *MMPostStreamService, _ context.CancelFunc) { s.FinishStreaming(postID) },
+			drive: func(s *MMPostStreamService, _ context.CancelFunc, _ chan<- llm.TextStreamEvent) {
+				s.FinishStreaming(postID)
+			},
 		},
 		{
 			name: "parent context is canceled",
-			end:  func(_ *MMPostStreamService, cancelParent context.CancelFunc) { cancelParent() },
+			drive: func(_ *MMPostStreamService, cancelParent context.CancelFunc, _ chan<- llm.TextStreamEvent) {
+				cancelParent()
+			},
+		},
+		{
+			name: "a new run completes",
+			drive: func(_ *MMPostStreamService, _ context.CancelFunc, stream chan<- llm.TextStreamEvent) {
+				stream <- llm.TextStreamEvent{Type: llm.EventTypeText, Value: "answer"}
+				stream <- llm.TextStreamEvent{Type: llm.EventTypeEnd}
+			},
 		},
 	}
 	for _, tc := range tests {
@@ -46,41 +70,21 @@ func TestStreamToPostMarksUserStop(t *testing.T) {
 			ctx, err := service.GetStreamingContext(parent, postID)
 			require.NoError(t, err)
 
-			stream := make(chan llm.TextStreamEvent)
-			go func() {
-				stream <- llm.TextStreamEvent{Type: llm.EventTypeText, Value: "partial answer"}
-				tc.end(service, cancelParent)
-			}()
+			stream := make(chan llm.TextStreamEvent, 2)
+			tc.drive(service, cancelParent, stream)
 
-			post := &model.Post{Id: postID, ChannelId: channelID}
+			post := &model.Post{Id: postID, ChannelId: channelID, Message: "partial answer"}
+			post.AddProp(GenerationStoppedProp, true)
 			service.StreamToPost(ctx, &llm.TextStreamResult{Stream: stream}, post, "en", "requester-id")
 
 			require.NotEmpty(t, client.updatedPosts)
 			final := client.updatedPosts[len(client.updatedPosts)-1]
-			require.Equal(t, "partial answer", final.Message)
 			if tc.wantStopped {
 				require.Equal(t, true, final.GetProp(GenerationStoppedProp))
+				require.NotContains(t, final.Message, "Sorry!")
 			} else {
 				require.Nil(t, final.GetProp(GenerationStoppedProp))
 			}
 		})
 	}
-}
-
-func TestStreamToPostClearsEarlierStop(t *testing.T) {
-	const channelID = "channel-id"
-
-	client := &fakeStreamingClient{channels: map[string]*model.Channel{channelID: {Id: channelID, Type: model.ChannelTypeOpen}}}
-	service := NewMMPostStreamService(client, i18n.Init())
-
-	stream := make(chan llm.TextStreamEvent, 2)
-	stream <- llm.TextStreamEvent{Type: llm.EventTypeText, Value: "regenerated answer"}
-	stream <- llm.TextStreamEvent{Type: llm.EventTypeEnd}
-
-	post := &model.Post{Id: "post-id", ChannelId: channelID}
-	post.AddProp(GenerationStoppedProp, true)
-	service.StreamToPost(context.Background(), &llm.TextStreamResult{Stream: stream}, post, "en", "requester-id")
-
-	require.NotEmpty(t, client.updatedPosts)
-	require.Nil(t, client.updatedPosts[len(client.updatedPosts)-1].GetProp(GenerationStoppedProp))
 }

@@ -58,20 +58,6 @@
         "tps": 6,
         "jitter": 0
       }
-    },
-    {
-      "match": {
-        "userMessage": "phase3-stop-generating-channel-001"
-      },
-      "response": {
-        "content": "Channel stop prefix marker followed by a long explanation of release planning covering milestones owners risks dependencies and rollout checklists for every team before the final channel stop tail."
-      },
-      "chunkSize": 2,
-      "streamingProfile": {
-        "ttft": 300,
-        "tps": 6,
-        "jitter": 0
-      }
     }
   ]
 }
