@@ -6,6 +6,7 @@ package streaming
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -71,8 +72,12 @@ type Service interface {
 }
 
 type postStreamContext struct {
-	cancel context.CancelFunc
+	cancel context.CancelCauseFunc
 }
+
+// ErrStoppedByUser is the cancellation cause of a stream the requester
+// stopped, distinguishing it from shutdown or a superseded run.
+var ErrStoppedByUser = errors.New("generation stopped by user")
 
 // TurnStore is the subset of store operations needed by the streaming layer.
 // Finalize either creates a fresh anchor (first stream / regen, with the caller
@@ -243,9 +248,10 @@ func (p *MMPostStreamService) sendPostStreamingEvent(post *model.Post, broadcast
 	p.mmClient.PublishWebSocketEvent("postupdate", payload, broadcast)
 }
 
-// StopStreaming cancels any in-flight stream to the given post.
+// StopStreaming cancels any in-flight stream to the given post on behalf of
+// the requester; the post is marked as stopped.
 func (p *MMPostStreamService) StopStreaming(postID string) {
-	p.FinishStreaming(postID)
+	p.endStreaming(postID, ErrStoppedByUser)
 }
 
 func (p *MMPostStreamService) GetStreamingContext(inCtx context.Context, postID string) (context.Context, error) {
@@ -256,7 +262,7 @@ func (p *MMPostStreamService) GetStreamingContext(inCtx context.Context, postID 
 		return nil, ErrAlreadyStreamingToPost
 	}
 
-	ctx, cancel := context.WithCancel(inCtx)
+	ctx, cancel := context.WithCancelCause(inCtx)
 
 	streamingContext := postStreamContext{
 		cancel: cancel,
@@ -270,10 +276,14 @@ func (p *MMPostStreamService) GetStreamingContext(inCtx context.Context, postID 
 // FinishStreaming should be called when a post streaming operation is finished on success or failure.
 // It is safe to call multiple times, must be called at least once.
 func (p *MMPostStreamService) FinishStreaming(postID string) {
+	p.endStreaming(postID, nil)
+}
+
+func (p *MMPostStreamService) endStreaming(postID string, cause error) {
 	p.contextsMutex.Lock()
 	defer p.contextsMutex.Unlock()
 	if streamContext, ok := p.contexts[postID]; ok {
-		streamContext.cancel()
+		streamContext.cancel(cause)
 	}
 	delete(p.contexts, postID)
 }
@@ -432,6 +442,10 @@ func (p *MMPostStreamService) streamToPostImpl(ctx context.Context, stream *llm.
 	// limit and are essential to the streaming UX. ReliableClusterSend routes
 	// them over TCP so they are not silently dropped between cluster nodes.
 	broadcast := &model.WebsocketBroadcast{ChannelId: post.ChannelId, ReliableClusterSend: true}
+
+	// A new run (regenerate, tool-approval resume) supersedes an earlier
+	// stop; the post update at stream end persists the cleared marker.
+	post.DelProp(GenerationStoppedProp)
 
 	// Look up any prior anchor; only continuation uses it (to demote at
 	// finalize). First stream and regen find none.
@@ -710,6 +724,9 @@ func (p *MMPostStreamService) streamToPostImpl(ctx context.Context, stream *llm.
 			}
 		case <-ctx.Done():
 			outcome = telemetry.StreamOutcomeCancelled
+			if errors.Is(context.Cause(ctx), ErrStoppedByUser) {
+				post.AddProp(GenerationStoppedProp, true)
+			}
 			if err := p.mmClient.UpdatePost(post); err != nil {
 				p.mmClient.LogError("Error updating post on stop signaled", "error", err)
 				return
