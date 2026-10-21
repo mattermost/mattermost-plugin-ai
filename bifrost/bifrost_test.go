@@ -412,23 +412,39 @@ func TestConvertMessagesReasoningDetails(t *testing.T) {
 		ReasoningSignature: "sig123",
 	}}
 
+	unsignedPosts := []llm.Post{{
+		Role:      llm.PostRoleBot,
+		Message:   "partial response",
+		Reasoning: "partial thinking captured before stream error",
+	}}
+
 	tests := []struct {
 		name              string
 		provider          schemas.ModelProvider
+		fallbacks         []schemas.Fallback
 		posts             []llm.Post
 		expectedLen       int
 		expectedReasoning string
 		expectedSignature string
 	}{
 		{
-			name:     "skips unsigned reasoning for Anthropic",
-			provider: schemas.Anthropic,
-			posts: []llm.Post{{
-				Role:               llm.PostRoleBot,
-				Message:            "partial response",
-				Reasoning:          "partial thinking captured before stream error",
-				ReasoningSignature: "",
-			}},
+			name:        "skips unsigned reasoning for Anthropic",
+			provider:    schemas.Anthropic,
+			posts:       unsignedPosts,
+			expectedLen: 1,
+		},
+		{
+			name:        "skips unsigned reasoning behind an Anthropic fallback",
+			provider:    schemas.OpenAI,
+			fallbacks:   []schemas.Fallback{{Provider: schemas.Anthropic, Model: "claude-sonnet-4-6"}},
+			posts:       unsignedPosts,
+			expectedLen: 1,
+		},
+		{
+			name:        "skips unsigned reasoning behind a Bedrock fallback",
+			provider:    schemas.Gemini,
+			fallbacks:   []schemas.Fallback{{Provider: schemas.Bedrock, Model: "anthropic.claude-sonnet-4-6"}},
+			posts:       unsignedPosts,
 			expectedLen: 1,
 		},
 		{
@@ -455,9 +471,9 @@ func TestConvertMessagesReasoningDetails(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			b := &LLM{provider: tt.provider}
+			b := &LLM{provider: tt.provider, fallbacks: testHops(tt.fallbacks, nil)}
 
-			messages := b.convertMessages(tt.posts)
+			messages := b.convertToBifrostRequest(llm.CompletionRequest{Posts: tt.posts}, llm.LanguageModelConfig{Model: "test-model"}).Input
 
 			require.Len(t, messages, tt.expectedLen)
 			if tt.expectedReasoning == "" {
@@ -472,7 +488,6 @@ func TestConvertMessagesReasoningDetails(t *testing.T) {
 }
 
 func TestCreateMultimodalContentUsesReusableFileData(t *testing.T) {
-	b := &LLM{}
 	imageData := encodeTestImage(t, "image/png", 2, 2)
 	post := llm.Post{
 		Role:    llm.PostRoleUser,
@@ -485,8 +500,8 @@ func TestCreateMultimodalContentUsesReusableFileData(t *testing.T) {
 		}},
 	}
 
-	first := b.createMultimodalContent(post, 0)
-	second := b.createMultimodalContent(post, 0)
+	first := createMultimodalContent(post, 0)
+	second := createMultimodalContent(post, 0)
 
 	require.Len(t, first, 2)
 	require.Len(t, second, 2)
@@ -528,7 +543,7 @@ func TestMultimodalContentUsesSniffedImageType(t *testing.T) {
 				Files: []llm.File{{MimeType: tt.declared, Data: tt.data}},
 			}
 
-			chatParts := (&LLM{}).createMultimodalContent(post, 0)
+			chatParts := createMultimodalContent(post, 0)
 			require.Len(t, chatParts, 1)
 			responsesParts := multimodalContent(post, 0,
 				func(text string) string { return "text:" + text },
@@ -631,8 +646,7 @@ func TestCreateMultimodalContentOmitsOversizedImages(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			data := encodeTestImage(t, tt.mimeType, tt.width, tt.height)
 
-			b := &LLM{}
-			parts := b.createMultimodalContent(llm.Post{
+			parts := createMultimodalContent(llm.Post{
 				Role:    llm.PostRoleUser,
 				Message: "summarize this image",
 				Files: []llm.File{{
@@ -664,7 +678,7 @@ func TestCreateMultimodalContentOmitsOversizedImages(t *testing.T) {
 		validPNG := encodeTestImage(t, "image/png", 10, 10)
 		oversizedPNG := encodeTestImage(t, "image/png", anthropicMaxImageDimension+1, 1)
 		validJPEG := encodeTestImage(t, "image/jpeg", 10, 10)
-		parts := (&LLM{}).createMultimodalContent(llm.Post{
+		parts := createMultimodalContent(llm.Post{
 			Role:    llm.PostRoleUser,
 			Message: "summarize these images",
 			Files: []llm.File{
@@ -733,7 +747,8 @@ func TestConvertMessagesAppliesProviderImageLimit(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			messages := (&LLM{provider: tt.provider}).convertMessages(tt.posts)
+			b := &LLM{provider: tt.provider}
+			messages := b.convertToBifrostRequest(llm.CompletionRequest{Posts: tt.posts}, llm.LanguageModelConfig{Model: "test-model"}).Input
 			require.Len(t, messages, 1)
 			require.NotNil(t, messages[0].Content)
 			blocks := messages[0].Content.ContentBlocks
@@ -925,7 +940,7 @@ func TestAnthropicSchemaKeepsThinkingWireRequest(t *testing.T) {
 			}
 
 			replayed := false
-			for _, msg := range b.convertMessages(request.Posts) {
+			for _, msg := range b.convertToBifrostRequest(request, cfg).Input {
 				replayed = replayed || (msg.ChatAssistantMessage != nil && len(msg.ReasoningDetails) > 0)
 			}
 			assert.True(t, replayed, "signed thinking from earlier turns must be replayed on schema requests")
@@ -982,7 +997,13 @@ func TestPromptCaching(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			b := &LLM{provider: tt.provider, fallbacks: testHops(tt.fallbacks, nil)}
+			b := &LLM{
+				provider:  tt.provider,
+				fallbacks: testHops(tt.fallbacks, nil),
+				baseProviders: map[schemas.ModelProvider]schemas.ModelProvider{
+					customProviderName(schemas.Anthropic, "svc2"): schemas.Anthropic,
+				},
+			}
 			cfg := llm.LanguageModelConfig{Model: "test-model", MaxGeneratedTokens: 100}
 
 			chatReq := b.convertToBifrostRequest(request, cfg)
@@ -1695,7 +1716,7 @@ func TestConvertMessagesReasoning(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			b := &LLM{provider: tt.provider}
-			messages := b.convertMessages(tt.posts)
+			messages := b.convertToBifrostRequest(llm.CompletionRequest{Posts: tt.posts}, llm.LanguageModelConfig{Model: "test-model"}).Input
 			require.True(t, len(messages) > tt.checkMessageIndex)
 
 			msg := messages[tt.checkMessageIndex]
@@ -1739,7 +1760,7 @@ func TestConvertMessagesEmptyToolResult(t *testing.T) {
 			Result:    "",
 		}},
 	}}
-	messages := b.convertMessages(posts)
+	messages := b.convertToBifrostRequest(llm.CompletionRequest{Posts: posts}, llm.LanguageModelConfig{Model: "test-model"}).Input
 	var toolMsg *schemas.ChatMessage
 	for i := range messages {
 		if messages[i].Role == schemas.ChatMessageRoleTool {
@@ -1875,8 +1896,7 @@ func TestMergeConsecutiveSameRoleMessages(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			b := &LLM{provider: schemas.Anthropic}
-			merged := b.mergeConsecutiveSameRoleMessages(tt.messages)
+			merged := mergeConsecutiveSameRoleMessages(tt.messages)
 			assert.Len(t, merged, tt.expected)
 			if tt.validate != nil {
 				tt.validate(t, merged)

@@ -600,33 +600,6 @@ func multimodalContent[T any](post llm.Post, maxDim int, textBlock func(string) 
 	return parts
 }
 
-// emptyToolResultPlaceholder stands in for a blank tool result. Anthropic
-// rejects blank text ("text content blocks must be non-empty"), so no message
-// or tool result may be replayed with blank content.
-const emptyToolResultPlaceholder = "(no output)"
-
-func isBlank(s string) bool {
-	return strings.TrimSpace(s) == ""
-}
-
-// replayableToolCalls returns the tool calls of a bot post that can be replayed
-// as tool_use/tool_result pairs, with blank results replaced. Calls without an
-// ID or name are results whose tool_use was never matched; they cannot form a
-// valid pair and are dropped.
-func replayableToolCalls(calls []llm.ToolCall) []llm.ToolCall {
-	replayable := make([]llm.ToolCall, 0, len(calls))
-	for _, tc := range calls {
-		if tc.ID == "" || tc.Name == "" {
-			continue
-		}
-		if isBlank(tc.Result) {
-			tc.Result = emptyToolResultPlaceholder
-		}
-		replayable = append(replayable, tc)
-	}
-	return replayable
-}
-
 // sniffImageMimeType returns the media type detected from the content, without
 // parameters. http.DetectContentType recognizes every type accepted by
 // llm.IsSupportedImageMimeType (JPEG, PNG, GIF and WebP).
@@ -669,27 +642,6 @@ func (b *LLM) shouldUseResponsesAPI(cfg llm.LanguageModelConfig) bool {
 		return true
 	}
 	return false
-}
-
-// promptCachingEnabledFor reports whether to request Anthropic automatic prompt
-// caching (top-level cache_control). Anthropic caches nothing unless asked,
-// so without this every turn re-bills the full system prompt, tool schemas,
-// and history at the base input rate. OpenAI-family and Gemini cache prompt
-// prefixes automatically and need no marker. Bifrost forwards the field
-// unstripped to non-Anthropic providers, so it is only attached when the
-// primary and every fallback are Anthropic; a mixed chain would 400 the
-// fallback request.
-func (b *LLM) promptCachingEnabledFor(fallbacks []schemas.Fallback) bool {
-	if b.provider != schemas.Anthropic {
-		return false
-	}
-	for _, fb := range fallbacks {
-		if fb.Provider != schemas.Anthropic &&
-			!strings.HasPrefix(string(fb.Provider), string(schemas.Anthropic)+"::") {
-			return false
-		}
-	}
-	return true
 }
 
 // requestFallbacks returns the fallback chain to attach to this request.

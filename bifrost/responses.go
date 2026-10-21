@@ -13,17 +13,13 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/telemetry"
 )
 
-// convertToResponsesMessages converts llm.Post messages to Bifrost ResponsesMessage format.
-func (b *LLM) convertToResponsesMessages(posts []llm.Post) []schemas.ResponsesMessage {
+// convertToResponsesMessages converts posts normalized for chain to Bifrost ResponsesMessage format.
+func convertToResponsesMessages(posts []llm.Post, chain requestChain) []schemas.ResponsesMessage {
 	messages := make([]schemas.ResponsesMessage, 0, len(posts))
-	maxDim := maxImageDimension(b.provider, countRequestImages(posts))
 
 	for _, post := range posts {
 		switch post.Role {
 		case llm.PostRoleSystem:
-			if isBlank(post.Message) {
-				continue
-			}
 			msg := schemas.ResponsesMessage{
 				Role: new(schemas.ResponsesInputMessageRoleSystem),
 				Content: &schemas.ResponsesMessageContent{
@@ -35,18 +31,14 @@ func (b *LLM) convertToResponsesMessages(posts []llm.Post) []schemas.ResponsesMe
 		case llm.PostRoleUser:
 			if len(post.Files) > 0 {
 				// Multimodal message with images
-				parts := b.createResponsesMultimodalContent(post, maxDim)
-				if len(parts) == 0 {
-					continue
-				}
 				msg := schemas.ResponsesMessage{
 					Role: new(schemas.ResponsesInputMessageRoleUser),
 					Content: &schemas.ResponsesMessageContent{
-						ContentBlocks: parts,
+						ContentBlocks: createResponsesMultimodalContent(post, chain.imageDimensionLimit),
 					},
 				}
 				messages = append(messages, msg)
-			} else if !isBlank(post.Message) {
+			} else {
 				msg := schemas.ResponsesMessage{
 					Role: new(schemas.ResponsesInputMessageRoleUser),
 					Content: &schemas.ResponsesMessageContent{
@@ -58,7 +50,7 @@ func (b *LLM) convertToResponsesMessages(posts []llm.Post) []schemas.ResponsesMe
 
 		case llm.PostRoleBot:
 			messages = append(messages, assistantReplayMessages(post)...)
-			for _, tc := range replayableToolCalls(post.ToolUse) {
+			for _, tc := range post.ToolUse {
 				funcCallMsg := schemas.ResponsesMessage{
 					Type: new(schemas.ResponsesMessageTypeFunctionCall),
 					ResponsesToolMessage: &schemas.ResponsesToolMessage{
@@ -104,7 +96,7 @@ func assistantReplayMessages(post llm.Post) []schemas.ResponsesMessage {
 		if record := serverToolActivityRecord(post.ServerTools); record != "" {
 			messages = append(messages, newTextMessage(record))
 		}
-		if !isBlank(post.Message) {
+		if post.Message != "" {
 			messages = append(messages, newTextMessage(post.Message))
 		}
 		return messages
@@ -120,9 +112,7 @@ func assistantReplayMessages(post llm.Post) []schemas.ResponsesMessage {
 	for _, segment := range post.AssistantSegments {
 		switch segment.Kind {
 		case llm.TurnSegmentText:
-			if !isBlank(segment.Text) {
-				messages = append(messages, newTextMessage(segment.Text))
-			}
+			messages = append(messages, newTextMessage(segment.Text))
 		case llm.TurnSegmentServerTool:
 			use, ok := serverToolsByID[segment.ServerToolID]
 			if !ok {
@@ -145,7 +135,7 @@ func assistantReplayMessages(post llm.Post) []schemas.ResponsesMessage {
 }
 
 // createResponsesMultimodalContent creates content blocks for Responses API messages with images.
-func (b *LLM) createResponsesMultimodalContent(post llm.Post, maxDim int) []schemas.ResponsesMessageContentBlock {
+func createResponsesMultimodalContent(post llm.Post, maxDim int) []schemas.ResponsesMessageContentBlock {
 	return multimodalContent(post, maxDim,
 		func(text string) schemas.ResponsesMessageContentBlock {
 			return schemas.ResponsesMessageContentBlock{
@@ -291,7 +281,8 @@ func (b *LLM) responsesReasoningFor(provider schemas.ModelProvider, cfg llm.Lang
 
 // convertToBifrostResponsesRequest converts our CompletionRequest to Bifrost's Responses API format.
 func (b *LLM) convertToBifrostResponsesRequest(request llm.CompletionRequest, cfg llm.LanguageModelConfig) (*schemas.BifrostResponsesRequest, error) {
-	messages := b.convertToResponsesMessages(request.Posts)
+	request, chain := b.prepareRequest(request)
+	messages := convertToResponsesMessages(request.Posts, chain)
 	tools := b.convertToResponsesTools(request, cfg)
 
 	req := &schemas.BifrostResponsesRequest{
@@ -324,8 +315,7 @@ func (b *LLM) convertToBifrostResponsesRequest(request llm.CompletionRequest, cf
 	}
 	// The Anthropic provider reads cache_control from ExtraParams on the
 	// Responses path (there is no typed field on ResponsesParameters).
-	fallbacks := b.requestFallbacks(request)
-	if b.promptCachingEnabledFor(fallbacks) {
+	if chain.promptCaching {
 		params.ExtraParams = map[string]any{
 			"cache_control": &schemas.CacheControl{Type: schemas.CacheControlTypeEphemeral},
 		}
@@ -333,7 +323,7 @@ func (b *LLM) convertToBifrostResponsesRequest(request llm.CompletionRequest, cf
 	req.Params = params
 
 	// Attach fallback chain so Bifrost retries with alternative providers on failure.
-	req.Fallbacks = fallbacks
+	req.Fallbacks = chain.fallbacks
 
 	return req, nil
 }

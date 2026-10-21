@@ -198,7 +198,8 @@ func (b *LLM) chatReasoningFor(provider schemas.ModelProvider, cfg llm.LanguageM
 
 // convertToBifrostRequest converts our CompletionRequest to Bifrost's format.
 func (b *LLM) convertToBifrostRequest(request llm.CompletionRequest, cfg llm.LanguageModelConfig) *schemas.BifrostChatRequest {
-	messages := b.convertMessages(request.Posts)
+	request, chain := b.prepareRequest(request)
+	messages := convertMessages(request.Posts, chain)
 	tools := b.convertTools(request, cfg)
 
 	req := &schemas.BifrostChatRequest{
@@ -225,31 +226,26 @@ func (b *LLM) convertToBifrostRequest(request llm.CompletionRequest, cfg llm.Lan
 	if cfg.JSONOutputFormat != nil {
 		params.ResponseFormat = buildChatResponseFormat(cfg.JSONOutputFormat)
 	}
-	fallbacks := b.requestFallbacks(request)
-	if b.promptCachingEnabledFor(fallbacks) {
+	if chain.promptCaching {
 		params.CacheControl = &schemas.CacheControl{Type: schemas.CacheControlTypeEphemeral}
 	}
 	req.Params = params
 
 	// Attach fallback chain so Bifrost retries with alternative providers on failure.
-	req.Fallbacks = fallbacks
+	req.Fallbacks = chain.fallbacks
 
 	return req
 }
 
-// convertMessages converts llm.Post messages to Bifrost ChatMessage format.
-func (b *LLM) convertMessages(posts []llm.Post) []schemas.ChatMessage {
+// convertMessages converts posts normalized for chain to Bifrost ChatMessage format.
+func convertMessages(posts []llm.Post, chain requestChain) []schemas.ChatMessage {
 	messages := make([]schemas.ChatMessage, 0, len(posts))
-	maxDim := maxImageDimension(b.provider, countRequestImages(posts))
 
 	for _, post := range posts {
 		var msg schemas.ChatMessage
 
 		switch post.Role {
 		case llm.PostRoleSystem:
-			if isBlank(post.Message) {
-				continue
-			}
 			msg = schemas.ChatMessage{
 				Role: schemas.ChatMessageRoleSystem,
 				Content: &schemas.ChatMessageContent{
@@ -260,20 +256,13 @@ func (b *LLM) convertMessages(posts []llm.Post) []schemas.ChatMessage {
 		case llm.PostRoleUser:
 			if len(post.Files) > 0 {
 				// Multimodal message with images
-				parts := b.createMultimodalContent(post, maxDim)
-				if len(parts) == 0 {
-					continue
-				}
 				msg = schemas.ChatMessage{
 					Role: schemas.ChatMessageRoleUser,
 					Content: &schemas.ChatMessageContent{
-						ContentBlocks: parts,
+						ContentBlocks: createMultimodalContent(post, chain.imageDimensionLimit),
 					},
 				}
 			} else {
-				if isBlank(post.Message) {
-					continue
-				}
 				msg = schemas.ChatMessage{
 					Role: schemas.ChatMessageRoleUser,
 					Content: &schemas.ChatMessageContent{
@@ -286,19 +275,14 @@ func (b *LLM) convertMessages(posts []llm.Post) []schemas.ChatMessage {
 			msg = schemas.ChatMessage{
 				Role: schemas.ChatMessageRoleAssistant,
 			}
-			if !isBlank(post.Message) {
+			if post.Message != "" {
 				msg.Content = &schemas.ChatMessageContent{
 					ContentStr: new(post.Message),
 				}
 			}
 
 			// Add reasoning details for thinking-enabled conversations.
-			// Anthropic requires historical thinking blocks to include a valid
-			// provider-issued signature. If a previous stream failed before the
-			// signature arrived, we persist partial reasoning for display only; do
-			// not replay it to Anthropic as an unsigned thinking block. Other
-			// providers may accept unsigned reasoning, so preserve it for them.
-			if post.Reasoning != "" && (b.provider != schemas.Anthropic || post.ReasoningSignature != "") {
+			if post.Reasoning != "" {
 				if msg.ChatAssistantMessage == nil {
 					msg.ChatAssistantMessage = &schemas.ChatAssistantMessage{}
 				}
@@ -311,9 +295,9 @@ func (b *LLM) convertMessages(posts []llm.Post) []schemas.ChatMessage {
 			}
 
 			// Handle tool calls in assistant messages
-			if replayable := replayableToolCalls(post.ToolUse); len(replayable) > 0 {
-				toolCalls := make([]schemas.ChatAssistantMessageToolCall, 0, len(replayable))
-				for i, tc := range replayable {
+			if len(post.ToolUse) > 0 {
+				toolCalls := make([]schemas.ChatAssistantMessageToolCall, 0, len(post.ToolUse))
+				for i, tc := range post.ToolUse {
 					toolCalls = append(toolCalls, schemas.ChatAssistantMessageToolCall{
 						Index: uint16(i % 65536), //nolint:gosec // index will never exceed uint16 max in practice
 						ID:    new(tc.ID),
@@ -332,7 +316,7 @@ func (b *LLM) convertMessages(posts []llm.Post) []schemas.ChatMessage {
 				// Add the assistant message with tool calls
 				messages = append(messages, msg)
 
-				for _, tc := range replayable {
+				for _, tc := range post.ToolUse {
 					toolResultMsg := schemas.ChatMessage{
 						Role: schemas.ChatMessageRoleTool,
 						Content: &schemas.ChatMessageContent{
@@ -355,9 +339,10 @@ func (b *LLM) convertMessages(posts []llm.Post) []schemas.ChatMessage {
 		messages = append(messages, msg)
 	}
 
-	// Merge consecutive same-role messages for Anthropic
-	if b.provider == schemas.Anthropic {
-		messages = b.mergeConsecutiveSameRoleMessages(messages)
+	// Bifrost does not merge same-role turns for Anthropic or Bedrock on the
+	// chat path, and Bedrock Converse rejects them.
+	if chain.strictMessages {
+		messages = mergeConsecutiveSameRoleMessages(messages)
 	}
 
 	return messages
@@ -365,7 +350,7 @@ func (b *LLM) convertMessages(posts []llm.Post) []schemas.ChatMessage {
 
 // mergeConsecutiveSameRoleMessages merges consecutive messages with the same role
 // into a single message with combined content blocks. Tool messages are never merged.
-func (b *LLM) mergeConsecutiveSameRoleMessages(messages []schemas.ChatMessage) []schemas.ChatMessage {
+func mergeConsecutiveSameRoleMessages(messages []schemas.ChatMessage) []schemas.ChatMessage {
 	if len(messages) <= 1 {
 		return messages
 	}
@@ -420,7 +405,7 @@ func messageToContentBlocks(msg *schemas.ChatMessage) []schemas.ChatContentBlock
 }
 
 // createMultimodalContent creates content blocks for messages with images.
-func (b *LLM) createMultimodalContent(post llm.Post, maxDim int) []schemas.ChatContentBlock {
+func createMultimodalContent(post llm.Post, maxDim int) []schemas.ChatContentBlock {
 	return multimodalContent(post, maxDim,
 		func(text string) schemas.ChatContentBlock {
 			return schemas.ChatContentBlock{
