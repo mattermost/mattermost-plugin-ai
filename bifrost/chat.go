@@ -333,6 +333,8 @@ func (b *LLM) convertMessages(posts []llm.Post) []schemas.ChatMessage {
 					if result == "" {
 						result = "(no output)"
 					}
+					// OpenAI-wire converters strip IsError; Anthropic and
+					// Bedrock map it to their tool-result error markers.
 					toolResultMsg := schemas.ChatMessage{
 						Role: schemas.ChatMessageRoleTool,
 						Content: &schemas.ChatMessageContent{
@@ -341,6 +343,9 @@ func (b *LLM) convertMessages(posts []llm.Post) []schemas.ChatMessage {
 						ChatToolMessage: &schemas.ChatToolMessage{
 							ToolCallID: new(tc.ID),
 						},
+					}
+					if toolResultIsError(tc) {
+						toolResultMsg.ChatToolMessage.IsError = new(true)
 					}
 					messages = append(messages, toolResultMsg)
 				}
@@ -464,4 +469,10 @@ func (b *LLM) convertTools(request llm.CompletionRequest, cfg llm.LanguageModelC
 	}
 
 	return result
+}
+
+// toolResultIsError reports whether a replayed tool call did not produce a
+// real result: it failed, or was rejected, denied by policy, or never run.
+func toolResultIsError(tc llm.ToolCall) bool {
+	return tc.Status == llm.ToolCallStatusError || tc.Status == llm.ToolCallStatusRejected
 }

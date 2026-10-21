@@ -72,6 +72,12 @@ func (b *LLM) convertToResponsesMessages(posts []llm.Post) []schemas.ResponsesMe
 						},
 					},
 				}
+				// Mark failures with status "incomplete", never ResponsesToolMessage.Error:
+				// the OpenAI converter forwards "error" verbatim and OpenAI rejects it,
+				// while "status" is valid OpenAI wire and Anthropic maps it to is_error.
+				if toolResultIsError(tc) {
+					funcOutputMsg.Status = new("incomplete")
+				}
 				messages = append(messages, funcOutputMsg)
 			}
 		}
