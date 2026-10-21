@@ -14,10 +14,22 @@ linters:
     - nakedret
     - revive
     - staticcheck
+    - testifylint
     - unconvert
     - unused
     - whitespace
   settings:
+    gocritic:
+      enabled-checks:
+        - ruleguard
+      settings:
+        ruleguard:
+          rules: ${base-path}/build/ruleguard/rules.go
+          failOn: all
+    testifylint:
+      disable-all: true
+      enable:
+        - go-require
     govet:
       disable:
         - fieldalignment

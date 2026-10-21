@@ -15,6 +15,7 @@ import (
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 	"github.com/mattermost/mattermost/server/public/model"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,11 +28,15 @@ func newModelRecordingAnthropicServer(t *testing.T) (*httptest.Server, func() []
 	var models []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
-		require.NoError(t, err)
+		if !assert.NoError(t, err) {
+			return
+		}
 		var req struct {
 			Model string `json:"model"`
 		}
-		require.NoError(t, json.Unmarshal(body, &req))
+		if !assert.NoError(t, json.Unmarshal(body, &req)) {
+			return
+		}
 		mu.Lock()
 		models = append(models, req.Model)
 		mu.Unlock()

@@ -131,8 +131,10 @@ func TestBatchCreateEmbeddingsSplitsLargeBatches(t *testing.T) {
 		var req struct {
 			Input []string `json:"input"`
 		}
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
-		require.LessOrEqual(t, len(req.Input), maxEmbeddingRequestInputs,
+		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&req)) {
+			return
+		}
+		assert.LessOrEqual(t, len(req.Input), maxEmbeddingRequestInputs,
 			"a single upstream request must stay within the input cap")
 
 		// Echo each input's trailing index as its embedding so the caller
@@ -140,7 +142,9 @@ func TestBatchCreateEmbeddingsSplitsLargeBatches(t *testing.T) {
 		data := make([]map[string]any, len(req.Input))
 		for i, text := range req.Input {
 			idx, err := strconv.Atoi(strings.TrimPrefix(text, "text-"))
-			require.NoError(t, err)
+			if !assert.NoError(t, err) {
+				return
+			}
 			data[i] = map[string]any{
 				"object":    "embedding",
 				"index":     i,
@@ -148,7 +152,7 @@ func TestBatchCreateEmbeddingsSplitsLargeBatches(t *testing.T) {
 			}
 		}
 		w.Header().Set("Content-Type", "application/json")
-		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+		assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
 			"object": "list",
 			"model":  "test-model",
 			"data":   data,
