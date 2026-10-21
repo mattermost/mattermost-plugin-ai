@@ -1468,6 +1468,27 @@ describe('LLMBotPost stopped generation notice', () => {
 
         expect(stoppedNotice()).toBe('You stopped generating this response.');
     });
+
+    test('tells the requester right away when they stop a regenerate', () => {
+        mockUseConversation.mockReturnValue({
+            conversation: makeConversation([makeTurn({content: [{type: 'text', text: 'Old answer'}]})]),
+            loading: false,
+            error: null,
+        });
+        let listener: PostUpdateHandler | undefined;
+        renderPost(makePost('Old answer'), (postID, listenerID, handler) => {
+            listener = handler;
+        });
+
+        fireEvent.click(screen.getByTestId('regenerate-button'));
+        act(() => {
+            listener?.(postUpdateMessage({post_id: 'post_1', control: 'start'}));
+            listener?.(postUpdateMessage({post_id: 'post_1', next: 'New partial'}));
+        });
+        fireEvent.click(screen.getByTestId('stop-generating-button'));
+
+        expect(stoppedNotice()).toBe('You stopped generating this response.');
+    });
 });
 
 describe('LLMBotPost meetings license gating', () => {

@@ -669,7 +669,8 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
     }
 
     // Only the requester can stop, so the requester is who stopped it.
-    const generationStopped = (stopped || props.post.props?.generation_stopped === true) && !isGenerationInProgress && !regenerating;
+    // A regenerate leaves the prior run's marker on the post until it finishes.
+    const generationStopped = (stopped || (props.post.props?.generation_stopped === true && !regenerating)) && !isGenerationInProgress;
     let generationStoppedMessage: string;
     if (requesterIsCurrentUser) {
         generationStoppedMessage = intl.formatMessage({defaultMessage: 'You stopped generating this response.'});
