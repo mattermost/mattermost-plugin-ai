@@ -281,15 +281,6 @@ func (m *mockMCPClientManager) GetCatalogAccess(ctx context.Context, req mcp.Cat
 	return m.catalogAccess(req)
 }
 
-func (m *mockMCPClientManager) GetServerAccess(_ context.Context, userID string) mcp.CatalogAccess {
-	access := m.catalogAccess(mcp.UserCatalogRequest(userID))
-	access.Tools = nil
-	if !access.Unavailable() {
-		access.Errors = nil
-	}
-	return access
-}
-
 func (m *mockMCPClientManager) GetTools(ctx context.Context, req mcp.CatalogRequest) ([]llm.Tool, *mcp.Errors) {
 	access := m.GetCatalogAccess(ctx, req)
 	return access.Tools, access.Errors
@@ -587,7 +578,7 @@ func (m *mockAgentStore) recordVersion(cfg, prev *llm.BotConfig, meta store.Agen
 	}
 	history = append(history, store.AgentVersionDetail{
 		AgentVersion: store.AgentVersion{
-			Version:             len(history) + 1,
+			Version:             mockLatestVersion(history) + 1,
 			CreatedBy:           meta.ActorID,
 			CreateAt:            cfg.UpdateAt,
 			Source:              meta.Source,
@@ -604,7 +595,7 @@ func (m *mockAgentStore) ListAgentVersions(agentID string, before, limit int) (s
 		return store.AgentVersionPage{}, fmt.Errorf("invalid agent version page size %d", limit)
 	}
 	history := m.versions[agentID]
-	page := store.AgentVersionPage{CurrentVersion: len(history), Versions: []store.AgentVersion{}}
+	page := store.AgentVersionPage{CurrentVersion: mockLatestVersion(history), Versions: []store.AgentVersion{}}
 	for i := len(history) - 1; i >= 0; i-- {
 		if before > 0 && history[i].Version >= before {
 			continue
@@ -619,18 +610,43 @@ func (m *mockAgentStore) ListAgentVersions(agentID string, before, limit int) (s
 }
 
 func (m *mockAgentStore) GetAgentVersion(agentID string, version int) (*store.AgentVersionDetail, error) {
-	history := m.versions[agentID]
-	if version < 1 || version > len(history) {
-		return nil, nil
+	for _, detail := range m.versions[agentID] {
+		if detail.Version == version {
+			detail.Config = *cloneBotConfig(&detail.Config)
+			return &detail, nil
+		}
 	}
-	detail := history[version-1]
-	detail.Config = *cloneBotConfig(&detail.Config)
-	return &detail, nil
+	return nil, nil
 }
 
-func (m *mockAgentStore) GetLatestAgentVersion(agentID string) (*store.AgentVersionDetail, error) {
-	return m.GetAgentVersion(agentID, len(m.versions[agentID]))
+func mockLatestVersion(history []store.AgentVersionDetail) int {
+	if len(history) == 0 {
+		return 0
+	}
+	return history[len(history)-1].Version
 }
+
+func (m *mockAgentStore) DeleteAgentVersions(agentID string, versions []int) (int64, error) {
+	history := m.versions[agentID]
+	if slices.Contains(versions, mockLatestVersion(history)) {
+		return 0, store.ErrCurrentAgentVersion
+	}
+	kept := slices.DeleteFunc(slices.Clone(history), func(v store.AgentVersionDetail) bool {
+		return slices.Contains(versions, v.Version)
+	})
+	m.versions[agentID] = kept
+	return int64(len(history) - len(kept)), nil
+}
+
+func (m *mockAgentStore) DeletePreviousAgentVersions(agentID string) (int64, error) {
+	history := m.versions[agentID]
+	if len(history) == 0 {
+		return 0, nil
+	}
+	m.versions[agentID] = history[len(history)-1:]
+	return int64(len(history) - 1), nil
+}
+
 
 // cloneBotConfig returns a deep copy so API callers cannot mutate mock store internals via returned pointers.
 func cloneBotConfig(src *llm.BotConfig) *llm.BotConfig {
@@ -740,6 +756,7 @@ func (m *mockAgentStore) DeleteAgent(id string) error {
 		return fmt.Errorf("agent %q not found or already deleted", id)
 	}
 	cfg.DeleteAt = time.Now().UnixMilli()
+	delete(m.versions, id)
 	return nil
 }
 

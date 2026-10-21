@@ -5,7 +5,6 @@ package mcp
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -285,78 +284,6 @@ func TestGetCatalogAccessSkipsDeniedServers(t *testing.T) {
 	assert.True(t, access.DeniedOrigins[httpServer.URL])
 	assert.Nil(t, access.Errors, "a denied server must never be connected to, so it can produce no error artifacts")
 	assert.Zero(t, requests.Load())
-}
-
-func TestGetServerAccessEvaluatesPolicyWithoutConnecting(t *testing.T) {
-	var requests atomic.Int32
-	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		requests.Add(1)
-		w.WriteHeader(http.StatusServiceUnavailable)
-	}))
-	t.Cleanup(httpServer.Close)
-
-	checker := &stubServerAccessChecker{denied: map[string]bool{accessDeniedID: true, accessPluginSrvID: true}}
-	m := newAccessTestManager(t, checker)
-	m.config.Servers = []ServerConfig{
-		{ID: accessAllowedID, Name: "Allowed", Enabled: true, BaseURL: httpServer.URL + "/"},
-		{ID: accessDeniedID, Name: "Denied", Enabled: true, BaseURL: accessDeniedOrigin + "/"},
-	}
-
-	access := m.GetServerAccess(context.Background(), "user-1")
-
-	assert.Equal(t, map[string]bool{accessDeniedOrigin: true, accessPluginOrigin: true}, access.DeniedOrigins)
-	require.Len(t, access.PluginServers, 1)
-	assert.Equal(t, accessPluginID, access.PluginServers[0].PluginID)
-	assert.Empty(t, access.Tools)
-	assert.Nil(t, access.Errors)
-	assert.Zero(t, requests.Load(), "server access must not contact any server")
-	require.NotEmpty(t, checker.users)
-	for _, user := range checker.users {
-		assert.Equal(t, "user-1", user)
-	}
-
-	empty := m.GetServerAccess(context.Background(), "")
-	require.NotNil(t, empty.Errors, "a missing user must fail closed")
-	assert.Empty(t, empty.PluginServers)
-}
-
-// A closed manager or an invalid request cannot evaluate access policy, so
-// both read paths must report it instead of returning an empty denial set.
-func TestCatalogAccessUnavailableWhenPolicyNotEvaluated(t *testing.T) {
-	tests := []struct {
-		name            string
-		closed          bool
-		userID          string
-		wantUnavailable bool
-	}{
-		{name: "open manager evaluates policy", userID: "user-1", wantUnavailable: false},
-		{name: "closed manager", closed: true, userID: "user-1", wantUnavailable: true},
-		{name: "missing user", userID: "", wantUnavailable: true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			checker := &stubServerAccessChecker{denied: map[string]bool{accessDeniedID: true}}
-			m := newAccessTestManager(t, checker)
-			m.config.Servers = []ServerConfig{{ID: accessDeniedID, Name: "Denied", Enabled: true, BaseURL: accessDeniedOrigin}}
-			if tt.closed {
-				m.Close()
-			}
-
-			serverAccess := m.GetServerAccess(context.Background(), tt.userID)
-			assert.Equal(t, tt.wantUnavailable, serverAccess.Unavailable(), "GetServerAccess")
-			if !tt.wantUnavailable {
-				assert.True(t, serverAccess.DeniedOrigins[accessDeniedOrigin])
-			}
-
-			if tt.closed {
-				catalog := m.GetCatalogAccess(context.Background(), UserCatalogRequest(tt.userID))
-				assert.True(t, catalog.Unavailable(), "GetCatalogAccess")
-			}
-		})
-	}
-
-	assert.False(t, CatalogAccess{Errors: &Errors{Errors: []error{errors.New("dial failed")}}}.Unavailable(),
-		"server connection errors leave the evaluated policy usable")
 }
 
 func newRemoteAccessTestManager(t *testing.T, servers []ServerConfig, checker ServerAccessChecker, httpClient *http.Client) *ClientManager {

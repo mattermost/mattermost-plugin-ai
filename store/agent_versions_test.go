@@ -47,6 +47,13 @@ func listAllAgentVersions(s *Store, agentID string) ([]AgentVersion, error) {
 	return page.Versions, err
 }
 
+func currentAgentVersion(t *testing.T, s *Store, agentID string) int {
+	t.Helper()
+	page, err := s.ListAgentVersions(agentID, 0, 1)
+	require.NoError(t, err)
+	return page.CurrentVersion
+}
+
 func versionNumbers(versions []AgentVersion) []int {
 	out := make([]int, 0, len(versions))
 	for _, v := range versions {
@@ -127,27 +134,10 @@ func TestAgentVersionLifecycle(t *testing.T) {
 		assert.Equal(t, want.ThinkingBudget, cfg.ThinkingBudget)
 	})
 
-	t.Run("latest version and unknown version", func(t *testing.T) {
-		latest, latestErr := s.GetLatestAgentVersion(agent.ID)
-		require.NoError(t, latestErr)
-		require.NotNil(t, latest)
-		assert.Equal(t, 3, latest.Version)
-		assert.Equal(t, "Be helpful and concise", latest.Config.CustomInstructions)
-
-		none, noneErr := s.GetLatestAgentVersion("unknownagent0000000000001")
-		require.NoError(t, noneErr)
-		assert.Nil(t, none)
-
+	t.Run("unknown version", func(t *testing.T) {
 		missing, getErr := s.GetAgentVersion(agent.ID, 4)
 		require.NoError(t, getErr)
 		assert.Nil(t, missing)
-	})
-
-	t.Run("versions survive agent deletion", func(t *testing.T) {
-		require.NoError(t, s.DeleteAgent(agent.ID))
-		after, listErr := listAllAgentVersions(s, agent.ID)
-		require.NoError(t, listErr)
-		assert.Len(t, after, 3)
 	})
 }
 
@@ -514,7 +504,7 @@ func TestAgentVersionWritesAreTransactional(t *testing.T) {
 		require.Error(t, s.UpdateAgent(agent, SystemAgentVersionMeta()))
 		versions, listErr := listAllAgentVersions(s, agent.ID)
 		require.NoError(t, listErr)
-		assert.Equal(t, []int{1}, versionNumbers(versions))
+		assert.Empty(t, versions)
 	})
 }
 
@@ -529,7 +519,7 @@ func TestAgentVersionMetaValidation(t *testing.T) {
 		{name: "restore without restored version", meta: AgentVersionMeta{Source: AgentVersionSourceRestore}, wantErr: true},
 		{name: "restored version on a non-restore source", meta: AgentVersionMeta{Source: AgentVersionSourceUpdate, RestoredFromVersion: 2}, wantErr: true},
 		{name: "valid restore", meta: AgentVersionMeta{Source: AgentVersionSourceRestore, RestoredFromVersion: 1}},
-		{name: "valid import", meta: AgentVersionMeta{ActorID: "u1", Source: AgentVersionSourceImport}},
+		{name: "valid update", meta: AgentVersionMeta{ActorID: "u1", Source: AgentVersionSourceUpdate}},
 	}
 
 	s := setupVersionTestStore(t)
@@ -538,19 +528,17 @@ func TestAgentVersionMetaValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			before, err := s.GetLatestAgentVersion(agent.ID)
-			require.NoError(t, err)
+			before := currentAgentVersion(t, s, agent.ID)
 
-			err = s.UpdateAgent(agent, tt.meta)
-			after, latestErr := s.GetLatestAgentVersion(agent.ID)
-			require.NoError(t, latestErr)
+			err := s.UpdateAgent(agent, tt.meta)
+			after := currentAgentVersion(t, s, agent.ID)
 			if tt.wantErr {
 				require.Error(t, err)
-				assert.Equal(t, before.Version, after.Version)
+				assert.Equal(t, before, after)
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, before.Version+1, after.Version)
+			assert.Equal(t, before+1, after)
 		})
 	}
 }

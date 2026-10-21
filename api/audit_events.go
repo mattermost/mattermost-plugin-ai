@@ -36,10 +36,9 @@ const (
 	AuditEventDeleteAgent       = "deleteAgent"
 	AuditEventUpdateAgentAvatar = "updateAgentAvatar"
 
-	// Agent versioning and transfer. Listing/viewing versions, export, and
-	// import preview are read-only and are not audited.
+	// Agent versioning. Listing and viewing versions are read-only and are not audited.
 	AuditEventRestoreAgentVersion = "restoreAgentVersion"
-	AuditEventImportAgent         = "importAgent"
+	AuditEventDeleteAgentVersions = "deleteAgentVersions"
 
 	// Custom prompts.
 	AuditEventCreateCustomPrompt = "createCustomPrompt"
@@ -114,9 +113,9 @@ func buildAuditEventRegistry(a *API) map[string]string {
 		handlerFuncName(a.handleDeleteAgent):       AuditEventDeleteAgent,
 		handlerFuncName(a.handleUploadAgentAvatar): AuditEventUpdateAgentAvatar,
 
-		// Agent versioning and transfer.
+		// Agent versioning.
 		handlerFuncName(a.handleRestoreAgentVersion): AuditEventRestoreAgentVersion,
-		handlerFuncName(a.handleImportAgent):         AuditEventImportAgent,
+		handlerFuncName(a.handleDeleteAgentVersions): AuditEventDeleteAgentVersions,
 
 		// Custom prompts.
 		handlerFuncName(a.handleCreateCustomPrompt): AuditEventCreateCustomPrompt,

@@ -529,21 +529,16 @@ func bindAgentRequestJSON(c *gin.Context, dst any) bool {
 	return true
 }
 
-// checkCanCreateAgent enforces the create permission and the agent quota. It
-// writes the abort response and returns false when creation must be blocked.
-func (a *API) checkCanCreateAgent(c *gin.Context, userID string) bool {
-	if !canCreateAgent(a.pluginAPI, userID) {
-		abortAgentRequest(c, http.StatusForbidden, errors.New("user does not have permission to create agents"))
-		return false
-	}
-	return a.checkAgentCreateQuota(c)
-}
-
 // handleCreateAgent handles POST /agents: creates the bot user and persisted agent config.
 func (a *API) handleCreateAgent(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 
-	if !a.checkCanCreateAgent(c, userID) {
+	if !canCreateAgent(a.pluginAPI, userID) {
+		abortAgentRequest(c, http.StatusForbidden, errors.New("user does not have permission to create agents"))
+		return
+	}
+
+	if !a.checkAgentCreateQuota(c) {
 		return
 	}
 
@@ -552,21 +547,9 @@ func (a *API) handleCreateAgent(c *gin.Context) {
 		return
 	}
 
-	agent, ok := a.createAgent(c, userID, req, store.AgentVersionMeta{ActorID: userID, Source: store.AgentVersionSourceCreate})
-	if !ok {
-		return
-	}
-	c.JSON(http.StatusCreated, agent)
-}
-
-// createAgent validates req and creates the bot account and the agent, whose
-// first version is recorded with meta. The caller must already have passed
-// checkCanCreateAgent. It writes the abort response and returns false on
-// failure; on success bots are refreshed and the caller writes the response.
-func (a *API) createAgent(c *gin.Context, userID string, req CreateAgentRequest, meta store.AgentVersionMeta) (*llm.BotConfig, bool) {
 	if req.UseServiceAccountAuth && !isSystemAdmin(a.pluginAPI, userID) {
 		abortAgentRequest(c, http.StatusForbidden, errServiceAccountAuthRequiresAdmin)
-		return nil, false
+		return
 	}
 
 	// Identify the requested agent as soon as the body is bound so
@@ -577,28 +560,28 @@ func (a *API) createAgent(c *gin.Context, userID string, req CreateAgentRequest,
 
 	if !validUsernameRe.MatchString(req.Username) {
 		abortAgentRequest(c, http.StatusBadRequest, errInvalidAgentUsername)
-		return nil, false
+		return
 	}
 
 	if _, ok := a.validateAgentServiceID(c, req.ServiceID); !ok {
-		return nil, false
+		return
 	}
 
 	proposed := buildAgentConfigForCreate(req, userID, "")
 	if !a.checkAgentLicenseGates(c, *proposed, nil) {
-		return nil, false
+		return
 	}
 
 	// Validate the built config before creating the Mattermost bot account so an
 	// invalid request does not leave an orphan bot user behind.
 	if err := proposed.Validate(); err != nil {
 		abortAgentRequest(c, http.StatusBadRequest, fmt.Errorf("invalid agent configuration: %w", err))
-		return nil, false
+		return
 	}
 
 	if err := a.accessChecker.ValidateAgentWrite(c.Request.Context(), userID, proposed, nil); err != nil {
 		abortAgentRequest(c, statusForAccessErr(err), err)
-		return nil, false
+		return
 	}
 
 	mmBot := &model.Bot{
@@ -610,18 +593,18 @@ func (a *API) createAgent(c *gin.Context, userID string, req CreateAgentRequest,
 		var appErr *model.AppError
 		if errors.As(err, &appErr) && (appErr.Id == "app.user.save.username_exists.app_error" || appErr.Id == "app.user.save.email_exists.app_error") {
 			abortAgentRequestWithCode(c, http.StatusConflict, a.agentUsernameConflictCode(userID, req.Username), fmt.Errorf("username %q is already taken", req.Username))
-			return nil, false
+			return
 		}
 		abortAgentRequest(c, http.StatusInternalServerError, fmt.Errorf("failed to create bot account: %w", err))
-		return nil, false
+		return
 	}
 
 	agent := buildAgentConfigForCreate(req, userID, mmBot.UserId)
 
-	if err := a.agentStore.CreateAgent(agent, meta); err != nil {
+	if err := a.agentStore.CreateAgent(agent, store.AgentVersionMeta{ActorID: userID, Source: store.AgentVersionSourceCreate}); err != nil {
 		a.discardUnusedBot(mmBot.UserId)
 		abortAgentRequest(c, http.StatusInternalServerError, fmt.Errorf("failed to persist agent: %w", err))
-		return nil, false
+		return
 	}
 
 	// Both IDs exist only after the bot account and agent config are persisted.
@@ -629,7 +612,7 @@ func (a *API) createAgent(c *gin.Context, userID string, req CreateAgentRequest,
 	audit.AddParam(auditRec(c), "bot_user_id", mmBot.UserId)
 
 	_ = a.refreshBotsAndNotify(agent.ID)
-	return agent, true
+	c.JSON(http.StatusCreated, agent)
 }
 
 // agentUsernameConflictCode reports whether a deactivated bot holds username, in

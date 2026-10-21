@@ -5,7 +5,6 @@ package mcp
 
 import (
 	"errors"
-	"slices"
 	"strings"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
@@ -14,7 +13,6 @@ import (
 var (
 	ErrCatalogRemoteOwnerRequired = errors.New("catalog request remote pool owner is required")
 	ErrCatalogInvokerRequired     = errors.New("catalog request invoking user ID is required")
-	ErrClientManagerClosed        = errors.New("MCP client manager is closed")
 )
 
 const (
@@ -45,23 +43,6 @@ type CatalogAccess struct {
 	Errors        *Errors
 	DeniedOrigins map[string]bool
 	PluginServers []PluginServerConfig
-}
-
-// unavailableAccess is returned when access policy could not be evaluated.
-func unavailableAccess(err error) CatalogAccess {
-	return CatalogAccess{Errors: &Errors{Errors: []error{err}}}
-}
-
-// Unavailable reports whether access policy could not be evaluated (an
-// invalid request, or the manager is closed). DeniedOrigins is then empty
-// rather than complete, so callers must treat every server as denied.
-func (a CatalogAccess) Unavailable() bool {
-	if a.Errors == nil {
-		return false
-	}
-	return slices.ContainsFunc(a.Errors.Errors, func(err error) bool {
-		return errors.Is(err, ErrCatalogRemoteOwnerRequired) || errors.Is(err, ErrCatalogInvokerRequired) || errors.Is(err, ErrClientManagerClosed)
-	})
 }
 
 // UserCatalogRequest is the per-user catalog: remotes and embedded/plugin all

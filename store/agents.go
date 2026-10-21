@@ -399,6 +399,9 @@ func (s *Store) UpdateAgent(cfg *llm.BotConfig, meta AgentVersionMeta) (err erro
 	if _, err = insertAgentVersionTx(tx, cfg.ID, latest+1, snapshot, meta, changedVersionFields(latestConfig, snapshot), now); err != nil {
 		return err
 	}
+	if err = s.pruneAgentVersionsTx(tx, cfg.ID, latest+1); err != nil {
+		return err
+	}
 	if err = tx.Commit(); err != nil {
 		return fmt.Errorf("failed to commit agent update: %w", err)
 	}
@@ -406,9 +409,20 @@ func (s *Store) UpdateAgent(cfg *llm.BotConfig, meta AgentVersionMeta) (err erro
 	return nil
 }
 
-// DeleteAgent performs a soft delete by setting DeleteAt to the current timestamp.
-func (s *Store) DeleteAgent(id string) error {
-	result, err := s.db.Exec(
+// DeleteAgent performs a soft delete by setting DeleteAt to the current
+// timestamp, and permanently deletes every version of the agent.
+func (s *Store) DeleteAgent(id string) (err error) {
+	tx, err := s.db.Beginx()
+	if err != nil {
+		return fmt.Errorf("failed to begin agent delete transaction: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	result, err := tx.Exec(
 		`UPDATE Agents_UserAgents SET DeleteAt = $1 WHERE ID = $2 AND DeleteAt = 0`,
 		model.GetMillis(),
 		id,
@@ -425,5 +439,11 @@ func (s *Store) DeleteAgent(id string) error {
 		return fmt.Errorf("agent %q not found or already deleted", id)
 	}
 
+	if _, err = tx.Exec(`DELETE FROM Agents_AgentVersions WHERE AgentID = $1`, id); err != nil {
+		return fmt.Errorf("failed to delete versions of agent %q: %w", id, err)
+	}
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit agent delete: %w", err)
+	}
 	return nil
 }

@@ -240,6 +240,9 @@ func (p *Plugin) OnActivate() error {
 	}
 	p.configMigrated = true
 
+	p.applyAgentVersionRetention()
+	p.configuration.RegisterUpdateListener(p.applyAgentVersionRetention)
+
 	if idsMigrated || structuredOutputMigrated {
 		if pubErr := p.PublishConfigUpdate(); pubErr != nil {
 			pluginAPI.Log.Error("Failed to publish config update after migration", "error", pubErr.Error())
@@ -662,6 +665,21 @@ type telemetryOTLPSettings struct {
 	endpoint string
 	tls      bool
 	headers  string
+}
+
+// applyAgentVersionRetention applies the configured number of agent versions
+// to keep and deletes the versions beyond it. Config updates reach every
+// node, and the delete is idempotent, so each node may run it.
+func (p *Plugin) applyAgentVersionRetention() {
+	p.store.SetAgentVersionsToKeep(p.configuration.Config().AgentVersionsToKeep)
+	pruned, err := p.store.PruneAgentVersions()
+	if err != nil {
+		p.pluginAPI.Log.Error("Failed to delete agent versions beyond the retention limit", "error", err.Error())
+		return
+	}
+	if pruned > 0 {
+		p.pluginAPI.Log.Info("Deleted agent versions beyond the retention limit", "count", pruned)
+	}
 }
 
 // applyTelemetryConfig (re)initializes the global OpenTelemetry TracerProvider

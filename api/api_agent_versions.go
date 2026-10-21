@@ -6,6 +6,7 @@ package api
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 
@@ -158,4 +159,76 @@ func (a *API) handleRestoreAgentVersion(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, updated)
+}
+
+// maxDeleteAgentVersions bounds one delete request; the History tab selects
+// from the versions it has loaded, at most a few pages.
+const maxDeleteAgentVersions = 1000
+
+// DeleteAgentVersionsRequest is the JSON body for DELETE /agents/:agentid/versions:
+// either the versions to delete, or all to delete every version but the current one.
+type DeleteAgentVersionsRequest struct {
+	Versions []int `json:"versions"`
+	All      bool  `json:"all"`
+}
+
+type deleteAgentVersionsResponse struct {
+	Deleted int64 `json:"deleted"`
+}
+
+// handleDeleteAgentVersions handles DELETE /agents/:agentid/versions: permanently
+// deletes versions from the agent's history. The current version is the live
+// configuration and is never deleted.
+func (a *API) handleDeleteAgentVersions(c *gin.Context) {
+	userID := c.GetHeader("Mattermost-User-Id")
+	agentID := c.Param("agentid")
+
+	audit.AddParam(auditRec(c), audit.KeyAgentID, audit.TruncateID(agentID))
+
+	if _, ok := a.loadManageableAgent(c, agentID, userID, "not authorized to modify this agent", nil); !ok {
+		return
+	}
+
+	var req DeleteAgentVersionsRequest
+	if !bindAgentRequestJSON(c, &req) {
+		return
+	}
+	audit.AddParam(auditRec(c), "all", req.All)
+
+	var deleted int64
+	var err error
+	switch {
+	case req.All && len(req.Versions) > 0:
+		abortAgentRequest(c, http.StatusBadRequest, errors.New("send either versions or all, not both"))
+		return
+	case req.All:
+		deleted, err = a.agentStore.DeletePreviousAgentVersions(agentID)
+	case len(req.Versions) == 0:
+		abortAgentRequest(c, http.StatusBadRequest, errors.New("versions must list at least one version, or set all"))
+		return
+	case len(req.Versions) > maxDeleteAgentVersions:
+		abortAgentRequest(c, http.StatusBadRequest, fmt.Errorf("at most %d versions can be deleted at once", maxDeleteAgentVersions))
+		return
+	default:
+		versions := make([]string, 0, len(req.Versions))
+		for _, v := range req.Versions {
+			if v < 1 || v > math.MaxInt32 {
+				abortAgentRequest(c, http.StatusBadRequest, fmt.Errorf("invalid version %d: must be a positive integer", v))
+				return
+			}
+			versions = append(versions, strconv.Itoa(v))
+		}
+		audit.AddParam(auditRec(c), "versions", versions)
+		deleted, err = a.agentStore.DeleteAgentVersions(agentID, req.Versions)
+	}
+	if errors.Is(err, store.ErrCurrentAgentVersion) {
+		abortAgentRequest(c, http.StatusBadRequest, err)
+		return
+	}
+	if err != nil {
+		abortAgentRequest(c, http.StatusInternalServerError, fmt.Errorf("failed to delete agent versions: %w", err))
+		return
+	}
+	audit.AddParam(auditRec(c), "deleted", deleted)
+	c.JSON(http.StatusOK, deleteAgentVersionsResponse{Deleted: deleted})
 }

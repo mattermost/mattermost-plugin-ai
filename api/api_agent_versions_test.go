@@ -6,6 +6,7 @@ package api
 import (
 	"encoding/json"
 	"maps"
+	"fmt"
 	"net/http"
 	"reflect"
 	"slices"
@@ -55,7 +56,7 @@ func TestAgentVersionRoutesRequireManage(t *testing.T) {
 		{name: "list versions", method: http.MethodGet, path: "/agents/agent-1/versions"},
 		{name: "get version", method: http.MethodGet, path: "/agents/agent-1/versions/1"},
 		{name: "restore version", method: http.MethodPost, path: "/agents/agent-1/versions/1/restore"},
-		{name: "export", method: http.MethodGet, path: "/agents/agent-1/export"},
+		{name: "delete versions", method: http.MethodDelete, path: "/agents/agent-1/versions"},
 	}
 	callers := []struct {
 		name           string
@@ -270,9 +271,7 @@ func TestRestoreAgentVersion(t *testing.T) {
 			errorContains:  "AI service that no longer exists",
 			validate: func(t *testing.T, e *TestEnvironment, _ *llm.BotConfig) {
 				assert.Equal(t, "svc-1", e.agentStore.agents[versionTestAgentID].ServiceID)
-				latest, err := e.agentStore.GetLatestAgentVersion(versionTestAgentID)
-				require.NoError(t, err)
-				assert.Equal(t, 2, latest.Version, "a rejected restore writes no version")
+				assert.Equal(t, 2, mockLatestVersion(e.agentStore.versions[versionTestAgentID]), "a rejected restore writes no version")
 			},
 		},
 		{
@@ -419,14 +418,14 @@ func TestAgentVersionReadsAreNotAudited(t *testing.T) {
 	seedVersionedAgent(t, e, versionTestAgent(), map[string]any{"customInstructions": "edited"})
 	records := e.CaptureAuditRecords()
 
-	for _, path := range []string{"/agents/agent-1/versions", "/agents/agent-1/versions/1", "/agents/agent-1/export"} {
+	for _, path := range []string{"/agents/agent-1/versions", "/agents/agent-1/versions/1"} {
 		recorder := doRequest(e.api, http.MethodGet, path, nil, testUserID)
 		require.Equal(t, http.StatusOK, recorder.Result().StatusCode, path)
 	}
 	assert.Empty(t, *records)
 }
 
-// Restore and import rebuild a full update request from a stored config, so a
+// Restore rebuilds a full update request from a stored config, so a
 // request field that requestFieldsFromConfig misses would silently be reset.
 func TestRequestFieldsFromConfigRoundTrip(t *testing.T) {
 	var want AgentRequestFields
@@ -453,4 +452,142 @@ func TestRequestFieldsFromConfigRoundTrip(t *testing.T) {
 	var cfg llm.BotConfig
 	want.applyTo(&cfg)
 	assert.Equal(t, want, requestFieldsFromConfig(&cfg), "every request-controlled field must survive a restore")
+}
+
+// seedAgentWithVersions stores an agent owned by testUserID and saves edits
+// through PUT /agents/:agentid until it has n versions.
+func seedAgentWithVersions(t *testing.T, e *TestEnvironment, n int) {
+	t.Helper()
+	original := versionTestAgent()
+	seedVersionedAgent(t, e, original, map[string]any{"customInstructions": "edit 2"})
+	for i := 3; i <= n; i++ {
+		recorder := doRequest(e.api, http.MethodPut, "/agents/"+original.ID, updateAgentBodyFromStored(e.agentStore.agents[original.ID], map[string]any{"customInstructions": fmt.Sprintf("edit %d", i)}), testUserID)
+		require.Equal(t, http.StatusOK, recorder.Result().StatusCode, recorder.Body.String())
+	}
+}
+
+func TestDeleteAgentVersions(t *testing.T) {
+	tests := []struct {
+		name            string
+		body            any
+		expectedStatus  int
+		errorContains   string
+		expectedDeleted int64
+		expectedKept    []int
+	}{
+		{name: "selected versions", body: map[string]any{"versions": []int{1, 3}}, expectedStatus: http.StatusOK, expectedDeleted: 2, expectedKept: []int{4, 2}},
+		{name: "a single version", body: map[string]any{"versions": []int{2}}, expectedStatus: http.StatusOK, expectedDeleted: 1, expectedKept: []int{4, 3, 1}},
+		{name: "every previous version", body: map[string]any{"all": true}, expectedStatus: http.StatusOK, expectedDeleted: 3, expectedKept: []int{4}},
+		{name: "the current version is refused", body: map[string]any{"versions": []int{2, 4}}, expectedStatus: http.StatusBadRequest, errorContains: "current version", expectedKept: []int{4, 3, 2, 1}},
+		{name: "both versions and all", body: map[string]any{"versions": []int{1}, "all": true}, expectedStatus: http.StatusBadRequest, expectedKept: []int{4, 3, 2, 1}},
+		{name: "nothing to delete", body: map[string]any{"versions": []int{}}, expectedStatus: http.StatusBadRequest, expectedKept: []int{4, 3, 2, 1}},
+		{name: "invalid version number", body: map[string]any{"versions": []int{0}}, expectedStatus: http.StatusBadRequest, expectedKept: []int{4, 3, 2, 1}},
+		{name: "malformed body", body: "not json", expectedStatus: http.StatusBadRequest, expectedKept: []int{4, 3, 2, 1}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := setupAgentTestEnvironment(t)
+			defer e.Cleanup(t)
+			mockLicensed(e.mockAPI)
+			seedAgentWithVersions(t, e, 4)
+
+			recorder := doRequest(e.api, http.MethodDelete, "/agents/agent-1/versions", tt.body, testUserID)
+			require.Equal(t, tt.expectedStatus, recorder.Result().StatusCode, recorder.Body.String())
+			if tt.errorContains != "" {
+				assert.Contains(t, recorder.Body.String(), tt.errorContains)
+			}
+			if tt.expectedStatus == http.StatusOK {
+				var resp deleteAgentVersionsResponse
+				require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+				assert.Equal(t, tt.expectedDeleted, resp.Deleted)
+			}
+
+			list := doRequest(e.api, http.MethodGet, "/agents/agent-1/versions", nil, testUserID)
+			require.Equal(t, http.StatusOK, list.Result().StatusCode)
+			var page store.AgentVersionPage
+			require.NoError(t, json.Unmarshal(list.Body.Bytes(), &page))
+			kept := []int{}
+			for _, v := range page.Versions {
+				kept = append(kept, v.Version)
+			}
+			assert.Equal(t, tt.expectedKept, kept)
+			assert.Equal(t, 4, page.CurrentVersion, "the current version always stays")
+		})
+	}
+}
+
+func TestAuditDeleteAgentVersions(t *testing.T) {
+	const plantedInstructions = "planted-deleted-instructions-that-must-never-leak"
+
+	tests := []struct {
+		name           string
+		body           map[string]any
+		manage         bool
+		expectedStatus int
+		validateRecord func(t *testing.T, rec *model.AuditRecord)
+	}{
+		{
+			name:           "selected versions record their numbers and the count",
+			body:           map[string]any{"versions": []int{1}},
+			manage:         true,
+			expectedStatus: http.StatusOK,
+			validateRecord: func(t *testing.T, rec *model.AuditRecord) {
+				assert.Equal(t, model.AuditStatusSuccess, rec.Status)
+				assert.Equal(t, versionTestAgentID, rec.EventData.Parameters[audit.KeyAgentID])
+				assert.Equal(t, []string{"1"}, rec.EventData.Parameters["versions"])
+				assert.Equal(t, false, rec.EventData.Parameters["all"])
+				assert.EqualValues(t, 1, rec.EventData.Parameters["deleted"])
+			},
+		},
+		{
+			name:           "all previous versions",
+			body:           map[string]any{"all": true},
+			manage:         true,
+			expectedStatus: http.StatusOK,
+			validateRecord: func(t *testing.T, rec *model.AuditRecord) {
+				assert.Equal(t, model.AuditStatusSuccess, rec.Status)
+				assert.Equal(t, true, rec.EventData.Parameters["all"])
+				assert.EqualValues(t, 1, rec.EventData.Parameters["deleted"])
+			},
+		},
+		{
+			name:           "non-manager records a 403 fail identifying the target",
+			body:           map[string]any{"all": true},
+			expectedStatus: http.StatusForbidden,
+			validateRecord: func(t *testing.T, rec *model.AuditRecord) {
+				assert.Equal(t, model.AuditStatusFail, rec.Status)
+				assert.Equal(t, http.StatusForbidden, rec.Error.Code)
+				assert.Equal(t, versionTestAgentID, rec.EventData.Parameters[audit.KeyAgentID])
+				assert.NotContains(t, rec.EventData.Parameters, "deleted")
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := setupAgentTestEnvironment(t)
+			defer e.Cleanup(t)
+			mockLicensed(e.mockAPI)
+			original := versionTestAgent()
+			original.CustomInstructions = plantedInstructions
+			seedVersionedAgent(t, e, original, map[string]any{"customInstructions": "edited"})
+			if !tt.manage {
+				e.mockAPI.On("HasPermissionTo", testUserID, model.PermissionManageOthersAgent).Return(false)
+				e.agentStore.agents[versionTestAgentID].CreatorID = "someone-else"
+			}
+			records := e.CaptureAuditRecords()
+
+			recorder := doRequest(e.api, http.MethodDelete, "/agents/agent-1/versions", tt.body, testUserID)
+			require.Equal(t, tt.expectedStatus, recorder.Result().StatusCode, recorder.Body.String())
+
+			require.Len(t, *records, 1, "exactly one audit record must be emitted")
+			rec := (*records)[0]
+			assert.Equal(t, AuditEventDeleteAgentVersions, rec.EventName)
+			assert.Equal(t, testUserID, rec.Actor.UserId)
+			tt.validateRecord(t, rec)
+
+			raw, err := json.Marshal(rec)
+			require.NoError(t, err)
+			assert.NotContains(t, string(raw), plantedInstructions, "audit record must never carry custom instructions")
+		})
+	}
 }
