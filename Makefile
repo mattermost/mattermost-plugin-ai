@@ -240,7 +240,7 @@ loadtest-controller-test: install-go-tools
 loadtest-controller-lint: install-go-tools
 	cd $(LOADTEST_CONTROLLER_DIR) && $(GO) vet ./...
 	cd $(LOADTEST_CONTROLLER_DIR) && $(GOBIN)/golangci-lint run --config $(PWD)/.golangci.yml ./...
-	cd $(LOADTEST_CONTROLLER_DIR) && $(GO) vet -vettool=$(GOBIN)/mattermost-govet -license -license.year=2023 ./...
+	cd $(LOADTEST_CONTROLLER_DIR) && $(GO) vet -vettool=$(GOBIN)/agents-govet ./...
 
 ## Fail when the controller module's go.mod/go.sum drift from `go mod tidy`.
 .PHONY: loadtest-controller-mod-check
@@ -268,21 +268,13 @@ apply:
 # makes Go-version-skew fixes obvious.
 GOLANGCI_LINT_VERSION    ?= v2.13.1
 GOTESTSUM_VERSION        ?= v1.7.0
-MATTERMOST_GOVET_VERSION ?= 2fbfca354651528bffd39e63d7c5a2b32e6adf3e
 
 ## Install go tools.
 install-go-tools:
 	@echo Installing go tools
 	$(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 	$(GO) install gotest.tools/gotestsum@$(GOTESTSUM_VERSION)
-	@if ! $(GO) install github.com/mattermost/mattermost-govet/v2@$(MATTERMOST_GOVET_VERSION); then \
-		echo "" >&2; \
-		echo "*** Failed to install mattermost-govet@$(MATTERMOST_GOVET_VERSION)." >&2; \
-		echo "*** This is usually Go toolchain skew: the pinned commit does not" >&2; \
-		echo "*** build against $$($(GO) version | awk '{print $$3}'). Bump" >&2; \
-		echo "*** MATTERMOST_GOVET_VERSION in the Makefile to a newer commit." >&2; \
-		exit 1; \
-	fi
+	$(GO) build -o $(GOBIN)/agents-govet ./build/govet
 
 ## Runs eslint and golangci-lint
 .PHONY: check-style
@@ -308,7 +300,7 @@ ifneq ($(HAS_SERVER),)
 	$(GO) vet ./...
 	$(GOBIN)/golangci-lint run ./...
 	# npm dependencies can contain Go packages; do not lint third-party sources.
-	$(GO) vet -vettool=$(GOBIN)/mattermost-govet -license -license.year=2023 $$($(GO) list ./... | awk '!/\/node_modules\//')
+	$(GO) vet -vettool=$(GOBIN)/agents-govet $$($(GO) list ./... | awk '!/\/node_modules\//')
 	$(MAKE) loadtest-controller-lint
 endif
 

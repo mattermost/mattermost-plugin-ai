@@ -337,6 +337,8 @@ github.com/mattermost/logr/v2 v2.0.22 h1:npFkXlkAWR9J8payh8ftPcCZvLbHSI125mAM5/r
 github.com/mattermost/logr/v2 v2.0.22/go.mod h1:0sUKpO+XNMZApeumaid7PYaUZPBIydfuWZ0dqixXo+s=
 github.com/mattermost/mattermost/server/public v0.4.5-0.20260911134158-fa302bf9e623 h1:tQR4uG8h1aDi4cq+gc3T5DCn33WYR2hDNFX3bQd87H0=
 github.com/mattermost/mattermost/server/public v0.4.5-0.20260911134158-fa302bf9e623/go.mod h1:zW0LL+/wOKxlCsJwQg6+N47NvUOugtOfx4tL7xxRaKo=
+github.com/mattermost/mattermost/tools/mattermost-govet v0.0.0-20261001132814-e49664194608 h1:u6QQsKcU7TO5faWQsu/Sn4ssDehRlih4szg11ZdQ0LU=
+github.com/mattermost/mattermost/tools/mattermost-govet v0.0.0-20261001132814-e49664194608/go.mod h1:VfsF0TSRtbVl+1rJvo1lDny9K3WhEItKrelefz7aeFc=
 github.com/mattermost/morph v1.1.0 h1:Q9vrJbeM3s2jfweGheq12EFIzdNp9a/6IovcbvOQ6Cw=
 github.com/mattermost/morph v1.1.0/go.mod h1:gD+EaqX2UMyyuzmF4PFh4r33XneQ8Nzi+0E8nXjMa3A=
 github.com/mattermost/testcontainers-mattermost-go v0.1.0 h1:oWNqnU2mua2PYMSornWjjiFQUZqPNeODSQSsWjFcuMw=
@@ -440,8 +442,6 @@ github.com/prometheus/common v0.70.1/go.mod h1:VdFUQDMZK3VLkurFUVhia6uys/0suUp86
 github.com/prometheus/procfs v0.0.0-20180725123919-05ee40e3a273/go.mod h1:c3At6R/oaqEKCNdg8wHV1ftS6bRYblBhIjjI8uT2IGk=
 github.com/prometheus/procfs v0.21.1 h1:GljZCt+zSTS+NZq88cyQ1LjZ+RCHp3uVuabBWA5+OJI=
 github.com/prometheus/procfs v0.21.1/go.mod h1:aB55Cww9pdSJVHk0hUf0inxWyyjPogFIjmHKYgMKmtY=
-github.com/quasilyte/go-ruleguard/dsl v0.3.23 h1:lxjt5B6ZCiBeeNO8/oQsegE6fLeCzuMRoVWSkXC4uvY=
-github.com/quasilyte/go-ruleguard/dsl v0.3.23/go.mod h1:KeCP03KrjuSO0H1kTuZQCWlQPulDV6YMIXmpQss17rU=
 github.com/quic-go/go-ossfuzz-seeds v0.1.0 h1:APacT+iIaNF6fd8AGEiN3bT/Jtkd2jz4v4TzM7MFjy0=
 github.com/quic-go/go-ossfuzz-seeds v0.1.0/go.mod h1:3IOHRbJIc+L6YKMwfDtJAM9Vj9k0YY4muhuyUYk5tbk=
 github.com/quic-go/qpack v0.6.0 h1:g7W+BMYynC1LbYLSqRt8PBg5Tgwxn214ZZR34VIOjz8=
