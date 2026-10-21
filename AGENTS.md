@@ -47,6 +47,8 @@ Most Go packages live at the **repo root**, not under `server/`.
 
 Linters (golangci-lint, ESLint, gofmt/goimports, header check, editorconfig) already enforce formatting, imports, error checking, license headers, and indentation. The rules below are the ones a linter cannot enforce.
 
+Repo-specific guards also run in `make check-style`: `build/ruleguard/rules.go` (timeout-less `http.Client`, `context.Background`/`TODO` in production code, `t.Fatal` in HTTP handlers), testifylint `go-require`, `webapp/eslint-plugin-agents` (jsx-a11y rules that also see same-file styled-components), and `e2e/eslint-rules`. Suppress a legitimate case on that line with the reason: `//nolint:gocritic // <reason>` or `// eslint-disable-next-line <rule> -- <reason>`.
+
 - File names: `snake_case.go` / `snake_case.ts(x)`.
 - TypeScript/React: PascalCase components, strict typing, **always styled-components**, never inline `style={{...}}`.
 - New user-facing strings must go through i18n (`make i18n-extract` picks them up).
@@ -105,6 +107,7 @@ The plugin emits OpenTelemetry traces. Agent-relevant rules:
 - Plugin config is migrated to the plugin DB on activation. For automation, read/write `GET`/`PUT /plugins/mattermost-ai/admin/config` rather than patching the Mattermost server config.
 - The embedded MCP server requires `SiteURL` to be set on the Mattermost server, and uses in-memory transport (no HTTP). On tool name collisions across MCP servers, first-registered wins; later duplicates are skipped with a warning.
 - `public/bridgeclient/` is consumed by other plugins — treat its exported API as frozen. It is a package of the root module (no own `go.mod`), not HTTP assets; `HAS_PUBLIC` is intentionally cleared in the Makefile. Changes there are covered by the root-module lint/test gates.
+- golangci-lint caches results without keying on `build/ruleguard/rules.go`; run `bin/golangci-lint cache clean` after editing a rule or it appears to have no effect. The rules file's `dsl` import resolves through the module being linted, which is why the root and `loadtest/controller` modules both require it.
 - A fresh checkout does not compile: run `make apply` first to generate `server/manifest.go` (`undefined: manifest` errors otherwise).
 - The repo has three Go modules: the root, `loadtest/controller/`, and `cmd/evalviewer/`. Go version bumps, `go mod tidy`, and `go fix` must be run in each.
 - `webapp/node_modules/` contains stray Go files that `./...` matches; for sweeping Go commands use `$(go list ./... | grep -v node_modules)`.
