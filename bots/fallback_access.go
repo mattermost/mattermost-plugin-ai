@@ -94,12 +94,8 @@ func (w *fallbackAccessLLM) describeFallbacks(request *llm.CompletionRequest) {
 	if systemIdx < 0 {
 		return
 	}
-	note := fmt.Sprintf(fallbackModelsNote, strings.Join(names, ", "))
-	if strings.Contains(request.Posts[systemIdx].Message, note) {
-		return
-	}
 	request.Posts = slices.Clone(request.Posts)
-	request.Posts[systemIdx].Message += "\n\n" + note
+	request.Posts[systemIdx].Message += "\n\n" + fmt.Sprintf(fallbackModelsNote, strings.Join(names, ", "))
 }
 
 // reachableFallbackModels mirrors how Bifrost attaches the chain: a
