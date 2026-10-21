@@ -1,6 +1,9 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 
 import { AIMockHarness, RunAIMockHarness, setupAimockTestPage } from 'helpers/aimock-harness';
+import { MattermostPage } from 'helpers/mm';
+import MattermostContainer from 'helpers/mmcontainer';
+import { AIMOCK_BOT_NAME } from 'helpers/plugincontainer';
 
 const PHASE3_STREAMING_CURSOR_PROMPT = 'phase3-streaming-cursor-001';
 const PHASE3_STREAMING_CURSOR_MARKER = 'Streaming cursor marker part one two three complete.';
@@ -16,6 +19,36 @@ const PHASE3_THREAD_PERSIST_PROMPT = 'phase3-thread-persist-001';
 const PHASE3_STOP_GENERATING_PROMPT = 'phase3-stop-generating-001';
 const PHASE3_STOP_GENERATING_PREFIX = 'Stop generating prefix marker';
 const PHASE3_STOP_GENERATING_TAIL = 'large scale application development.';
+
+const PHASE3_STOP_CHANNEL_PROMPT = 'phase3-stop-generating-channel-001';
+const PHASE3_STOP_CHANNEL_PREFIX = 'Channel stop prefix marker';
+const PHASE3_STOP_CHANNEL_TAIL = 'final channel stop tail.';
+
+const REQUESTER_USERNAME = 'regularuser';
+const ONLOOKER_USERNAME = 'seconduser';
+const REQUESTER_STOPPED_NOTICE = 'You stopped generating this response.';
+const ONLOOKER_STOPPED_NOTICE = `@${REQUESTER_USERNAME} stopped generating this response.`;
+
+async function openReplyThread(page: Page): Promise<void> {
+    const replyIndicator = page.getByText(/\d+ repl/).last();
+    await expect(replyIndicator).toBeVisible({ timeout: 60000 });
+    await replyIndicator.click();
+    await expect(page.locator('#rhsContainer')).toBeVisible({ timeout: 10000 });
+}
+
+async function prepareChannelViewers(mattermost: MattermostContainer): Promise<void> {
+    for (const username of [REQUESTER_USERNAME, ONLOOKER_USERNAME]) {
+        const client = await mattermost.getClient(username, username);
+        const me = await client.getMe();
+        await client.savePreferences(me.id, [
+            { user_id: me.id, category: 'tutorial_step', name: me.id, value: '999' },
+            { user_id: me.id, category: 'onboarding_task_list', name: 'onboarding_task_list_show', value: 'false' },
+            { user_id: me.id, category: 'onboarding_task_list', name: 'onboarding_task_list_open', value: 'false' },
+            { user_id: me.id, category: 'drafts', name: 'drafts_tour_tip_showed', value: JSON.stringify({ drafts_tour_tip_showed: true }) },
+            { user_id: me.id, category: 'crt_thread_pane_step', name: me.id, value: '999' },
+        ]);
+    }
+}
 
 test.describe('Streaming and Persistence - aimock', () => {
     test.describe.configure({ mode: 'serial' });
@@ -121,6 +154,7 @@ test.describe('Stop Generating Button - aimock', () => {
                 enabledNativeTools: [],
             },
         });
+        await prepareChannelViewers(harness.mattermost);
     });
 
     test.afterAll(async () => {
@@ -149,5 +183,49 @@ test.describe('Stop Generating Button - aimock', () => {
         const content = await postText.textContent();
         expect(content).toContain(PHASE3_STOP_GENERATING_PREFIX);
         expect(content).not.toContain(PHASE3_STOP_GENERATING_TAIL);
+        await expect(page.getByTestId('llm-bot-generation-stopped')).toHaveText(REQUESTER_STOPPED_NOTICE);
+    });
+
+    test('Stop in a channel is shown to the requester and onlookers', async ({ browser }) => {
+        test.setTimeout(180000);
+
+        const baseUrl = harness.mattermost.url();
+        const channelUrl = `${baseUrl}/test/channels/off-topic`;
+        const requesterContext = await browser.newContext();
+        const onlookerContext = await browser.newContext();
+
+        try {
+            const requesterPage = await requesterContext.newPage();
+            const onlookerPage = await onlookerContext.newPage();
+            const requester = new MattermostPage(requesterPage);
+            await requester.login(baseUrl, REQUESTER_USERNAME, REQUESTER_USERNAME);
+            await new MattermostPage(onlookerPage).login(baseUrl, ONLOOKER_USERNAME, ONLOOKER_USERNAME);
+            await requesterPage.goto(channelUrl);
+            await onlookerPage.goto(channelUrl);
+
+            await requester.mentionBot(AIMOCK_BOT_NAME, PHASE3_STOP_CHANNEL_PROMPT);
+            await openReplyThread(requesterPage);
+            await openReplyThread(onlookerPage);
+
+            const requesterPost = requesterPage.locator('#rhsContainer [data-testid="llm-bot-post"]').last();
+            const onlookerPost = onlookerPage.locator('#rhsContainer [data-testid="llm-bot-post"]').last();
+            await expect(requesterPost).toContainText(PHASE3_STOP_CHANNEL_PREFIX, { timeout: 60000 });
+            await expect(onlookerPost).toContainText(PHASE3_STOP_CHANNEL_PREFIX, { timeout: 30000 });
+            await expect(onlookerPost.getByTestId('stop-generating-button')).toHaveCount(0);
+
+            await requesterPost.getByTestId('stop-generating-button').click();
+
+            await expect(requesterPost.getByTestId('llm-bot-generation-stopped')).toHaveText(REQUESTER_STOPPED_NOTICE, { timeout: 15000 });
+            await expect(onlookerPost.getByTestId('llm-bot-generation-stopped')).toHaveText(ONLOOKER_STOPPED_NOTICE, { timeout: 15000 });
+            await expect(onlookerPost).not.toContainText(PHASE3_STOP_CHANNEL_TAIL);
+            // The stop is persisted on the post, so a later visit still explains the cut-off reply.
+            await onlookerPage.reload();
+            await openReplyThread(onlookerPage);
+            await expect(onlookerPage.locator('#rhsContainer [data-testid="llm-bot-post"]').last().getByTestId('llm-bot-generation-stopped'))
+                .toHaveText(ONLOOKER_STOPPED_NOTICE, { timeout: 30000 });
+        } finally {
+            await requesterContext.close();
+            await onlookerContext.close();
+        }
     });
 });
