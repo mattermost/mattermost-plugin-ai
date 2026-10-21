@@ -98,6 +98,19 @@ func autoReplySecondBotConfig() llm.BotConfig {
 // LLM), a licensed server, and a fake auto-reply settings lookup wired in.
 func setupAutoReplyTestEnv(t *testing.T, botConfigs []llm.BotConfig, llmResponses ...*llm.TextStreamResult) *autoReplyTestEnv {
 	t.Helper()
+	return setupAutoReplyTestEnvWithTools(t, botConfigs, nil, &testToolCallingConfig{}, llmResponses...)
+}
+
+// setupAutoReplyTestEnvWithTools is setupAutoReplyTestEnv with the given
+// built-in tools cataloged for every agent and the given tool-calling config.
+func setupAutoReplyTestEnvWithTools(
+	t *testing.T,
+	botConfigs []llm.BotConfig,
+	builtInTools []llm.Tool,
+	toolCallingConfig *testToolCallingConfig,
+	llmResponses ...*llm.TextStreamResult,
+) *autoReplyTestEnv {
+	t.Helper()
 
 	mockAPI := &plugintest.API{}
 	mockAPI.On("GetConfig").Return(&model.Config{}).Maybe()
@@ -143,7 +156,7 @@ func setupAutoReplyTestEnv(t *testing.T, botConfigs []llm.BotConfig, llmResponse
 	}
 
 	mcpMgr := &testMCPClientManager{}
-	contextBuilder := llmcontext.NewLLMContextBuilder(pluginClient, &testToolProvider{}, mcpMgr, &mockConfigProvider{})
+	contextBuilder := llmcontext.NewLLMContextBuilder(pluginClient, &testToolProvider{tools: builtInTools}, mcpMgr, &mockConfigProvider{})
 	promptsManager, err := llm.NewPrompts(prompts.PromptsFolder)
 	require.NoError(t, err)
 
@@ -160,7 +173,7 @@ func setupAutoReplyTestEnv(t *testing.T, botConfigs []llm.BotConfig, llmResponse
 		licenseChecker,
 		i18n.Init(),
 		nil, // meetings
-		&testToolCallingConfig{},
+		toolCallingConfig,
 	)
 	convs.SetConversationService(convSvc)
 

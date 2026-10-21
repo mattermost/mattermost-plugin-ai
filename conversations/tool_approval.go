@@ -718,7 +718,7 @@ func (c *Conversations) streamToolFollowUp(
 	// The continuation post may already carry attachments from an earlier round.
 	llmContext.SetResponseAttachmentBudget(maxResponseAttachments - len(post.FileIds))
 
-	toolsDisabled := applyToolAvailability(llmContext, isDM, c.channelMentionToolCallingEnabled())
+	toolsDisabled := applyToolAvailability(llmContext, isDM, c.channelMentionToolCallingEnabled(), llm.ToolDisabledOutsideDM)
 
 	if !isDM && !toolsDisabled && channelToolsAutoRunEverywhereOnly {
 		c.applyBotChannelAutoEverywhereToolFilter(llmContext)

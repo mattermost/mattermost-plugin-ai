@@ -202,7 +202,7 @@ func TestApplyBotChannelAutoEverywhereToolFilter(t *testing.T) {
 	tools := llmContext.Tools.GetTools()
 	require.Len(t, tools, 1)
 	require.Equal(t, "everywhere_tool", tools[0].Name)
-	require.Len(t, llmContext.DisabledToolsInfo, 3)
+	require.Len(t, llmContext.ToolsDisabledUnattended(), 3)
 }
 
 func TestApplyBotChannelAutoEverywhereToolFilter_NamespacedToolUsesBarePolicy(t *testing.T) {
@@ -229,7 +229,7 @@ func TestApplyBotChannelAutoEverywhereToolFilter_NamespacedToolUsesBarePolicy(t 
 	require.Equal(t, "server__everywhere_tool", tools[0].Name)
 }
 
-func TestApplyToolAvailabilityBeforeBotChannelFilterPreservesDisabledToolsInfo(t *testing.T) {
+func TestApplyToolAvailabilityBeforeBotChannelFilterRecordsUnattendedTools(t *testing.T) {
 	origin := "https://mcp.example.com/mcp"
 	c := &Conversations{
 		toolPolicyChecker: mapPolicyChecker{
@@ -249,7 +249,7 @@ func TestApplyToolAvailabilityBeforeBotChannelFilterPreservesDisabledToolsInfo(t
 		{Name: "ask_tool", Description: "needs approval", ServerOrigin: origin, Resolver: func(_ context.Context, _ *llm.Context, _ llm.ToolArgumentGetter) (string, error) { return "", nil }},
 	})
 
-	toolsDisabled := applyToolAvailability(llmContext, false, true)
+	toolsDisabled := applyToolAvailability(llmContext, false, true, llm.ToolDisabledOutsideDM)
 	require.False(t, toolsDisabled)
 
 	c.applyBotChannelAutoEverywhereToolFilter(llmContext)
@@ -258,8 +258,8 @@ func TestApplyToolAvailabilityBeforeBotChannelFilterPreservesDisabledToolsInfo(t
 	require.Len(t, tools, 1)
 	require.Equal(t, "everywhere_tool", tools[0].Name)
 
-	disabledNames := make([]string, 0, len(llmContext.DisabledToolsInfo))
-	for _, info := range llmContext.DisabledToolsInfo {
+	disabledNames := make([]string, 0, len(llmContext.DisabledTools))
+	for _, info := range llmContext.ToolsDisabledUnattended() {
 		disabledNames = append(disabledNames, info.Name)
 	}
 	require.ElementsMatch(t, []string{"builtin", "ask_tool"}, disabledNames)
@@ -280,7 +280,7 @@ func TestApplyBotChannelAutoEverywhereToolFilter_nilCheckerFailClosed(t *testing
 	c.applyBotChannelAutoEverywhereToolFilter(llmContext)
 
 	require.Empty(t, llmContext.Tools.GetTools())
-	require.Len(t, llmContext.DisabledToolsInfo, 2)
+	require.Len(t, llmContext.ToolsDisabledUnattended(), 2)
 }
 
 func TestBotChannelAutoEverywhereFilterKeepsMetaTools(t *testing.T) {
@@ -313,8 +313,8 @@ func TestBotChannelAutoEverywhereFilterKeepsMetaTools(t *testing.T) {
 	}
 	require.ElementsMatch(t, []string{mcp.SearchToolsName, mcp.LoadToolName, "safe_tool"}, toolNames)
 
-	disabledNames := make([]string, 0, len(llmContext.DisabledToolsInfo))
-	for _, info := range llmContext.DisabledToolsInfo {
+	disabledNames := make([]string, 0, len(llmContext.DisabledTools))
+	for _, info := range llmContext.ToolsDisabledUnattended() {
 		disabledNames = append(disabledNames, info.Name)
 	}
 	require.ElementsMatch(t, []string{"builtin", "ask_tool"}, disabledNames)
@@ -341,8 +341,8 @@ func TestBotChannelAutoEverywhereFilterKeepsMetaToolsWithNilChecker(t *testing.T
 	}
 	require.ElementsMatch(t, []string{mcp.SearchToolsName, mcp.LoadToolName}, toolNames)
 
-	disabledNames := make([]string, 0, len(llmContext.DisabledToolsInfo))
-	for _, info := range llmContext.DisabledToolsInfo {
+	disabledNames := make([]string, 0, len(llmContext.DisabledTools))
+	for _, info := range llmContext.ToolsDisabledUnattended() {
 		disabledNames = append(disabledNames, info.Name)
 	}
 	require.ElementsMatch(t, []string{"builtin", "ask_tool"}, disabledNames)
@@ -389,8 +389,8 @@ func TestBotChannelAutoEverywhereFilterKeepsAutoExecuteBuiltInWithNilChecker(t *
 	}
 	require.ElementsMatch(t, []string{"CreateFile"}, toolNames)
 
-	disabledNames := make([]string, 0, len(llmContext.DisabledToolsInfo))
-	for _, info := range llmContext.DisabledToolsInfo {
+	disabledNames := make([]string, 0, len(llmContext.DisabledTools))
+	for _, info := range llmContext.ToolsDisabledUnattended() {
 		disabledNames = append(disabledNames, info.Name)
 	}
 	require.ElementsMatch(t, []string{"builtin"}, disabledNames)
@@ -565,7 +565,7 @@ func TestChannelMentionSystemPromptDynamicToolWorkflow(t *testing.T) {
 			)
 			require.NotNil(t, llmContext.Tools.GetTool(mcp.SearchToolsName))
 
-			toolsDisabled := applyToolAvailability(llmContext, tt.channelType == model.ChannelTypeDirect, tt.allowToolsInChannel)
+			toolsDisabled := applyToolAvailability(llmContext, tt.channelType == model.ChannelTypeDirect, tt.allowToolsInChannel, llm.ToolDisabledOutsideDM)
 			require.Equal(t, tt.wantToolsDisabled, toolsDisabled)
 
 			systemPrompt, err := promptsEngine.Format(prompts.PromptDirectMessageQuestionSystem, llmContext)

@@ -290,7 +290,7 @@ func (c *Conversations) regenerateViaConversation(
 	)
 
 	isDM := mmapi.IsDMWith(bot.GetMMBot().UserId, channel)
-	toolsDisabled := applyToolAvailability(llmContext, isDM, c.channelMentionToolCallingEnabled())
+	toolsDisabled := applyToolAvailability(llmContext, isDM, c.channelMentionToolCallingEnabled(), llm.ToolDisabledOutsideDM)
 
 	// Build the request BEFORE scrubbing — ExcludeAfterPostID needs the anchor.
 	// AllowUnsharedToolContent on DMs is a no-op (DM tool_results are shared)

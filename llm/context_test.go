@@ -36,6 +36,76 @@ func TestContext_SetBotFields(t *testing.T) {
 	assert.Equal(t, "Be helpful and concise", c.CustomInstructions)
 }
 
+func TestContextToolCallability(t *testing.T) {
+	tests := []struct {
+		name                string
+		tools               []string
+		disabled            []DisabledTool
+		wantCallable        []string
+		wantOutsideDM       []string
+		wantUnattended      []string
+		wantNotCallableTool string
+	}{
+		{
+			name:                "every cataloged tool is callable",
+			tools:               []string{"b_tool", "a_tool"},
+			wantCallable:        []string{"a_tool", "b_tool"},
+			wantNotCallableTool: "missing_tool",
+		},
+		{
+			name:  "disabled tools are not callable and keep their reason",
+			tools: []string{"a_tool", "b_tool", "c_tool"},
+			disabled: []DisabledTool{
+				{ToolInfo: ToolInfo{Name: "a_tool"}, Reason: ToolDisabledOutsideDM},
+				{ToolInfo: ToolInfo{Name: "uncataloged"}, Reason: ToolDisabledUnattended},
+				{ToolInfo: ToolInfo{Name: "c_tool"}, Reason: ToolDisabledUnattended},
+			},
+			wantCallable:        []string{"b_tool"},
+			wantOutsideDM:       []string{"a_tool"},
+			wantUnattended:      []string{"uncataloged", "c_tool"},
+			wantNotCallableTool: "c_tool",
+		},
+		{
+			name:  "a tool disabled twice keeps its first reason",
+			tools: []string{"a_tool"},
+			disabled: []DisabledTool{
+				{ToolInfo: ToolInfo{Name: "a_tool"}, Reason: ToolDisabledOutsideDM},
+				{ToolInfo: ToolInfo{Name: "a_tool"}, Reason: ToolDisabledUnattended},
+			},
+			wantOutsideDM:       []string{"a_tool"},
+			wantNotCallableTool: "a_tool",
+		},
+	}
+
+	names := func(infos []ToolInfo) []string {
+		var result []string
+		for _, info := range infos {
+			result = append(result, info.Name)
+		}
+		return result
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Context{Tools: NewToolStore()}
+			for _, name := range tt.tools {
+				c.Tools.AddTools([]Tool{{Name: name}})
+			}
+			for _, tool := range tt.disabled {
+				c.DisableTools(tool.Reason, tool.ToolInfo)
+			}
+
+			assert.Equal(t, tt.wantCallable, names(c.CallableToolsInfo()))
+			assert.Equal(t, tt.wantOutsideDM, names(c.ToolsDisabledOutsideDM()))
+			assert.Equal(t, tt.wantUnattended, names(c.ToolsDisabledUnattended()))
+			for _, name := range tt.wantCallable {
+				assert.True(t, c.IsToolCallable(name), name)
+			}
+			assert.False(t, c.IsToolCallable(tt.wantNotCallableTool))
+		})
+	}
+}
+
 func TestContext_CustomPromptVars(t *testing.T) {
 	tests := []struct {
 		name     string

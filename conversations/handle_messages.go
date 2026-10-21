@@ -273,6 +273,12 @@ func (c *Conversations) handleMentions(ctx context.Context, bot *bots.Bot, post 
 	hasToolPolicyChecker := c.toolPolicyChecker != nil
 	allowToolsInChannel := computeAllowToolsInChannel(configEnabled, post, postingUser, hasToolPolicyChecker)
 	channelToolsAutoRunEverywhereOnly := configEnabled && isBotActivateAI(post, postingUser) && hasToolPolicyChecker
+	// With channel tool calling enabled, tools are off only because nobody is
+	// present to approve them.
+	toolsDisabledReason := llm.ToolDisabledOutsideDM
+	if configEnabled {
+		toolsDisabledReason = llm.ToolDisabledUnattended
+	}
 
 	responseRootID := post.Id
 	if post.RootId != "" {
@@ -295,7 +301,7 @@ func (c *Conversations) handleMentions(ctx context.Context, bot *bots.Bot, post 
 		}
 	}()
 
-	return c.handleMentionViaConversation(ctx, bot, post, postingUser, channel, allowToolsInChannel, channelToolsAutoRunEverywhereOnly, responsePost, progress)
+	return c.handleMentionViaConversation(ctx, bot, post, postingUser, channel, allowToolsInChannel, toolsDisabledReason, channelToolsAutoRunEverywhereOnly, responsePost, progress)
 }
 
 // handleMentionViaConversation processes a channel mention using the conversation entity model.
@@ -310,6 +316,7 @@ func (c *Conversations) handleMentionViaConversation(
 	postingUser *model.User,
 	channel *model.Channel,
 	allowToolsInChannel bool,
+	toolsDisabledReason llm.ToolDisabledReason,
 	channelToolsAutoRunEverywhereOnly bool,
 	responsePost *model.Post,
 	progress *responseProgressReporter,
@@ -329,7 +336,7 @@ func (c *Conversations) handleMentionViaConversation(
 	// toolsDisabled machinery below.
 	extraOpts = append(extraOpts, c.contextBuilder.WithLLMContextResponseFiles())
 	// Build the context once WITH tools so the system prompt can reference
-	// .Tools and .DisabledToolsInfo.
+	// .Tools and .DisabledTools.
 	llmContext := c.buildConversationContextWithTools(
 		ctx,
 		bot, postingUser, channel,
@@ -338,7 +345,7 @@ func (c *Conversations) handleMentionViaConversation(
 	)
 	progress.Advance(responseProgressLoadingConversation)
 
-	toolsDisabled := applyToolAvailability(llmContext, false, allowToolsInChannel)
+	toolsDisabled := applyToolAvailability(llmContext, false, allowToolsInChannel, toolsDisabledReason)
 	if channelToolsAutoRunEverywhereOnly {
 		c.applyBotChannelAutoEverywhereToolFilter(llmContext)
 	}
