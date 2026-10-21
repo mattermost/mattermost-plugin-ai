@@ -130,7 +130,7 @@ async function renderPromptViaAPI(
     client: any,
     promptId: string,
     channelId = '',
-    botUsername = '',
+    botId = '',
 ) {
     const baseUrl = mattermost.url();
     const response = await fetch(`${baseUrl}/plugins/mattermost-ai/custom-prompts/${promptId}/render`, {
@@ -139,7 +139,7 @@ async function renderPromptViaAPI(
             Authorization: `Bearer ${client.getToken()}`,
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ channel_id: channelId, bot_username: botUsername }),
+        body: JSON.stringify({ channel_id: channelId, bot_id: botId }),
     });
     if (!response.ok) {
         throw new Error(`renderPromptViaAPI failed: ${response.status} ${response.statusText}`);
@@ -258,7 +258,7 @@ test.describe('Custom Prompts Management Modal', () => {
                 store.dispatch({type: 'SHOW_CUSTOM_PROMPTS_MODAL', show: false});
             }
         });
-        await page.waitForTimeout(500);
+        await expect(page.getByRole('dialog', {name: 'Custom Prompts'})).toBeHidden({ timeout: 10000 });
 
         // Reopen
         await openCustomPromptsModal(page);
