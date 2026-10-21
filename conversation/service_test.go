@@ -758,10 +758,12 @@ func TestBuildCompletionRequest_RedactsUnsharedToolContentByDefault(t *testing.T
 	require.NoError(t, err)
 	convID := result.ConversationID
 
-	// Two tool calls, one shared, one unshared.
+	// One shared call, one the user kept private, and one awaiting the
+	// share decision.
 	assistantBlocks := []ContentBlock{
 		{Type: BlockTypeToolUse, ID: "tc-shared", Name: "search", Input: json.RawMessage(`{}`), Status: StatusSuccess, Shared: new(true)},
-		{Type: BlockTypeToolUse, ID: "tc-private", Name: "read_dm", Input: json.RawMessage(`{}`), Status: StatusSuccess, Shared: new(false)},
+		{Type: BlockTypeToolUse, ID: "tc-private", Name: "read_dm", Input: json.RawMessage(`{"channel":"secret-dm"}`), Status: StatusSuccess, Shared: new(false)},
+		{Type: BlockTypeToolUse, ID: "tc-pending", Name: "read_dm", Input: json.RawMessage(`{"channel":"other-dm"}`), Status: StatusSuccess, Shared: new(false)},
 	}
 	assistantContent, err := json.Marshal(assistantBlocks)
 	require.NoError(t, err)
@@ -773,7 +775,8 @@ func TestBuildCompletionRequest_RedactsUnsharedToolContentByDefault(t *testing.T
 
 	resultBlocks := []ContentBlock{
 		{Type: BlockTypeToolResult, ToolUseID: "tc-shared", Content: "PUBLIC DATA", Status: StatusSuccess, Shared: new(true)},
-		{Type: BlockTypeToolResult, ToolUseID: "tc-private", Content: "PRIVATE SECRET", Status: StatusSuccess, Shared: new(false)},
+		{Type: BlockTypeToolResult, ToolUseID: "tc-private", Content: "PRIVATE SECRET", Status: StatusSuccess, Shared: new(false), DecidedAt: new(model.GetMillis())},
+		{Type: BlockTypeToolResult, ToolUseID: "tc-pending", Content: "PENDING SECRET", Status: StatusSuccess, Shared: new(false)},
 	}
 	resultContent, err := json.Marshal(resultBlocks)
 	require.NoError(t, err)
@@ -803,9 +806,17 @@ func TestBuildCompletionRequest_RedactsUnsharedToolContentByDefault(t *testing.T
 		require.NoError(t, err)
 		results := resultsByID(req)
 		assert.Equal(t, "PUBLIC DATA", results["tc-shared"])
-		assert.Equal(t, UnsharedToolResultRedaction, results["tc-private"],
+		assert.Equal(t, "[arguments and result not shared by user]", results["tc-private"],
 			"kept-private tool_result content must never leak into the default LLM prompt; "+
 				"a channel-visible response could paraphrase it")
+		assert.Equal(t, "[result pending the user's decision to share it]", results["tc-pending"])
+		for _, p := range req.Posts {
+			for _, tc := range p.ToolUse {
+				if tc.ID != "tc-shared" {
+					assert.JSONEq(t, `{}`, string(tc.Arguments))
+				}
+			}
+		}
 	})
 
 	t.Run("empty BuildOptions still redacts", func(t *testing.T) {
@@ -822,6 +833,7 @@ func TestBuildCompletionRequest_RedactsUnsharedToolContentByDefault(t *testing.T
 		results := resultsByID(req)
 		assert.Equal(t, "PUBLIC DATA", results["tc-shared"])
 		assert.Equal(t, "PRIVATE SECRET", results["tc-private"])
+		assert.Equal(t, "PENDING SECRET", results["tc-pending"])
 	})
 }
 

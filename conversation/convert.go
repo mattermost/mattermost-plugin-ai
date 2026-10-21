@@ -23,10 +23,14 @@ const DefaultMaxFileSize = int64(5 * 1024 * 1024)
 // only and fetched on demand via the read_file tool. ~8 KiB ≈ 2000 tokens.
 const InlineFileMaxBytes = int64(8 * 1024)
 
-// UnsharedToolResultRedaction replaces tool_result content the requester has
-// not shared, preserving the tool_use/tool_result pairing required by LLM
-// providers.
-const UnsharedToolResultRedaction = "[result not shared by user]"
+// UnsharedToolResultRedaction replaces tool_result content the requester
+// decided not to share, preserving the tool_use/tool_result pairing required
+// by LLM providers. Unshared tool_use arguments are redacted alongside it.
+const UnsharedToolResultRedaction = "[arguments and result not shared by user]"
+
+// PendingShareToolResultRedaction replaces tool_result content whose share
+// decision the requester has not made yet.
+const PendingShareToolResultRedaction = "[result pending the user's decision to share it]"
 
 // NotExecutedToolResult is replayed as the result of a tool call that was
 // still pending or accepted when the turn ended, so the model does not read
@@ -49,7 +53,8 @@ type PostConversionOptions struct {
 
 // BlocksToPost converts a slice of content blocks and a role string into an llm.Post.
 // When opts.RedactUnshared is true, tool_result content whose Shared flag is not
-// true is replaced with UnsharedToolResultRedaction, and tool_use arguments
+// true is replaced with UnsharedToolResultRedaction (or
+// PendingShareToolResultRedaction before the share decision), and tool_use arguments
 // whose Shared flag is not true are replaced with an empty JSON object so the
 // LLM cannot paraphrase private tool parameters into a channel-visible reply.
 func BlocksToPost(
@@ -128,6 +133,9 @@ func BlocksToPost(
 			content := block.Content
 			if opts.RedactUnshared && (block.Shared == nil || !*block.Shared) {
 				content = UnsharedToolResultRedaction
+				if block.DecidedAt == nil {
+					content = PendingShareToolResultRedaction
+				}
 			}
 			resultIDs[block.ToolUseID] = true
 			merged := false

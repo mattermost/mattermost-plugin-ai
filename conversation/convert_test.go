@@ -190,14 +190,16 @@ func TestBlocksToPost_RedactUnshared(t *testing.T) {
 			Status:      StatusSuccess,
 			Shared:      new(false),
 		},
-		{Type: BlockTypeToolResult, ToolUseID: "t-private", Content: "SECRET", Status: StatusSuccess, Shared: new(false)},
+		{Type: BlockTypeToolResult, ToolUseID: "t-private", Content: "SECRET", Status: StatusSuccess, Shared: new(false), DecidedAt: new(int64(1000))},
+		{Type: BlockTypeToolUse, ID: "t-pending", Name: "read_dm", Input: json.RawMessage(`{"channel":"other-dm"}`), Status: StatusSuccess, Shared: new(false)},
+		{Type: BlockTypeToolResult, ToolUseID: "t-pending", Content: "PENDING SECRET", Status: StatusSuccess, Shared: new(false)},
 		{Type: BlockTypeToolUse, ID: "t-nilshared", Name: "foo", Input: json.RawMessage(`{"token":"xyz"}`), Status: StatusSuccess},
 		{Type: BlockTypeToolResult, ToolUseID: "t-nilshared", Content: "ALSO SECRET", Status: StatusSuccess},
 	}
 
 	t.Run("redactUnshared=false", func(t *testing.T) {
 		got := BlocksToPost(blocks, "assistant", PostConversionOptions{})
-		require.Len(t, got.ToolUse, 3)
+		require.Len(t, got.ToolUse, 4)
 		results := map[string]string{}
 		args := map[string]string{}
 		for _, tc := range got.ToolUse {
@@ -206,6 +208,7 @@ func TestBlocksToPost_RedactUnshared(t *testing.T) {
 		}
 		assert.Equal(t, "PUBLIC", results["t-shared"])
 		assert.Equal(t, "SECRET", results["t-private"])
+		assert.Equal(t, "PENDING SECRET", results["t-pending"])
 		assert.Equal(t, "ALSO SECRET", results["t-nilshared"])
 		assert.JSONEq(t, `{"q":"public"}`, args["t-shared"])
 		assert.JSONEq(t, `{"channel":"secret-dm"}`, args["t-private"])
@@ -214,7 +217,7 @@ func TestBlocksToPost_RedactUnshared(t *testing.T) {
 
 	t.Run("redactUnshared=true", func(t *testing.T) {
 		got := BlocksToPost(blocks, "assistant", PostConversionOptions{RedactUnshared: true})
-		require.Len(t, got.ToolUse, 3)
+		require.Len(t, got.ToolUse, 4)
 		results := map[string]string{}
 		args := map[string]string{}
 		for _, tc := range got.ToolUse {
@@ -222,13 +225,15 @@ func TestBlocksToPost_RedactUnshared(t *testing.T) {
 			args[tc.ID] = string(tc.Arguments)
 		}
 		assert.Equal(t, "PUBLIC", results["t-shared"])
-		assert.Equal(t, UnsharedToolResultRedaction, results["t-private"])
-		assert.Equal(t, UnsharedToolResultRedaction, results["t-nilshared"])
+		assert.Equal(t, "[arguments and result not shared by user]", results["t-private"])
+		assert.Equal(t, "[result pending the user's decision to share it]", results["t-pending"])
+		assert.Equal(t, "[result pending the user's decision to share it]", results["t-nilshared"])
 		// Shared tool_use arguments pass through; unshared and nil-shared
 		// arguments are redacted to empty JSON so the LLM cannot paraphrase
 		// private tool parameters into a channel-visible reply.
 		assert.JSONEq(t, `{"q":"public"}`, args["t-shared"])
 		assert.JSONEq(t, `{}`, args["t-private"])
+		assert.JSONEq(t, `{}`, args["t-pending"])
 		assert.JSONEq(t, `{}`, args["t-nilshared"])
 		for _, tc := range got.ToolUse {
 			if tc.ID == "t-private" {
