@@ -29,7 +29,7 @@ func newSanitizingLogger(inner schemas.Logger, apiKeys ...string) schemas.Logger
 // API keys. Pass the primary key plus every fallback key so a fallback
 // provider's credential never leaks through Bifrost's own request/error logs.
 func newBifrostClient(account schemas.Account, apiKeys ...string) (*bifrostcore.Bifrost, error) {
-	return bifrostcore.Init(context.Background(), schemas.BifrostConfig{
+	return bifrostcore.Init(context.Background(), schemas.BifrostConfig{ //nolint:gocritic // client-lifetime context; Init outlives any single request
 		Account:    account,
 		LLMPlugins: []schemas.LLMPlugin{reasoningHopPlugin{}},
 		Logger:     newSanitizingLogger(bifrostcore.NewDefaultLogger(schemas.LogLevelInfo), apiKeys...),

@@ -393,7 +393,7 @@ func (h *PluginMCPHandlers) toolAccessDenied(ctx context.Context, userID, toolNa
 // discovery timeout. A plugin that fails or times out is skipped; healthy
 // plugins are unaffected.
 func (h *PluginMCPHandlers) discoverProxyTools(ps mcppkg.PluginServerConfig) proxyDiscovery {
-	discoveryCtx, cancel := context.WithTimeout(context.Background(), h.proxyDiscoveryTimeout)
+	discoveryCtx, cancel := context.WithTimeout(context.Background(), h.proxyDiscoveryTimeout) //nolint:gocritic // server build has no request context; bounded by proxyDiscoveryTimeout
 	defer cancel()
 
 	proxyTools, proxyHandlers, err := BuildProxyTools(discoveryCtx, ps, h.sourcePluginAPI)

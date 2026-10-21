@@ -271,7 +271,7 @@ type indexJobSpec struct {
 }
 
 func (s *Indexer) runCatchUpJob(jobStatus *JobStatus) {
-	s.runIndexJob(context.Background(), jobStatus, nil, indexJobSpec{
+	s.runIndexJob(context.Background(), jobStatus, nil, indexJobSpec{ //nolint:gocritic // background job root; no request to inherit
 		panicLog:              "Catch-up job panicked",
 		completeLog:           "Catch-up completed",
 		runMainPass:           true,
@@ -282,7 +282,7 @@ func (s *Indexer) runCatchUpJob(jobStatus *JobStatus) {
 }
 
 func (s *Indexer) runReindexJob(jobStatus *JobStatus, clearIndex bool, deferRun *deferredRun) {
-	s.runIndexJob(context.Background(), jobStatus, deferRun, indexJobSpec{
+	s.runIndexJob(context.Background(), jobStatus, deferRun, indexJobSpec{ //nolint:gocritic // background job root; no request to inherit
 		panicLog:              "Reindex job panicked",
 		completeLog:           "Reindexing completed",
 		clearIndex:            clearIndex,

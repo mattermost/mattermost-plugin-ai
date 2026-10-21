@@ -62,7 +62,7 @@ func NewTranscriber(cfg TranscriptionConfig) (*Transcriber, error) {
 
 // Transcribe converts audio to text using Bifrost.
 func (t *Transcriber) Transcribe(file io.Reader) (*subtitles.Subtitles, error) {
-	bifrostCtx, cancel := schemas.NewBifrostContextWithTimeout(context.Background(), 5*time.Minute)
+	bifrostCtx, cancel := schemas.NewBifrostContextWithTimeout(context.Background(), 5*time.Minute) //nolint:gocritic // Transcriber.Transcribe has no ctx parameter yet; bounded by the timeout
 	defer cancel()
 
 	// Read the file into bytes for the request

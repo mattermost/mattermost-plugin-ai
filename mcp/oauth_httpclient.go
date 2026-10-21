@@ -53,7 +53,7 @@ func (l *limitedReadCloser) Close() error               { return l.closer.Close(
 // whose responses are size-capped, for use with SDK calls (like dynamic
 // client registration) that would otherwise read the body unbounded.
 func (m *OAuthManager) bodyLimitedHTTPClient() *http.Client {
-	base := http.DefaultClient
+	base := http.DefaultClient //nolint:gocritic // nil only in tests; production injects the httpservice client, which sets Timeout
 	if m.httpClient != nil {
 		base = m.httpClient
 	}
@@ -69,7 +69,7 @@ func (m *OAuthManager) bodyLimitedHTTPClient() *http.Client {
 // no legitimate reason to redirect, and following one would replay the secrets
 // to the redirect target. Callers treat the returned non-2xx as an error.
 func noRedirectClient(base *http.Client) *http.Client {
-	clientCopy := http.Client{}
+	clientCopy := http.Client{} //nolint:gocritic // nil base only in tests; otherwise a copy of the caller's client and its Timeout
 	if base != nil {
 		clientCopy = *base
 	}

@@ -102,7 +102,7 @@ func (t *otelTracer) EndTrace(_ string) *bschemas.Trace { return nil }
 // nest correctly.
 func (t *otelTracer) StartSpan(ctx context.Context, name string, kind bschemas.SpanKind) (context.Context, bschemas.SpanHandle) {
 	if ctx == nil {
-		ctx = context.Background()
+		ctx = context.Background() //nolint:gocritic // nil-ctx guard for the Bifrost Tracer interface
 	}
 	ctx, span := telemetry.Tracer().Start(ctx, name,
 		trace.WithAttributes(attribute.String("bifrost.span.kind", string(kind))),

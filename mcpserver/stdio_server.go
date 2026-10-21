@@ -56,7 +56,7 @@ func NewStdioServer(config StdioConfig, logger loggerlib.Logger, searchService t
 	)
 
 	// Validate token at startup for STDIO
-	if err := mattermostServer.authProvider.ValidateAuth(context.Background()); err != nil {
+	if err := mattermostServer.authProvider.ValidateAuth(context.Background()); err != nil { //nolint:gocritic // standalone stdio binary startup
 		return nil, fmt.Errorf("startup token validation failed: %w", err)
 	}
 
@@ -84,7 +84,7 @@ func (s *MattermostStdioMCPServer) Serve() error {
 
 // serveStdio starts the server using stdio transport
 func (s *MattermostMCPServer) serveStdio() error {
-	ctx := context.Background()
+	ctx := context.Background() //nolint:gocritic // standalone stdio binary root
 	if cfg, ok := s.config.(StdioConfig); ok && cfg.PersonalAccessToken != "" {
 		// Tool handlers inherit this context. HTTP callbacks (read_file,
 		// semantic search) forward the PAT as a bearer token so the plugin

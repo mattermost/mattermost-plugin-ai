@@ -71,7 +71,7 @@ type Server struct {
 // NewServer constructs a cross-plugin MCP server. The config must have
 // non-empty PluginID, Name, and Path.
 func NewServer(pluginAPI PluginAPI, config Config) *Server {
-	regCtx, regCancel := context.WithCancel(context.Background())
+	regCtx, regCancel := context.WithCancel(context.Background()) //nolint:gocritic // server-lifetime registration context, canceled by Unregister
 	version := config.Version
 	if version == "" {
 		version = "0.0.1"

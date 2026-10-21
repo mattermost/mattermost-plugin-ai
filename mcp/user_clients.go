@@ -430,7 +430,7 @@ func (c *UserClients) recordConnectFailure(mcpErrors *Errors, plan connectPlan) 
 // outlives the request, and is reused by later ones, is not tied to it.
 func cacheableContext(ctx context.Context) context.Context {
 	if ctx == nil {
-		return context.Background()
+		return context.Background() //nolint:gocritic // nil-ctx guard
 	}
 	return context.WithoutCancel(ctx)
 }

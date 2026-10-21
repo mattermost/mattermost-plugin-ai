@@ -236,7 +236,7 @@ func (m *MockLLM) sampleRequest(req llm.CompletionRequest, cfg llm.LanguageModel
 
 func contextOrBackground(ctx context.Context) context.Context {
 	if ctx == nil {
-		return context.Background()
+		return context.Background() //nolint:gocritic // nil-ctx guard
 	}
 	return ctx
 }
