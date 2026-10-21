@@ -1,6 +1,5 @@
 import {StartedTestContainer, GenericContainer, StartedNetwork, Network, Wait} from "testcontainers";
 
-import { test } from "@playwright/test";
 import { withDeadline } from "./deadline";
 
 /**
@@ -71,7 +70,6 @@ export class OpenAIMockContainer {
 	container: StartedTestContainer;
 
 	start = async (network: StartedNetwork) => {
-		test.slow(); // triples a beforeAll's 60 s timeout, which container startup can exceed
 		this.container = await withDeadline("Starting the Smocker container", 5 * 60000, () => new GenericContainer(SMOCKER_IMAGE)
 			.withExposedPorts(8081)
 			.withNetwork(network)

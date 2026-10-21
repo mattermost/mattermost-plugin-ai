@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test';
+import { expect } from '@playwright/test';
+import { containerTest } from 'helpers/container-fixture';
 
 import { AIMockHarness, RunAIMockHarness, setupAimockTestPage } from 'helpers/aimock-harness';
 
@@ -17,27 +18,29 @@ const PHASE3_STOP_GENERATING_PROMPT = 'phase3-stop-generating-001';
 const PHASE3_STOP_GENERATING_PREFIX = 'Stop generating prefix marker';
 const PHASE3_STOP_GENERATING_TAIL = 'large scale application development.';
 
-test.describe('Streaming and Persistence - aimock', () => {
-    test.describe.configure({ mode: 'serial' });
+const harnessTest = () => containerTest(async (own) => {
+    const harness = own(await RunAIMockHarness({
+        fixtureFile: 'llmbot-streaming-persistence.json',
+        bot: {
+            enabledNativeTools: [],
+        },
+    }));
+    return { harness };
+});
+
+const streamingTest = harnessTest();
+
+streamingTest.describe('Streaming and Persistence - aimock', () => {
+    streamingTest.describe.configure({ mode: 'serial' });
 
     let harness: AIMockHarness;
 
-    test.beforeAll(async () => {
-        test.setTimeout(180000);
-        harness = await RunAIMockHarness({
-            fixtureFile: 'llmbot-streaming-persistence.json',
-            bot: {
-                enabledNativeTools: [],
-            },
-        });
+    streamingTest.beforeAll(async ({ containers }) => {
+        ({ harness } = containers);
     });
 
-    test.afterAll(async () => {
-        await harness?.stop();
-    });
-
-    test('Streaming Cursor Display', async ({ page }) => {
-        test.setTimeout(120000);
+    streamingTest('Streaming Cursor Display', async ({ page }) => {
+        streamingTest.setTimeout(120000);
 
         const { aiPlugin, llmBotHelper } = await setupAimockTestPage(page, harness.mattermost.url());
 
@@ -46,8 +49,8 @@ test.describe('Streaming and Persistence - aimock', () => {
         await llmBotHelper.expectPostText(PHASE3_STREAMING_CURSOR_MARKER);
     });
 
-    test('Streaming Complete Lifecycle', async ({ page }) => {
-        test.setTimeout(120000);
+    streamingTest('Streaming Complete Lifecycle', async ({ page }) => {
+        streamingTest.setTimeout(120000);
 
         const { aiPlugin, llmBotHelper } = await setupAimockTestPage(page, harness.mattermost.url());
 
@@ -62,8 +65,8 @@ test.describe('Streaming and Persistence - aimock', () => {
         await expect(stopButton).not.toBeVisible();
     });
 
-    test('Navigation Persistence', async ({ page }) => {
-        test.setTimeout(120000);
+    streamingTest('Navigation Persistence', async ({ page }) => {
+        streamingTest.setTimeout(120000);
 
         const { aiPlugin, llmBotHelper } = await setupAimockTestPage(page, harness.mattermost.url());
 
@@ -85,8 +88,8 @@ test.describe('Streaming and Persistence - aimock', () => {
         expect(contentAfter).toContain(PHASE3_NAV_PERSISTENCE_MARKER);
     });
 
-    test('Thread View Persistence', async ({ page }) => {
-        test.setTimeout(120000);
+    streamingTest('Thread View Persistence', async ({ page }) => {
+        streamingTest.setTimeout(120000);
 
         const { aiPlugin, llmBotHelper } = await setupAimockTestPage(page, harness.mattermost.url());
 
@@ -110,25 +113,17 @@ test.describe('Streaming and Persistence - aimock', () => {
     });
 });
 
-test.describe('Stop Generating Button - aimock', () => {
+const stopGeneratingTest = harnessTest();
+
+stopGeneratingTest.describe('Stop Generating Button - aimock', () => {
     let harness: AIMockHarness;
 
-    test.beforeAll(async () => {
-        test.setTimeout(180000);
-        harness = await RunAIMockHarness({
-            fixtureFile: 'llmbot-streaming-persistence.json',
-            bot: {
-                enabledNativeTools: [],
-            },
-        });
+    stopGeneratingTest.beforeAll(async ({ containers }) => {
+        ({ harness } = containers);
     });
 
-    test.afterAll(async () => {
-        await harness?.stop();
-    });
-
-    test('Stop Generating Button', async ({ page }) => {
-        test.setTimeout(120000);
+    stopGeneratingTest('Stop Generating Button', async ({ page }) => {
+        stopGeneratingTest.setTimeout(120000);
 
         const { aiPlugin, llmBotHelper } = await setupAimockTestPage(page, harness.mattermost.url());
 

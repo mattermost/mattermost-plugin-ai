@@ -10,7 +10,6 @@ import {
     mergeFixtureFiles,
     normalizeFixtureInput,
 } from './aimock-fixtures';
-import { test } from '@playwright/test';
 import { withDeadline } from './deadline';
 
 export const AIMOCK_IMAGE =
@@ -74,7 +73,6 @@ export class AIMockContainer {
     private reloadCounter = 0;
 
     async start(network: StartedNetwork, options: AIMockStartOptions = {}): Promise<void> {
-        test.slow(); // triples a beforeAll's 60 s timeout, which container startup can exceed
         this.network = network;
         this.startOptions = options;
         this.fixtureFileContents = this.buildInitialFixtureFile(options);
