@@ -19,6 +19,7 @@ let openAIMock: OpenAIMockContainer;
 
 test.describe.serial('Per-Tool Policy Change', () => {
     test.beforeAll(async () => {
+        test.setTimeout(180000);
         mattermost = await RunToolConfigContainer();
         openAIMock = await RunOpenAIMocks(mattermost.network);
     });

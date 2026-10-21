@@ -181,8 +181,7 @@ export default class MattermostContainer {
     }
 
     getLogs = async (lines: number): Promise<string> => {
-        const {output} = await this.container.exec(["mmctl", "--local", "logs", "--number", lines.toString()])
-        return output
+        return this.mmctl("logs", "--number", lines.toString())
     }
 
     setSiteURL = async () => {
@@ -347,10 +346,9 @@ export default class MattermostContainer {
 
 
         // Install ffmpeg for transcription features
-        try {
-            await this.container.exec(["sh", "-c", "apt-get update && apt-get install -y ffmpeg"])
-        } catch (error) {
-            console.log("Note: Could not install ffmpeg (container may not support apt-get)")
+        const {exitCode: ffmpegExitCode} = await this.container.exec(["sh", "-c", "apt-get update && apt-get install -y ffmpeg"])
+        if (ffmpegExitCode !== 0) {
+            console.log(`Note: Could not install ffmpeg (exit code ${ffmpegExitCode}); transcription features may not work`)
         }
 
         await this.waitForLocalMode()

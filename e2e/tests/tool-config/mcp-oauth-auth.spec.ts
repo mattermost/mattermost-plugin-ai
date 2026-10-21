@@ -19,6 +19,7 @@ let openAIMock: OpenAIMockContainer;
 
 test.describe('MCP OAuth Authentication', () => {
     test.beforeAll(async () => {
+        test.setTimeout(180000);
         mattermost = await RunSystemConsoleContainer({
             services: [
                 {

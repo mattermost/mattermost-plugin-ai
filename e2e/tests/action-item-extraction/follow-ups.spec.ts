@@ -38,6 +38,7 @@ data: [DONE]
 `.trim().split('\n').filter(l => l).join('\n\n') + '\n\n';
 
 test.beforeAll(async () => {
+    test.setTimeout(180000);
     mattermost = await RunContainer();
     openAIMock = await RunOpenAIMocks(mattermost.network);
 });

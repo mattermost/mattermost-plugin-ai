@@ -16,6 +16,7 @@ let mattermost: MattermostContainer;
 let openAIMock: OpenAIMockContainer;
 
 test.beforeAll(async () => {
+    test.setTimeout(180000);
     mattermost = await RunContainer();
     openAIMock = await RunOpenAIMocks(mattermost.network);
 });

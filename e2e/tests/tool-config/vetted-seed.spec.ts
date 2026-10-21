@@ -31,6 +31,7 @@ const VETTED_READ_TOOLS = [
 
 test.describe('Vetted Server Seed', () => {
     test.beforeAll(async () => {
+        test.setTimeout(180000);
         mattermost = await RunToolConfigContainer();
         openAIMock = await RunOpenAIMocks(mattermost.network);
     });
