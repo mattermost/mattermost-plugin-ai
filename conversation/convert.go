@@ -28,6 +28,11 @@ const InlineFileMaxBytes = int64(8 * 1024)
 // providers.
 const UnsharedToolResultRedaction = "[result not shared by user]"
 
+// NotExecutedToolResult is replayed as the result of a tool call that was
+// still pending or accepted when the turn ended, so the model does not read
+// it as a call that ran and returned nothing.
+const NotExecutedToolResult = "Not executed: the user stopped the response or moved on without approving this tool call."
+
 // unsharedToolUseArgumentsRedaction replaces tool_use arguments the requester
 // has not shared. Empty JSON keeps the call well-formed for providers that
 // require a JSON object while stripping any sensitive parameter values.
@@ -64,6 +69,7 @@ func BlocksToPost(
 	var textParts []string
 	var fileContents []string
 	var descriptors []string
+	resultIDs := make(map[string]bool)
 
 	for _, block := range blocks {
 		switch block.Type {
@@ -122,6 +128,7 @@ func BlocksToPost(
 			if opts.RedactUnshared && (block.Shared == nil || !*block.Shared) {
 				content = UnsharedToolResultRedaction
 			}
+			resultIDs[block.ToolUseID] = true
 			merged := false
 			for i := range post.ToolUse {
 				if post.ToolUse[i].ID == block.ToolUseID {
@@ -237,6 +244,17 @@ func BlocksToPost(
 
 		case BlockTypeAnnotations:
 			// Not mapped to llm.Post
+		}
+	}
+
+	for i := range post.ToolUse {
+		tc := &post.ToolUse[i]
+		if resultIDs[tc.ID] {
+			continue
+		}
+		if tc.Status == llm.ToolCallStatusPending || tc.Status == llm.ToolCallStatusAccepted {
+			tc.Result = NotExecutedToolResult
+			tc.Status = llm.ToolCallStatusRejected
 		}
 	}
 

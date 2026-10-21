@@ -1750,6 +1750,116 @@ func TestBuildChannelMentionRequest_ToolRoundsMerged(t *testing.T) {
 	assert.Equal(t, "Weather in NYC is 72F and sunny.", final.Message)
 }
 
+// A tool call left pending or accepted (the user replied instead of approving,
+// or stopped the response while it ran) must not replay as a call that ran.
+func TestBuildRequests_UnexecutedToolCallsReplayAsNotExecuted(t *testing.T) {
+	tests := []struct {
+		name       string
+		status     string
+		result     *string
+		wantResult string
+		wantStatus llm.ToolCallStatus
+	}{
+		{
+			name:       "pending without result",
+			status:     StatusPending,
+			wantResult: NotExecutedToolResult,
+			wantStatus: llm.ToolCallStatusRejected,
+		},
+		{
+			name:       "accepted without result",
+			status:     StatusAccepted,
+			wantResult: NotExecutedToolResult,
+			wantStatus: llm.ToolCallStatusRejected,
+		},
+		{
+			name:       "executed call keeps its empty result",
+			status:     StatusSuccess,
+			result:     new(""),
+			wantResult: "",
+			wantStatus: llm.ToolCallStatusSuccess,
+		},
+		{
+			name:       "pending call with a stored result keeps it",
+			status:     StatusPending,
+			result:     new("72F"),
+			wantResult: "72F",
+			wantStatus: llm.ToolCallStatusPending,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, s := setupTestService(t)
+			botID := model.NewId()
+			userID := model.NewId()
+			rootPostID := "root_" + model.NewId()
+
+			result, err := svc.CreateConversation(CreateConversationParams{
+				UserID:       userID,
+				BotID:        botID,
+				RootPostID:   &rootPostID,
+				Operation:    "conversation",
+				SystemPrompt: "system",
+				UserMessage:  "what's the weather?",
+				UserPostID:   new("postU1"),
+			})
+			require.NoError(t, err)
+			convID := result.ConversationID
+
+			blocks := []ContentBlock{
+				{Type: BlockTypeText, Text: "Let me check."},
+				{Type: BlockTypeToolUse, ID: "tc1", Name: "get_weather", Input: json.RawMessage(`{}`), Status: tc.status, Shared: new(true)},
+			}
+			if tc.result != nil {
+				blocks = append(blocks, ContentBlock{Type: BlockTypeToolResult, ToolUseID: "tc1", Content: *tc.result, Status: StatusSuccess, Shared: new(true)})
+			}
+			content, _ := json.Marshal(blocks)
+			require.NoError(t, s.CreateTurn(&store.Turn{
+				ID: model.NewId(), ConversationID: convID, PostID: new("postBot1"),
+				Role: "assistant", Content: content, Sequence: 2, CreatedAt: model.GetMillis(),
+			}))
+			followUp, _ := json.Marshal([]ContentBlock{{Type: BlockTypeText, Text: "never mind"}})
+			require.NoError(t, s.CreateTurn(&store.Turn{
+				ID: model.NewId(), ConversationID: convID, PostID: new("postU2"),
+				Role: "user", Content: followUp, Sequence: 3, CreatedAt: model.GetMillis(),
+			}))
+
+			conv, err := s.GetConversation(convID)
+			require.NoError(t, err)
+			svc.bots = &testBotLookup{botUserIDs: map[string]bool{botID: true}}
+
+			dmReq, err := svc.BuildCompletionRequest(conv, &llm.Context{})
+			require.NoError(t, err)
+			channelReq, err := svc.BuildChannelMentionRequest(conv, &llm.Context{}, &mmapi.ThreadData{
+				Posts: []*model.Post{
+					{Id: "postU1", UserId: userID, CreateAt: 1000, Message: "what's the weather?"},
+					{Id: "postBot1", UserId: botID, CreateAt: 2000, Message: "Let me check."},
+					{Id: "postU2", UserId: userID, CreateAt: 3000, Message: "never mind"},
+				},
+				UsersByID: map[string]*model.User{userID: {Id: userID, Username: "alice"}},
+			})
+			require.NoError(t, err)
+
+			for name, req := range map[string]*llm.CompletionRequest{"dm": dmReq, "channel": channelReq} {
+				var calls []llm.ToolCall
+				for _, post := range req.Posts {
+					calls = append(calls, post.ToolUse...)
+				}
+				require.Len(t, calls, 1, name)
+				assert.Equal(t, tc.wantResult, calls[0].Result, name)
+				assert.Equal(t, tc.wantStatus, calls[0].Status, name)
+			}
+
+			turns, err := s.GetTurnsForConversation(convID)
+			require.NoError(t, err)
+			stored, err := UnmarshalBlocks(turns[1].Content)
+			require.NoError(t, err)
+			assert.Equal(t, tc.status, stored[1].Status, "stored data must not change")
+		})
+	}
+}
+
 func TestSequenceNumbering_Concurrent(t *testing.T) {
 	svc, s := setupTestService(t)
 
