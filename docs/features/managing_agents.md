@@ -198,7 +198,7 @@ The dirty-state check considers both form fields and a queued avatar upload, so 
 
 ## Version history
 
-Every successful save of an agent creates a new numbered version: 1, 2, 3, and so on. The agent always runs its latest version; there are no drafts or pinned versions. Creating, editing, restoring, and importing an agent each add a version, and so do a few internal writes (for example, the legacy bot migration), which are labeled **System**. Agents that existed before version history was introduced get a version 1, labeled **Initial version**, when the plugin activates. If an agent's stored configuration changes outside the editor (for example, an internal migration), a **System** version records that change before the next save, so the next editor is never credited with it.
+Every successful save of an agent creates a new numbered version: 1, 2, 3, and so on. The agent always runs its latest version; there are no drafts or pinned versions. Creating, editing, and restoring an agent each add a version, and so do a few internal writes (for example, the legacy bot migration), which are labeled **System**. Agents that existed before version history was introduced get a version 1, labeled **Initial version**, when the plugin activates. If an agent's stored configuration changes outside the editor (for example, an internal migration), a **System** version records that change before the next save, so the next editor is never credited with it.
 
 To view the history, open an existing agent in the editor and select the **History** tab. Each entry shows the version number, when it was saved, who saved it, how it was produced, and which settings changed compared with the previous version (setting names only). The newest 50 versions are shown first; choose **Load older versions** below the list to see earlier ones. Select a version to see a read-only view of its full configuration.
 
@@ -209,7 +209,23 @@ To roll back, select a version and choose **Restore this version**, then confirm
 - The username never changes. If the agent was renamed after the version was saved, it keeps its current username; use [Renaming an agent](#renaming-an-agent) to change it.
 - Versions do not store attribute-based access policies. Switching an agent away from attribute-based access deletes its policy, so restoring an earlier attribute-based version leaves the agent with no policy and nobody can use it. The confirmation warns about this, and after the restore the editor opens the **Access** tab so you can create a new policy.
 
-Only users who can manage the agent can see its history, because versions include the agent's custom instructions. Versions are kept when an agent is deleted and are never pruned. Restores are recorded in the server audit log as `restoreAgentVersion` (agent, version number, and changed setting names only).
+Only users who can manage the agent can see its history, because versions include the agent's custom instructions. Restores are recorded in the server audit log as `restoreAgentVersion` (agent, version number, and changed setting names only).
+
+### Deleting versions
+
+Versions keep everything an agent was ever saved with, including instructions that were later removed. If something sensitive was saved (for example, an access token pasted into the instructions), first edit the agent to remove it, then delete the versions that still hold it. On the **History** tab you can:
+
+- Select a version and choose **Delete** to delete that version.
+- Check several versions in the list and choose **Delete selected**.
+- Choose **Delete all previous** to delete every version except the current one.
+
+Deleted versions are permanently removed and can't be restored. The current version is the agent's live configuration and can't be deleted. Version numbers are never reused: the next save continues from the current number. Deleting versions is recorded in the server audit log as `deleteAgentVersions` (agent, the deleted version numbers or whether all previous versions were deleted, and how many were deleted).
+
+### Keeping a limited history
+
+By default every version is kept. To keep only the most recent versions of each agent, go to **System Console > Plugins > Agents**, set **Limit agent version history** to **True**, and set **Versions to keep per agent** (including the current version). When you save the setting, older versions of every agent are deleted, and from then on each save deletes the versions that fall outside the limit. Set **Limit agent version history** back to **False** to keep every version again; versions already deleted aren't restored.
+
+Deleting an agent also deletes all of its versions.
 
 ## Exporting and importing agents
 
@@ -217,32 +233,27 @@ You can copy an agent's purpose and tool setup to another Mattermost server by e
 
 ### Export
 
-Users who can manage an agent can export it with **Export** in the editor header or in the row's `⋯` menu on the **Agents** page. This downloads a `<username>-v<version>.agent.json` file containing the agent's latest version.
+Users who can manage an agent can export it with **Export** in the editor header or in the row's `⋯` menu on the **Agents** page. This downloads a `<username>-v<version>.agent.json` file containing the agent's current version.
 
 The file contains only settings that mean the same thing on any server:
 
 - Suggested username and display name
 - Custom instructions
 - **Enable Tools**, **Max tool turns**, and dynamic tool loading
-- **Automatically enable all MCP tools**, and the list of granted MCP tools, each identified by its MCP server's URL (with the server's name for reference when you can see that server)
+- **Automatically enable all MCP tools**, and the list of granted MCP tools, each identified by its MCP server's URL
 
 The file does **not** contain the AI service, model, reasoning settings, native provider tools, vision, access rules (channels, users, teams, attribute-based policies), agent admins, the service account setting, the avatar, or any IDs. It never contains MCP server credentials or AI service keys. Custom instructions are included, so treat the file as you would the instructions themselves.
 
 ### Import
 
-Select **Import agent** on the **Agents** page and choose an exported file. Users who can create agents, or who can manage at least one agent, can import. Files larger than 2 MiB are rejected. The modal shows the file's full custom instructions before you import, so review them: they become the agent's instructions. You can then either:
+Importing loads a file's settings into the agent editor. Nothing is saved until you choose **Save**, and the save goes through the same checks as any other edit. Review the imported custom instructions before saving: they become the agent's instructions.
 
-- **Create a new agent.** Choose the username (prefilled from the file), display name, AI service, and optionally a model. This requires permission to create agents and counts toward the agent limit like any other new agent. Settings not carried in the file get the same defaults as a new agent created in the editor: everyone can use it, there are no extra admins, and vision and reasoning are on.
-- **Update an existing agent** you can manage. Only the settings carried in the file change; the agent's username, display name, AI service, model, access rules, admins, and service account setting stay as they are. When the file's suggested username matches an agent you can manage, that agent is preselected.
+- **New agent:** select **Import agent** on the **Agents** page and choose a file. This opens a new agent with the file's settings, including its suggested username and display name. Pick the AI service and any other settings, then save. This requires permission to create agents and counts toward the agent limit.
+- **Existing agent:** open the agent in the editor, select **Import from file**, and choose a file. Only the settings the file carries are replaced. The agent's username, display name, AI service, model, access rules, admins, and service account setting stay as they are.
 
-Each MCP server referenced in the file must be mapped to an MCP server on this server, or its tools removed:
+MCP tools in the file are matched to the MCP servers your **MCPs** tab lists, by server URL (ignoring surrounding whitespace and a trailing `/`). Matched tools are stored under the server's URL exactly as it is configured here. Tools of servers that aren't listed are left out, and the editor names those servers so you can grant replacement tools on the **MCPs** tab before saving. When the file turns on **Automatically enable all MCP tools**, no matching is needed.
 
-- A server whose URL matches an MCP server available to you on this server (ignoring surrounding whitespace and a trailing `/`) is mapped automatically. The imported tools are stored under that server's URL exactly as it is configured here.
-- Otherwise, pick the server to use, or choose **Remove these tools**. Import is blocked until every server is mapped or removed. Tools keep their names on the chosen server.
-- Available servers are the ones your **MCPs** tab lists: enabled servers your access policies allow, and the embedded Mattermost server when it is enabled. System administrators can also map to disabled servers.
-- When the file turns on **Automatically enable all MCP tools**, no mapping is needed. The agent can then use any MCP tool the requesting user can use on this server; access policies still apply.
-
-An import adds a new version labeled **Imported**, and is recorded in the server audit log as `importAgent` (agent, and whether it created or updated an agent; never the file contents). Viewing history, exporting, and previewing an import are read-only and are not audited.
+Files larger than 2 MiB, files that aren't agent exports, and files with an unsupported format version are rejected. An imported agent's first save is recorded like any other create or edit.
 
 ## Deleting an agent
 
