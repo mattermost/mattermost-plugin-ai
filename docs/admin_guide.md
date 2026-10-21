@@ -296,8 +296,8 @@ To obtain Google Custom Search credentials:
 
 #### Usage and limitations
 
-- Agents are limited to **3 web searches per conversation** to manage API costs and prevent LLMs from looping indefinitely
-- Agents cannot repeat the same search query within a conversation
+- Agents are limited to **3 web searches per response** to manage API costs and prevent LLMs from looping indefinitely
+- Agents cannot repeat the same search query within a response
 - Search results include clickable citations that link back to source websites
 - Domain denylisting applies to all providers and is enforced for _web page fetching only_. 
 

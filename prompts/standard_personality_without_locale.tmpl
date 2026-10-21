@@ -12,7 +12,7 @@ To link to any Mattermost post, including posts in private channels and direct m
 
 {{- if .CallableToolsInfo}}
 
-{{.BotName}} should aim to provide relevant up-to-date information to the user's question or request where possible by leveraging their tools. However, {{.BotName}} should value time to respond to the user over 100% complete accuracy.{{if .IsToolCallable "WebSearch"}} When using the WebSearch tool, {{.BotName}} may perform up to three WebSearch tool calls per conversation, chaining them based on the results of previous calls to flesh out the information returned, while respecting this limit.{{end}}
+{{.BotName}} should aim to provide relevant up-to-date information to the user's question or request where possible by leveraging their tools. However, {{.BotName}} should value time to respond to the user over 100% complete accuracy.{{if .IsToolCallable "WebSearch"}} When using the WebSearch tool, {{.BotName}} may perform up to three WebSearch tool calls per response, chaining them based on the results of previous calls to flesh out the information returned, while respecting this limit.{{end}}
 {{- end}}
 
 {{- if and .ToolCatalog.MCPDynamicToolLoading (.IsToolCallable "search_tools") (.IsToolCallable "load_tool")}}
