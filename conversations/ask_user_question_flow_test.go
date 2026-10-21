@@ -12,6 +12,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/bots"
 	"github.com/mattermost/mattermost-plugin-agents/v2/conversation"
 	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise"
+	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise/enterprisetest"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mcp"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmapi/mocks"
@@ -37,7 +38,7 @@ func TestHandleToolCallAnswersUserQuestion(t *testing.T) {
 		"options": [{"label": "UX Design"}, {"label": "Design team"}]
 	}`)
 
-	dmChannel := &model.Channel{Id: "dm-channel", Type: model.ChannelTypeDirect, Name: "bot-id__user-id"}
+	dmChannel := &model.Channel{Id: "dm-channel", Type: model.ChannelTypeDirect, Name: "bot-id__" + testRequesterID}
 	openChannel := &model.Channel{Id: "channel-id", TeamId: "team-id", Type: model.ChannelTypeOpen}
 
 	cases := []struct {
@@ -136,7 +137,7 @@ func TestHandleToolCallAnswersUserQuestion(t *testing.T) {
 
 			mmClient := mocks.NewMockClient(t)
 			mmClient.On("LogDebug", mock.Anything, mock.Anything).Maybe().Return()
-			mmClient.On("GetUser", "user-id").Maybe().Return(&model.User{Id: "user-id", Username: "user"}, nil)
+			mmClient.On("GetUser", testRequesterID).Maybe().Return(&model.User{Id: testRequesterID, Username: "user"}, nil)
 			mmClient.On("KVGet", mock.Anything, mock.Anything).Maybe().Return(nil)
 			mmClient.On("GetConfig").Maybe().Return(&model.Config{})
 
@@ -145,6 +146,7 @@ func TestHandleToolCallAnswersUserQuestion(t *testing.T) {
 				mmClient:         mmClient,
 				contextBuilder:   loadedStateBuilder(t),
 				bots:             botsService,
+				licenseChecker:   enterprisetest.CheckerAt(enterprise.LevelProfessional),
 				convService:      conversation.NewService(convStore, nil, nil, nil),
 				streamingService: streamingService,
 			}
@@ -152,7 +154,7 @@ func TestHandleToolCallAnswersUserQuestion(t *testing.T) {
 			approvalPost := &model.Post{Id: approvalPostID, UserId: "bot-id"}
 			approvalPost.AddProp(streaming.ConversationIDProp, conv.ID)
 
-			err = c.HandleToolCall(context.Background(), "user-id", approvalPost, tc.channel, tc.acceptedIDs, tc.answers)
+			err = c.HandleToolCall(context.Background(), testRequesterID, approvalPost, tc.channel, tc.acceptedIDs, tc.answers)
 
 			if tc.wantErr != nil {
 				require.ErrorIs(t, err, tc.wantErr)
@@ -262,12 +264,13 @@ func TestHandleToolCallMixedBatchInChannelAwaitsShareDecision(t *testing.T) {
 
 	mmClient := mocks.NewMockClient(t)
 	mmClient.On("LogDebug", mock.Anything, mock.Anything).Maybe().Return()
-	mmClient.On("GetUser", "user-id").Maybe().Return(&model.User{Id: "user-id", Username: "user"}, nil)
+	mmClient.On("GetUser", testRequesterID).Maybe().Return(&model.User{Id: testRequesterID, Username: "user"}, nil)
 
 	c := &Conversations{
 		mmClient:         mmClient,
 		contextBuilder:   loadedStateBuilder(t),
 		bots:             botsService,
+		licenseChecker:   enterprisetest.CheckerAt(enterprise.LevelProfessional),
 		convService:      conversation.NewService(convStore, nil, nil, nil),
 		streamingService: &loadedStateStreamingService{},
 	}
@@ -277,7 +280,7 @@ func TestHandleToolCallMixedBatchInChannelAwaitsShareDecision(t *testing.T) {
 	channel := &model.Channel{Id: "channel-id", TeamId: "team-id", Type: model.ChannelTypeOpen}
 
 	answers := map[string]mmtools.UserInteractionAnswer{"q-1": {Selected: []string{"UX Design"}}}
-	require.NoError(t, c.HandleToolCall(context.Background(), "user-id", approvalPost, channel, []string{"tool-use-1", "q-1"}, answers))
+	require.NoError(t, c.HandleToolCall(context.Background(), testRequesterID, approvalPost, channel, []string{"tool-use-1", "q-1"}, answers))
 
 	turns, err := convStore.GetTurnsForConversation(conv.ID)
 	require.NoError(t, err)
@@ -301,6 +304,14 @@ func TestHandleToolCallMixedBatchInChannelAwaitsShareDecision(t *testing.T) {
 	assert.Empty(t, lm.requests, "follow-up must wait for the share decision in HandleToolResult")
 }
 
+func passthroughBotsService(bot *bots.Bot) *bots.MMBots {
+	mockAPI := &plugintest.API{}
+	pluginAPI := pluginapi.NewClient(mockAPI, nil)
+	botsService := bots.New(mockAPI, pluginAPI, enterprise.NewLicenseChecker(pluginAPI), nil, nil, newPassthroughAccessChecker(), &http.Client{}, nil)
+	botsService.SetBotsForTesting([]*bots.Bot{bot})
+	return botsService
+}
+
 // TestStreamToolFollowUpInteractiveFlag pins when the follow-up context offers
 // user-interaction tools: a requester-driven follow-up is interactive, while a
 // bot activate_ai conversation stays constrained to unattended tools.
@@ -311,24 +322,26 @@ func TestStreamToolFollowUpInteractiveFlag(t *testing.T) {
 		seedLoadToolPair(t, convStore, conv.ID, "load-1", "jira__get_issue", &nextSeq)
 
 		lm := &loadedStateLLM{}
+		bot := loadedStateBot(lm)
 		streamingService := &loadedStateStreamingService{}
 		c := &Conversations{
 			contextBuilder:   loadedStateBuilder(t),
+			bots:             passthroughBotsService(bot),
 			convService:      conversation.NewService(convStore, nil, nil, nil),
 			streamingService: streamingService,
 		}
 
-		err := c.streamToolFollowUp(
-			context.Background(),
-			loadedStateBot(lm),
-			&model.User{Id: "user-id", Username: "user"},
-			&model.Channel{Id: "dm-channel", Type: model.ChannelTypeDirect, Name: "bot-id__user-id"},
-			&model.Post{Id: "root-post-id"},
-			conv,
-			true,
-			false,
-			nil,
-		)
+		post := &model.Post{Id: "root-post-id"}
+		policy, err := c.resolveTurnPolicy(context.Background(), turnRequest{
+			bot:     bot,
+			user:    &model.User{Id: testRequesterID, Username: "user"},
+			channel: &model.Channel{Id: "dm-channel", Type: model.ChannelTypeDirect, Name: "bot-id__" + testRequesterID},
+			conv:    conv,
+			post:    post,
+		})
+		require.NoError(t, err)
+
+		err = c.streamToolFollowUp(context.Background(), policy, post, conv, false, nil)
 		require.NoError(t, err)
 		streamingService.waitForStreaming()
 		require.Len(t, lm.requests, 1)
@@ -337,10 +350,17 @@ func TestStreamToolFollowUpInteractiveFlag(t *testing.T) {
 
 	t.Run("activate_ai channel follow-up is not interactive", func(t *testing.T) {
 		convStore, conv := loadedStateConversationStore()
-		nextSeq := 1
-		seedLoadToolPair(t, convStore, conv.ID, "load-1", "jira__get_issue", &nextSeq)
 		rootID := "root-id"
 		conv.RootPostID = &rootID
+		require.NoError(t, convStore.CreateTurn(&store.Turn{
+			ID: "initiating-turn", ConversationID: conv.ID, PostID: &rootID, Role: "user", Sequence: 0,
+		}))
+		nextSeq := 1
+		seedLoadToolPair(t, convStore, conv.ID, "load-1", "jira__get_issue", &nextSeq)
+		botPostID := "post-id"
+		require.NoError(t, convStore.CreateTurn(&store.Turn{
+			ID: "bot-turn", ConversationID: conv.ID, PostID: &botPostID, Role: "assistant", Sequence: nextSeq,
+		}))
 
 		rootPost := &model.Post{Id: "root-id", UserId: "automation-bot", Message: "automated request"}
 		rootPost.AddProp(ActivateAIProp, true)
@@ -361,27 +381,30 @@ func TestStreamToolFollowUpInteractiveFlag(t *testing.T) {
 		}, nil).Once()
 
 		lm := &loadedStateLLM{}
+		bot := loadedStateBot(lm)
 		streamingService := &loadedStateStreamingService{}
 		c := &Conversations{
 			mmClient:          mmClient,
 			contextBuilder:    loadedStateBuilder(t),
+			bots:              passthroughBotsService(bot),
+			licenseChecker:    enterprisetest.CheckerAt(enterprise.LevelProfessional),
 			convService:       conversation.NewService(convStore, nil, nil, nil),
 			streamingService:  streamingService,
 			configProvider:    &channelFollowUpTestConfig{enableChannelMentionToolCalling: true},
 			toolPolicyChecker: mapPolicyChecker{},
 		}
 
-		err := c.streamToolFollowUp(
-			context.Background(),
-			loadedStateBot(lm),
-			&model.User{Id: "user-id", Username: "user"},
-			&model.Channel{Id: "channel-id", TeamId: "team-id", Type: model.ChannelTypeOpen},
-			&model.Post{Id: "post-id"},
-			conv,
-			false,
-			false,
-			nil,
-		)
+		post := &model.Post{Id: botPostID, UserId: "bot-id"}
+		policy, err := c.resolveTurnPolicy(context.Background(), turnRequest{
+			bot:     bot,
+			user:    &model.User{Id: testRequesterID, Username: "user"},
+			channel: &model.Channel{Id: "channel-id", TeamId: "team-id", Type: model.ChannelTypeOpen},
+			conv:    conv,
+			post:    post,
+		})
+		require.NoError(t, err)
+
+		err = c.streamToolFollowUp(context.Background(), policy, post, conv, false, nil)
 		require.NoError(t, err)
 		streamingService.waitForStreaming()
 		require.Len(t, lm.requests, 1)
@@ -445,7 +468,7 @@ func TestHandleToolCallAutoExecutesPolicyEligiblePendingTools(t *testing.T) {
 			// unlicensed context builder drops them from the tool store, so
 			// a marked remote tool must resolve to rejection on resume — not
 			// execute and not fail the whole submission.
-			name:             "unlicensed remote auto-run resume rejects instead of executing",
+			name:             "remote auto-run resume below Enterprise rejects instead of executing",
 			wouldAutoExecute: true,
 			unlicensed:       true,
 			policyChecker: mapPolicyChecker{
@@ -539,8 +562,13 @@ func TestHandleToolCallAutoExecutesPolicyEligiblePendingTools(t *testing.T) {
 				Sequence:       nextSeq,
 			}))
 
+			// Professional runs multiplayer channels but not remote MCP.
+			level := enterprise.LevelEnterprise
+			if tc.unlicensed {
+				level = enterprise.LevelProfessional
+			}
 			mockAPI := &plugintest.API{}
-			mockLicenseState(mockAPI, !tc.unlicensed)
+			enterprisetest.StubLicense(mockAPI, level)
 			pluginAPI := pluginapi.NewClient(mockAPI, nil)
 			licenseChecker := enterprise.NewLicenseChecker(pluginAPI)
 			botsService := bots.New(mockAPI, pluginAPI, licenseChecker, nil, nil, newPassthroughAccessChecker(), &http.Client{}, nil)
@@ -550,7 +578,7 @@ func TestHandleToolCallAutoExecutesPolicyEligiblePendingTools(t *testing.T) {
 
 			mmClient := mocks.NewMockClient(t)
 			mmClient.On("LogDebug", mock.Anything, mock.Anything).Maybe().Return()
-			mmClient.On("GetUser", "user-id").Maybe().Return(&model.User{Id: "user-id", Username: "user"}, nil)
+			mmClient.On("GetUser", testRequesterID).Maybe().Return(&model.User{Id: testRequesterID, Username: "user"}, nil)
 			mmClient.On("GetConfig").Maybe().Return(&model.Config{})
 
 			contextBuilder := loadedStateBuilder(t)
@@ -566,6 +594,7 @@ func TestHandleToolCallAutoExecutesPolicyEligiblePendingTools(t *testing.T) {
 				convService:       conversation.NewService(convStore, nil, nil, nil),
 				streamingService:  streamingService,
 				licenseChecker:    licenseChecker,
+				configProvider:    &channelFollowUpTestConfig{enableChannelMentionToolCalling: true},
 				toolPolicyChecker: tc.policyChecker,
 			}
 
@@ -581,7 +610,7 @@ func TestHandleToolCallAutoExecutesPolicyEligiblePendingTools(t *testing.T) {
 				acceptedIDs = []string{"q-1"}
 				answers = map[string]mmtools.UserInteractionAnswer{"q-1": {Selected: []string{"UX Design"}}}
 			}
-			require.NoError(t, c.HandleToolCall(context.Background(), "user-id", approvalPost, channel, acceptedIDs, answers))
+			require.NoError(t, c.HandleToolCall(context.Background(), testRequesterID, approvalPost, channel, acceptedIDs, answers))
 			streamingService.waitForStreaming()
 
 			turns, err := convStore.GetTurnsForConversation(conv.ID)

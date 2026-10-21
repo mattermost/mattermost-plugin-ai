@@ -52,6 +52,8 @@ type fakeMMClient struct {
 	websocketEvents      []fakeWebSocketEvent
 	// dmChannelID, when set, is the channel DM posts are created in.
 	dmChannelID string
+	// unreadableChannels are channels HasPermissionToChannel denies.
+	unreadableChannels map[string]bool
 
 	// logMu guards logErrors: background goroutines (e.g. title generation)
 	// may log while the test goroutine reads.
@@ -214,7 +216,7 @@ func (c *fakeMMClient) PublishWebSocketEvent(event string, payload map[string]an
 }
 
 func (c *fakeMMClient) GetConfig() *model.Config {
-	return &model.Config{}
+	return &model.Config{LocalizationSettings: model.LocalizationSettings{DefaultServerLocale: model.NewPointer("en")}}
 }
 
 func (c *fakeMMClient) LogError(msg string, _ ...any) {
@@ -258,8 +260,8 @@ func (c *fakeMMClient) GetChannelByName(string, string, bool) (*model.Channel, e
 	return nil, errors.New("not implemented")
 }
 
-func (c *fakeMMClient) HasPermissionToChannel(string, string, *model.Permission) bool {
-	return true
+func (c *fakeMMClient) HasPermissionToChannel(_, channelID string, _ *model.Permission) bool {
+	return !c.unreadableChannels[channelID]
 }
 
 func (c *fakeMMClient) HasPermissionToFileAction(sessionID, _, _ string) bool {

@@ -61,6 +61,57 @@ func (a *API) postAuthorizationRequired(c *gin.Context) {
 	}
 }
 
+// agentPostAuthorizationRequired authorizes a request on the run behind an
+// agent post: the requester must be able to read the post's channel and still
+// use the agent that wrote it. A post no agent wrote is rejected.
+func (a *API) agentPostAuthorizationRequired(c *gin.Context) {
+	userID := c.GetHeader("Mattermost-User-Id")
+	rec := auditRec(c)
+
+	post, err := a.pluginAPI.Post.GetPost(c.Param("postid"))
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+	c.Set(ContextPostKey, post)
+	audit.AddParam(rec, audit.KeyPostID, post.Id)
+
+	channel, err := a.pluginAPI.Channel.Get(post.ChannelId)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+	c.Set(ContextChannelKey, channel)
+	audit.AddParam(rec, audit.KeyChannelID, channel.Id)
+
+	if !a.pluginAPI.User.HasPermissionToChannel(userID, channel.Id, model.PermissionReadChannel) {
+		c.AbortWithError(http.StatusForbidden, errors.New("user doesn't have permission to read the post's channel"))
+		return
+	}
+
+	bot := a.bots.GetBotByID(post.UserId)
+	if bot == nil {
+		c.AbortWithError(http.StatusBadRequest, errors.New("not a bot post"))
+		return
+	}
+	c.Set(ContextBotKey, bot)
+	audit.AddParam(rec, audit.KeyAgentID, bot.GetMMBot().UserId)
+
+	if err := a.bots.CheckUsageRestrictions(c.Request.Context(), userID, bot, channel); err != nil {
+		c.AbortWithError(usageRestrictionHTTPStatus(err), err)
+		return
+	}
+}
+
+// usageRestrictionHTTPStatus maps an agent access check failure: a denial is
+// 403, a failure to evaluate access is 500.
+func usageRestrictionHTTPStatus(err error) int {
+	if errors.Is(err, bots.ErrUsageRestriction) {
+		return http.StatusForbidden
+	}
+	return http.StatusInternalServerError
+}
+
 func (a *API) handleReact(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
@@ -264,12 +315,6 @@ func (a *API) handleStop(c *gin.Context) {
 		return
 	}
 
-	botID := post.UserId
-	if !a.bots.IsAnyBot(botID) {
-		c.AbortWithError(http.StatusBadRequest, errors.New("not a bot post"))
-		return
-	}
-
 	// Check ownership via conversation entity
 	if !a.isConversationOwner(post, userID) {
 		c.AbortWithError(http.StatusForbidden, errors.New("only the original poster can stop the stream"))
@@ -314,7 +359,9 @@ func (a *API) handleRegenerate(c *gin.Context) {
 			abortNotLicensed(c, err)
 			return
 		}
-		if errors.Is(err, mmapi.ErrFileActionForbidden) {
+		if errors.Is(err, mmapi.ErrFileActionForbidden) ||
+			errors.Is(err, bots.ErrUsageRestriction) ||
+			errors.Is(err, conversations.ErrThreadSourceUnavailable) {
 			c.AbortWithError(http.StatusForbidden, err)
 			return
 		}
@@ -329,12 +376,7 @@ func (a *API) handleToolCall(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
-
-	// Enrich the audit record as soon as the objects are bound so the
-	// permission fail paths below still carry post and channel.
 	rec := auditRec(c)
-	audit.AddParam(rec, audit.KeyPostID, post.Id)
-	audit.AddParam(rec, audit.KeyChannelID, channel.Id)
 
 	isDM := mmapi.IsDMWith(post.UserId, channel)
 	if !isDM && !a.config.EnableChannelMentionToolCalling() {
@@ -364,17 +406,29 @@ func (a *API) handleToolCall(c *gin.Context) {
 	audit.AddParam(rec, "accepted_tool_ids", audit.TruncateIDs(data.AcceptedToolIDs))
 
 	if err := a.conversationsService.HandleToolCall(c.Request.Context(), userID, post, channel, data.AcceptedToolIDs, data.ToolAnswers); err != nil {
-		c.AbortWithError(toolApprovalHTTPStatus(err), err)
+		abortToolDecision(c, err)
 		return
 	}
 
 	c.Status(http.StatusOK)
 }
 
+// abortToolDecision aborts a tool decision request with err, answering a
+// missing license with the license error response.
+func abortToolDecision(c *gin.Context, err error) {
+	var licErr *enterprise.LicenseError
+	if errors.As(err, &licErr) {
+		abortNotLicensed(c, err)
+		return
+	}
+	c.AbortWithError(toolApprovalHTTPStatus(err), err)
+}
+
 // toolApprovalHTTPStatus maps errors from HandleToolCall/HandleToolResult to
 // HTTP statuses. Stale-click and missing-conversation cases are client-side
-// issues (400); requester-mismatch and unlicensed remote MCP use are
-// permission denials (403); everything else falls through to 500.
+// issues (400); requester-mismatch, lost agent or thread access, and
+// unlicensed remote MCP use are permission denials (403); everything else
+// falls through to 500.
 func toolApprovalHTTPStatus(err error) int {
 	switch {
 	case errors.Is(err, conversations.ErrStaleToolClick),
@@ -382,7 +436,9 @@ func toolApprovalHTTPStatus(err error) int {
 		errors.Is(err, conversations.ErrInvalidToolAnswer):
 		return http.StatusBadRequest
 	case errors.Is(err, conversations.ErrNotRequester),
-		errors.Is(err, conversations.ErrRemoteMCPNotLicensed):
+		errors.Is(err, conversations.ErrRemoteMCPNotLicensed),
+		errors.Is(err, conversations.ErrThreadSourceUnavailable),
+		errors.Is(err, bots.ErrUsageRestriction):
 		return http.StatusForbidden
 	default:
 		return http.StatusInternalServerError
@@ -393,12 +449,7 @@ func (a *API) handleToolResult(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
-
-	// Enrich the audit record as soon as the objects are bound so the
-	// permission fail paths below still carry post and channel.
 	rec := auditRec(c)
-	audit.AddParam(rec, audit.KeyPostID, post.Id)
-	audit.AddParam(rec, audit.KeyChannelID, channel.Id)
 
 	isDM := mmapi.IsDMWith(post.UserId, channel)
 	if !isDM && !a.config.EnableChannelMentionToolCalling() {
@@ -423,7 +474,7 @@ func (a *API) handleToolResult(c *gin.Context) {
 	audit.AddParam(rec, "accepted_tool_ids", audit.TruncateIDs(data.AcceptedToolIDs))
 
 	if err := a.conversationsService.HandleToolResult(c.Request.Context(), userID, post, channel, data.AcceptedToolIDs); err != nil {
-		c.AbortWithError(toolApprovalHTTPStatus(err), err)
+		abortToolDecision(c, err)
 		return
 	}
 

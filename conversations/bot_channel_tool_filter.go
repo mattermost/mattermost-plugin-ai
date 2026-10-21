@@ -8,7 +8,6 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mcp"
-	"github.com/mattermost/mattermost-plugin-agents/v2/store"
 )
 
 // applyBotChannelAutoEverywhereToolFilter keeps only MCP tools whose policy is
@@ -112,40 +111,4 @@ func botChannelAutoEverywhereKeepTool(checker mcp.ToolPolicyChecker, tool llm.To
 	}
 	policy, enabled := checker.GetToolPolicy(tool.ServerOrigin, llm.BareMCPToolName(tool.Name))
 	return mcp.IsToolPolicyAutoRunEverywhere(policy) && enabled
-}
-
-func (c *Conversations) channelFollowUpMCPToolFilterContextOptions(isDM bool, conv *store.Conversation) ([]llm.ContextOption, bool) {
-	if c.contextBuilder == nil || !c.shouldConstrainChannelFollowUpToAutoEverywhere(isDM, conv) {
-		return nil, false
-	}
-
-	return []llm.ContextOption{
-		c.contextBuilder.WithLLMContextMCPToolFilter(func(tool llm.Tool) bool {
-			return botChannelAutoEverywhereKeepTool(c.toolPolicyChecker, tool)
-		}),
-	}, true
-}
-
-func (c *Conversations) shouldConstrainChannelFollowUpToAutoEverywhere(isDM bool, conv *store.Conversation) bool {
-	if isDM || !c.channelMentionToolCallingEnabled() {
-		return false
-	}
-
-	// Channel follow-ups rebuild strict MCP registries before the follow-up
-	// request is sent. If the root post cannot prove this was a normal
-	// interactive channel flow, keep only auto-run-everywhere MCP tools.
-	if conv == nil || conv.RootPostID == nil || c.mmClient == nil {
-		return true
-	}
-
-	rootPost, rootErr := c.mmClient.GetPost(*conv.RootPostID)
-	if rootErr != nil || rootPost == nil {
-		return true
-	}
-	rootUser, userErr := c.mmClient.GetUser(rootPost.UserId)
-	if userErr != nil {
-		return true
-	}
-
-	return isBotActivateAI(rootPost, rootUser)
 }

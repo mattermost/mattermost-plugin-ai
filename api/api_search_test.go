@@ -172,7 +172,7 @@ func TestHandleRunSearchWithoutEmbeddingSearch(t *testing.T) {
 				post.Id = model.NewId()
 				post.ChannelId = dmChannelID
 			}).Return(nil)
-			client.On("GetChannel", dmChannelID).Return(&model.Channel{Id: dmChannelID, Type: model.ChannelTypeDirect}, nil)
+			client.On("GetChannel", dmChannelID).Return(&model.Channel{Id: dmChannelID, Type: model.ChannelTypeDirect, Name: model.GetDMNameFromIds(testBotUserID, testUserID)}, nil)
 			// Stop the background answer at its first step; this test only
 			// covers whether the search starts.
 			client.On("CreatePost", mock.Anything).Return(errors.New("stop"))

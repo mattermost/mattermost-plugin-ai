@@ -13,6 +13,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/bots"
 	"github.com/mattermost/mattermost-plugin-agents/v2/conversation"
 	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise"
+	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise/enterprisetest"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mcp"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmapi/mocks"
 	"github.com/mattermost/mattermost-plugin-agents/v2/store"
@@ -120,7 +121,7 @@ func TestHandleToolCallAuditRecordsDecision(t *testing.T) {
 
 			mmClient := mocks.NewMockClient(t)
 			mmClient.On("LogDebug", mock.Anything, mock.Anything).Maybe().Return()
-			mmClient.On("GetUser", "user-id").Maybe().Return(&model.User{Id: "user-id", Username: "user"}, nil)
+			mmClient.On("GetUser", testRequesterID).Maybe().Return(&model.User{Id: testRequesterID, Username: "user"}, nil)
 			mmClient.On("KVGet", mock.Anything, mock.Anything).Maybe().Return(nil)
 			mmClient.On("GetConfig").Maybe().Return(&model.Config{})
 
@@ -129,8 +130,10 @@ func TestHandleToolCallAuditRecordsDecision(t *testing.T) {
 				mmClient:          mmClient,
 				contextBuilder:    loadedStateBuilder(t),
 				bots:              botsService,
+				licenseChecker:    enterprisetest.CheckerAt(enterprise.LevelEnterprise),
 				convService:       conversation.NewService(convStore, nil, nil, nil),
 				streamingService:  streamingService,
+				configProvider:    &channelFollowUpTestConfig{enableChannelMentionToolCalling: true},
 				toolPolicyChecker: tc.policyChecker,
 			}
 
@@ -141,7 +144,7 @@ func TestHandleToolCallAuditRecordsDecision(t *testing.T) {
 			rec := plugin.MakeAuditRecord("toolCallApproval", model.AuditStatusFail)
 			ctx := audit.WithRecord(context.Background(), rec)
 
-			require.NoError(t, c.HandleToolCall(ctx, "user-id", approvalPost, channel, tc.acceptedIDs, nil))
+			require.NoError(t, c.HandleToolCall(ctx, testRequesterID, approvalPost, channel, tc.acceptedIDs, nil))
 			streamingService.waitForStreaming()
 
 			assert.Equal(t, "bot-id", rec.EventData.Parameters[audit.KeyAgentID])
@@ -195,6 +198,7 @@ func TestHandleToolResultAuditRecordsDecision(t *testing.T) {
 
 	mmClient := mocks.NewMockClient(t)
 	mmClient.On("LogDebug", mock.Anything, mock.Anything).Maybe().Return()
+	mmClient.On("GetUser", testRequesterID).Return(&model.User{Id: testRequesterID, Username: "user"}, nil)
 
 	c := &Conversations{
 		mmClient:    mmClient,
@@ -204,12 +208,12 @@ func TestHandleToolResultAuditRecordsDecision(t *testing.T) {
 
 	clickedPost := &model.Post{Id: clickedPostID, UserId: "bot-id"}
 	clickedPost.AddProp(streaming.ConversationIDProp, conv.ID)
-	channel := &model.Channel{Id: "dm-channel", Type: model.ChannelTypeDirect, Name: "bot-id__user-id"}
+	channel := &model.Channel{Id: "dm-channel", Type: model.ChannelTypeDirect, Name: "bot-id__" + testRequesterID}
 
 	rec := plugin.MakeAuditRecord("toolResultApproval", model.AuditStatusFail)
 	ctx := audit.WithRecord(context.Background(), rec)
 
-	require.NoError(t, c.HandleToolResult(ctx, "user-id", clickedPost, channel, []string{"tool-use-a"}))
+	require.NoError(t, c.HandleToolResult(ctx, testRequesterID, clickedPost, channel, []string{"tool-use-a"}))
 
 	assert.Equal(t, "bot-id", rec.EventData.Parameters[audit.KeyAgentID])
 	assert.Equal(t, []string{"jira__get_issue"}, rec.EventData.Parameters["accepted_tools"])
@@ -224,7 +228,7 @@ func TestHandleToolResultAuditRecordsDecision(t *testing.T) {
 	// its record must not claim a share resolution that did not happen.
 	repeatRec := plugin.MakeAuditRecord("toolResultApproval", model.AuditStatusFail)
 	repeatCtx := audit.WithRecord(context.Background(), repeatRec)
-	require.NoError(t, c.HandleToolResult(repeatCtx, "user-id", clickedPost, channel, []string{"tool-use-a"}))
+	require.NoError(t, c.HandleToolResult(repeatCtx, testRequesterID, clickedPost, channel, []string{"tool-use-a"}))
 
 	assert.Equal(t, "bot-id", repeatRec.EventData.Parameters[audit.KeyAgentID])
 	assert.NotContains(t, repeatRec.EventData.Parameters, "accepted_tools")

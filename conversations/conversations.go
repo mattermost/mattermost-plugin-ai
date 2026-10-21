@@ -22,7 +22,6 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/streaming"
 	"github.com/mattermost/mattermost-plugin-agents/v2/subtitles"
 	"github.com/mattermost/mattermost-plugin-agents/v2/telemetry"
-	"github.com/mattermost/mattermost-plugin-agents/v2/toolrunner"
 	"github.com/mattermost/mattermost/server/public/model"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -207,29 +206,47 @@ type DMStreamResult struct {
 	release func()
 }
 
-// ProcessDMRequest builds a completion request from the conversation and
+// ProcessDMRequest builds a completion request from the DM conversation and
 // runs the tool loop, returning the final stream. The conversation must
 // already exist (created via CreateOrGetDMConversation).
-//
-// maxToolTurns bounds the tool-call-execute-recall loop for this bot; pass 0
-// or any non-positive value to use the system default
-// (llm.DefaultMaxToolTurns).
-func (c *Conversations) ProcessDMRequest(
-	ctx stdcontext.Context,
-	convID string,
-	lm llm.LanguageModel,
-	llmCtx *llm.Context,
-	maxToolTurns int,
-) (*DMStreamResult, error) {
-	return c.processDMRequest(ctx, convID, lm, llmCtx, maxToolTurns, nil)
+func (c *Conversations) ProcessDMRequest(ctx stdcontext.Context, convID string, llmCtx *llm.Context) (*DMStreamResult, error) {
+	if c.convService == nil {
+		return nil, fmt.Errorf("conversation service not configured")
+	}
+	conv, err := c.convService.GetConversation(convID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get conversation: %w", err)
+	}
+	if conv.ChannelID == nil {
+		return nil, fmt.Errorf("conversation %s has no channel", convID)
+	}
+	bot := c.bots.GetBotByID(conv.BotID)
+	if bot == nil {
+		return nil, fmt.Errorf("agent %s not available", conv.BotID)
+	}
+	user, err := c.mmClient.GetUser(conv.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get user: %w", err)
+	}
+	channel, err := c.mmClient.GetChannel(*conv.ChannelID)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get channel: %w", err)
+	}
+	policy, err := c.resolveTurnPolicy(ctx, turnRequest{bot: bot, user: user, channel: channel, conv: conv})
+	if err != nil {
+		return nil, err
+	}
+	if !policy.isDM {
+		return nil, fmt.Errorf("conversation %s is not a direct message with its agent", convID)
+	}
+	return c.processDMRequest(ctx, convID, policy, llmCtx, nil)
 }
 
 func (c *Conversations) processDMRequest(
 	ctx stdcontext.Context,
 	convID string,
-	lm llm.LanguageModel,
+	policy *turnPolicy,
 	llmCtx *llm.Context,
-	maxToolTurns int,
 	beforeProvider func(),
 ) (*DMStreamResult, error) {
 	ctx, span := telemetry.Tracer().Start(ctx, "process dm request",
@@ -272,11 +289,7 @@ func (c *Conversations) processDMRequest(
 	if beforeProvider != nil {
 		beforeProvider()
 	}
-	runResult, err := c.runToolLoop(loopCtx, lm, maxToolTurns, *completionReq,
-		c.shouldAutoExecuteTool(llmCtx, true),
-		convID,
-		func([]toolrunner.ToolTurn) bool { return true },
-		nil, "Failed to write tool turns", "conversation_id", convID)
+	runResult, err := policy.runToolLoop(loopCtx, llmCtx, convID, *completionReq, "Failed to write tool turns", "conversation_id", convID)
 	if err != nil {
 		return nil, fmt.Errorf("tool runner failed: %w", err)
 	}
@@ -349,31 +362,6 @@ func endSpanOnStreamClose(stream *llm.TextStreamResult, span trace.Span) (*llm.T
 	return &llm.TextStreamResult{Stream: out}, release
 }
 
-// runToolLoop runs the ToolRunner over req, persisting each intermediate tool
-// round to the conversation as it completes. sharedForTurns decides the shared
-// flag written with each round; writeFailMsg (plus writeFailArgs) is logged
-// when persisting a round fails.
-func (c *Conversations) runToolLoop(
-	ctx stdcontext.Context,
-	lm llm.LanguageModel,
-	maxRounds int,
-	req llm.CompletionRequest,
-	shouldExecute func(llm.ToolCall) bool,
-	convID string,
-	sharedForTurns func([]toolrunner.ToolTurn) bool,
-	opts []llm.LanguageModelOption,
-	writeFailMsg string,
-	writeFailArgs ...any,
-) (*toolrunner.ToolRunResult, error) {
-	opts = c.withProviderWebSearchLicense(opts)
-	runner := toolrunner.New(lm, toolrunner.WithMaxRounds(maxRounds), toolrunner.WithToolErrorResult(llmcontext.MCPToolErrorResult))
-	return runner.Run(ctx, req, shouldExecute, func(turns []toolrunner.ToolTurn) {
-		if writeErr := c.convService.WriteToolTurns(convID, turns, sharedForTurns(turns)); writeErr != nil {
-			c.mmClient.LogError(writeFailMsg, append([]any{"error", writeErr}, writeFailArgs...)...)
-		}
-	}, opts...)
-}
-
 // withProviderWebSearchLicense omits the provider-native web search tool below
 // Professional so the request is sent without it. A nil checker fails closed.
 func (c *Conversations) withProviderWebSearchLicense(opts []llm.LanguageModelOption) []llm.LanguageModelOption {
@@ -387,87 +375,6 @@ func (c *Conversations) withProviderWebSearchLicense(opts []llm.LanguageModelOpt
 // tool calling for channel mentions.
 func (c *Conversations) channelMentionToolCallingEnabled() bool {
 	return c.configProvider != nil && c.configProvider.EnableChannelMentionToolCalling()
-}
-
-// shouldAutoExecuteTool returns a callback that decides whether a tool call
-// should be auto-executed based on the tool policy and the conversation
-// context. In DMs, both auto_run and auto_run_everywhere bypass approval.
-// In channels, only auto_run_everywhere bypasses approval — the legacy
-// auto_run policy is DM-only so the channel-visible follow-up cannot
-// reveal unshared tool output without an explicit Share from the requester.
-func (c *Conversations) shouldAutoExecuteTool(llmCtx *llm.Context, isDM bool) func(llm.ToolCall) bool {
-	return func(tc llm.ToolCall) bool {
-		if isMCPMetaToolCall(tc, llmCtx) {
-			return true
-		}
-		var lookup llm.ToolLookup
-		var found bool
-		if llmCtx != nil {
-			lookup, found = llmCtx.Tools.LookupTool(tc.Name, tc.ServerOrigin)
-		}
-		if !found {
-			return false
-		}
-		// Interaction tools are answered by the user; auto-executing one
-		// would bypass the question entirely.
-		if lookup.Tool.UserInteraction != "" {
-			return false
-		}
-		// Auto-execute built-ins (e.g. CreateFile) run without approval, like
-		// the MCP meta-tools: their only side effect is scoped to the
-		// assistant's own response. Only honored for built-ins — an MCP tool
-		// carrying the flag must still go through policy.
-		if isAutoExecuteBuiltIn(lookup.Tool) {
-			return true
-		}
-		if c.toolPolicyChecker == nil {
-			return false
-		}
-		policy, enabled := c.toolPolicyChecker.GetToolPolicy(lookup.ServerOrigin, lookup.BareName)
-		if !enabled {
-			return false
-		}
-		if isDM {
-			return mcp.IsToolPolicyAutoRunInDM(policy)
-		}
-		return mcp.IsToolPolicyAutoRunEverywhere(policy)
-	}
-}
-
-// allToolsAutoRunEverywhere checks whether every tool call across the given
-// tool turns has an auto_run_everywhere policy.  When true, tool results can
-// be written with shared=true so the result-approval UI is skipped.
-func (c *Conversations) allToolsAutoRunEverywhere(turns []toolrunner.ToolTurn, llmCtx *llm.Context) bool {
-	sawToolCall := false
-	for _, turn := range turns {
-		for _, tc := range turn.AssistantToolCalls {
-			sawToolCall = true
-			if isMCPMetaToolCall(tc, llmCtx) {
-				continue
-			}
-			var lookup llm.ToolLookup
-			var found bool
-			if llmCtx != nil {
-				lookup, found = llmCtx.Tools.LookupTool(tc.Name, tc.ServerOrigin)
-			}
-			if !found {
-				return false
-			}
-			// Auto-execute built-ins never require approval, so a round made
-			// up only of them can still be written shared=true.
-			if isAutoExecuteBuiltIn(lookup.Tool) {
-				continue
-			}
-			if c.toolPolicyChecker == nil {
-				return false
-			}
-			policy, enabled := c.toolPolicyChecker.GetToolPolicy(lookup.ServerOrigin, lookup.BareName)
-			if !enabled || !mcp.IsToolPolicyAutoRunEverywhere(policy) {
-				return false
-			}
-		}
-	}
-	return sawToolCall
 }
 
 // isAutoExecuteBuiltIn reports whether the tool is a built-in flagged to run

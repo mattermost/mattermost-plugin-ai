@@ -5,6 +5,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/mattermost/mattermost-plugin-agents/v2/audit"
+	"github.com/mattermost/mattermost-plugin-agents/v2/bots"
 	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 	"github.com/mattermost/mattermost-plugin-agents/v2/meetings"
@@ -509,5 +511,116 @@ func TestHandleTranscribeFileDeniedByFilePolicy(t *testing.T) {
 				"admin GetFileInfo/GetFile must run only after the caller's file policy allows access")
 			assert.NotContains(t, rec.Body.String(), "sensitive recording contents")
 		})
+	}
+}
+
+// TestPostResumeRoutesUseThePostsAgent pins that the routes resuming a run on
+// an agent post (regenerate, tool approval, tool result sharing, stop) check
+// the requester's access to the agent that wrote the post rather than to the
+// default agent, and refuse posts no agent wrote.
+func TestPostResumeRoutesUseThePostsAgent(t *testing.T) {
+	gin.SetMode(gin.ReleaseMode)
+	gin.DefaultWriter = io.Discard
+
+	const (
+		postID        = "post12345678901234567890ab"
+		channelID     = "chan12345678901234567890ab"
+		postBotUserID = "postbotid12345678901234567"
+		sentinel      = "SENTINEL-ANSWER-CONTENT"
+	)
+
+	routes := []struct {
+		endpoint string
+		body     string
+		event    string
+	}{
+		{endpoint: "regenerate"},
+		{endpoint: "stop"},
+		{endpoint: "tool_call", body: `{"accepted_tool_ids":["tool-use-1"],"tool_answers":{"tool-use-1":{"text":"` + sentinel + `"}}}`, event: AuditEventToolCallApproval},
+		{endpoint: "tool_result", body: `{"accepted_tool_ids":["tool-use-1"]}`, event: AuditEventToolResultApproval},
+	}
+
+	tests := []struct {
+		name          string
+		postAuthor    string
+		blockDefault  bool
+		blockPostBot  bool
+		wantStatus    int
+		wantNotStatus int
+	}{
+		{name: "post's agent blocks the requester", postAuthor: postBotUserID, blockPostBot: true, wantStatus: http.StatusForbidden},
+		{name: "only the default agent blocks the requester", postAuthor: postBotUserID, blockDefault: true, wantNotStatus: http.StatusForbidden},
+		{name: "post no agent wrote", postAuthor: testUserID, wantStatus: http.StatusBadRequest},
+	}
+
+	for _, route := range routes {
+		for _, test := range tests {
+			t.Run(route.endpoint+"/"+test.name, func(t *testing.T) {
+				e := SetupTestEnvironment(t)
+				defer e.Cleanup(t)
+				records := e.CaptureAuditRecords()
+				e.api.streamingService = &recordingStreamingService{}
+
+				blocked := func(block bool) (llm.UserAccessLevel, []string) {
+					if block {
+						return llm.UserAccessLevelBlock, []string{testUserID}
+					}
+					return llm.UserAccessLevelAll, nil
+				}
+				defaultLevel, defaultUsers := blocked(test.blockDefault)
+				postBotLevel, postBotUsers := blocked(test.blockPostBot)
+				e.setBots(
+					bots.NewBot(llm.BotConfig{ID: testBotUserID, Name: "defaultbot", UserAccessLevel: defaultLevel, UserIDs: defaultUsers, ChannelAccessLevel: llm.ChannelAccessLevelAll}, llm.ServiceConfig{}, &model.Bot{UserId: testBotUserID, Username: "defaultbot"}, nil),
+					bots.NewBot(llm.BotConfig{ID: postBotUserID, Name: "postbot", UserAccessLevel: postBotLevel, UserIDs: postBotUsers, ChannelAccessLevel: llm.ChannelAccessLevelAll}, llm.ServiceConfig{}, &model.Bot{UserId: postBotUserID, Username: "postbot"}, nil),
+				)
+
+				post := &model.Post{Id: postID, UserId: test.postAuthor, ChannelId: channelID}
+				post.AddProp(streaming.LLMRequesterUserIDProp, testUserID)
+				e.mockAPI.On("GetPost", postID).Return(post, nil)
+				e.mockAPI.On("GetChannel", channelID).Return(&model.Channel{
+					Id:   channelID,
+					Name: postBotUserID + "__" + testUserID,
+					Type: model.ChannelTypeDirect,
+				}, nil)
+				e.mockAPI.On("HasPermissionToChannel", testUserID, channelID, model.PermissionReadChannel).Return(true)
+
+				var body io.Reader
+				if route.body != "" {
+					body = strings.NewReader(route.body)
+				}
+				req := httptest.NewRequest(http.MethodPost, "/post/"+postID+"/"+route.endpoint, body)
+				req.Header.Add("Mattermost-User-Id", testUserID)
+				recorder := httptest.NewRecorder()
+				e.api.ServeHTTP(&plugin.Context{}, recorder, req)
+
+				status := recorder.Result().StatusCode
+				if test.wantStatus != 0 {
+					require.Equal(t, test.wantStatus, status)
+				} else {
+					require.NotEqual(t, test.wantNotStatus, status)
+				}
+
+				if route.event == "" {
+					assert.Empty(t, *records, "an unaudited route must not emit a record")
+					return
+				}
+				require.Len(t, *records, 1, "exactly one audit record must be emitted")
+				rec := (*records)[0]
+				assert.Equal(t, route.event, rec.EventName)
+				assert.Equal(t, testUserID, rec.Actor.UserId)
+				assert.Equal(t, postID, rec.EventData.Parameters[audit.KeyPostID])
+				assert.Equal(t, channelID, rec.EventData.Parameters[audit.KeyChannelID])
+				if test.postAuthor == postBotUserID {
+					assert.Equal(t, postBotUserID, rec.EventData.Parameters[audit.KeyAgentID])
+				}
+				if test.wantStatus != 0 {
+					assert.Equal(t, model.AuditStatusFail, rec.Status)
+					assert.Equal(t, test.wantStatus, rec.Error.Code)
+				}
+				marshaled, err := json.Marshal(rec)
+				require.NoError(t, err)
+				assert.NotContains(t, string(marshaled), sentinel)
+			})
+		}
 	}
 }

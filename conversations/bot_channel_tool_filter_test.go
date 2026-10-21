@@ -10,6 +10,9 @@ import (
 	"testing"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/bots"
+	"github.com/mattermost/mattermost-plugin-agents/v2/conversation"
+	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise"
+	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise/enterprisetest"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llmcontext"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mcp"
@@ -158,21 +161,6 @@ func channelFollowUpSearchToolNames(t *testing.T, store *llm.ToolStore, query st
 		names = append(names, item.Name)
 	}
 	return names
-}
-
-func buildChannelFollowUpStrictContext(t *testing.T, builder *llmcontext.Builder, opts []llm.ContextOption) *llm.Context {
-	t.Helper()
-
-	allOpts := append([]llm.ContextOption{}, opts...)
-	bot := channelFollowUpTestBot()
-	allOpts = append(allOpts, builder.WithLLMContextTools(context.Background(), bot))
-
-	return builder.BuildLLMContextUserRequest(
-		bot,
-		&model.User{Id: "user-id", Username: "user", Locale: "en"},
-		&model.Channel{Id: "channel-id", TeamId: "team-id", Type: model.ChannelTypeOpen},
-		allOpts...,
-	)
 }
 
 func TestApplyBotChannelAutoEverywhereToolFilter(t *testing.T) {
@@ -422,6 +410,9 @@ func TestBotChannelAutoEverywhereFilterDenormalizesNamespacedTool(t *testing.T) 
 	require.Equal(t, "jira__safe_tool", tools[0].Name)
 }
 
+// TestChannelFollowUpStrictRegistry pins which catalog a resumed run gets:
+// a channel run whose initiator cannot be confirmed as a present human is
+// limited to auto_run_everywhere tools, and DMs are never limited.
 func TestChannelFollowUpStrictRegistry(t *testing.T) {
 	const origin = "https://mcp.atlassian.com"
 
@@ -431,96 +422,111 @@ func TestChannelFollowUpStrictRegistry(t *testing.T) {
 			"ask_tool":  {policy: mcp.ToolPolicyAsk, enabled: true},
 		},
 	}
+	channel := &model.Channel{Id: "channel-id", TeamId: "team-id", Type: model.ChannelTypeOpen}
+	dmChannel := &model.Channel{Id: "dm-channel", Type: model.ChannelTypeDirect, Name: "bot-id__" + testRequesterID}
+	activateAIPost := &model.Post{Id: "initiator-post", UserId: "bot-user"}
+	activateAIPost.AddProp(ActivateAIProp, true)
+
 	tests := []struct {
-		name              string
-		isDM              bool
-		toolPolicyChecker mapPolicyChecker
-		setupMMClient     func(t *testing.T) *mocks.MockClient
-		expectedFiltered  bool
-		expectedOptsEmpty bool
-		expectSafeTool    bool
-		expectAskTool     bool
+		name          string
+		channel       *model.Channel
+		postID        string
+		setupMMClient func(mmClient *mocks.MockClient)
+		expectAskTool bool
 	}{
 		{
-			name:              "get post failure fails closed",
-			toolPolicyChecker: channelPolicyChecker,
-			setupMMClient: func(t *testing.T) *mocks.MockClient {
-				mmClient := mocks.NewMockClient(t)
-				mmClient.On("GetPost", "root-id").Return((*model.Post)(nil), errors.New("missing root post")).Once()
-				return mmClient
+			name:    "initiating post lookup failure fails closed",
+			channel: channel,
+			postID:  "bot-post",
+			setupMMClient: func(mmClient *mocks.MockClient) {
+				mmClient.On("GetPost", "initiator-post").Return((*model.Post)(nil), errors.New("missing post")).Once()
 			},
-			expectedFiltered: true,
-			expectSafeTool:   true,
-			expectAskTool:    false,
+			expectAskTool: false,
 		},
 		{
-			name:              "get user failure fails closed",
-			toolPolicyChecker: channelPolicyChecker,
-			setupMMClient: func(t *testing.T) *mocks.MockClient {
-				mmClient := mocks.NewMockClient(t)
-				mmClient.On("GetPost", "root-id").Return(&model.Post{UserId: "root-user"}, nil).Once()
-				mmClient.On("GetUser", "root-user").Return((*model.User)(nil), errors.New("missing root user")).Once()
-				return mmClient
+			name:    "initiating user lookup failure fails closed",
+			channel: channel,
+			postID:  "bot-post",
+			setupMMClient: func(mmClient *mocks.MockClient) {
+				mmClient.On("GetPost", "initiator-post").Return(&model.Post{Id: "initiator-post", UserId: "root-user"}, nil).Once()
+				mmClient.On("GetUser", "root-user").Return((*model.User)(nil), errors.New("missing user")).Once()
 			},
-			expectedFiltered: true,
-			expectSafeTool:   true,
-			expectAskTool:    false,
+			expectAskTool: false,
 		},
 		{
-			name:              "DM does not apply channel filter",
-			isDM:              true,
-			toolPolicyChecker: mapPolicyChecker{},
-			expectedFiltered:  false,
-			expectedOptsEmpty: true,
-			expectSafeTool:    true,
-			expectAskTool:     true,
+			name:          "post outside the conversation fails closed",
+			channel:       channel,
+			postID:        "unknown-post",
+			expectAskTool: false,
 		},
 		{
-			name:              "confirmed ActivateAI filters auto everywhere",
-			toolPolicyChecker: channelPolicyChecker,
-			setupMMClient: func(t *testing.T) *mocks.MockClient {
-				rootPost := &model.Post{UserId: "bot-user"}
-				rootPost.AddProp(ActivateAIProp, true)
-				mmClient := mocks.NewMockClient(t)
-				mmClient.On("GetPost", "root-id").Return(rootPost, nil).Once()
+			name:    "bot activate_ai initiator is limited to auto everywhere",
+			channel: channel,
+			postID:  "bot-post",
+			setupMMClient: func(mmClient *mocks.MockClient) {
+				mmClient.On("GetPost", "initiator-post").Return(activateAIPost, nil).Once()
 				mmClient.On("GetUser", "bot-user").Return(&model.User{Id: "bot-user", IsBot: true}, nil).Once()
-				return mmClient
 			},
-			expectedFiltered: true,
-			expectSafeTool:   true,
-			expectAskTool:    false,
+			expectAskTool: false,
+		},
+		{
+			name:    "human initiator keeps approval tools",
+			channel: channel,
+			postID:  "bot-post",
+			setupMMClient: func(mmClient *mocks.MockClient) {
+				mmClient.On("GetPost", "initiator-post").Return(&model.Post{Id: "initiator-post", UserId: "human-user"}, nil).Once()
+				mmClient.On("GetUser", "human-user").Return(&model.User{Id: "human-user"}, nil).Once()
+			},
+			expectAskTool: true,
+		},
+		{
+			name:          "DM is not limited",
+			channel:       dmChannel,
+			postID:        "bot-post",
+			expectAskTool: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config := &channelFollowUpTestConfig{enableChannelMentionToolCalling: true}
-			builder := newChannelFollowUpTestBuilder(t, []llm.Tool{
-				channelFollowUpTestMCPTool("jira__safe_tool", origin, "auto-everywhere safe channel follow-up capability"),
-				channelFollowUpTestMCPTool("jira__ask_tool", origin, "approval-only channel follow-up capability"),
-			}, config)
-			c := &Conversations{
-				contextBuilder:    builder,
-				configProvider:    config,
-				toolPolicyChecker: tt.toolPolicyChecker,
-			}
+			convStore, conv := loadedStateConversationStore()
+			initiatorPostID := "initiator-post"
+			botPostID := "bot-post"
+			require.NoError(t, convStore.CreateTurn(&store.Turn{ID: "user-turn", ConversationID: conv.ID, PostID: &initiatorPostID, Role: "user", Sequence: 0}))
+			require.NoError(t, convStore.CreateTurn(&store.Turn{ID: "bot-turn", ConversationID: conv.ID, PostID: &botPostID, Role: "assistant", Sequence: 1}))
+
+			mmClient := mocks.NewMockClient(t)
+			mmClient.On("KVGet", mock.Anything, mock.Anything).Return(nil).Maybe()
 			if tt.setupMMClient != nil {
-				c.mmClient = tt.setupMMClient(t)
-			}
-			rootID := "root-id"
-
-			opts, filtered := c.channelFollowUpMCPToolFilterContextOptions(tt.isDM, &store.Conversation{RootPostID: &rootID})
-			require.Equal(t, tt.expectedFiltered, filtered)
-			if tt.expectedOptsEmpty {
-				require.Empty(t, opts)
+				tt.setupMMClient(mmClient)
 			}
 
-			llmContext := buildChannelFollowUpStrictContext(t, builder, opts)
-			if tt.expectSafeTool {
-				require.Contains(t, channelFollowUpSearchToolNames(t, llmContext.Tools, "safe"), "jira__safe_tool")
-			} else {
-				require.NotContains(t, channelFollowUpSearchToolNames(t, llmContext.Tools, "safe"), "jira__safe_tool")
+			config := &channelFollowUpTestConfig{enableChannelMentionToolCalling: true}
+			bot := loadedStateBot(nil)
+			c := &Conversations{
+				mmClient: mmClient,
+				contextBuilder: newChannelFollowUpTestBuilder(t, []llm.Tool{
+					channelFollowUpTestMCPTool("jira__safe_tool", origin, "auto-everywhere safe channel follow-up capability"),
+					channelFollowUpTestMCPTool("jira__ask_tool", origin, "approval-only channel follow-up capability"),
+				}, config),
+				bots:              passthroughBotsService(bot),
+				licenseChecker:    enterprisetest.CheckerAt(enterprise.LevelEnterprise),
+				convService:       conversation.NewService(convStore, nil, nil, nil),
+				configProvider:    config,
+				toolPolicyChecker: channelPolicyChecker,
 			}
+
+			policy, err := c.resolveTurnPolicy(context.Background(), turnRequest{
+				bot:     bot,
+				user:    &model.User{Id: testRequesterID, Username: "user", Locale: "en"},
+				channel: tt.channel,
+				conv:    conv,
+				post:    &model.Post{Id: tt.postID, UserId: "bot-id"},
+			})
+			require.NoError(t, err)
+			llmContext := policy.buildContext(context.Background(), "Failed to load user tool preferences")
+
+			require.Contains(t, channelFollowUpSearchToolNames(t, llmContext.Tools, "safe"), "jira__safe_tool")
 			if tt.expectAskTool {
 				require.Contains(t, channelFollowUpSearchToolNames(t, llmContext.Tools, "approval-only"), "jira__ask_tool")
 			} else {
@@ -559,7 +565,7 @@ func TestChannelMentionSystemPromptDynamicToolWorkflow(t *testing.T) {
 			bot := channelFollowUpTestBot()
 			llmContext := builder.BuildLLMContextUserRequest(
 				bot,
-				&model.User{Id: "user-id", Username: "user", Locale: "en"},
+				&model.User{Id: testRequesterID, Username: "user", Locale: "en"},
 				&model.Channel{Id: "channel-id", TeamId: "team-id", Type: tt.channelType},
 				builder.WithLLMContextTools(context.Background(), bot),
 			)
@@ -585,7 +591,7 @@ func TestChannelMentionSystemPromptDynamicToolWorkflow(t *testing.T) {
 func TestUserMCPPreferenceContextOptionsNormalizesDisabledServersBeforeBuild(t *testing.T) {
 	origin := "https://mcp.example.com"
 	mmClient := mocks.NewMockClient(t)
-	mmClient.On("KVGet", "user_tool_providers_user-id", mock.AnythingOfType("*mcp.UserToolProviderPreferences")).
+	mmClient.On("KVGet", "user_tool_providers_"+testRequesterID, mock.AnythingOfType("*mcp.UserToolProviderPreferences")).
 		Run(func(args mock.Arguments) {
 			prefs := args.Get(1).(*mcp.UserToolProviderPreferences)
 			prefs.DisabledServers = []string{"  " + origin + "/  "}
@@ -598,7 +604,7 @@ func TestUserMCPPreferenceContextOptionsNormalizesDisabledServersBeforeBuild(t *
 		contextBuilder: &llmcontext.Builder{},
 	}
 
-	opts := c.userMCPPreferenceContextOptions("user-id", "Failed to load user tool preferences")
+	opts := c.userMCPPreferenceContextOptions(testRequesterID, "Failed to load user tool preferences")
 	require.Len(t, opts, 1)
 
 	llmContext := &llm.Context{}

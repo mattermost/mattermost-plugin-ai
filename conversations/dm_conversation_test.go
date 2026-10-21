@@ -359,7 +359,11 @@ func newDMPolicyChecker() *dmPolicyChecker {
 }
 
 func (f *dmPolicyChecker) setAutoRun(origin, name string) {
-	f.policies[origin+":"+name] = mcp.ToolPolicyAutoRunInDM
+	f.setPolicy(origin, name, mcp.ToolPolicyAutoRunInDM)
+}
+
+func (f *dmPolicyChecker) setPolicy(origin, name, policy string) {
+	f.policies[origin+":"+name] = policy
 }
 
 func (f *dmPolicyChecker) GetToolPolicy(serverBaseURL, toolName string) (string, bool) {
@@ -556,13 +560,7 @@ func TestDMNewConversation_CreatesConversationAndTurns(t *testing.T) {
 	require.NotEmpty(t, convResult.ConversationID)
 	require.True(t, convResult.IsNew)
 
-	streamResult, err := env.conversations.ProcessDMRequest(
-		context.Background(),
-		convResult.ConversationID,
-		env.fakeLLM,
-		nil, // llmContext
-		0,
-	)
+	streamResult, err := env.conversations.ProcessDMRequest(context.Background(), convResult.ConversationID, nil)
 	require.NoError(t, err)
 	require.NotNil(t, streamResult)
 	require.NotNil(t, streamResult.Stream)
@@ -618,13 +616,7 @@ func TestDMContinueConversation_ReadsTurnsNotPosts(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, convResult)
 
-	streamResult, err := env.conversations.ProcessDMRequest(
-		context.Background(),
-		convResult.ConversationID,
-		env.fakeLLM,
-		nil,
-		0,
-	)
+	streamResult, err := env.conversations.ProcessDMRequest(context.Background(), convResult.ConversationID, nil)
 	require.NoError(t, err)
 	require.NotNil(t, streamResult)
 
@@ -700,13 +692,7 @@ func TestDMAutoRunTools_ToolRunnerExecutesAndWritesTurns(t *testing.T) {
 	require.NotNil(t, convResult)
 	require.NotEmpty(t, convResult.ConversationID)
 
-	streamResult, err := env.conversations.ProcessDMRequest(
-		context.Background(),
-		convResult.ConversationID,
-		env.fakeLLM,
-		llmCtx,
-		0,
-	)
+	streamResult, err := env.conversations.ProcessDMRequest(context.Background(), convResult.ConversationID, llmCtx)
 	require.NoError(t, err)
 	require.NotNil(t, streamResult)
 
@@ -790,13 +776,7 @@ func TestDMManualApprovalTools_ToolRunnerReturnsUnresolved(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, convResult)
 
-	streamResult, err := env.conversations.ProcessDMRequest(
-		context.Background(),
-		convResult.ConversationID,
-		env.fakeLLM,
-		llmCtx,
-		0,
-	)
+	streamResult, err := env.conversations.ProcessDMRequest(context.Background(), convResult.ConversationID, llmCtx)
 	require.NoError(t, err)
 	require.NotNil(t, streamResult)
 	require.NotNil(t, streamResult.Stream)
@@ -849,13 +829,7 @@ func TestDMUnknownToolReturnsErrorInsteadOfApproval(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, convResult)
 
-	streamResult, err := env.conversations.ProcessDMRequest(
-		context.Background(),
-		convResult.ConversationID,
-		env.fakeLLM,
-		llmCtx,
-		0,
-	)
+	streamResult, err := env.conversations.ProcessDMRequest(context.Background(), convResult.ConversationID, llmCtx)
 	require.NoError(t, err)
 	require.NotNil(t, streamResult)
 
@@ -1085,13 +1059,7 @@ func TestDMToolSharedFlag_AlwaysTrue(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	streamResult, err := env.conversations.ProcessDMRequest(
-		context.Background(),
-		convResult.ConversationID,
-		env.fakeLLM,
-		&llm.Context{Tools: toolStore},
-		0,
-	)
+	streamResult, err := env.conversations.ProcessDMRequest(context.Background(), convResult.ConversationID, &llm.Context{Tools: toolStore})
 	require.NoError(t, err)
 	require.NotNil(t, streamResult)
 
@@ -1152,13 +1120,7 @@ func TestDMCompletionRequest_BuiltFromTurns(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, createResult.ConversationID, convResult.ConversationID)
 
-	_, err = env.conversations.ProcessDMRequest(
-		context.Background(),
-		convResult.ConversationID,
-		env.fakeLLM,
-		nil,
-		0,
-	)
+	_, err = env.conversations.ProcessDMRequest(context.Background(), convResult.ConversationID, nil)
 	require.NoError(t, err)
 
 	// Verify the CompletionRequest sent to the LLM

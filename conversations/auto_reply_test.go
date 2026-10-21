@@ -69,6 +69,8 @@ type autoReplyTestEnv struct {
 	mcpMgr        *testMCPClientManager
 	settings      *fakeAutoReplySettings
 	channel       *model.Channel
+	config        *testToolCallingConfig
+	streaming     *fakeStreamingService
 }
 
 // autoReplyBotConfig is the default unrestricted agent configuration used by
@@ -150,17 +152,19 @@ func setupAutoReplyTestEnv(t *testing.T, botConfigs []llm.BotConfig, llmResponse
 	convFakeStore := newFakeConvStore()
 	convSvc := conversation.NewService(convFakeStore, promptsManager, mmClient, botService)
 
+	config := &testToolCallingConfig{}
+	streamingService := &fakeStreamingService{}
 	convs := conversations.New(
 		promptsManager,
 		mmClient,
-		&fakeStreamingService{},
+		streamingService,
 		contextBuilder,
 		botService,
 		nil, // db
 		licenseChecker,
 		i18n.Init(),
 		nil, // meetings
-		&testToolCallingConfig{},
+		config,
 	)
 	convs.SetConversationService(convSvc)
 
@@ -177,6 +181,8 @@ func setupAutoReplyTestEnv(t *testing.T, botConfigs []llm.BotConfig, llmResponse
 		mcpMgr:        mcpMgr,
 		settings:      settings,
 		channel:       channel,
+		config:        config,
+		streaming:     streamingService,
 	}
 }
 

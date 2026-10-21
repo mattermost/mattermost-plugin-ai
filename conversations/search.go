@@ -78,8 +78,13 @@ func (c *Conversations) HandleSearch(ctx context.Context, bot *bots.Bot, user *m
 		return nil, fmt.Errorf("failed to get DM channel: %w", err)
 	}
 
+	policy, err := c.resolveTurnPolicy(ctx, turnRequest{bot: bot, user: user, channel: channel, trigger: questionPost})
+	if err != nil {
+		return nil, err
+	}
+
 	go func() {
-		if searchErr := c.runSearch(ctx, bot, user, channel, questionPost, req); searchErr != nil {
+		if searchErr := c.runSearch(ctx, policy, questionPost, req); searchErr != nil {
 			c.mmClient.LogError("Failed to answer search request", "error", searchErr, "post_id", questionPost.Id)
 		}
 	}()
@@ -87,7 +92,8 @@ func (c *Conversations) HandleSearch(ctx context.Context, bot *bots.Bot, user *m
 	return questionPost, nil
 }
 
-func (c *Conversations) runSearch(ctx context.Context, bot *bots.Bot, user *model.User, channel *model.Channel, questionPost *model.Post, req SearchRequest) (err error) {
+func (c *Conversations) runSearch(ctx context.Context, policy *turnPolicy, questionPost *model.Post, req SearchRequest) (err error) {
+	bot, user, channel := policy.bot, policy.user, policy.channel
 	responsePost := &model.Post{
 		ChannelId: channel.Id,
 		RootId:    questionPost.Id,
@@ -108,14 +114,7 @@ func (c *Conversations) runSearch(ctx context.Context, bot *bots.Bot, user *mode
 		}
 	}()
 
-	llmContext := c.buildConversationContextWithTools(
-		ctx,
-		bot, user, channel,
-		"Failed to load user tool preferences for search",
-		c.contextBuilder.WithLLMContextInteractive(),
-		c.contextBuilder.WithLLMContextResponseFiles(),
-		c.searchToolsContextOption(bot),
-	)
+	llmContext := policy.buildContext(ctx, "Failed to load user tool preferences for search", c.searchToolsContextOption(bot))
 	progress.Advance(responseProgressLoadingConversation)
 
 	if _, ok := llmContext.Tools.LookupTool("search_posts", mcp.EmbeddedClientKey); !ok {
@@ -147,7 +146,7 @@ func (c *Conversations) runSearch(ctx context.Context, bot *bots.Bot, user *mode
 		return fmt.Errorf("failed to create search conversation: %w", err)
 	}
 
-	return c.streamDMConversation(ctx, bot, channel, user, questionPost, responsePost, progress, llmContext, &DMConversationResult{
+	return c.streamDMConversation(ctx, policy, questionPost, responsePost, progress, llmContext, &DMConversationResult{
 		ConversationID: created.ConversationID,
 		IsNew:          true,
 		UserTurnID:     created.UserTurnID,
@@ -171,18 +170,4 @@ func (c *Conversations) conversationToolOptions(bot *bots.Bot, conv *store.Conve
 		return nil
 	}
 	return []llm.ContextOption{c.searchToolsContextOption(bot)}
-}
-
-// threadConversationToolOptions is conversationToolOptions for a thread reply
-// whose conversation has not been loaded yet.
-func (c *Conversations) threadConversationToolOptions(bot *bots.Bot, user *model.User, post *model.Post) []llm.ContextOption {
-	if post.RootId == "" || c.convService == nil {
-		return nil
-	}
-	conv, err := c.convService.GetConversationByThread(post.RootId, bot.GetMMBot().UserId, user.Id)
-	if err != nil {
-		c.mmClient.LogWarn("Failed to look up thread conversation", "error", err, "root_id", post.RootId)
-		return nil
-	}
-	return c.conversationToolOptions(bot, conv)
 }

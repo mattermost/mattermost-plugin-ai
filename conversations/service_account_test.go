@@ -63,7 +63,7 @@ func TestHandleToolCallExecutesFromServiceAccountCatalog(t *testing.T) {
 	convStore := newLoadedStateFlowStore()
 	conv := &store.Conversation{
 		ID:           "conv-id",
-		UserID:       "user-id",
+		UserID:       testRequesterID,
 		BotID:        serviceAccountBotUserID,
 		SystemPrompt: "system",
 		Operation:    "conversation",
@@ -96,11 +96,11 @@ func TestHandleToolCallExecutesFromServiceAccountCatalog(t *testing.T) {
 	approvalPost.AddProp(streaming.ConversationIDProp, conv.ID)
 	channel := &model.Channel{Id: "channel-id", TeamId: "team-id", Type: model.ChannelTypeOpen}
 
-	require.NoError(t, c.HandleToolCall(context.Background(), "user-id", approvalPost, channel, []string{"tool-use-1"}, nil))
+	require.NoError(t, c.HandleToolCall(context.Background(), testRequesterID, approvalPost, channel, []string{"tool-use-1"}, nil))
 
 	require.Equal(t, []string{serviceAccountBotUserID}, provider.SAIdentities(),
 		"the approval resume must re-derive the catalog for the agent bot identity")
-	require.Equal(t, []string{"user-id"}, provider.SAInvokers(),
+	require.Equal(t, []string{testRequesterID}, provider.SAInvokers(),
 		"embedded/plugin identity on the SA catalog is the initiator")
 	require.Equal(t, 0, provider.Calls(), "service account agents never build the per-user remotes catalog")
 	require.Equal(t, 1, executed, "the service account resolver must run exactly once")
@@ -130,7 +130,7 @@ func serviceAccountConversations(t *testing.T, convStore *loadedStateFlowStore, 
 
 	mmClient := mocks.NewMockClient(t)
 	mmClient.On("LogDebug", mock.Anything, mock.Anything).Maybe().Return()
-	mmClient.On("GetUser", "user-id").Return(&model.User{Id: "user-id", Username: "user"}, nil).Maybe()
+	mmClient.On("GetUser", testRequesterID).Return(&model.User{Id: testRequesterID, Username: "user"}, nil).Maybe()
 
 	return &Conversations{
 		mmClient:       mmClient,

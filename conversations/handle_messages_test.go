@@ -16,6 +16,7 @@ import (
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin/plugintest"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -174,7 +175,7 @@ func postWithProp(prop string) *model.Post {
 	return p
 }
 
-func TestComputeAllowToolsInChannel(t *testing.T) {
+func TestSetChannelRunTools(t *testing.T) {
 	humanUser := &model.User{Id: "u1", IsBot: false}
 	botUser := &model.User{Id: "b1", IsBot: true}
 	humanPost := &model.Post{UserId: "u1"}
@@ -188,26 +189,38 @@ func TestComputeAllowToolsInChannel(t *testing.T) {
 	tests := []struct {
 		name                 string
 		configEnabled        bool
-		post                 *model.Post
-		postingUser          *model.User
+		initiator            *model.Post
+		initiatingUser       *model.User
 		hasToolPolicyChecker bool
-		want                 bool
+		wantTools            bool
+		wantInteractive      bool
+		wantAutoEverywhere   bool
 	}{
-		{"config disabled, human", false, humanPost, humanUser, false, false},
-		{"config enabled, human", true, humanPost, humanUser, false, true},
-		{"config enabled, bot user", true, humanPost, botUser, false, false},
-		{"config enabled, bot user with activate_ai and policy checker", true, botActivateAIPost, botUser, true, true},
-		{"config enabled, bot user with activate_ai without policy checker", true, botActivateAIPost, botUser, false, false},
-		{"config enabled, from_webhook post", true, webhookPost, humanUser, false, false},
-		{"config enabled, from_plugin post", true, pluginPost, humanUser, false, false},
-		{"config enabled, from_bot post", true, botPropPost, humanUser, false, false},
-		{"config enabled, from_oauth_app post", true, oauthAppPost, humanUser, false, false},
-		{"config disabled, bot user", false, humanPost, botUser, false, false},
+		{"config disabled, human", false, humanPost, humanUser, false, false, true, false},
+		{"config enabled, human", true, humanPost, humanUser, false, true, true, false},
+		{"config enabled, bot user", true, humanPost, botUser, false, false, false, false},
+		{"config enabled, bot user with activate_ai and policy checker", true, botActivateAIPost, botUser, true, true, false, true},
+		{"config enabled, bot user with activate_ai without policy checker", true, botActivateAIPost, botUser, false, false, false, true},
+		{"config disabled, bot user with activate_ai", false, botActivateAIPost, botUser, true, false, false, true},
+		{"config enabled, unknown initiator with policy checker", true, nil, nil, true, true, false, true},
+		{"config enabled, unknown initiating user with policy checker", true, humanPost, nil, true, true, false, true},
+		{"config enabled, from_webhook post", true, webhookPost, humanUser, false, false, false, false},
+		{"config enabled, from_plugin post", true, pluginPost, humanUser, false, false, false, false},
+		{"config enabled, from_bot post", true, botPropPost, humanUser, false, false, false, false},
+		{"config enabled, from_oauth_app post", true, oauthAppPost, humanUser, false, false, false, false},
+		{"config disabled, bot user", false, humanPost, botUser, false, false, false, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := computeAllowToolsInChannel(tt.configEnabled, tt.post, tt.postingUser, tt.hasToolPolicyChecker)
-			require.Equal(t, tt.want, got)
+			c := &Conversations{configProvider: &channelFollowUpTestConfig{enableChannelMentionToolCalling: tt.configEnabled}}
+			if tt.hasToolPolicyChecker {
+				c.toolPolicyChecker = mapPolicyChecker{}
+			}
+			p := &turnPolicy{c: c}
+			p.setChannelRunTools(tt.initiator, tt.initiatingUser)
+			assert.Equal(t, tt.wantTools, p.toolsEnabled, "toolsEnabled")
+			assert.Equal(t, tt.wantInteractive, p.interactive, "interactive")
+			assert.Equal(t, tt.wantAutoEverywhere, p.autoEverywhereOnly, "autoEverywhereOnly")
 		})
 	}
 }

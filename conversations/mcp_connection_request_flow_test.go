@@ -64,7 +64,7 @@ func (p *connectionTestMCPProvider) MCPServerOriginsByName() map[string]string {
 // conversation without blaming the user.
 func TestHandleToolCallResolvesConnectionRequest(t *testing.T) {
 	requestInput := json.RawMessage(`{"server":"Jira","reason":"Look up your open issues"}`)
-	dmChannel := &model.Channel{Id: "dm-channel", Type: model.ChannelTypeDirect, Name: "bot-id__user-id"}
+	dmChannel := &model.Channel{Id: "dm-channel", Type: model.ChannelTypeDirect, Name: "bot-id__" + testRequesterID}
 	openChannel := &model.Channel{Id: "channel-id", TeamId: "team-id", Type: model.ChannelTypeOpen}
 
 	cases := []struct {
@@ -144,7 +144,7 @@ func TestHandleToolCallResolvesConnectionRequest(t *testing.T) {
 			if tc.accepted {
 				acceptedIDs = []string{"connect-1"}
 			}
-			require.NoError(t, c.HandleToolCall(context.Background(), "user-id", approvalPost, tc.channel, acceptedIDs, nil))
+			require.NoError(t, c.HandleToolCall(context.Background(), testRequesterID, approvalPost, tc.channel, acceptedIDs, nil))
 			streamingService.waitForStreaming()
 
 			turns, err := convStore.GetTurnsForConversation(conv.ID)
@@ -231,7 +231,7 @@ func newConnectionTestConversations(t *testing.T, provider llmcontext.MCPToolPro
 
 	mmClient := mocks.NewMockClient(t)
 	mmClient.On("LogDebug", mock.Anything, mock.Anything).Maybe().Return()
-	mmClient.On("GetUser", "user-id").Maybe().Return(&model.User{Id: "user-id", Username: "user"}, nil)
+	mmClient.On("GetUser", testRequesterID).Maybe().Return(&model.User{Id: testRequesterID, Username: "user"}, nil)
 	mmClient.On("KVGet", mock.Anything, mock.Anything).Maybe().Return(nil)
 	mmClient.On("GetConfig").Maybe().Return(&model.Config{})
 	mmClient.On("GetPost", mock.Anything).Maybe().Return(nil, &model.AppError{Message: "not found"})
@@ -288,9 +288,9 @@ func TestHandleToolCallOffersReconnectWhenApprovedToolLapses(t *testing.T) {
 			Status:       conversation.StatusPending,
 			Shared:       new(false),
 		})
-	dmChannel := &model.Channel{Id: "dm-channel", Type: model.ChannelTypeDirect, Name: "bot-id__user-id"}
+	dmChannel := &model.Channel{Id: "dm-channel", Type: model.ChannelTypeDirect, Name: "bot-id__" + testRequesterID}
 
-	require.NoError(t, c.HandleToolCall(context.Background(), "user-id", approvalPost, dmChannel, []string{"call-1"}, nil))
+	require.NoError(t, c.HandleToolCall(context.Background(), testRequesterID, approvalPost, dmChannel, []string{"call-1"}, nil))
 	streamingService.waitForStreaming()
 
 	turns, err := convStore.GetTurnsForConversation(conv.ID)
