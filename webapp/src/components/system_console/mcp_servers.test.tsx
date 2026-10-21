@@ -186,6 +186,17 @@ describe('MCPServers stable ID handling', () => {
         expect(servers[0].id).toBe(STABLE_ID);
     });
 
+    it('opens the name editor from a focusable rename button', () => {
+        renderServers(makeMCPConfig([existingServer]));
+
+        const rename = screen.getByRole('button', {name: 'Rename Jira'});
+        rename.focus();
+        expect(document.activeElement).toBe(rename);
+
+        fireEvent.click(rename);
+        expect(screen.getByPlaceholderText('Server name')).toBeTruthy();
+    });
+
     it('preserves the server id through a URL edit', () => {
         const {onChange} = renderServers(makeMCPConfig([existingServer]));
 

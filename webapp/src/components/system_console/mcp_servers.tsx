@@ -328,7 +328,14 @@ const MCPServer = ({
                         />
                     </ServerNameEditContainer>
                 ) : (
-                    <ServerTitle onClick={() => setIsEditingName(true)}>
+                    <ServerTitle
+                        type='button'
+                        aria-label={intl.formatMessage(
+                            {defaultMessage: 'Rename {name}'},
+                            {name: config.name || unnamedServerLabel},
+                        )}
+                        onClick={() => setIsEditingName(true)}
+                    >
                         {config.name || unnamedServerLabel}
                         <ServerTitleEditIcon>
                             <Icon
@@ -639,7 +646,7 @@ const MCPServers = ({mcpConfig, savedServers = [], onChange}: Props) => {
                 subtitle={intl.formatMessage({defaultMessage: 'Configure MCP servers to enable AI tools.'})}
                 showDivider={false}
             />
-            <TabsContainer role='tablist'>
+            <TabsContainer>
                 <UnderlineTab
                     type='button'
                     role='tab'
@@ -867,7 +874,7 @@ const ServerTitleEditIcon = styled.span`
     transition: opacity 0.2s ease;
 `;
 
-const ServerTitle = styled.div`
+const ServerTitle = styled.button`
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -879,13 +886,17 @@ const ServerTitle = styled.div`
     cursor: pointer;
     padding: 0;
     margin: 0;
+    border: none;
+    background: none;
+    text-align: left;
     border-radius: var(--radius-s);
 
     &:hover {
         background-color: rgba(var(--center-channel-color-rgb), 0.08);
     }
 
-    &:hover ${ServerTitleEditIcon} {
+    &:hover ${ServerTitleEditIcon},
+    &:focus-visible ${ServerTitleEditIcon} {
         opacity: 0.72;
     }
 `;
