@@ -174,5 +174,5 @@ func siteURLPath(siteURL string) string {
 	if err != nil {
 		return ""
 	}
-	return strings.TrimRight(u.Path, "/")
+	return strings.TrimRight(u.EscapedPath(), "/")
 }

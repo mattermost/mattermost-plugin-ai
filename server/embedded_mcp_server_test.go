@@ -129,6 +129,12 @@ func TestDeriveInternalServerURL(t *testing.T) {
 			want:    "http://localhost:8065/team/chat",
 		},
 		{
+			name:    "subpath SiteURL keeps encoded characters in the path",
+			cfg:     cfgWith(model.NewPointer(":8065"), none),
+			siteURL: "https://example.com/chat%3Fteam",
+			want:    "http://localhost:8065/chat%3Fteam",
+		},
+		{
 			name:    "TLS with subpath SiteURL falls back to SiteURL",
 			cfg:     cfgWith(model.NewPointer(":443"), tls),
 			siteURL: "https://example.com/chat",
