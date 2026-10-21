@@ -101,14 +101,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function readString(value: unknown): string | null {
-    if (value === undefined) {
+    if (typeof value === 'undefined') {
         return '';
     }
     return typeof value === 'string' ? value : null;
 }
 
 function readBoolean(value: unknown, fallback: boolean): boolean | null {
-    if (value === undefined) {
+    if (typeof value === 'undefined') {
         return fallback;
     }
     return typeof value === 'boolean' ? value : null;
@@ -126,8 +126,8 @@ function parseAgent(value: unknown): AgentExportAgent | null {
 
     // Files written before this field existed run with dynamic loading on.
     const mcpDynamicToolLoading = readBoolean(value.mcpDynamicToolLoading, true);
-    const maxToolTurns = value.maxToolTurns === undefined ? 0 : value.maxToolTurns;
-    const rawTools = value.mcpTools === undefined || value.mcpTools === null ? [] : value.mcpTools;
+    const maxToolTurns = typeof value.maxToolTurns === 'undefined' ? 0 : value.maxToolTurns;
+    const rawTools = value.mcpTools ?? [];
     if (name === null || displayName === null || customInstructions === null || disableTools === null ||
         autoEnableNewMCPTools === null || mcpDynamicToolLoading === null ||
         typeof maxToolTurns !== 'number' || !Number.isInteger(maxToolTurns) || !Array.isArray(rawTools)) {

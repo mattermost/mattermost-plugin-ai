@@ -1473,7 +1473,7 @@ describe('AgentConfigView import from file', () => {
         expect((screen.getByLabelText('Username') as HTMLInputElement).value).toBe('releasehelper');
         expect((screen.getByLabelText('Display Name') as HTMLInputElement).value).toBe('Release Helper');
         expect((screen.getByLabelText('Custom instructions') as HTMLTextAreaElement).value).toBe('Imported instructions');
-        expect(mockGetUserMCPTools).toHaveBeenCalledWith({agentId: undefined, serviceAccount: false});
+        expect(mockGetUserMCPTools).toHaveBeenCalledWith({serviceAccount: false});
 
         fireEvent.click(screen.getByRole('button', {name: 'Save'}));
 

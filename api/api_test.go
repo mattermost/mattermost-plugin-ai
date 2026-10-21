@@ -647,7 +647,6 @@ func (m *mockAgentStore) DeletePreviousAgentVersions(agentID string) (int64, err
 	return int64(len(history) - 1), nil
 }
 
-
 // cloneBotConfig returns a deep copy so API callers cannot mutate mock store internals via returned pointers.
 func cloneBotConfig(src *llm.BotConfig) *llm.BotConfig {
 	if src == nil {

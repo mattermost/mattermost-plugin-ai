@@ -412,10 +412,10 @@ const AgentConfigView = (props: Props) => {
 
     const filePicker = useAgentFilePicker(applyImport, (message) => setErrors({general: message}));
 
-    const initialImportRef = useRef(importedDocument);
+    const initialImportRef = useRef(importedDocument ?? null);
     useEffect(() => {
         const doc = initialImportRef.current;
-        initialImportRef.current = undefined;
+        initialImportRef.current = null;
         if (doc) {
             applyImport(doc);
         }
