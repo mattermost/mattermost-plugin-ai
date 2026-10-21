@@ -41,6 +41,15 @@ func TestStreamToPostMarksUserStop(t *testing.T) {
 			wantStopped: true,
 		},
 		{
+			name: "requester stops and the upstream ends",
+			drive: func(s *MMPostStreamService, _ context.CancelFunc, stream chan<- llm.TextStreamEvent) {
+				s.StopStreaming(postID)
+				stream <- llm.TextStreamEvent{Type: llm.EventTypeEnd}
+				close(stream)
+			},
+			wantStopped: true,
+		},
+		{
 			name: "run finishes without a user stop",
 			drive: func(s *MMPostStreamService, _ context.CancelFunc, _ chan<- llm.TextStreamEvent) {
 				s.FinishStreaming(postID)
@@ -73,7 +82,7 @@ func TestStreamToPostMarksUserStop(t *testing.T) {
 			stream := make(chan llm.TextStreamEvent, 2)
 			tc.drive(service, cancelParent, stream)
 
-			post := &model.Post{Id: postID, ChannelId: channelID, Message: "partial answer"}
+			post := &model.Post{Id: postID, ChannelId: channelID}
 			post.AddProp(GenerationStoppedProp, true)
 			service.StreamToPost(ctx, &llm.TextStreamResult{Stream: stream}, post, "en", "requester-id")
 
@@ -87,4 +96,23 @@ func TestStreamToPostMarksUserStop(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestStopStreamingKeepsRunUntilItsCleanup(t *testing.T) {
+	const postID = "post-id"
+	service := NewMMPostStreamService(&fakeStreamingClient{}, i18n.Init())
+
+	_, err := service.GetStreamingContext(context.Background(), postID)
+	require.NoError(t, err)
+	service.StopStreaming(postID)
+
+	// A regenerate clicked right after Stop must not start while the stopped
+	// run is still finishing; its cleanup would cancel the new run.
+	_, err = service.GetStreamingContext(context.Background(), postID)
+	require.ErrorIs(t, err, ErrAlreadyStreamingToPost)
+
+	service.FinishStreaming(postID)
+	next, err := service.GetStreamingContext(context.Background(), postID)
+	require.NoError(t, err)
+	require.NoError(t, next.Err())
 }

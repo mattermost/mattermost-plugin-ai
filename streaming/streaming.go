@@ -249,9 +249,16 @@ func (p *MMPostStreamService) sendPostStreamingEvent(post *model.Post, broadcast
 }
 
 // StopStreaming cancels any in-flight stream to the given post on behalf of
-// the requester; the post is marked as stopped.
+// the requester; the post is marked as stopped. The run stays registered
+// until its owner calls FinishStreaming, so a new run on the post cannot
+// start while the stopped one is still finishing and be canceled by its
+// cleanup.
 func (p *MMPostStreamService) StopStreaming(postID string) {
-	p.endStreaming(postID, errStoppedByUser)
+	p.contextsMutex.Lock()
+	defer p.contextsMutex.Unlock()
+	if streamContext, ok := p.contexts[postID]; ok {
+		streamContext.cancel(errStoppedByUser)
+	}
 }
 
 func (p *MMPostStreamService) GetStreamingContext(inCtx context.Context, postID string) (context.Context, error) {
@@ -276,14 +283,10 @@ func (p *MMPostStreamService) GetStreamingContext(inCtx context.Context, postID 
 // FinishStreaming should be called when a post streaming operation is finished on success or failure.
 // It is safe to call multiple times, must be called at least once.
 func (p *MMPostStreamService) FinishStreaming(postID string) {
-	p.endStreaming(postID, nil)
-}
-
-func (p *MMPostStreamService) endStreaming(postID string, cause error) {
 	p.contextsMutex.Lock()
 	defer p.contextsMutex.Unlock()
 	if streamContext, ok := p.contexts[postID]; ok {
-		streamContext.cancel(cause)
+		streamContext.cancel(nil)
 	}
 	delete(p.contexts, postID)
 }
@@ -504,9 +507,9 @@ func (p *MMPostStreamService) streamToPostImpl(ctx context.Context, stream *llm.
 	for {
 		select {
 		case event, ok := <-stream.Stream:
-			// When the upstream shares this context it closes or errors on
-			// cancel too, and select may pick that over ctx.Done().
-			if (!ok || event.Type == llm.EventTypeError) && ctx.Err() != nil {
+			// When the upstream shares this context it ends, errors or closes
+			// on cancel too, and select may pick that over ctx.Done().
+			if (!ok || event.Type == llm.EventTypeEnd || event.Type == llm.EventTypeError) && ctx.Err() != nil {
 				handleCancel()
 				return
 			}
