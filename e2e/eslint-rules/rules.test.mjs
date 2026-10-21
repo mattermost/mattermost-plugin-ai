@@ -46,3 +46,18 @@ tester.run('container-exec-exit-code', plugin.rules['container-exec-exit-code'],
         {code: 'const {output} = await withDeadline("mmctl", 60000, () => this.container.exec(["mmctl"]));', errors: [{messageId: 'unchecked'}]},
     ],
 });
+
+tester.run('container-start-in-fixture', plugin.rules['container-start-in-fixture'], {
+    valid: [
+        'const test = containerTest(async (own) => ({mattermost: own(await RunContainer())}));',
+        'const stackTest = (fixtures) => containerTest(async (own) => { const mattermost = own(await RunContainer()); return {mattermost, aimock: own(await RunAIMockSidecar(mattermost.network, fixtures))}; });',
+        'async function setupMattermost() { return RunSystemConsoleContainer({}); }',
+        'test.beforeAll(async ({containers}) => { await startExternalServer(containers.mattermost.url()); });',
+    ],
+    invalid: [
+        {code: 'test.beforeAll(async () => { mattermost = await RunContainer(); });', errors: [{messageId: 'inHook'}]},
+        {code: 'test("x", async ({page}) => { const mm = await RunSystemConsoleContainer({}); });', errors: [{messageId: 'inHook'}]},
+        {code: 'fooTest.skip("x", async () => { await RunOpenAIMocks(network); });', errors: [{messageId: 'inHook'}]},
+        {code: 'test.describe("x", () => { test.beforeAll(async () => { await Promise.all([1].map(() => startAIMockCitationStack())); }); });', errors: [{messageId: 'inHook'}]},
+    ],
+});
