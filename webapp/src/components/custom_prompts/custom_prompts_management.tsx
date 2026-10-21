@@ -271,6 +271,7 @@ const CustomPromptsManagement = () => {
                 onBackdropClick={handleClose}
                 zIndex={2000}
             >
+                {/* eslint-disable-next-line agents/click-events-have-key-events, agents/no-static-element-interactions -- only stops clicks inside the sheet from reaching the backdrop */}
                 <Sheet
                     className={MODAL_SHEET_CLASS}
                     onClick={handleModalClick}
@@ -322,7 +323,7 @@ const CustomPromptsManagement = () => {
                                 </ModalBody>
                             ) : (
                                 <>
-                                    <TabBar role='tablist'>
+                                    <TabBar>
                                         <UnderlineTab
                                             type='button'
                                             role='tab'

@@ -448,7 +448,7 @@ const AgentConfigView = (props: Props) => {
                     </HeaderLeading>
                 </ViewHeader>
 
-                <ConfigTabs role='tablist'>
+                <ConfigTabs>
                     <UnderlineTab
                         type='button'
                         role='tab'
