@@ -126,7 +126,8 @@ func tailWithinTokens(text string, maxTokens int, countTokens func(string) int) 
 // Truncate fits the request within maxTokens by dropping the oldest
 // non-system posts, cutting the front of the oldest kept one when it has no
 // tool calls. System posts are never dropped or cut, the newest non-system
-// post is always kept, and a TruncatedHistoryNote replaces dropped posts.
+// post is always kept with some of its text (whole when none would fit), and
+// a TruncatedHistoryNote replaces dropped posts.
 // Posts is replaced, never modified in place, so callers' slices are safe.
 func (b *CompletionRequest) Truncate(maxTokens int, countTokens func(string) int) bool {
 	total, systemTokens := 0, 0
@@ -162,13 +163,14 @@ func (b *CompletionRequest) Truncate(maxTokens int, countTokens func(string) int
 			continue
 		}
 		done = true
-		if len(post.ToolUse) > 0 {
-			// Cutting would break tool call/result pairing; drop it whole.
-			keep[i] = newest
-			continue
+		tail := ""
+		if len(post.ToolUse) == 0 {
+			tail = tailWithinTokens(post.Message, available-countTokens(TruncatedMessagePrefix), countTokens)
 		}
-		tail := tailWithinTokens(post.Message, available-countTokens(TruncatedMessagePrefix), countTokens)
-		if tail == "" && !newest {
+		if tail == "" {
+			// Cutting would break tool call/result pairing or leave nothing
+			// of the message, so the newest post stays whole.
+			keep[i] = newest
 			continue
 		}
 		keep[i] = true

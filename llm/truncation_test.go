@@ -36,6 +36,8 @@ func TestTruncationWrapper(t *testing.T) {
 	midBudget := midBudgetMessage()
 	systemPrompt := "you are a helpful assistant"
 	longSystemPrompt := strings.Repeat("s ", 600)
+	// oversizedSystemPrompt alone estimates above the 720-token budget.
+	oversizedSystemPrompt := strings.Repeat("s ", 1000)
 	note := Post{Role: PostRoleUser, Message: TruncatedHistoryNote}
 	// cut matches any message cut by Truncate; its exact length is covered by
 	// TestCompletionRequestTruncate.
@@ -148,6 +150,21 @@ func TestTruncationWrapper(t *testing.T) {
 			expectedPosts: []Post{
 				{Role: PostRoleSystem, Message: longSystemPrompt},
 				cut(PostRoleUser),
+				{Role: PostRoleUser, Message: "question?"},
+			},
+		},
+		{
+			name: "system prompt over budget keeps the newest message whole",
+			posts: []Post{
+				{Role: PostRoleSystem, Message: oversizedSystemPrompt},
+				{Role: PostRoleUser, Message: "older"},
+				{Role: PostRoleUser, Message: "question?"},
+			},
+			inputTokenLimit:    1000,
+			countTokensReturns: []countResult{{count: 990}},
+			expectedPosts: []Post{
+				{Role: PostRoleSystem, Message: oversizedSystemPrompt},
+				note,
 				{Role: PostRoleUser, Message: "question?"},
 			},
 		},

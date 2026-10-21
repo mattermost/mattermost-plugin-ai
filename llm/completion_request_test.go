@@ -86,7 +86,7 @@ func TestCompletionRequestTruncate(t *testing.T) {
 			},
 		},
 		{
-			name: "never drops or cuts system posts, even over budget",
+			name: "never drops or cuts system posts, even over budget, and keeps the newest post whole",
 			posts: []Post{
 				{Role: PostRoleSystem, Message: chars(2000)},
 				{Role: PostRoleUser, Message: chars(400)},
@@ -97,7 +97,7 @@ func TestCompletionRequestTruncate(t *testing.T) {
 			want: []Post{
 				{Role: PostRoleSystem, Message: chars(2000)},
 				note,
-				{Role: PostRoleUser, Message: strings.TrimSpace(TruncatedMessagePrefix)},
+				{Role: PostRoleUser, Message: chars(400)},
 			},
 		},
 		{
