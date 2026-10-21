@@ -4,8 +4,8 @@
 const jsxA11y = require('eslint-plugin-jsx-a11y');
 
 // jsx-a11y only recognizes lowercase DOM tags, so it skips <Header onClick>
-// when Header is `styled.div`. These wrappers map each file's styled-components
-// declarations to their DOM tag before delegating to the jsx-a11y rule.
+// when Header is `styled.div`. These wrappers map each file's top-level
+// styled-components declarations to their DOM tag before delegating.
 const A11Y_RULES = [
     'alt-text',
     'anchor-has-content',
@@ -25,65 +25,48 @@ const A11Y_RULES = [
     'tabindex-no-positive',
 ];
 
+// Returns {tag} for styled.div / styled('div'), {base} for styled(Other),
+// following .attrs(...) and template tags.
 function styledTag(node) {
-    if (!node) {
-        return null;
-    }
-    switch (node.type) {
+    switch (node?.type) {
     case 'TaggedTemplateExpression':
         return styledTag(node.tag);
-    case 'CallExpression':
-        if (node.callee.type === 'Identifier' && node.callee.name === 'styled') {
-            const [arg] = node.arguments;
-            if (arg && arg.type === 'Literal' && typeof arg.value === 'string') {
-                return {tag: arg.value};
-            }
-            if (arg && arg.type === 'Identifier') {
-                return {base: arg.name};
-            }
-            return null;
+    case 'CallExpression': {
+        if (node.callee.type !== 'Identifier' || node.callee.name !== 'styled') {
+            return styledTag(node.callee);
         }
-        return styledTag(node.callee);
+        const [arg] = node.arguments;
+        if (arg?.type === 'Literal') {
+            return {tag: arg.value};
+        }
+        return arg?.type === 'Identifier' ? {base: arg.name} : null;
+    }
     case 'MemberExpression':
-        if (node.object.type === 'Identifier' && node.object.name === 'styled' && node.property.type === 'Identifier') {
+        if (node.object.type === 'Identifier' && node.object.name === 'styled') {
             return {tag: node.property.name};
         }
         return styledTag(node.object);
-    case 'TSAsExpression':
-    case 'TSInstantiationExpression':
-        return styledTag(node.expression);
     default:
         return null;
     }
 }
 
-function styledComponentTags(ast) {
+function styledComponentTags(program) {
     const declared = new Map();
-    const visit = (node) => {
-        if (!node || typeof node.type !== 'string') {
-            return;
+    for (const statement of program.body) {
+        const declaration = statement.type === 'ExportNamedDeclaration' ? statement.declaration : statement;
+        if (declaration?.type !== 'VariableDeclaration') {
+            continue;
         }
-        if (node.type === 'VariableDeclarator' && node.id.type === 'Identifier') {
-            const found = styledTag(node.init);
+        for (const {id, init} of declaration.declarations) {
+            const found = id.type === 'Identifier' && styledTag(init);
             if (found) {
-                declared.set(node.id.name, found);
+                declared.set(id.name, found);
             }
         }
-        for (const key of Object.keys(node)) {
-            if (key === 'parent') {
-                continue;
-            }
-            const child = node[key];
-            if (Array.isArray(child)) {
-                child.forEach(visit);
-            } else if (child && typeof child.type === 'string') {
-                visit(child);
-            }
-        }
-    };
-    visit(ast);
+    }
 
-    const resolve = (name, seen) => {
+    const resolve = (name, seen = new Set()) => {
         const found = declared.get(name);
         if (!found || seen.has(name)) {
             return null;
@@ -91,29 +74,16 @@ function styledComponentTags(ast) {
         seen.add(name);
         return found.tag || resolve(found.base, seen);
     };
-
-    const tags = {};
-    for (const name of declared.keys()) {
-        const tag = resolve(name, new Set());
-        if (tag) {
-            tags[name] = tag;
-        }
-    }
-    return tags;
+    return Object.fromEntries([...declared.keys()].map((name) => [name, resolve(name)]).filter(([, tag]) => tag));
 }
 
 function withStyledComponents(rule) {
     return {
         meta: rule.meta,
         create(context) {
-            const sourceCode = context.sourceCode || context.getSourceCode();
-            const a11ySettings = context.settings['jsx-a11y'] || {};
             const settings = {
                 ...context.settings,
-                'jsx-a11y': {
-                    ...a11ySettings,
-                    components: {...styledComponentTags(sourceCode.ast), ...a11ySettings.components},
-                },
+                'jsx-a11y': {...context.settings['jsx-a11y'], components: styledComponentTags(context.sourceCode.ast)},
             };
             return rule.create(Object.create(context, {settings: {value: settings}}));
         },

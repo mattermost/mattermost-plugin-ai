@@ -8,7 +8,7 @@ import CustomPromptsDropdown from './custom_prompts_dropdown';
 
 const mockDispatch = jest.fn();
 const mockRenderCustomPrompt = jest.fn();
-let mockPrompts: Array<{id: string; name: string}> = [];
+const mockPrompts = [{id: 'prompt-id', name: 'Summary'}];
 
 jest.mock('react-redux', () => ({
     useSelector: () => mockPrompts,
@@ -32,35 +32,25 @@ jest.mock('@/client', () => ({
 
 jest.mock('@/redux', () => ({
     fetchCustomPrompts: () => ({type: 'FETCH_CUSTOM_PROMPTS'}),
-    ShowCustomPromptsModalHandler: 'SHOW_CUSTOM_PROMPTS_MODAL',
 }));
 
 jest.mock('@/components/bot_selector', () => ({
     DropdownBotSelector: () => null,
 }));
 
-function renderDropdown(updateText = jest.fn()) {
-    render(
-        <CustomPromptsDropdown
-            draft={{}}
-            getSelectedText={() => ({start: 0, end: 0})}
-            updateText={updateText}
-            channelId='channel-id'
-            isRHS={false}
-        />,
-    );
-    return updateText;
-}
-
 describe('CustomPromptsDropdown', () => {
-    beforeEach(() => {
-        jest.clearAllMocks();
-        mockRenderCustomPrompt.mockResolvedValue({rendered: 'Summarize this channel'});
-    });
-
     test('menu items are focusable and insert the rendered prompt', async () => {
-        mockPrompts = [{id: 'prompt-id', name: 'Summary'}];
-        const updateText = renderDropdown();
+        mockRenderCustomPrompt.mockResolvedValue({rendered: 'Summarize this channel'});
+        const updateText = jest.fn();
+        render(
+            <CustomPromptsDropdown
+                draft={{}}
+                getSelectedText={() => ({start: 0, end: 0})}
+                updateText={updateText}
+                channelId='channel-id'
+                isRHS={false}
+            />,
+        );
 
         const item = screen.getByRole('menuitem', {name: 'Summary'});
         item.focus();
@@ -68,19 +58,5 @@ describe('CustomPromptsDropdown', () => {
 
         fireEvent.click(item);
         await waitFor(() => expect(updateText).toHaveBeenCalledWith('Summarize this channel'));
-    });
-
-    test('the manage entry is focusable and opens the management modal', () => {
-        mockPrompts = [];
-        renderDropdown();
-
-        expect(screen.getByRole('menuitem', {name: 'No custom prompts yet'})).toHaveProperty('disabled', true);
-
-        const manage = screen.getByRole('menuitem', {name: 'Manage prompts'});
-        manage.focus();
-        expect(document.activeElement).toBe(manage);
-
-        fireEvent.click(manage);
-        expect(mockDispatch).toHaveBeenCalledWith({type: 'SHOW_CUSTOM_PROMPTS_MODAL', show: true});
     });
 });

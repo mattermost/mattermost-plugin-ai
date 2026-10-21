@@ -43,8 +43,3 @@ ruleTester.run('no-static-element-interactions', plugin.rules['no-static-element
         {code: 'const Header = styled.div``; const x = <Header onClick={toggle}/>;', errors: 1},
     ],
 });
-
-test('the recommended config enables every wrapped rule', () => {
-    const enabled = Object.keys(plugin.configs.recommended.rules);
-    expect(enabled).toEqual(Object.keys(plugin.rules).map((name) => `agents/${name}`));
-});

@@ -646,7 +646,7 @@ const MCPServers = ({mcpConfig, savedServers = [], onChange}: Props) => {
                 subtitle={intl.formatMessage({defaultMessage: 'Configure MCP servers to enable AI tools.'})}
                 showDivider={false}
             />
-            <TabsContainer>
+            <TabsContainer role='tablist'>
                 <UnderlineTab
                     type='button'
                     role='tab'

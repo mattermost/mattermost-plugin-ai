@@ -323,7 +323,7 @@ const CustomPromptsManagement = () => {
                                 </ModalBody>
                             ) : (
                                 <>
-                                    <TabBar>
+                                    <TabBar role='tablist'>
                                         <UnderlineTab
                                             type='button'
                                             role='tab'
