@@ -237,17 +237,14 @@ func (b *LLM) convertToResponsesTools(request llm.CompletionRequest, cfg llm.Lan
 	return result
 }
 
-// buildResponsesReasoning creates the ResponsesParametersReasoning
-// configuration for the primary provider, or nil when no reasoning block
-// should be sent.
-func (b *LLM) buildResponsesReasoning(cfg llm.LanguageModelConfig) *schemas.ResponsesParametersReasoning {
-	return b.responsesReasoningFor(b.provider, cfg)
-}
-
 // responsesReasoningFor creates the ResponsesParametersReasoning configuration
-// for provider and cfg.Model, or nil when no reasoning block should be sent.
-func (b *LLM) responsesReasoningFor(provider schemas.ModelProvider, cfg llm.LanguageModelConfig) *schemas.ResponsesParametersReasoning {
-	if provider == schemas.OpenAI || provider == schemas.Azure {
+// for cfg.Model on the provider registered as name, or nil when no reasoning
+// block should be sent.
+func (b *LLM) responsesReasoningFor(name schemas.ModelProvider, cfg llm.LanguageModelConfig) *schemas.ResponsesParametersReasoning {
+	provider := b.baseProvider(name)
+	// Bifrost sends a chat-only hop's Responses request as a chat completion
+	// and keeps reasoning_effort, so it gets the chat path's reasoning below.
+	if (provider == schemas.OpenAI || provider == schemas.Azure) && !b.chatOnlyProviders[name] {
 		if b.thinkingOff(cfg) {
 			return nil
 		}
@@ -281,8 +278,7 @@ func (b *LLM) responsesReasoningFor(provider schemas.ModelProvider, cfg llm.Lang
 
 // convertToBifrostResponsesRequest converts our CompletionRequest to Bifrost's Responses API format.
 func (b *LLM) convertToBifrostResponsesRequest(request llm.CompletionRequest, cfg llm.LanguageModelConfig) (*schemas.BifrostResponsesRequest, error) {
-	cfg = configForModel(cfg, cfg.Model)
-	request, chain := b.prepareRequest(request)
+	request, chain := b.prepareRequest(request, cfg.Model)
 	messages := convertToResponsesMessages(request.Posts, chain)
 	tools := b.convertToResponsesTools(request, cfg)
 
@@ -293,7 +289,7 @@ func (b *LLM) convertToBifrostResponsesRequest(request llm.CompletionRequest, cf
 	}
 
 	// Set parameters
-	params := &schemas.ResponsesParameters{MaxOutputTokens: maxTokensParam(cfg)}
+	var params schemas.ResponsesParameters
 	if len(tools) > 0 {
 		params.Tools = tools
 		if cfg.ToolsDisabled {
@@ -301,8 +297,6 @@ func (b *LLM) convertToBifrostResponsesRequest(request llm.CompletionRequest, cf
 			params.ToolChoice = &schemas.ResponsesToolChoice{ResponsesToolChoiceStr: &none}
 		}
 	}
-	// Apply reasoning configuration
-	params.Reasoning = b.buildResponsesReasoning(cfg)
 	// Apply structured output (JSON schema) configuration
 	if cfg.JSONOutputFormat != nil {
 		textConfig, err := buildResponsesTextConfig(cfg.JSONOutputFormat)
@@ -318,7 +312,7 @@ func (b *LLM) convertToBifrostResponsesRequest(request llm.CompletionRequest, cf
 			"cache_control": &schemas.CacheControl{Type: schemas.CacheControlTypeEphemeral},
 		}
 	}
-	req.Params = params
+	req.Params = b.responsesHopParams(params, req.Provider, req.Model, cfg)
 
 	// Attach fallback chain so Bifrost retries with alternative providers on failure.
 	req.Fallbacks = chain.fallbacks

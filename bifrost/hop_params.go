@@ -50,7 +50,7 @@ func (hopParamsPlugin) PostLLMHook(_ *schemas.BifrostContext, resp *schemas.Bifr
 }
 
 // withHopParams attaches the per-attempt resolver for cfg as requested,
-// before any clamp to a model's output limit.
+// before any clamp to a service's or model's output limit.
 func (b *LLM) withHopParams(ctx *schemas.BifrostContext, cfg llm.LanguageModelConfig) {
 	ctx.SetValue(hopParamsKey{}, hopParams(func(req *schemas.BifrostRequest) {
 		b.applyHopParams(req, cfg)
@@ -64,26 +64,39 @@ func (b *LLM) withHopParams(ctx *schemas.BifrostContext, cfg llm.LanguageModelCo
 func (b *LLM) applyHopParams(req *schemas.BifrostRequest, cfg llm.LanguageModelConfig) {
 	switch {
 	case req.ChatRequest != nil && req.ChatRequest.Params != nil:
-		cfg = configForModel(cfg, req.ChatRequest.Model)
-		params := *req.ChatRequest.Params
-		params.MaxCompletionTokens = maxTokensParam(cfg)
-		params.Reasoning = b.chatReasoningFor(b.baseProvider(req.ChatRequest.Provider), cfg)
-		req.ChatRequest.Params = &params
+		req.ChatRequest.Params = b.chatHopParams(*req.ChatRequest.Params, req.ChatRequest.Provider, req.ChatRequest.Model, cfg)
 	case req.ResponsesRequest != nil && req.ResponsesRequest.Params != nil:
-		cfg = configForModel(cfg, req.ResponsesRequest.Model)
-		params := *req.ResponsesRequest.Params
-		params.MaxOutputTokens = maxTokensParam(cfg)
-		params.Reasoning = b.responsesReasoningFor(b.baseProvider(req.ResponsesRequest.Provider), cfg)
-		req.ResponsesRequest.Params = &params
+		req.ResponsesRequest.Params = b.responsesHopParams(*req.ResponsesRequest.Params, req.ResponsesRequest.Provider, req.ResponsesRequest.Model, cfg)
 	}
 }
 
-// configForModel returns cfg for model with the requested MaxGeneratedTokens
-// clamped to that model's output limit. Clamping from the requested value
-// keeps a fallback with a higher limit than the primary from being capped by
-// the primary's.
-func configForModel(cfg llm.LanguageModelConfig, model string) llm.LanguageModelConfig {
+// chatHopParams returns params with the max output tokens and reasoning block
+// for model on the provider registered as name.
+func (b *LLM) chatHopParams(params schemas.ChatParameters, name schemas.ModelProvider, model string, cfg llm.LanguageModelConfig) *schemas.ChatParameters {
+	cfg = b.configForHop(cfg, name, model)
+	params.MaxCompletionTokens = maxTokensParam(cfg)
+	params.Reasoning = b.chatReasoningFor(name, cfg)
+	return &params
+}
+
+// responsesHopParams is chatHopParams for the Responses API.
+func (b *LLM) responsesHopParams(params schemas.ResponsesParameters, name schemas.ModelProvider, model string, cfg llm.LanguageModelConfig) *schemas.ResponsesParameters {
+	cfg = b.configForHop(cfg, name, model)
+	params.MaxOutputTokens = maxTokensParam(cfg)
+	params.Reasoning = b.responsesReasoningFor(name, cfg)
+	return &params
+}
+
+// configForHop returns cfg for model on the provider registered as name, with
+// the requested MaxGeneratedTokens clamped to the model's output limit and,
+// for a fallback, to its service's configured limit. Clamping from the requested value keeps a
+// fallback with a higher limit than the primary from being capped by the
+// primary's.
+func (b *LLM) configForHop(cfg llm.LanguageModelConfig, name schemas.ModelProvider, model string) llm.LanguageModelConfig {
 	cfg.Model = model
+	if limit := b.outputTokenLimits[name]; limit > 0 {
+		cfg.MaxGeneratedTokens = min(cfg.MaxGeneratedTokens, limit)
+	}
 	cfg.MaxGeneratedTokens = clampToModelOutputLimit(model, cfg.MaxGeneratedTokens)
 	return cfg
 }

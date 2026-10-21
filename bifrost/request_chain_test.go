@@ -19,11 +19,14 @@ func TestRequestChain(t *testing.T) {
 		schemas.Anthropic: schemas.Anthropic,
 		schemas.Gemini:    schemas.Gemini,
 		schemas.Bedrock:   schemas.Bedrock,
+		schemas.Vertex:    schemas.Vertex,
+		schemas.Azure:     schemas.Azure,
 		customAnthropic:   schemas.Anthropic,
 	}
 	tests := []struct {
 		name            string
 		provider        schemas.ModelProvider
+		model           string
 		fallbacks       []schemas.Fallback
 		imageCount      int
 		wantImageLimit  int
@@ -76,6 +79,40 @@ func TestRequestChain(t *testing.T) {
 			wantImageLimit: anthropicMaxImageDimension,
 			wantStrict:     true,
 		},
+		{
+			name:           "Claude on a Vertex fallback follows Anthropic's rules",
+			provider:       schemas.Gemini,
+			model:          "gemini-2.5-flash",
+			fallbacks:      []schemas.Fallback{{Provider: schemas.Vertex, Model: "claude-sonnet-4-6@20250929"}},
+			wantImageLimit: anthropicMaxImageDimension,
+			wantStrict:     true,
+		},
+		{
+			name:           "Claude on an Azure primary follows Anthropic's rules",
+			provider:       schemas.Azure,
+			model:          "claude-opus-4-6",
+			wantImageLimit: anthropicMaxImageDimension,
+			wantStrict:     true,
+		},
+		{
+			name:     "Gemini on Vertex keeps Vertex's rules",
+			provider: schemas.Vertex,
+			model:    "gemini-2.5-pro",
+		},
+		{
+			name:           "GPT on Azure keeps OpenAI's rules",
+			provider:       schemas.Azure,
+			model:          "gpt-4o",
+			wantImageLimit: openaiMaxImageDimension,
+		},
+		{
+			name:           "Claude on a Vertex fallback does not enable Anthropic prompt caching",
+			provider:       schemas.Anthropic,
+			model:          "claude-sonnet-4-6",
+			fallbacks:      []schemas.Fallback{{Provider: schemas.Vertex, Model: "claude-sonnet-4-6@20250929"}},
+			wantImageLimit: anthropicMaxImageDimension,
+			wantStrict:     true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -87,7 +124,7 @@ func TestRequestChain(t *testing.T) {
 			}
 			request := llm.CompletionRequest{Posts: []llm.Post{{Role: llm.PostRoleUser, Message: "hi", Files: files}}}
 
-			chain := b.requestChain(request)
+			chain := b.requestChain(request, tt.model)
 
 			assert.Equal(t, tt.fallbacks, chain.fallbacks)
 			assert.Equal(t, tt.wantImageLimit, chain.imageDimensionLimit)

@@ -4,15 +4,11 @@
 package bifrost
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"net/http/httptest"
+	"regexp"
 	"strings"
-	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -21,25 +17,6 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm/llmtest"
 )
-
-// succeedingCaptureServer records the last request body it receives and
-// answers it, ending the fallback chain.
-func succeedingCaptureServer(t *testing.T, body *atomic.Value) *httptest.Server {
-	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		data, _ := io.ReadAll(r.Body)
-		var parsed map[string]any
-		_ = json.Unmarshal(data, &parsed)
-		body.Store(parsed)
-		if strings.HasSuffix(r.URL.Path, "/responses") {
-			responsesSSE(w, "ok")
-			return
-		}
-		chatCompletionSSE(w, "ok")
-	}))
-	t.Cleanup(server.Close)
-	return server
-}
 
 // adjacentSameRoleMessages returns the index of each message in a chat-style
 // body ("messages" array) that repeats the previous message's role. Tool
@@ -70,21 +47,54 @@ func adjacentSameRoleMessages(body map[string]any) []int {
 	return repeats
 }
 
+// anthropicToolVersion matches the date suffix of an Anthropic server tool
+// type, such as web_search_20260209.
+var anthropicToolVersion = regexp.MustCompile(`_\d{8}$`)
+
+// nativeToolsOnWire returns the provider-executed tools of a captured request:
+// the tool types of an OpenAI or Anthropic request, without Anthropic's
+// version suffix, and the tool keys of a Gemini request. Function tools are
+// left out.
+func nativeToolsOnWire(body map[string]any) []string {
+	tools, _ := body["tools"].([]any)
+	var native []string
+	for _, raw := range tools {
+		tool, _ := raw.(map[string]any)
+		if toolType, ok := tool["type"].(string); ok {
+			if toolType != "function" && toolType != "custom" {
+				native = append(native, anthropicToolVersion.ReplaceAllString(toolType, ""))
+			}
+			continue
+		}
+		if _, isAnthropicFunction := tool["input_schema"]; isAnthropicFunction {
+			continue
+		}
+		for key := range tool {
+			if key != "functionDeclarations" {
+				native = append(native, key)
+			}
+		}
+	}
+	return native
+}
+
 // TestMessageShapingCoversEveryFallbackHop drives real failovers through
 // Bifrost and checks the message body every tried hop receives. Bifrost
 // replays one built body to each fallback, so the body must satisfy the
 // strictest provider that the request may reach, not just the primary.
 func TestMessageShapingCoversEveryFallbackHop(t *testing.T) {
-	type hop struct {
-		serviceType string
-		model       string
-		succeed     bool
+	failingHop := func(serviceType, model string) captureHop {
+		return captureHop{svc: llm.ServiceConfig{Type: serviceType, DefaultModel: model}}
 	}
-	openAI := hop{serviceType: llm.ServiceTypeOpenAI, model: "gpt-4o"}
-	openAICompatible := hop{serviceType: llm.ServiceTypeOpenAICompatible, model: "gpt-4o"}
-	anthropicHop := hop{serviceType: llm.ServiceTypeAnthropic, model: "claude-sonnet-4-6"}
-	gemini := hop{serviceType: llm.ServiceTypeGemini, model: "gemini-2.5-flash"}
-	local := hop{serviceType: llm.ServiceTypeOpenAICompatible, model: "llama3", succeed: true}
+	openAI := failingHop(llm.ServiceTypeOpenAI, "gpt-4o")
+	openAICompatible := failingHop(llm.ServiceTypeOpenAICompatible, "gpt-4o")
+	anthropicHop := failingHop(llm.ServiceTypeAnthropic, "claude-sonnet-4-6")
+	gemini := failingHop(llm.ServiceTypeGemini, "gemini-2.5-flash")
+	mistral := failingHop(llm.ServiceTypeMistral, "mistral-large-latest")
+	azureClaude := failingHop(llm.ServiceTypeAzure, "claude-sonnet-4-6")
+	local := localHop
+	webSearch := []string{llm.NativeToolWebSearch}
+	allNativeTools := []string{llm.NativeToolWebSearch, llm.NativeToolWebFetch, llm.NativeToolCodeInterpreter}
 
 	oversized := encodeTestImage(t, "image/png", anthropicMaxImageDimension+1000, 1)
 	oversizedBase64 := base64.StdEncoding.EncodeToString(oversized)
@@ -115,9 +125,9 @@ func TestMessageShapingCoversEveryFallbackHop(t *testing.T) {
 	}
 
 	tests := []struct {
-		name            string
-		hops            []hop
-		nativeWebSearch bool
+		name        string
+		hops        []captureHop
+		nativeTools []string
 		// allowed restricts the fallbacks to these hop indexes; nil leaves the
 		// chain unrestricted.
 		allowed []int
@@ -128,51 +138,91 @@ func TestMessageShapingCoversEveryFallbackHop(t *testing.T) {
 		// no unsigned reasoning, and (on the chat path) no repeated roles.
 		wantStrict bool
 		chatPath   bool
+		// wantNativeTools is, per reached hop, the native tools its body
+		// carries; nil skips the check.
+		wantNativeTools [][]string
 	}{
 		{
 			name:        "OpenAI Responses primary with an Anthropic fallback (#1042)",
-			hops:        []hop{openAI, anthropicHop, local},
+			hops:        []captureHop{openAI, anthropicHop, local},
 			wantReached: 3, wantImageOmitted: true, wantStrict: true,
 		},
 		{
 			name:        "OpenAI-compatible chat primary with an Anthropic fallback",
-			hops:        []hop{openAICompatible, anthropicHop, local},
+			hops:        []captureHop{openAICompatible, anthropicHop, local},
 			wantReached: 3, wantImageOmitted: true, wantStrict: true, chatPath: true,
 		},
 		{
 			name:        "Gemini chat primary with an Anthropic fallback",
-			hops:        []hop{gemini, anthropicHop, local},
+			hops:        []captureHop{gemini, anthropicHop, local},
 			wantReached: 3, wantImageOmitted: true, wantStrict: true, chatPath: true,
 		},
 		{
 			name:        "Gemini Responses primary with an Anthropic fallback",
-			hops:        []hop{gemini, anthropicHop, local},
-			wantReached: 3, wantImageOmitted: true, wantStrict: true, nativeWebSearch: true,
+			hops:        []captureHop{gemini, anthropicHop, local},
+			wantReached: 3, wantImageOmitted: true, wantStrict: true, nativeTools: webSearch,
 		},
 		{
 			name:        "Anthropic chat primary with an OpenAI fallback",
-			hops:        []hop{anthropicHop, openAI, local},
+			hops:        []captureHop{anthropicHop, openAI, local},
 			wantReached: 3, wantImageOmitted: true, wantStrict: true, chatPath: true,
 		},
 		{
 			name:        "Anthropic Responses primary with an OpenAI fallback",
-			hops:        []hop{anthropicHop, openAI, local},
-			wantReached: 3, wantImageOmitted: true, wantStrict: true, nativeWebSearch: true,
+			hops:        []captureHop{anthropicHop, openAI, local},
+			wantReached: 3, wantImageOmitted: true, wantStrict: true, nativeTools: webSearch,
+		},
+		{
+			name:        "OpenAI-compatible chat primary with a Claude-on-Azure fallback",
+			hops:        []captureHop{openAICompatible, azureClaude, local},
+			wantReached: 3, wantImageOmitted: true, wantStrict: true, chatPath: true,
+		},
+		{
+			name:        "OpenAI Responses primary with a Claude-on-Azure fallback",
+			hops:        []captureHop{openAI, azureClaude, local},
+			wantReached: 3, wantImageOmitted: true, wantStrict: true,
+		},
+		{
+			// Anthropic adds code_execution itself when web search or fetch
+			// is present, so Bifrost leaves it out of the request.
+			name:        "Anthropic primary's native tools reach each fallback only as that hop supports them",
+			hops:        []captureHop{anthropicHop, openAI, gemini, openAICompatible, mistral, local},
+			nativeTools: allNativeTools,
+			wantReached: 6, wantImageOmitted: true, wantStrict: true,
+			wantNativeTools: [][]string{
+				{"web_search", "web_fetch"},
+				{"web_search", "code_interpreter"},
+				{"googleSearch"},
+				{}, {}, {},
+			},
+		},
+		{
+			name:        "OpenAI primary's native tools reach each fallback only as that hop supports them",
+			hops:        []captureHop{openAI, anthropicHop, gemini, azureClaude, local},
+			nativeTools: allNativeTools,
+			wantReached: 5, wantImageOmitted: true, wantStrict: true,
+			wantNativeTools: [][]string{
+				{"web_search", "code_interpreter"},
+				{"web_search"},
+				{"googleSearch"},
+				{"web_search"},
+				{},
+			},
 		},
 		{
 			name:        "Anthropic hop behind the serving hop still shapes the body",
-			hops:        []hop{openAICompatible, local, anthropicHop},
+			hops:        []captureHop{openAICompatible, local, anthropicHop},
 			wantReached: 2, wantImageOmitted: true, wantStrict: true, chatPath: true,
 		},
 		{
 			name:        "Anthropic hop trimmed by access does not shape the chat body",
-			hops:        []hop{openAICompatible, local, anthropicHop},
+			hops:        []captureHop{openAICompatible, local, anthropicHop},
 			allowed:     []int{1},
 			wantReached: 2, chatPath: true,
 		},
 		{
 			name:        "Anthropic hop trimmed by access does not shape the Responses body",
-			hops:        []hop{openAI, local, anthropicHop},
+			hops:        []captureHop{openAI, local, anthropicHop},
 			allowed:     []int{1},
 			wantReached: 2,
 		},
@@ -180,41 +230,22 @@ func TestMessageShapingCoversEveryFallbackHop(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			bodies := make([]atomic.Value, len(tt.hops))
-			services := make([]llm.ServiceConfig, len(tt.hops))
-			for i, h := range tt.hops {
-				captureServer := failingCaptureServer
-				if h.succeed {
-					captureServer = succeedingCaptureServer
-				}
-				services[i] = llm.ServiceConfig{
-					ID: fmt.Sprintf("hop%d", i), Type: h.serviceType, APIKey: fmt.Sprintf("key-%d", i),
-					APIURL: captureServer(t, &bodies[i]).URL, DefaultModel: h.model,
-				}
-			}
-			bot := llm.BotConfig{ID: "bot-1", Name: "ai", DisplayName: "AI", ServiceID: services[0].ID}
-			if tt.nativeWebSearch {
-				bot.EnabledNativeTools = []string{llm.NativeToolWebSearch}
-			}
+			bot := llm.BotConfig{EnabledNativeTools: tt.nativeTools}
 			request := llm.CompletionRequest{Posts: posts}
 			if tt.allowed != nil {
 				request.RestrictFallbacks = true
 				for _, i := range tt.allowed {
-					request.AllowedFallbackServiceIDs = append(request.AllowedFallbackServiceIDs, services[i].ID)
+					request.AllowedFallbackServiceIDs = append(request.AllowedFallbackServiceIDs, hopServiceID(i))
 				}
 			}
 
-			llmInstance, err := NewFromServiceConfig(services[0], bot, services[1:])
-			require.NoError(t, err)
-			t.Cleanup(llmInstance.Shutdown)
+			llmInstance, bodies := captureFailover(t, tt.hops, bot, request)
 			require.Equal(t, !tt.chatPath, llmInstance.shouldUseResponsesAPI(llmInstance.GetDefaultConfig()), "row must exercise the intended API path")
 
-			_, err = llmInstance.ChatCompletionNoStream(context.Background(), request, llm.WithToolsDisabled())
-			require.NoError(t, err)
-
 			for i, h := range tt.hops {
-				label := fmt.Sprintf("hop %d (%s)", i, h.serviceType)
-				parsed, reached := bodies[i].Load().(map[string]any)
+				label := fmt.Sprintf("hop %d (%s)", i, h.svc.Type)
+				parsed := bodies[i]
+				reached := parsed != nil
 				if i >= tt.wantReached {
 					assert.False(t, reached, "%s must not be tried", label)
 					continue
@@ -233,13 +264,15 @@ func TestMessageShapingCoversEveryFallbackHop(t *testing.T) {
 				if tt.wantStrict {
 					assert.NotContains(t, body, unsignedReasoning, "%s must not replay unsigned reasoning", label)
 				}
-				if tt.chatPath {
+				if tt.wantStrict && tt.chatPath {
 					if _, isChat := parsed["messages"]; isChat {
-						assert.Equal(t, tt.wantStrict, len(adjacentSameRoleMessages(parsed)) == 0,
-							"%s consecutive same-role messages merged only for a strict chain: %s", label, body)
+						assert.Empty(t, adjacentSameRoleMessages(parsed), "%s must not repeat a role: %s", label, body)
 					}
 				}
-				if h.serviceType == llm.ServiceTypeAnthropic {
+				if tt.wantNativeTools != nil {
+					assert.ElementsMatch(t, tt.wantNativeTools[i], nativeToolsOnWire(parsed), "%s native tools", label)
+				}
+				if h.svc.Type == llm.ServiceTypeAnthropic || strings.HasPrefix(h.svc.DefaultModel, "claude") {
 					assert.Empty(t, llmtest.AnthropicRequestViolations(raw), "%s would be rejected by Anthropic: %s", label, body)
 				}
 			}

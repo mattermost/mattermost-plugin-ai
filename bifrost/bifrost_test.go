@@ -90,7 +90,7 @@ func TestAnthropicThinkingDefaults(t *testing.T) {
 	}
 }
 
-func TestBuildChatReasoning(t *testing.T) {
+func TestChatReasoningFor(t *testing.T) {
 	tests := []struct {
 		name             string
 		provider         schemas.ModelProvider
@@ -374,7 +374,7 @@ func TestBuildChatReasoning(t *testing.T) {
 				thinkingBudget:   tt.thinkingBudget,
 				reasoningEffort:  tt.reasoningEffort,
 			}
-			result := b.buildChatReasoning(tt.cfg)
+			result := b.chatReasoningFor(tt.provider, tt.cfg)
 			if tt.expectNil {
 				assert.Nil(t, result)
 				return
@@ -1307,7 +1307,7 @@ func TestAnthropicOnlyWebFetchDroppedForOpenAI(t *testing.T) {
 		"web_search is part of OpenAI's tool union and must survive the fallback serialization")
 }
 
-func TestBuildResponsesReasoning(t *testing.T) {
+func TestResponsesReasoningFor(t *testing.T) {
 	tests := []struct {
 		name             string
 		provider         schemas.ModelProvider
@@ -1474,7 +1474,7 @@ func TestBuildResponsesReasoning(t *testing.T) {
 				thinkingBudget:   tt.thinkingBudget,
 				reasoningEffort:  tt.reasoningEffort,
 			}
-			result := b.buildResponsesReasoning(tt.cfg)
+			result := b.responsesReasoningFor(tt.provider, tt.cfg)
 			if tt.expectNil {
 				assert.Nil(t, result)
 				return

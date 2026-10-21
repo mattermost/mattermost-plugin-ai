@@ -38,10 +38,11 @@ func normalizePosts(posts []llm.Post, chain requestChain) []llm.Post {
 				continue
 			}
 		case llm.PostRoleBot:
-			var ok bool
-			if post, ok = normalizeBotPost(post, chain.strictMessages); !ok {
+			p, ok := normalizeBotPost(post, chain.strictMessages)
+			if !ok {
 				continue
 			}
+			post = p
 		}
 		normalized = append(normalized, post)
 	}

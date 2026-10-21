@@ -176,16 +176,11 @@ func (b *LLM) streamChat(ctx context.Context, request llm.CompletionRequest, cfg
 	}
 }
 
-// buildChatReasoning creates the ChatReasoning configuration for the primary
-// provider, or nil when no reasoning block should be sent.
-func (b *LLM) buildChatReasoning(cfg llm.LanguageModelConfig) *schemas.ChatReasoning {
-	return b.chatReasoningFor(b.provider, cfg)
-}
-
-// chatReasoningFor creates the ChatReasoning configuration for provider and
-// cfg.Model, or nil when no reasoning block should be sent.
-func (b *LLM) chatReasoningFor(provider schemas.ModelProvider, cfg llm.LanguageModelConfig) *schemas.ChatReasoning {
-	params, ok := b.providerReasoning(provider, cfg)
+// chatReasoningFor creates the ChatReasoning configuration for cfg.Model on
+// the provider registered as name, or nil when no reasoning block should be
+// sent.
+func (b *LLM) chatReasoningFor(name schemas.ModelProvider, cfg llm.LanguageModelConfig) *schemas.ChatReasoning {
+	params, ok := b.providerReasoning(b.baseProvider(name), cfg)
 	if !ok {
 		return nil
 	}
@@ -198,8 +193,7 @@ func (b *LLM) chatReasoningFor(provider schemas.ModelProvider, cfg llm.LanguageM
 
 // convertToBifrostRequest converts our CompletionRequest to Bifrost's format.
 func (b *LLM) convertToBifrostRequest(request llm.CompletionRequest, cfg llm.LanguageModelConfig) *schemas.BifrostChatRequest {
-	cfg = configForModel(cfg, cfg.Model)
-	request, chain := b.prepareRequest(request)
+	request, chain := b.prepareRequest(request, cfg.Model)
 	messages := convertMessages(request.Posts, chain)
 	tools := b.convertTools(request, cfg)
 
@@ -210,7 +204,7 @@ func (b *LLM) convertToBifrostRequest(request llm.CompletionRequest, cfg llm.Lan
 	}
 
 	// Set parameters
-	params := &schemas.ChatParameters{MaxCompletionTokens: maxTokensParam(cfg)}
+	var params schemas.ChatParameters
 	if len(tools) > 0 {
 		params.Tools = tools
 		if cfg.ToolsDisabled {
@@ -218,8 +212,6 @@ func (b *LLM) convertToBifrostRequest(request llm.CompletionRequest, cfg llm.Lan
 			params.ToolChoice = &schemas.ChatToolChoice{ChatToolChoiceStr: &none}
 		}
 	}
-	// Apply reasoning configuration
-	params.Reasoning = b.buildChatReasoning(cfg)
 	// Apply structured output (JSON schema) configuration
 	if cfg.JSONOutputFormat != nil {
 		params.ResponseFormat = buildChatResponseFormat(cfg.JSONOutputFormat)
@@ -227,7 +219,7 @@ func (b *LLM) convertToBifrostRequest(request llm.CompletionRequest, cfg llm.Lan
 	if chain.promptCaching {
 		params.CacheControl = &schemas.CacheControl{Type: schemas.CacheControlTypeEphemeral}
 	}
-	req.Params = params
+	req.Params = b.chatHopParams(params, req.Provider, req.Model, cfg)
 
 	// Attach fallback chain so Bifrost retries with alternative providers on failure.
 	req.Fallbacks = chain.fallbacks

@@ -82,6 +82,13 @@ type LLM struct {
 	// baseProviders maps each Bifrost registration name (including custom
 	// fallback slots such as "anthropic::svc2") to its base provider type.
 	baseProviders map[schemas.ModelProvider]schemas.ModelProvider
+	// outputTokenLimits maps each fallback's Bifrost registration name to its
+	// service's configured output token limit; zero or absent means unset. The
+	// primary's limit is the request default, which callers may override.
+	outputTokenLimits map[schemas.ModelProvider]int
+	// chatOnlyProviders holds the registration names of fallbacks registered
+	// chat-only, whose Responses requests Bifrost sends as chat completions.
+	chatOnlyProviders map[schemas.ModelProvider]bool
 
 	// providerFileDownloadRoutes are registered Bifrost routes that can serve
 	// captured files. Fallbacks of the same provider type have distinct routes.
@@ -150,6 +157,9 @@ type FallbackEntry struct {
 	// ID is the source service ID, used to mint a unique custom-provider name
 	// when this fallback shares a base provider type with another service.
 	ID string
+	// OutputTokenLimit is the service's configured output token limit; zero
+	// means unset.
+	OutputTokenLimit int
 	// IsKeyLess marks a fallback that authenticates without an API key (e.g. a
 	// local Ollama server).
 	IsKeyLess bool
@@ -184,6 +194,8 @@ func New(cfg Config) (*LLM, error) {
 	// key at fallback time.
 	usedNames := map[schemas.ModelProvider]bool{primaryEntry.registeredName(): true}
 	baseProviders := map[schemas.ModelProvider]schemas.ModelProvider{primaryEntry.registeredName(): cfg.Provider}
+	outputTokenLimits := map[schemas.ModelProvider]int{}
+	chatOnlyProviders := make(map[schemas.ModelProvider]bool)
 
 	// Redact the primary and every fallback key from error/log surfaces, even
 	// key formats the generic redaction patterns don't recognize.
@@ -226,6 +238,10 @@ func New(cfg Config) (*LLM, error) {
 		account.addProvider(entry)
 		usedNames[name] = true
 		baseProviders[name] = fb.Provider
+		outputTokenLimits[name] = fb.OutputTokenLimit
+		if entry.chatOnly {
+			chatOnlyProviders[name] = true
+		}
 		if supportsProviderFileDownloadProvider(fb.Provider) {
 			providerFileDownloadRoutes[name] = true
 		}
@@ -264,6 +280,8 @@ func New(cfg Config) (*LLM, error) {
 		useResponsesAPI:            cfg.UseResponsesAPI,
 		fallbacks:                  fallbacks,
 		baseProviders:              baseProviders,
+		outputTokenLimits:          outputTokenLimits,
+		chatOnlyProviders:          chatOnlyProviders,
 		providerFileDownloadRoutes: providerFileDownloadRoutes,
 	}, nil
 }
@@ -453,10 +471,12 @@ func (b *LLM) applyCompletionBetaHeaders(bifrostCtx *schemas.BifrostContext) {
 	bifrostCtx.SetValue(schemas.BifrostContextKeyExtraHeaders, headers)
 }
 
-// ProviderServices must be called on the concrete client before wrapping.
+// ProviderServices must be called on the concrete client before wrapping. A
+// fallback can serve the turn that creates a file, so any registered download
+// route exposes the downloader.
 func (b *LLM) ProviderServices() *llm.ProviderServices {
 	services := &llm.ProviderServices{}
-	if supportsProviderFileDownloadProvider(b.provider) {
+	if len(b.providerFileDownloadRoutes) > 0 {
 		services.FileDownloader = b
 	}
 	return services

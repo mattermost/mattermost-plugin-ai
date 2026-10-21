@@ -220,25 +220,48 @@ func TestGetLLMResolvesProviderServicesThroughWrapperChain(t *testing.T) {
 	require.False(t, assertable, "the wrapped model must not be relied on for provider capabilities")
 }
 
-func TestGetLLMProviderServicesForNonDownloadableProvider(t *testing.T) {
-	cfg := &mockConfig{}
-	mmBots := newTestMMBots(t, cfg)
-
-	service := llm.ServiceConfig{
-		ID:           "openai-svc",
-		Type:         llm.ServiceTypeOpenAI,
-		APIKey:       "test-key",
-		DefaultModel: "gpt-5",
+func TestGetLLMProviderServicesForNonDownloadablePrimary(t *testing.T) {
+	anthropicFallback := llm.ServiceConfig{
+		ID:           "anthropic-svc",
+		Type:         llm.ServiceTypeAnthropic,
+		APIKey:       "fallback-key",
+		DefaultModel: "claude-sonnet-4-6",
 	}
-	botCfg := llm.BotConfig{
-		Name:               "openai-sandbox-bot",
-		EnabledNativeTools: []string{llm.NativeToolCodeInterpreter},
+	tests := []struct {
+		name             string
+		fallbacks        []llm.ServiceConfig
+		wantFileDownload bool
+	}{
+		{name: "OpenAI alone cannot download files"},
+		{
+			name:             "an Anthropic fallback can download the files of turns it serves",
+			fallbacks:        []llm.ServiceConfig{anthropicFallback},
+			wantFileDownload: true,
+		},
 	}
 
-	_, providerServices, err := mmBots.getLLM(service, botCfg, nil)
-	require.NoError(t, err)
-	t.Cleanup(mmBots.ShutdownServiceLLMs)
-	require.False(t, providerServices.CanDownloadFiles())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &mockConfig{}
+			mmBots := newTestMMBots(t, cfg)
+
+			service := llm.ServiceConfig{
+				ID:           "openai-svc",
+				Type:         llm.ServiceTypeOpenAI,
+				APIKey:       "test-key",
+				DefaultModel: "gpt-5",
+			}
+			botCfg := llm.BotConfig{
+				Name:               "openai-sandbox-bot",
+				EnabledNativeTools: []string{llm.NativeToolCodeInterpreter},
+			}
+
+			_, providerServices, err := mmBots.getLLM(service, botCfg, tt.fallbacks)
+			require.NoError(t, err)
+			t.Cleanup(mmBots.ShutdownServiceLLMs)
+			require.Equal(t, tt.wantFileDownload, providerServices.CanDownloadFiles())
+		})
+	}
 }
 
 func TestGetLLMLoadTestMockInvalidProfileJSON(t *testing.T) {

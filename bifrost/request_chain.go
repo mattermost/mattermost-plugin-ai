@@ -20,7 +20,8 @@ type requestChain struct {
 	// zero when no hop rejects images on dimensions.
 	imageDimensionLimit int
 	// strictMessages is set when a hop rejects replayed reasoning without a
-	// provider signature and requires alternating roles (Anthropic, Bedrock).
+	// provider signature and requires alternating roles (Anthropic, Bedrock,
+	// and Claude on Vertex or Azure).
 	strictMessages bool
 	// promptCaching requests Anthropic automatic prompt caching (top-level
 	// cache_control); Anthropic caches nothing unless asked, so every turn
@@ -30,38 +31,50 @@ type requestChain struct {
 	promptCaching bool
 }
 
-// requestChain resolves the chain request is tried on.
-func (b *LLM) requestChain(request llm.CompletionRequest) requestChain {
+// requestChain resolves the chain request is tried on when primaryModel is
+// the primary's model.
+func (b *LLM) requestChain(request llm.CompletionRequest, primaryModel string) requestChain {
 	chain := requestChain{
 		fallbacks:     b.requestFallbacks(request),
 		promptCaching: true,
 	}
-	hops := []schemas.ModelProvider{b.baseProvider(b.provider)}
+	hops := []schemas.Fallback{{Provider: b.baseProvider(b.provider), Model: primaryModel}}
 	for _, fb := range chain.fallbacks {
-		hops = append(hops, b.baseProvider(fb.Provider))
+		hops = append(hops, schemas.Fallback{Provider: b.baseProvider(fb.Provider), Model: fb.Model})
 	}
 
 	imageCount := countRequestImages(request.Posts)
-	for _, provider := range hops {
-		if limit := maxImageDimension(provider, imageCount); limit > 0 &&
+	for _, hop := range hops {
+		messagesAPI := messagesAPIProvider(hop.Provider, hop.Model)
+		if limit := maxImageDimension(messagesAPI, imageCount); limit > 0 &&
 			(chain.imageDimensionLimit == 0 || limit < chain.imageDimensionLimit) {
 			chain.imageDimensionLimit = limit
 		}
-		switch provider {
+		switch messagesAPI {
 		case schemas.Anthropic, schemas.Bedrock, schemas.BedrockMantle:
 			chain.strictMessages = true
 		}
-		if provider != schemas.Anthropic {
+		if hop.Provider != schemas.Anthropic {
 			chain.promptCaching = false
 		}
 	}
 	return chain
 }
 
+// messagesAPIProvider returns the provider whose message rules model follows
+// on base: Bifrost sends Claude models on Vertex and Azure to Anthropic's
+// Messages API.
+func messagesAPIProvider(base schemas.ModelProvider, model string) schemas.ModelProvider {
+	if (base == schemas.Vertex || base == schemas.Azure) && schemas.IsAnthropicModel(model) {
+		return schemas.Anthropic
+	}
+	return base
+}
+
 // prepareRequest returns request with its posts normalized for its chain,
 // and that chain. Both API paths build messages only from its results.
-func (b *LLM) prepareRequest(request llm.CompletionRequest) (llm.CompletionRequest, requestChain) {
-	chain := b.requestChain(request)
+func (b *LLM) prepareRequest(request llm.CompletionRequest, primaryModel string) (llm.CompletionRequest, requestChain) {
+	chain := b.requestChain(request, primaryModel)
 	request.Posts = normalizePosts(request.Posts, chain)
 	return request, chain
 }

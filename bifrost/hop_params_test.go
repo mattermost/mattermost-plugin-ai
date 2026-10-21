@@ -6,9 +6,11 @@ package bifrost
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -19,20 +21,90 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 )
 
-// failingCaptureServer records the last request body it receives and rejects
-// every request so Bifrost moves on to the next hop. A 400 fails over without
-// Bifrost's retry backoff for server errors.
-func failingCaptureServer(t *testing.T, body *atomic.Value) *httptest.Server {
+// captureServer records the last request body it receives. A succeeding
+// server answers it, ending the fallback chain; a failing one rejects it so
+// Bifrost moves on to the next hop. A 400 fails over without Bifrost's retry
+// backoff for server errors.
+func captureServer(t *testing.T, body *atomic.Value, succeed bool) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		data, _ := io.ReadAll(r.Body)
 		var parsed map[string]any
 		_ = json.Unmarshal(data, &parsed)
 		body.Store(parsed)
-		http.Error(w, `{"type":"error","error":{"type":"invalid_request_error","message":"rejected"}}`, http.StatusBadRequest)
+		switch {
+		case !succeed:
+			http.Error(w, `{"type":"error","error":{"type":"invalid_request_error","message":"rejected"}}`, http.StatusBadRequest)
+		case strings.HasSuffix(r.URL.Path, "/responses"):
+			responsesSSE(w, "ok")
+		default:
+			chatCompletionSSE(w, "ok")
+		}
 	}))
 	t.Cleanup(server.Close)
 	return server
+}
+
+// captureHop is one service of a chain driven by captureFailover.
+type captureHop struct {
+	svc     llm.ServiceConfig
+	succeed bool
+}
+
+// localHop is an OpenAI-compatible chat-only service that answers, ending a
+// chain driven by captureFailover.
+var localHop = captureHop{
+	svc:     llm.ServiceConfig{Type: llm.ServiceTypeOpenAICompatible, DefaultModel: "llama3"},
+	succeed: true,
+}
+
+// hopServiceID is the service ID captureFailover gives hop i.
+func hopServiceID(i int) string {
+	return fmt.Sprintf("hop%d", i)
+}
+
+// captureFailover sends request through the production wiring for a chain of
+// hops, each served by a captureServer, and returns the client and the body
+// each hop received, nil for a hop that was not tried. The service IDs, URLs,
+// keys, and the bot's identity and service are filled in here.
+func captureFailover(t *testing.T, hops []captureHop, bot llm.BotConfig, request llm.CompletionRequest) (*LLM, []map[string]any) {
+	t.Helper()
+	captures := make([]atomic.Value, len(hops))
+	services := make([]llm.ServiceConfig, len(hops))
+	for i, hop := range hops {
+		services[i] = hop.svc
+		services[i].ID = hopServiceID(i)
+		services[i].APIKey = fmt.Sprintf("key-%d", i)
+		services[i].APIURL = captureServer(t, &captures[i], hop.succeed).URL
+	}
+	bot.ID, bot.Name, bot.DisplayName, bot.ServiceID = "bot-1", "ai", "AI", services[0].ID
+
+	llmInstance, err := NewFromServiceConfig(services[0], bot, services[1:])
+	require.NoError(t, err)
+	t.Cleanup(llmInstance.Shutdown)
+
+	_, err = llmInstance.ChatCompletionNoStream(context.Background(), request, llm.WithToolsDisabled())
+	require.NoError(t, err)
+
+	bodies := make([]map[string]any, len(hops))
+	for i := range captures {
+		bodies[i], _ = captures[i].Load().(map[string]any)
+	}
+	return llmInstance, bodies
+}
+
+// captureTwoHopFailover drives a primary -> fallback -> localHop chain whose
+// first two hops reject the request, and returns the bodies the primary and
+// fallback received.
+func captureTwoHopFailover(t *testing.T, primarySvc, fallbackSvc llm.ServiceConfig, bot llm.BotConfig) (primaryBody, fallbackBody map[string]any) {
+	t.Helper()
+	_, bodies := captureFailover(t, []captureHop{{svc: primarySvc}, {svc: fallbackSvc}, localHop}, bot, llm.CompletionRequest{
+		Posts: []llm.Post{{Role: llm.PostRoleUser, Message: "hi"}},
+	})
+	require.NotNil(t, bodies[0], "primary hop must have been called")
+	require.NotNil(t, bodies[1], "fallback hop must have been called")
+	require.NotNil(t, bodies[2], "the request must fail over through both hops")
+	return bodies[0], bodies[1]
 }
 
 // anthropicThinkingOnWire returns the thinking object and output_config.effort
@@ -116,7 +188,7 @@ func TestReasoningIsResolvedPerFallbackHop(t *testing.T) {
 			if tt.nativeWebSearch {
 				bot.EnabledNativeTools = []string{"web_search"}
 			}
-			primaryBody, fallbackBody := captureFailoverHops(t,
+			primaryBody, fallbackBody := captureTwoHopFailover(t,
 				llm.ServiceConfig{Type: llm.ServiceTypeAnthropic, DefaultModel: tt.primaryModel},
 				llm.ServiceConfig{Type: tt.fallbackType, DefaultModel: tt.fallbackModel},
 				bot,
@@ -152,46 +224,6 @@ func TestReasoningIsResolvedPerFallbackHop(t *testing.T) {
 	}
 }
 
-// captureFailoverHops sends one completion through the production wiring for
-// a primary -> fallback -> local chain whose first two hops reject the
-// request, and returns the request bodies the primary and fallback received.
-// The service IDs, URLs, keys and fallback links are filled in here.
-func captureFailoverHops(t *testing.T, primarySvc, fallbackSvc llm.ServiceConfig, bot llm.BotConfig) (primaryBody, fallbackBody map[string]any) {
-	t.Helper()
-	var primaryCapture, fallbackCapture atomic.Value
-	var localHits atomic.Int32
-	primaryServer := failingCaptureServer(t, &primaryCapture)
-	fallbackServer := failingCaptureServer(t, &fallbackCapture)
-	localServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		localHits.Add(1)
-		chatCompletionSSE(w, "from-local")
-	}))
-	t.Cleanup(localServer.Close)
-
-	primarySvc.ID, primarySvc.APIKey, primarySvc.APIURL, primarySvc.FallbackServiceID = "primary", "primary-key", primaryServer.URL, "fallback"
-	fallbackSvc.ID, fallbackSvc.APIKey, fallbackSvc.APIURL, fallbackSvc.FallbackServiceID = "fallback", "fallback-key", fallbackServer.URL, "local"
-	localSvc := llm.ServiceConfig{
-		ID: "local", Type: llm.ServiceTypeOpenAICompatible, APIURL: localServer.URL, DefaultModel: "llama3",
-	}
-	bot.ID, bot.Name, bot.DisplayName, bot.ServiceID = "bot-1", "ai", "AI", "primary"
-
-	llmInstance, err := NewFromServiceConfig(primarySvc, bot, []llm.ServiceConfig{fallbackSvc, localSvc})
-	require.NoError(t, err)
-	t.Cleanup(llmInstance.Shutdown)
-
-	_, err = llmInstance.ChatCompletionNoStream(context.Background(), llm.CompletionRequest{
-		Posts: []llm.Post{{Role: llm.PostRoleUser, Message: "hi"}},
-	}, llm.WithToolsDisabled())
-	require.NoError(t, err)
-	require.Positive(t, localHits.Load(), "the request must fail over through both hops")
-
-	primaryBody, ok := primaryCapture.Load().(map[string]any)
-	require.True(t, ok, "primary hop must have been called")
-	fallbackBody, ok = fallbackCapture.Load().(map[string]any)
-	require.True(t, ok, "fallback hop must have been called")
-	return primaryBody, fallbackBody
-}
-
 // maxTokensOnWire returns the max output tokens field of a captured request:
 // max_tokens (Anthropic), max_completion_tokens (OpenAI chat) or
 // max_output_tokens (OpenAI Responses).
@@ -218,11 +250,13 @@ func TestMaxOutputTokensAreClampedPerFallbackHop(t *testing.T) {
 		outputTokenLimit int
 		fallbackType     string
 		fallbackModel    string
-		reasoningEnabled bool
-		effort           string
-		nativeWebSearch  bool
-		wantPrimary      float64
-		wantFallback     float64
+		// fallbackOutputTokenLimit is the fallback service's configured limit.
+		fallbackOutputTokenLimit int
+		reasoningEnabled         bool
+		effort                   string
+		nativeWebSearch          bool
+		wantPrimary              float64
+		wantFallback             float64
 		// wantFallbackBudget is the fallback's thinking budget; 0 means unchecked.
 		wantFallbackBudget float64
 	}{
@@ -264,6 +298,25 @@ func TestMaxOutputTokensAreClampedPerFallbackHop(t *testing.T) {
 			fallbackType: llm.ServiceTypeOpenAI, fallbackModel: "gpt-4o",
 			wantPrimary: 8192, wantFallback: 64000,
 		},
+		{
+			name:        "fallback service's own limit clamps a model without a known limit",
+			primaryType: llm.ServiceTypeAnthropic, primaryModel: "claude-opus-4-6", outputTokenLimit: 64000,
+			fallbackType: llm.ServiceTypeOpenAI, fallbackModel: "gpt-4o", fallbackOutputTokenLimit: 2048,
+			wantPrimary: 64000, wantFallback: 2048,
+		},
+		{
+			name:        "fallback service's own limit clamps below its model's limit",
+			primaryType: llm.ServiceTypeAnthropic, primaryModel: "claude-opus-4-6", outputTokenLimit: 128000,
+			fallbackType: llm.ServiceTypeAnthropic, fallbackModel: "claude-sonnet-4-6", fallbackOutputTokenLimit: 4096,
+			nativeWebSearch: true,
+			wantPrimary:     128000, wantFallback: 4096,
+		},
+		{
+			name:        "fallback service's own limit does not raise the requested value",
+			primaryType: llm.ServiceTypeAnthropic, primaryModel: "claude-opus-4-6", outputTokenLimit: 16000,
+			fallbackType: llm.ServiceTypeOpenAI, fallbackModel: "gpt-4o", fallbackOutputTokenLimit: 32000,
+			wantPrimary: 16000, wantFallback: 16000,
+		},
 	}
 
 	for _, tt := range tests {
@@ -272,9 +325,9 @@ func TestMaxOutputTokensAreClampedPerFallbackHop(t *testing.T) {
 			if tt.nativeWebSearch {
 				bot.EnabledNativeTools = []string{"web_search"}
 			}
-			primaryBody, fallbackBody := captureFailoverHops(t,
+			primaryBody, fallbackBody := captureTwoHopFailover(t,
 				llm.ServiceConfig{Type: tt.primaryType, DefaultModel: tt.primaryModel, OutputTokenLimit: tt.outputTokenLimit},
-				llm.ServiceConfig{Type: tt.fallbackType, DefaultModel: tt.fallbackModel},
+				llm.ServiceConfig{Type: tt.fallbackType, DefaultModel: tt.fallbackModel, OutputTokenLimit: tt.fallbackOutputTokenLimit},
 				bot,
 			)
 
@@ -292,6 +345,49 @@ func TestMaxOutputTokensAreClampedPerFallbackHop(t *testing.T) {
 				assert.InDelta(t, tt.wantFallbackBudget, budget, 0, "fallback thinking budget")
 				assert.Less(t, budget, fallbackMax, "Anthropic requires budget_tokens below max_tokens")
 			}
+		})
+	}
+}
+
+// TestChatOnlyFallbackGetsChatPathReasoning drives real failovers through
+// Bifrost from a Responses-path primary to an OpenAI-compatible fallback
+// registered chat-only. Bifrost sends that hop a chat completion and keeps any
+// Responses reasoning effort as reasoning_effort, which the same service as a
+// primary never sends.
+func TestChatOnlyFallbackGetsChatPathReasoning(t *testing.T) {
+	tests := []struct {
+		name            string
+		primary         llm.ServiceConfig
+		nativeWebSearch bool
+	}{
+		{
+			name:    "OpenAI Responses primary",
+			primary: llm.ServiceConfig{Type: llm.ServiceTypeOpenAI, DefaultModel: "gpt-5"},
+		},
+		{
+			name:            "Anthropic Responses primary",
+			primary:         llm.ServiceConfig{Type: llm.ServiceTypeAnthropic, DefaultModel: "claude-opus-4-7"},
+			nativeWebSearch: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bot := llm.BotConfig{ReasoningEnabled: true, ReasoningEffort: "high"}
+			if tt.nativeWebSearch {
+				bot.EnabledNativeTools = []string{llm.NativeToolWebSearch}
+			}
+			chatOnly := captureHop{svc: llm.ServiceConfig{Type: llm.ServiceTypeOpenAICompatible, DefaultModel: "gpt-5"}}
+			llmInstance, bodies := captureFailover(t, []captureHop{{svc: tt.primary}, chatOnly, localHop}, bot, llm.CompletionRequest{
+				Posts: []llm.Post{{Role: llm.PostRoleUser, Message: "hi"}},
+			})
+			require.True(t, llmInstance.shouldUseResponsesAPI(llmInstance.GetDefaultConfig()), "row must exercise the Responses path")
+			fallbackBody := bodies[1]
+			require.NotNil(t, fallbackBody, "the chat-only fallback must have been called")
+
+			assert.Contains(t, fallbackBody, "messages", "the chat-only fallback must be sent a chat completion")
+			assert.NotContains(t, fallbackBody, "reasoning_effort")
+			assert.NotContains(t, fallbackBody, "reasoning")
 		})
 	}
 }
