@@ -126,6 +126,21 @@ func TestTruncationWrapper(t *testing.T) {
 			expectedPosts:      []Post{note, {Role: PostRoleUser, Message: "newest-" + midBudget}},
 		},
 		{
+			name: "never drops the newest post while the provider count stays over the limit",
+			posts: []Post{
+				{Role: PostRoleSystem, Message: systemPrompt},
+				{Role: PostRoleUser, Message: "older-" + nearBudget},
+				{Role: PostRoleUser, Message: "newer-" + nearBudget},
+			},
+			inputTokenLimit:    1000,
+			countTokensReturns: []countResult{{count: 1100}, {count: 1050}},
+			expectedPosts: []Post{
+				{Role: PostRoleSystem, Message: systemPrompt},
+				note,
+				{Role: PostRoleUser, Message: "newer-" + nearBudget},
+			},
+		},
+		{
 			name: "skips safety check when provider returns unsupported error",
 			posts: []Post{
 				{Role: PostRoleUser, Message: nearBudget},
