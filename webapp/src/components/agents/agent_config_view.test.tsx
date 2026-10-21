@@ -5,7 +5,7 @@ import React from 'react';
 import {act, fireEvent, render, screen, waitFor, waitForElementToBeRemoved, within} from '@testing-library/react';
 import {IntlProvider} from 'react-intl';
 
-import {createAgent, getAgentVersion, getAgentVersions, getProfilesByIds, getUserMCPTools, restoreAgentVersion, updateAgent} from '@/client';
+import {createAgent, deleteAgentVersions, getAgentVersion, getAgentVersions, getProfilesByIds, getUserMCPTools, restoreAgentVersion, updateAgent} from '@/client';
 import {AgentExportDocument, AgentVersionDetail, AgentVersionList, EnabledTool, MaxCustomInstructionsRunes, ServiceInfo, UserAgent} from '@/types/agents';
 import {downloadAgentExport} from '@/utils/agent_export';
 import {useCurrentUserHasSystemPermission} from '@/utils/permissions';
@@ -49,6 +49,7 @@ jest.mock('@/client', () => ({
     getAgentVersions: jest.fn(),
     getAgentVersion: jest.fn(),
     restoreAgentVersion: jest.fn(),
+    deleteAgentVersions: jest.fn(),
     getProfilesByIds: jest.fn(),
 }));
 
@@ -1537,5 +1538,107 @@ describe('AgentConfigView import from file', () => {
 
         expect(await screen.findByText('This file is not a valid Mattermost agent export.')).not.toBeNull();
         expect(mockGetUserMCPTools).not.toHaveBeenCalled();
+    });
+});
+
+describe('AgentConfigView history deletion', () => {
+    const mockGetAgentVersions = getAgentVersions as jest.MockedFunction<typeof getAgentVersions>;
+    const mockGetAgentVersion = getAgentVersion as jest.MockedFunction<typeof getAgentVersion>;
+    const mockDeleteAgentVersions = deleteAgentVersions as jest.MockedFunction<typeof deleteAgentVersions>;
+    const mockGetProfilesByIds = getProfilesByIds as jest.MockedFunction<typeof getProfilesByIds>;
+
+    const summary = (version: number) => ({version, createdBy: '', createAt: 1759500000000 + version, source: 'update' as const, restoredFromVersion: 0, changedFields: []});
+    const listOf = (...versions: number[]): AgentVersionList => ({currentVersion: 3, versions: versions.map(summary), hasMore: false});
+
+    function renderHistory() {
+        render(
+            <IntlProvider locale='en'>
+                <AgentConfigView
+                    mode='edit'
+                    agent={savedAgent}
+                    services={services}
+                    onBack={jest.fn()}
+                    onSaved={jest.fn()}
+                />
+            </IntlProvider>,
+        );
+        fireEvent.click(screen.getByRole('tab', {name: 'History'}));
+    }
+
+    async function confirmDelete() {
+        const dialog = await screen.findByRole('dialog');
+        fireEvent.click(within(dialog).getByRole('button', {name: 'Delete'}));
+    }
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+        mockedUseCurrentUserHasSystemPermission.mockReturnValue(true);
+        mockGetAgentVersions.mockResolvedValueOnce(listOf(3, 2, 1));
+        mockGetAgentVersion.mockImplementation(async (_id, version) => ({...summary(version), config: {...savedAgent, customInstructions: `v${version}`}}));
+        mockGetProfilesByIds.mockResolvedValue([]);
+    });
+
+    test('deletes the checked versions and reloads the list', async () => {
+        mockDeleteAgentVersions.mockResolvedValue(2);
+        mockGetAgentVersions.mockResolvedValue(listOf(3));
+        renderHistory();
+
+        await screen.findByTestId('version-list');
+        expect((screen.getByRole('checkbox', {name: 'The current version cannot be deleted'}) as HTMLInputElement).disabled).toBe(true);
+        expect((screen.getByRole('button', {name: 'Delete selected (0)'}) as HTMLButtonElement).disabled).toBe(true);
+
+        fireEvent.click(screen.getByRole('checkbox', {name: 'Select version 2'}));
+        fireEvent.click(screen.getByRole('checkbox', {name: 'Select version 1'}));
+        fireEvent.click(screen.getByRole('button', {name: 'Delete selected (2)'}));
+        await confirmDelete();
+
+        await waitFor(() => expect(mockDeleteAgentVersions).toHaveBeenCalledWith('agent_1', [1, 2]));
+        await waitFor(() => expect(within(screen.getByTestId('version-list')).getAllByRole('listitem')).toHaveLength(1));
+        expect(mockGetAgentVersions).toHaveBeenCalledTimes(2);
+        expect((screen.getByRole('button', {name: 'Delete all previous'}) as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    test('deletes every previous version', async () => {
+        mockDeleteAgentVersions.mockResolvedValue(2);
+        mockGetAgentVersions.mockResolvedValue(listOf(3));
+        renderHistory();
+
+        await screen.findByTestId('version-list');
+        fireEvent.click(screen.getByRole('button', {name: 'Delete all previous'}));
+        expect(await screen.findByText('Delete all previous versions?')).not.toBeNull();
+        await confirmDelete();
+
+        await waitFor(() => expect(mockDeleteAgentVersions).toHaveBeenCalledWith('agent_1', 'all'));
+        await waitFor(() => expect(within(screen.getByTestId('version-list')).getAllByRole('listitem')).toHaveLength(1));
+    });
+
+    test('deleting the viewed version falls back to the current version', async () => {
+        mockDeleteAgentVersions.mockResolvedValue(1);
+        mockGetAgentVersions.mockResolvedValue(listOf(3, 2));
+        renderHistory();
+
+        const list = await screen.findByTestId('version-list');
+        fireEvent.click(within(list).getByText('Version 1'));
+        await waitFor(() => expect(mockGetAgentVersion).toHaveBeenCalledWith('agent_1', 1));
+        fireEvent.click(screen.getByRole('button', {name: 'Delete'}));
+        await confirmDelete();
+
+        await waitFor(() => expect(mockDeleteAgentVersions).toHaveBeenCalledWith('agent_1', [1]));
+        await waitFor(() => expect(screen.queryByRole('button', {name: 'Restore this version'})).toBeNull());
+        expect(mockGetAgentVersion).toHaveBeenLastCalledWith('agent_1', 3);
+    });
+
+    test('shows the server error and keeps the list', async () => {
+        mockDeleteAgentVersions.mockRejectedValue({message: 'the current version of an agent cannot be deleted'});
+        renderHistory();
+
+        await screen.findByTestId('version-list');
+        fireEvent.click(screen.getByRole('checkbox', {name: 'Select version 1'}));
+        fireEvent.click(screen.getByRole('button', {name: 'Delete selected (1)'}));
+        await confirmDelete();
+
+        expect(await screen.findByText('the current version of an agent cannot be deleted')).not.toBeNull();
+        expect(within(screen.getByTestId('version-list')).getAllByRole('listitem')).toHaveLength(3);
+        expect(mockGetAgentVersions).toHaveBeenCalledTimes(1);
     });
 });

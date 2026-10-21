@@ -8,10 +8,11 @@ import {FormattedMessage, useIntl, type IntlShape} from 'react-intl';
 import {UserProfile} from '@mattermost/types/users';
 
 import {Button} from '@mattermost/compass-ui/components/button';
+import {Checkbox} from '@mattermost/compass-ui/components/checkbox';
 import {SectionNotice} from '@mattermost/compass-ui/components/section-notice';
 import {Tag} from '@mattermost/compass-ui/components/tag';
 
-import {getAgentVersion, getAgentVersions, getProfilesByIds, restoreAgentVersion} from '@/client';
+import {deleteAgentVersions, getAgentVersion, getAgentVersions, getProfilesByIds, restoreAgentVersion} from '@/client';
 import {AgentVersionDetail, AgentVersionList, ServiceInfo, UserAgent} from '@/types/agents';
 import ConfirmationDialog from '@/components/confirmation_dialog';
 import {UserAccessLevel} from '@/components/system_console/bot';
@@ -20,6 +21,10 @@ import {changedFieldLabels, versionSourceLabel} from '../agent_version_labels';
 import VersionSnapshot from '../version_snapshot';
 
 const RESTORE_DIALOG_TITLE_ID = 'restore-agent-version-title';
+const DELETE_DIALOG_TITLE_ID = 'delete-agent-versions-title';
+
+// The versions a confirmed delete removes: listed ones, or every previous one.
+type PendingDelete = number[] | 'all';
 
 type Props = {
     agentId: string;
@@ -78,6 +83,11 @@ const HistoryTab = ({agentId, services, isDirty, currentUserAccessLevel, onResto
     const [restoredNotice, setRestoredNotice] = useState('');
     const [loadingOlder, setLoadingOlder] = useState(false);
     const [olderError, setOlderError] = useState('');
+    const [checkedVersions, setCheckedVersions] = useState<number[]>([]);
+    const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+    const [deleting, setDeleting] = useState(false);
+    const [deleteError, setDeleteError] = useState('');
+    const [deletedNotice, setDeletedNotice] = useState('');
     const requestedAuthors = useRef(new Set<string>());
     const mountedRef = useRef(true);
 
@@ -229,6 +239,36 @@ const HistoryTab = ({agentId, services, isDirty, currentUserAccessLevel, onResto
         setSelected(version);
         setRestoreError('');
         setRestoredNotice('');
+        setDeleteError('');
+        setDeletedNotice('');
+    };
+
+    const toggleChecked = (version: number) => {
+        setCheckedVersions((prev) => (prev.includes(version) ? prev.filter((v) => v !== version) : [...prev, version]));
+    };
+
+    const handleDeleteConfirm = async () => {
+        if (pendingDelete === null || deleting) {
+            return;
+        }
+        setDeleting(true);
+        setDeleteError('');
+        try {
+            const deleted = await deleteAgentVersions(agentId, pendingDelete);
+            setPendingDelete(null);
+            setCheckedVersions([]);
+            setRestoredNotice('');
+            setDeletedNotice(intl.formatMessage(
+                {defaultMessage: 'Deleted {count, plural, one {# version} other {# versions}}.'},
+                {count: deleted},
+            ));
+            await loadList(false);
+        } catch (e) {
+            setPendingDelete(null);
+            setDeleteError(errorMessage(e, intl.formatMessage({defaultMessage: 'Failed to delete versions. Please try again.'})));
+        } finally {
+            setDeleting(false);
+        }
     };
 
     const handleRestoreConfirm = async () => {
@@ -245,6 +285,7 @@ const HistoryTab = ({agentId, services, isDirty, currentUserAccessLevel, onResto
                 {defaultMessage: 'Version {version} was restored as the current version.'},
                 {version: restoredVersion},
             ));
+            setDeletedNotice('');
             onRestored(agent);
             await loadList(true);
         } catch (e) {
@@ -285,18 +326,47 @@ const HistoryTab = ({agentId, services, isDirty, currentUserAccessLevel, onResto
     const isCurrentSelected = selected !== null && selected === list.currentVersion;
     const restoresRemovedPolicy = detail?.config?.userAccessLevel === UserAccessLevel.AttributeBased &&
         currentUserAccessLevel !== UserAccessLevel.AttributeBased;
+    const hasPreviousVersions = list.hasMore || list.versions.some((v) => v.version !== list.currentVersion);
+    const deleteCount = pendingDelete === 'all' ? 0 : pendingDelete?.length ?? 0;
 
     return (
         <Layout>
             <ListColumn>
+                <ListActions>
+                    <Button
+                        emphasis='tertiary'
+                        size='small'
+                        destructive={true}
+                        disabled={checkedVersions.length === 0 || deleting}
+                        onClick={() => setPendingDelete([...checkedVersions].sort((a, b) => a - b))}
+                    >
+                        {intl.formatMessage({defaultMessage: 'Delete selected ({count})'}, {count: checkedVersions.length})}
+                    </Button>
+                    <Button
+                        emphasis='tertiary'
+                        size='small'
+                        destructive={true}
+                        disabled={!hasPreviousVersions || deleting}
+                        onClick={() => setPendingDelete('all')}
+                    >
+                        <FormattedMessage defaultMessage='Delete all previous'/>
+                    </Button>
+                </ListActions>
                 <VersionList
                     aria-label={intl.formatMessage({defaultMessage: 'Version history'})}
                     data-testid='version-list'
                 >
                     {list.versions.map((v) => {
                         const changed = changedFieldLabels(intl, v.changedFields);
+                        const isCurrent = v.version === list.currentVersion;
                         return (
-                            <li key={v.version}>
+                            <VersionRow key={v.version}>
+                                <VersionCheckbox
+                                    checked={checkedVersions.includes(v.version)}
+                                    disabled={isCurrent}
+                                    onChange={() => toggleChecked(v.version)}
+                                    aria-label={isCurrent ? intl.formatMessage({defaultMessage: 'The current version cannot be deleted'}) : intl.formatMessage({defaultMessage: 'Select version {version}'}, {version: v.version})}
+                                />
                                 <VersionItem
                                     type='button'
                                     $selected={v.version === selected}
@@ -307,7 +377,7 @@ const HistoryTab = ({agentId, services, isDirty, currentUserAccessLevel, onResto
                                         <VersionTitle>
                                             {intl.formatMessage({defaultMessage: 'Version {version}'}, {version: v.version})}
                                         </VersionTitle>
-                                        {v.version === list.currentVersion && <CurrentTag/>}
+                                        {isCurrent && <CurrentTag/>}
                                     </VersionTitleRow>
                                     <VersionMeta>{versionSourceLabel(intl, v)}</VersionMeta>
                                     <VersionMeta>
@@ -325,7 +395,7 @@ const HistoryTab = ({agentId, services, isDirty, currentUserAccessLevel, onResto
                                         </VersionMeta>
                                     )}
                                 </VersionItem>
-                            </li>
+                            </VersionRow>
                         );
                     })}
                 </VersionList>
@@ -348,14 +418,15 @@ const HistoryTab = ({agentId, services, isDirty, currentUserAccessLevel, onResto
             </ListColumn>
 
             <DetailPane>
-                {restoredNotice && (
+                {[restoredNotice, deletedNotice].filter(Boolean).map((message) => (
                     <SectionNotice
+                        key={message}
                         type='success'
-                        title={restoredNotice}
+                        title={message}
                         role='status'
                     />
-                )}
-                {[restoreError, listError, detailError].filter(Boolean).map((message) => (
+                ))}
+                {[restoreError, deleteError, listError, detailError].filter(Boolean).map((message) => (
                     <SectionNotice
                         key={message}
                         type='danger'
@@ -383,13 +454,23 @@ const HistoryTab = ({agentId, services, isDirty, currentUserAccessLevel, onResto
                             </VersionMeta>
                         </div>
                         {!isCurrentSelected && (
-                            <Button
-                                emphasis='primary'
-                                disabled={!detail || restoring}
-                                onClick={() => setConfirmOpen(true)}
-                            >
-                                <FormattedMessage defaultMessage='Restore this version'/>
-                            </Button>
+                            <DetailActions>
+                                <Button
+                                    emphasis='tertiary'
+                                    destructive={true}
+                                    disabled={deleting || restoring}
+                                    onClick={() => setPendingDelete([selectedSummary.version])}
+                                >
+                                    <FormattedMessage defaultMessage='Delete'/>
+                                </Button>
+                                <Button
+                                    emphasis='primary'
+                                    disabled={!detail || restoring || deleting}
+                                    onClick={() => setConfirmOpen(true)}
+                                >
+                                    <FormattedMessage defaultMessage='Restore this version'/>
+                                </Button>
+                            </DetailActions>
                         )}
                     </DetailHeader>
                 )}
@@ -438,6 +519,29 @@ const HistoryTab = ({agentId, services, isDirty, currentUserAccessLevel, onResto
                 managedAccessibility={true}
                 zIndex={2100}
             />
+            <ConfirmationDialog
+                show={pendingDelete !== null}
+                titleId={DELETE_DIALOG_TITLE_ID}
+                title={pendingDelete === 'all' ? (
+                    <FormattedMessage defaultMessage='Delete all previous versions?'/>
+                ) : intl.formatMessage(
+                    {defaultMessage: 'Delete {count, plural, one {# version} other {# versions}}?'},
+                    {count: deleteCount},
+                )}
+                message={pendingDelete === 'all' ? (
+                    <FormattedMessage defaultMessage='Every version except the current one is permanently deleted. The agent keeps its current configuration. This cannot be undone.'/>
+                ) : intl.formatMessage(
+                    {defaultMessage: '{count, plural, one {Version {versions} is} other {Versions {versions} are}} permanently deleted from the history. The agent keeps its current configuration. This cannot be undone.'},
+                    {count: deleteCount, versions: (pendingDelete ?? []).join(', ')},
+                )}
+                confirmButtonText={deleting ? <FormattedMessage defaultMessage='Deleting...'/> : <FormattedMessage defaultMessage='Delete'/>}
+                onConfirm={handleDeleteConfirm}
+                onCancel={() => setPendingDelete(null)}
+                confirmPending={deleting}
+                isDestructive={true}
+                managedAccessibility={true}
+                zIndex={2100}
+            />
         </Layout>
     );
 };
@@ -462,6 +566,28 @@ const VersionList = styled.ol`
     display: flex;
     flex-direction: column;
     gap: 8px;
+`;
+
+const ListActions = styled.div`
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+`;
+
+const VersionRow = styled.li`
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+`;
+
+const VersionCheckbox = styled(Checkbox)`
+    margin-top: 12px;
+`;
+
+const DetailActions = styled.div`
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
 `;
 
 const VersionItem = styled.button<{$selected: boolean}>`
