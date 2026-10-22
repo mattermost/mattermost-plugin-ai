@@ -641,12 +641,12 @@ const VersionCard = styled.li<{$selected: boolean}>`
     }
 `;
 
-// Fixed width so cards line up whether or not they have a checkbox.
+// Fixed width so cards line up whether or not they have a checkbox. The top
+// padding matches VersionItem's, so the checkbox sits on the title's line.
 const CheckboxSlot = styled.div`
     flex: 0 0 28px;
-    display: flex;
-    justify-content: flex-end;
-    padding-top: 12px;
+    box-sizing: border-box;
+    padding: 10px 0 0 12px;
 `;
 
 const DetailActions = styled.div`
