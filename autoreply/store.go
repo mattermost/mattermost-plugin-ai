@@ -25,8 +25,8 @@ const (
 	// ModeAmbient classifies each eligible post and replies only when the
 	// classifier returns should_reply=true.
 	ModeAmbient Mode = "ambient"
-	// ModeAmbientThreads is ModeAmbient restricted to threads the agent has
-	// already replied in, which in practice means an @mention brought it in.
+	// ModeAmbientThreads is ModeAmbient restricted to thread replies in threads
+	// the agent has already replied in.
 	ModeAmbientThreads Mode = "ambient_threads"
 )
 

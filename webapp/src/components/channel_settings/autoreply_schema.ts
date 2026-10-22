@@ -18,11 +18,11 @@ import {
 } from '@/utils/permissions';
 import manifest from '@/manifest';
 import {licenseAllows} from '@/license';
-import {getAmbientAutoReplyEnabled} from '@/selectors';
 
 import {AutoReplyAgentPicker} from './autoreply_agent_picker';
 import {AutoReplyAnalysisModelField, AutoReplyInstructionsField} from './autoreply_ambient_fields';
 import {
+    ChannelAutoReplySaveErrorKind,
     normalizeChannelAutoReply,
     parseChannelAutoReplyMode,
     setChannelAutoReplyDraft,
@@ -117,7 +117,18 @@ export const makeLoadValues = (store: WebappStore) => async (channel: Channel): 
     };
 };
 
-export const makeOnSave = (store: WebappStore) => async (values: ChannelSettingsValues, channel: Channel): Promise<void> => {
+function saveErrorKindForStatus(status: number): ChannelAutoReplySaveErrorKind {
+    switch (status) {
+    case 403:
+        return 'forbidden';
+    case 409:
+        return 'ambient_disabled';
+    default:
+        return 'generic';
+    }
+}
+
+export const makeOnSave = () => async (values: ChannelSettingsValues, channel: Channel): Promise<void> => {
     const mode = parseChannelAutoReplyMode(values.mode);
     let botId: string;
     let instructions: string;
@@ -145,10 +156,6 @@ export const makeOnSave = (store: WebappStore) => async (values: ChannelSettings
         setChannelAutoReplySaveError('no_agent');
         throw new Error('no agent selected for channel auto-reply');
     }
-    if ((mode === 'ambient' || mode === 'ambient_threads') && !getAmbientAutoReplyEnabled(store.getState())) {
-        setChannelAutoReplySaveError('ambient_disabled');
-        throw new Error('ambient auto-reply is disabled by the system admin');
-    }
     const saved: ChannelAutoReplySettings = {
         bot_id: botId,
         mode,
@@ -160,8 +167,7 @@ export const makeOnSave = (store: WebappStore) => async (values: ChannelSettings
     } catch (e) {
         // The endpoints answer with a bare status code (no JSON error body),
         // so error handling keys off the status only.
-        const status = e instanceof ClientError ? e.status_code : 0;
-        setChannelAutoReplySaveError(status === 403 ? 'forbidden' : 'generic');
+        setChannelAutoReplySaveError(saveErrorKindForStatus(e instanceof ClientError ? e.status_code ?? 0 : 0));
 
         // The host swallows the rejection and keeps the tab dirty; the picker
         // is the plugin-rendered element that displays the recorded error.
@@ -243,6 +249,6 @@ export function makeChannelAutoReplySchema(store: WebappStore, intl: IntlShape):
             ],
         }],
         loadValues: makeLoadValues(store),
-        onSave: makeOnSave(store),
+        onSave: makeOnSave(),
     };
 }

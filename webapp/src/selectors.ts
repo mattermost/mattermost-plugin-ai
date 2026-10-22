@@ -12,7 +12,6 @@ interface PluginState {
     pinnedPromptIds: string[] | null;
     showCustomPromptsModal: boolean;
     htmlArtifactsEnabled?: boolean;
-    ambientAutoReplyEnabled?: boolean;
 }
 
 type AppState = GlobalState & {
@@ -34,6 +33,3 @@ export const getShowCustomPromptsModal = (state: AppState): boolean =>
 
 export const getHTMLArtifactsEnabled = (state: AppState): boolean =>
     Boolean(state[`plugins-${manifest.id}`]?.htmlArtifactsEnabled);
-
-export const getAmbientAutoReplyEnabled = (state: AppState): boolean =>
-    Boolean(state[`plugins-${manifest.id}`]?.ambientAutoReplyEnabled);

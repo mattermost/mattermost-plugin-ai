@@ -93,11 +93,6 @@ export async function fetchAndStoreBots(dispatch: Dispatch): Promise<LLMBot[] | 
         htmlArtifactsEnabled: Boolean(response.htmlArtifactsEnabled),
     });
 
-    dispatch({
-        type: 'SET_AMBIENT_AUTO_REPLY_ENABLED',
-        ambientAutoReplyEnabled: Boolean(response.ambientAutoReplyEnabled),
-    });
-
     return response.bots;
 }
 

@@ -3,10 +3,7 @@
 
 import React, {useState} from 'react';
 import {FormattedMessage} from 'react-intl';
-import {useSelector} from 'react-redux';
 import styled from 'styled-components';
-
-import {getAmbientAutoReplyEnabled} from '@/selectors';
 
 import {useChannelAutoReplyDraft} from './autoreply_state';
 
@@ -14,9 +11,7 @@ type Props = {
     informChange: (name: string, value: string) => void;
 };
 
-// Static ids are safe: only one Channel Settings modal exists at a time.
-const INSTRUCTIONS_ID = 'autoreply-instructions';
-const ANALYSIS_MODEL_ID = 'autoreply-analysis-model';
+type AmbientFieldName = 'instructions' | 'analysis_model';
 
 // Ambient extras for the schema-driven channel-settings tab. The host hands
 // custom settings nothing but informChange, so saved values come from the
@@ -27,80 +22,58 @@ const ANALYSIS_MODEL_ID = 'autoreply-analysis-model';
 // so after a Reset these fields keep displaying local text while the host
 // reverted to baseline. Saving then persists baseline extras; reopening
 // re-hydrates. Calling informChange from an effect to compensate would make
-// the tab instantly dirty on open. POC assumption: extras stay always
-// visible; they cannot follow the live radio.
-
-export const AutoReplyInstructionsField = ({informChange}: Props) => {
+// the tab instantly dirty on open.
+const AmbientField = ({informChange, name, label, helpText, multiline}: Props & {
+    name: AmbientFieldName;
+    label: React.ReactNode;
+    helpText: React.ReactNode;
+    multiline?: boolean;
+}) => {
     const draft = useChannelAutoReplyDraft();
-    const ambientEnabled = useSelector(getAmbientAutoReplyEnabled);
     const [local, setLocal] = useState<string | null>(null);
 
     if (!draft) {
         return null;
     }
 
-    const value = local ?? draft.saved.instructions;
+    // Static ids are safe: only one Channel Settings modal exists at a time.
+    const id = `autoreply-${name.replace('_', '-')}`;
+    const onChange = (event: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
+        setLocal(event.target.value);
+        informChange(name, event.target.value);
+    };
+    const inputProps = {id, 'data-testid': id, value: local ?? draft.saved[name], onChange};
 
     return (
         <Container>
-            <Label htmlFor={INSTRUCTIONS_ID}>
-                <FormattedMessage defaultMessage='Ambient instructions'/>
-            </Label>
-            <InstructionsTextArea
-                id={INSTRUCTIONS_ID}
-                data-testid='autoreply-instructions'
-                value={value}
-                onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => {
-                    setLocal(event.target.value);
-                    informChange('instructions', event.target.value);
-                }}
-            />
-            <HelpText>
-                <FormattedMessage defaultMessage='Instructions for when the agent should reply. Used by both ambient modes.'/>
-            </HelpText>
-            {!ambientEnabled && (
-                <HelpText data-testid='autoreply-ambient-disabled'>
-                    <FormattedMessage defaultMessage='Ambient auto-replies are turned off by your system admin.'/>
-                </HelpText>
-            )}
+            <Label htmlFor={id}>{label}</Label>
+            {multiline ? <InstructionsTextArea {...inputProps}/> : <ModelInput {...inputProps}/>}
+            <HelpText>{helpText}</HelpText>
         </Container>
     );
 };
+
+export const AutoReplyInstructionsField = ({informChange}: Props) => (
+    <AmbientField
+        informChange={informChange}
+        name='instructions'
+        multiline={true}
+        label={<FormattedMessage defaultMessage='Ambient instructions'/>}
+        helpText={<FormattedMessage defaultMessage='Instructions for when the agent should reply. Used by both ambient modes.'/>}
+    />
+);
 
 // TODO(ambient-poc): replace this free-text input with a channel-authorized
 // model discovery/validation endpoint. POC assumption: the value is an
 // unvalidated model id string.
-export const AutoReplyAnalysisModelField = ({informChange}: Props) => {
-    const draft = useChannelAutoReplyDraft();
-    const [local, setLocal] = useState<string | null>(null);
-
-    if (!draft) {
-        return null;
-    }
-
-    const value = local ?? draft.saved.analysis_model;
-
-    return (
-        <Container>
-            <Label htmlFor={ANALYSIS_MODEL_ID}>
-                <FormattedMessage defaultMessage='Analysis model'/>
-            </Label>
-            <ModelInput
-                id={ANALYSIS_MODEL_ID}
-                data-testid='autoreply-analysis-model'
-                type='text'
-                value={value}
-                onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
-                    setLocal(event.target.value);
-                    informChange('analysis_model', event.target.value);
-                }}
-            />
-            <HelpText>
-                <FormattedMessage defaultMessage='Model id used to decide whether to reply. Used by both ambient modes.'/>
-            </HelpText>
-        </Container>
-    );
-};
+export const AutoReplyAnalysisModelField = ({informChange}: Props) => (
+    <AmbientField
+        informChange={informChange}
+        name='analysis_model'
+        label={<FormattedMessage defaultMessage='Analysis model'/>}
+        helpText={<FormattedMessage defaultMessage='Model id used to decide whether to reply. Used by both ambient modes.'/>}
+    />
+);
 
 const Container = styled.div`
     display: flex;
@@ -142,6 +115,6 @@ const InstructionsTextArea = styled.textarea`
     min-height: 120px;
 `;
 
-const ModelInput = styled.input`
+const ModelInput = styled.input.attrs({type: 'text'})`
     ${fieldChrome}
 `;

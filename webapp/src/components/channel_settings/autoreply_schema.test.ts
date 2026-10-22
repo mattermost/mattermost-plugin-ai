@@ -97,7 +97,7 @@ function makeChannel(type: string, id = CHANNEL_ID): Channel {
     return {id, type, team_id: TEAM_ID} as Channel;
 }
 
-function makeState(opts: {bots: LLMBot[] | null; channelPermissions?: string[]; skuShortName?: string; ambientAutoReplyEnabled?: boolean}): GlobalState {
+function makeState(opts: {bots: LLMBot[] | null; channelPermissions?: string[]; skuShortName?: string}): GlobalState {
     return {
         entities: {
             general: {config: {}, license: {SkuShortName: opts.skuShortName ?? 'advanced'}},
@@ -112,7 +112,7 @@ function makeState(opts: {bots: LLMBot[] | null; channelPermissions?: string[]; 
                 },
             },
         },
-        [botsKey]: {bots: opts.bots, ambientAutoReplyEnabled: opts.ambientAutoReplyEnabled ?? true},
+        [botsKey]: {bots: opts.bots},
     } as unknown as GlobalState;
 }
 
@@ -260,7 +260,7 @@ describe('makeLoadValues', () => {
 });
 
 describe('makeOnSave', () => {
-    const onSave = makeOnSave(makeTestStore(makeState({bots: []})));
+    const onSave = makeOnSave();
 
     function seedDraft(saveError: 'forbidden' | 'no_agent' | 'generic' | null = null) {
         setChannelAutoReplyDraft({channelId: CHANNEL_ID, saved: {bot_id: 'other', mode: 'off', ...emptyExtras}, saveError});
@@ -338,26 +338,6 @@ describe('makeOnSave', () => {
         });
     });
 
-    test.each(['ambient', 'ambient_threads'])('rejects %s with ambient_disabled and performs no PUT when the admin turned it off', async (mode) => {
-        seedDraft();
-        const disabledOnSave = makeOnSave(makeTestStore(makeState({bots: [], ambientAutoReplyEnabled: false})));
-
-        await expect(disabledOnSave({mode, bot_id: 'other'}, makeChannel('O'))).rejects.toThrow();
-
-        expect(mockedUpdateChannelAutoReply).not.toHaveBeenCalled();
-        expect(getChannelAutoReplyDraft()?.saveError).toBe('ambient_disabled');
-    });
-
-    test('still saves non-ambient modes when the admin turned ambient off', async () => {
-        seedDraft();
-        mockedUpdateChannelAutoReply.mockImplementation(() => Promise.resolve());
-        const disabledOnSave = makeOnSave(makeTestStore(makeState({bots: [], ambientAutoReplyEnabled: false})));
-
-        await disabledOnSave({mode: 'threads', bot_id: 'other'}, makeChannel('O'));
-
-        expect(mockedUpdateChannelAutoReply).toHaveBeenCalledWith(CHANNEL_ID, {bot_id: 'other', mode: 'threads', ...emptyExtras});
-    });
-
     test('preserves extras when saving a non-ambient enabled mode', async () => {
         seedDraft();
         mockedUpdateChannelAutoReply.mockImplementation(() => Promise.resolve());
@@ -398,6 +378,16 @@ describe('makeOnSave', () => {
         await expect(onSave({mode: 'threads', bot_id: 'other'}, makeChannel('O'))).rejects.toBe(error);
 
         expect(getChannelAutoReplyDraft()?.saveError).toBe('forbidden');
+    });
+
+    test('records ambient_disabled and re-throws when the PUT conflicts with the admin setting', async () => {
+        seedDraft();
+        const error = new ClientError('http://localhost', {message: '', status_code: 409, url: 'u'});
+        mockedUpdateChannelAutoReply.mockRejectedValue(error);
+
+        await expect(onSave({mode: 'ambient_threads', bot_id: 'other'}, makeChannel('O'))).rejects.toBe(error);
+
+        expect(getChannelAutoReplyDraft()?.saveError).toBe('ambient_disabled');
     });
 
     test('records generic and re-throws when the PUT fails with a 500', async () => {

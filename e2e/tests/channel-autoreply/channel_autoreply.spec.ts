@@ -3,8 +3,7 @@
 //
 // Auto-reply is configured via the REST API rather than the channel-settings tab UI.
 // The tab component is covered by webapp unit tests; this spec covers the
-// end-to-end contract, including ambient classifier then reply via ordered
-// Smocker mocks. On servers < 11.10 the tab does not register
+// end-to-end contract. On servers < 11.10 the tab does not register
 // (registerChannelSettingsTab is missing); REST endpoints remain available.
 
 import { test, expect } from '@playwright/test';
@@ -83,9 +82,7 @@ async function setupClientAndChannel(testTag: string): Promise<{
 
 async function setAmbientAutoReplyEnabled(enabled: boolean): Promise<void> {
     const adminClient = await mattermost.getAdminClient();
-    const api = mattermostAIAdminConfigApiFromClient(adminClient, mattermost.url());
-    const current = await api.get();
-    await api.put({...current, enableAmbientAutoReply: enabled}, {settleMs: 2000});
+    await mattermostAIAdminConfigApiFromClient(adminClient, mattermost.url()).patch({enableAmbientAutoReply: enabled}, {settleMs: 2000});
 }
 
 async function putAutoReply(
@@ -96,16 +93,7 @@ async function putAutoReply(
     extras?: { instructions?: string; analysis_model?: string },
 ): Promise<void> {
     const routes = mattermostAIPluginRoutes(mattermost.url());
-    const payload: { bot_id: string; mode: string; instructions?: string; analysis_model?: string } = {
-        bot_id: botId,
-        mode,
-    };
-    if (extras?.instructions !== undefined) {
-        payload.instructions = extras.instructions;
-    }
-    if (extras?.analysis_model !== undefined) {
-        payload.analysis_model = extras.analysis_model;
-    }
+    const payload = { bot_id: botId, mode, ...extras };
     await routes.putJson(`channel/${channelId}/autoreply`, client.getToken(), payload);
     // Round-trip sanity check: GET must return what was stored.
     const setting = await routes.getJson(`channel/${channelId}/autoreply`, client.getToken());
@@ -124,23 +112,16 @@ async function mockAmbientClassifierThenReply(shouldReply: boolean): Promise<voi
     const catchAllRule = buildChatCompletionMockRule(responseTest);
     // Smocker last-registered = highest priority. Catch-all must come first so the
     // classifier JSON rule actually matches the classification request.
-    const ruleOrder = [catchAllRule, classifierRule];
-    await openAIMock.addMocks(ruleOrder);
+    await openAIMock.addMocks([catchAllRule, classifierRule]);
 }
-
-type SmockerMockState = {
-    request?: {body?: {value?: string}};
-    state?: {times_count?: number};
-};
 
 /** Fail unless Smocker served the classifier JSON mock (not the catch-all SSE). */
 async function expectMatchedAmbientDecision(shouldReply: boolean): Promise<void> {
-    const mocks = await openAIMock.getMocks() as SmockerMockState[];
-    const list = Array.isArray(mocks) ? mocks : [];
-    const classifier = list.find((m) => m.request?.body?.value === ambientClassifierPrompt);
-    const catchAll = list.find((m) => !m.request?.body);
+    const mocks = await openAIMock.getMocks();
+    const classifier = mocks.find((m) => m.request?.body?.value === ambientClassifierPrompt);
+    const catchAll = mocks.find((m) => !m.request?.body);
     expect(classifier, 'classifier JSON Smocker rule must be registered').toBeTruthy();
-    expect(classifier!.state?.times_count, 'classifier JSON Smocker rule must have been matched').toBeGreaterThan(0);
+    expect(classifier?.state?.times_count ?? 0, 'classifier JSON Smocker rule must have been matched').toBeGreaterThan(0);
     if (!shouldReply) {
         expect(catchAll?.state?.times_count ?? 0, 'classifier false must not fall through to the catch-all SSE').toBe(0);
     }
@@ -452,7 +433,7 @@ test.describe('Per-channel agent auto-reply', () => {
             for (const mode of ['ambient', 'ambient_threads']) {
                 await expect(
                     routes.putJson(`channel/${channel.id}/autoreply`, client.getToken(), { bot_id: botUser.id, mode }),
-                ).rejects.toThrow(/403/);
+                ).rejects.toThrow(/failed: 409/);
             }
             await putAutoReply(client, channel.id, botUser.id, 'threads');
         } finally {

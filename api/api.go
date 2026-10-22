@@ -709,11 +709,10 @@ type AIBotInfo struct {
 }
 
 type AIBotsResponse struct {
-	Bots                    []AIBotInfo `json:"bots"`
-	SearchEnabled           bool        `json:"searchEnabled"`
-	AllowUnsafeLinks        bool        `json:"allowUnsafeLinks"`
-	HTMLArtifactsEnabled    bool        `json:"htmlArtifactsEnabled"`
-	AmbientAutoReplyEnabled bool        `json:"ambientAutoReplyEnabled"`
+	Bots                 []AIBotInfo `json:"bots"`
+	SearchEnabled        bool        `json:"searchEnabled"`
+	AllowUnsafeLinks     bool        `json:"allowUnsafeLinks"`
+	HTMLArtifactsEnabled bool        `json:"htmlArtifactsEnabled"`
 }
 
 // usesServiceAccountAuth reports the effective service account mode for a bot:
@@ -802,11 +801,10 @@ func (a *API) handleGetAIBots(c *gin.Context) {
 	searchEnabled := a.searchService.Enabled()
 
 	c.JSON(http.StatusOK, AIBotsResponse{
-		Bots:                    bots,
-		SearchEnabled:           searchEnabled,
-		AllowUnsafeLinks:        a.config.AllowUnsafeLinks(),
-		HTMLArtifactsEnabled:    a.config.EnableHTMLArtifacts(),
-		AmbientAutoReplyEnabled: a.config.EnableAmbientAutoReply(),
+		Bots:                 bots,
+		SearchEnabled:        searchEnabled,
+		AllowUnsafeLinks:     a.config.AllowUnsafeLinks(),
+		HTMLArtifactsEnabled: a.config.EnableHTMLArtifacts(),
 	})
 }
 

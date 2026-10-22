@@ -1,16 +1,6 @@
 import {StartedTestContainer, GenericContainer, StartedNetwork, Network, Wait} from "testcontainers";
 
-/**
- * Smocker matches request paths exactly. Bifrost may POST to /v1/chat/completions or /chat/completions.
- * Use a single path regex so we do not register two mocks with the same body matchers (which would
- * cause the second request to match the duplicate rule instead of the next logical mock).
- */
-export type SmockerPathMatcher = {
-	matcher: string;
-	value: string;
-};
-
-export type SmockerBodyMatcher = {
+export type SmockerMatcher = {
 	matcher: string;
 	value: string;
 };
@@ -18,8 +8,8 @@ export type SmockerBodyMatcher = {
 export type SmockerMockRule = {
 	request: {
 		method: string;
-		path: string | SmockerPathMatcher;
-		body?: SmockerBodyMatcher;
+		path: string | SmockerMatcher;
+		body?: SmockerMatcher;
 	};
 	context?: { times?: number };
 	response: {
@@ -29,9 +19,20 @@ export type SmockerMockRule = {
 	};
 };
 
+/** A registered rule as returned by GET /mocks, including how often it matched. */
+export type SmockerMockState = {
+	request?: {body?: {value?: string}};
+	state?: {times_count?: number};
+};
+
+/**
+ * Smocker matches request paths exactly. Bifrost may POST to /v1/chat/completions or /chat/completions.
+ * Use a single path regex so we do not register two mocks with the same body matchers (which would
+ * cause the second request to match the duplicate rule instead of the next logical mock).
+ */
 export function normalizeChatCompletionMockPath(body: SmockerMockRule): SmockerMockRule {
-	const req = body?.request;
-	if (!req || typeof req.path !== 'string') {
+	const req = body.request;
+	if (typeof req.path !== 'string') {
 		return body;
 	}
 	const p = req.path;
@@ -281,7 +282,7 @@ export class OpenAIMockContainer {
 		})
 	}
 
-	getMocks = async (): Promise<unknown> => {
+	getMocks = async (): Promise<SmockerMockState[]> => {
 		const response = await fetch(`http://localhost:${this.container.getMappedPort(8081)}/mocks`);
 		return response.json();
 	}

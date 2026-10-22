@@ -98,7 +98,6 @@ function asString(value: unknown): string {
  * that case the saved bot id is preserved as-is: treating it like an empty
  * list would clear a configured agent and a subsequent save could persist the
  * cleared state. Only a genuinely empty list triggers the reselection flow.
- * Instructions and analysis_model are independent of the agent list.
  */
 export function normalizeChannelAutoReply(raw: ChannelAutoReplySettings, bots: LLMBot[] | null, channelId: string): ChannelAutoReplySettings {
     const mode = parseChannelAutoReplyMode(raw.mode);
