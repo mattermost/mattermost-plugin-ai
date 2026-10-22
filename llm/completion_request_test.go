@@ -31,7 +31,7 @@ func TestCompletionRequestTruncate(t *testing.T) {
 		wasTruncated := req.Truncate(50, mockTokenCounter)
 
 		assert.False(t, wasTruncated, "Should not need truncation")
-		assert.Equal(t, 3, len(req.Posts), "Should have same number of posts")
+		assert.Len(t, req.Posts, 3, "Should have same number of posts")
 		assert.Equal(t, "You are a helpful assistant.", req.Posts[0].Message, "First message should be unchanged")
 	})
 
@@ -81,7 +81,7 @@ func TestCompletionRequestTruncate(t *testing.T) {
 		wasTruncated := req.Truncate(20, mockTokenCounter)
 
 		assert.True(t, wasTruncated, "Should truncate message")
-		assert.Equal(t, 1, len(req.Posts), "Should still have one post")
+		assert.Len(t, req.Posts, 1, "Should still have one post")
 		assert.NotEqual(t, longMessage, req.Posts[0].Message, "Message should be truncated")
 		assert.Less(t, len(req.Posts[0].Message), len(longMessage), "Truncated message should be shorter")
 

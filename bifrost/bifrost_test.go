@@ -1515,7 +1515,7 @@ func TestGetKeysForProviderVertex(t *testing.T) {
 	require.Len(t, keysADC, 1)
 	require.NotNil(t, keysADC[0].VertexKeyConfig)
 	assert.Equal(t, "adc-project", keysADC[0].VertexKeyConfig.ProjectID.Val)
-	assert.Equal(t, "", keysADC[0].VertexKeyConfig.AuthCredentials.Val)
+	assert.Empty(t, keysADC[0].VertexKeyConfig.AuthCredentials.Val)
 
 	other := &providerAccount{
 		ProviderSettings: ProviderSettings{

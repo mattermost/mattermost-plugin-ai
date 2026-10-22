@@ -956,7 +956,7 @@ func TestSearchWithPermissions(t *testing.T) {
 
 		results, err := pgVector.Search(ctx, searchVector, opts)
 		require.Error(t, err)
-		assert.Len(t, results, 0, "Should return no posts when not specifying a user")
+		assert.Empty(t, results, "Should return no posts when not specifying a user")
 	})
 
 	t.Run("search with user ID only returns posts from channels the user is a member of", func(t *testing.T) {
@@ -1567,7 +1567,7 @@ func TestSearchExcludesDeletedPosts(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should only return 3 results (active posts only)
-	assert.Equal(t, 3, len(results), "Should only return active posts, not deleted ones")
+	assert.Len(t, results, 3, "Should only return active posts, not deleted ones")
 
 	// Verify only active posts are returned
 	returnedPostIDs := make(map[string]bool)
@@ -2095,7 +2095,7 @@ func TestSearchValidation(t *testing.T) {
 		results, err := pgVector.Search(ctx, searchVector, opts)
 		require.NoError(t, err)
 		// User with no channel memberships should see no results
-		assert.Len(t, results, 0)
+		assert.Empty(t, results)
 	})
 }
 
@@ -2458,7 +2458,7 @@ func TestStoreConcurrentChunkConsistency(t *testing.T) {
 		var winnerIdx int
 		_, err = fmt.Sscanf(firstTag, fmt.Sprintf("iter%d-writer%%d", iter), &winnerIdx)
 		require.NoErrorf(t, err, "iter %d: could not parse winning writer index from tag %q", iter, firstTag)
-		require.Equalf(t, winnerIdx+1, len(contents),
+		require.Lenf(t, contents, winnerIdx+1,
 			"iter %d: winner is writer%d (TotalChunks=%d) but found %d rows: %v",
 			iter, winnerIdx, winnerIdx+1, len(contents), contents)
 	}

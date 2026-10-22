@@ -517,7 +517,7 @@ func TestHandleGetMCPTools_PluginServer(t *testing.T) {
 			require.NotNil(t, pluginRow, "expected a plugin-type row in response.Servers")
 			require.Equal(t, tt.expectServerType, pluginRow.ServerType)
 			require.Equal(t, tt.expectEnabled, pluginRow.Enabled)
-			require.Equal(t, tt.expectToolCount, len(pluginRow.Tools))
+			require.Len(t, pluginRow.Tools, tt.expectToolCount)
 			if tt.expectErrorNotNil {
 				require.NotNil(t, pluginRow.Error)
 			} else {

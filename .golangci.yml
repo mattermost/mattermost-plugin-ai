@@ -22,7 +22,9 @@ linters:
     testifylint:
       disable-all: true
       enable:
+        - empty
         - go-require
+        - len
     govet:
       disable:
         - fieldalignment
