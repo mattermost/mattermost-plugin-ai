@@ -49,6 +49,7 @@ function isCardScoped(sourceCode, node, seen = new Set()) {
     switch (node.type) {
     case 'AwaitExpression':
     case 'TSNonNullExpression':
+    case 'TSAsExpression':
         return isCardScoped(sourceCode, node.argument ?? node.expression, seen);
     case 'Identifier':
         return isCardScoped(sourceCode, variableInit(sourceCode, node), seen);
