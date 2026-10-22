@@ -413,10 +413,12 @@ func TestChatOnlyFallbackGetsChatPathReasoning(t *testing.T) {
 }
 
 // TestHopReasoningFollowsTheModelsMessagesAPI checks that a Claude model on
-// Vertex or Azure, which Bifrost sends to Anthropic's Messages API, gets the
-// reasoning an Anthropic hop with the same model gets, on both API paths.
-// Vertex cannot be pointed at a test server, so it is checked here rather
-// than through a captured failover.
+// Vertex, which Bifrost sends to Anthropic's Messages API, gets the reasoning
+// an Anthropic hop with the same model gets, on both API paths, and that
+// non-Claude models on Vertex and Azure keep their own provider's. Vertex
+// cannot be pointed at a test server, so it is checked here rather than
+// through a captured failover; Claude on Azure is covered by
+// TestReasoningIsResolvedPerFallbackHop.
 func TestHopReasoningFollowsTheModelsMessagesAPI(t *testing.T) {
 	tests := []struct {
 		name             string
@@ -429,8 +431,6 @@ func TestHopReasoningFollowsTheModelsMessagesAPI(t *testing.T) {
 		{name: "Sonnet 5 off on Vertex", provider: schemas.Vertex, model: "claude-sonnet-5@20260101", wantAnthropic: true},
 		{name: "Opus 5.5 off on Vertex", provider: schemas.Vertex, model: "claude-opus-5-5", wantAnthropic: true},
 		{name: "Opus 4.6 high on Vertex", provider: schemas.Vertex, model: "claude-opus-4-6", reasoningEnabled: true, effort: "high", wantAnthropic: true},
-		{name: "Sonnet 5 off on Azure", provider: schemas.Azure, model: "claude-sonnet-5", wantAnthropic: true},
-		{name: "Opus 4.6 high on Azure", provider: schemas.Azure, model: "claude-opus-4-6", reasoningEnabled: true, effort: "high", wantAnthropic: true},
 		{name: "Gemini on Vertex keeps Gemini reasoning", provider: schemas.Vertex, model: "gemini-2.5-pro", reasoningEnabled: true, effort: "high"},
 		{name: "GPT on Azure keeps OpenAI reasoning", provider: schemas.Azure, model: "gpt-5", reasoningEnabled: true, effort: "high"},
 	}
