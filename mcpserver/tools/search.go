@@ -4,9 +4,10 @@
 package tools
 
 import (
+	"cmp"
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 
@@ -343,11 +344,8 @@ func (p *MattermostToolProvider) executeKeywordSearch(ctx context.Context, clien
 		return nil, nil
 	}
 
-	sort.Slice(posts, func(i, j int) bool {
-		if posts[i].CreateAt != posts[j].CreateAt {
-			return posts[i].CreateAt > posts[j].CreateAt
-		}
-		return posts[i].Id > posts[j].Id
+	slices.SortFunc(posts, func(a, b *model.Post) int {
+		return cmp.Or(cmp.Compare(b.CreateAt, a.CreateAt), cmp.Compare(b.Id, a.Id))
 	})
 
 	if args.KeywordOffset > 0 && args.KeywordOffset < len(posts) {

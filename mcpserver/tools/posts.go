@@ -4,8 +4,9 @@
 package tools
 
 import (
+	"cmp"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/format"
@@ -757,8 +758,8 @@ func (p *MattermostToolProvider) formatPostListChrono(mcpContext *MCPToolContext
 	for _, post := range postList.Posts {
 		posts = append(posts, post)
 	}
-	sort.Slice(posts, func(i, j int) bool {
-		return posts[i].CreateAt < posts[j].CreateAt
+	slices.SortFunc(posts, func(a, b *model.Post) int {
+		return cmp.Compare(a.CreateAt, b.CreateAt)
 	})
 
 	client := mcpContext.Client

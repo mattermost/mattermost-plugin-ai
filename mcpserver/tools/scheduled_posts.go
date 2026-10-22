@@ -4,8 +4,9 @@
 package tools
 
 import (
+	"cmp"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/format"
@@ -84,8 +85,8 @@ func (p *MattermostToolProvider) toolListScheduledPosts(mcpContext *MCPToolConte
 		return "no scheduled posts found", nil
 	}
 
-	sort.Slice(scheduled, func(i, j int) bool {
-		return scheduled[i].ScheduledAt < scheduled[j].ScheduledAt
+	slices.SortFunc(scheduled, func(a, b *model.ScheduledPost) int {
+		return cmp.Compare(a.ScheduledAt, b.ScheduledAt)
 	})
 
 	var result strings.Builder

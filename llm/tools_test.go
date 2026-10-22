@@ -6,7 +6,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -801,8 +801,8 @@ func TestRetainOnlyMCPTools(t *testing.T) {
 				gotNames = append(gotNames, tool.Name)
 			}
 			// Sort for deterministic comparison (map iteration order)
-			sort.Strings(gotNames)
-			sort.Strings(tt.wantToolNames)
+			slices.Sort(gotNames)
+			slices.Sort(tt.wantToolNames)
 			assert.Equal(t, tt.wantToolNames, gotNames)
 		})
 	}
