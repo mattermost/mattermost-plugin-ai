@@ -351,7 +351,7 @@ func (a *API) handleRegenerate(c *gin.Context) {
 // regenerateHTTPStatus maps errors from HandleRegenerate to HTTP statuses.
 func regenerateHTTPStatus(err error) int {
 	switch {
-	case errors.Is(err, conversations.ErrChannelAnalysisRegenerateUnsupported):
+	case errors.Is(err, conversations.ErrNotRegenerable):
 		return http.StatusBadRequest
 	case errors.Is(err, conversations.ErrNotRequester),
 		errors.Is(err, mmapi.ErrFileActionForbidden),
@@ -556,7 +556,7 @@ func makeAnalysisPost(postIDToAnalyze string, analysisType string, conversationI
 }
 
 // makeChannelAnalysisPost creates a post for channel analysis results. The
-// post is not regenerable; see conversations.ErrChannelAnalysisRegenerateUnsupported.
+// post is not regenerable; see conversations.ErrNotRegenerable.
 func makeChannelAnalysisPost(channelID string, analysisType string, conversationID string) *model.Post {
 	post := &model.Post{}
 	post.AddProp(streaming.NoRegen, "true")

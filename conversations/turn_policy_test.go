@@ -559,7 +559,7 @@ func TestAnalysisFollowUpRechecksSourceAccess(t *testing.T) {
 		{name: "channel follow-up while the channel is readable", source: analyzedChannel, wantAnswered: true},
 		{name: "channel follow-up after losing access to the channel", source: analyzedChannel, unreadable: true, wantPlaceholder: analysisSourceDeniedEN},
 		{name: "follow-up of an analysis that records no source", source: analyzedNothingRecorded, wantPlaceholder: analysisSourceDeniedEN},
-		{name: "channel regenerate of the analysis", source: analyzedChannel, regenerate: true, wantErr: conversations.ErrChannelAnalysisRegenerateUnsupported},
+		{name: "channel regenerate of the analysis", source: analyzedChannel, regenerate: true, wantErr: conversations.ErrNotRegenerable},
 		{name: "channel regenerate of a follow-up answer after losing access", source: analyzedChannel, unreadable: true, regenerate: true, regenerateFollowUp: true, wantErr: conversations.ErrAnalysisSourceUnavailable},
 	}
 

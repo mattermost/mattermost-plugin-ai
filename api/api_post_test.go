@@ -665,7 +665,8 @@ func TestPostResumeRoutesUseThePostsAgent(t *testing.T) {
 // TestRegenerateAnalysisRechecksTheAnalyzedSource pins how the regenerate
 // route answers when an analysis's source cannot be used: a thread that is
 // gone or unreadable is 403, failing to look the thread up is 500, and a
-// channel analysis, which regeneration cannot rebuild, is 400.
+// channel analysis or a post tagged no_regen, which regeneration cannot
+// rebuild, is 400.
 func TestRegenerateAnalysisRechecksTheAnalyzedSource(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
 	gin.DefaultWriter = io.Discard
@@ -681,14 +682,20 @@ func TestRegenerateAnalysisRechecksTheAnalyzedSource(t *testing.T) {
 	tests := []struct {
 		name            string
 		channelAnalysis bool
-		threadErr       *model.AppError
-		threadHidden    bool
-		wantStatus      int
+		// meetingSummary seeds a meeting summary post, which records its
+		// requester instead of a conversation.
+		meetingSummary bool
+		noRegen        bool
+		threadErr      *model.AppError
+		threadHidden   bool
+		wantStatus     int
 	}{
 		{name: "thread was deleted", threadErr: model.NewAppError("GetPost", "app.post.get.app_error", nil, "", http.StatusNotFound), wantStatus: http.StatusForbidden},
 		{name: "thread lookup fails", threadErr: model.NewAppError("GetPost", "app.post.get.app_error", nil, "", http.StatusInternalServerError), wantStatus: http.StatusInternalServerError},
 		{name: "requester can no longer read the thread", threadHidden: true, wantStatus: http.StatusForbidden},
-		{name: "channel analysis", channelAnalysis: true, wantStatus: http.StatusBadRequest},
+		{name: "channel analysis", channelAnalysis: true, noRegen: true, wantStatus: http.StatusBadRequest},
+		{name: "channel analysis created before it was tagged no_regen", channelAnalysis: true, wantStatus: http.StatusBadRequest},
+		{name: "meeting summary", meetingSummary: true, noRegen: true, wantStatus: http.StatusBadRequest},
 	}
 
 	for _, tc := range tests {
@@ -700,15 +707,22 @@ func TestRegenerateAnalysisRechecksTheAnalyzedSource(t *testing.T) {
 			e.setupTestBot(llm.BotConfig{Name: "test-bot", DisplayName: "Test Bot"})
 
 			post := &model.Post{Id: postID, UserId: testBotUserID, ChannelId: dmChannel.Id}
-			post.AddProp(streaming.ConversationIDProp, convID)
 			operation := llm.OperationThreadAnalysis
-			if tc.channelAnalysis {
+			switch {
+			case tc.meetingSummary:
+				post.AddProp(streaming.LLMRequesterUserIDProp, testUserID)
+			case tc.channelAnalysis:
 				operation = llm.OperationChannelSummary
+				post.AddProp(streaming.ConversationIDProp, convID)
 				post.AddProp(conversations.AnalyzedChannelIDProp, threadChannelID)
 				post.AddProp(conversations.AnalysisTypeProp, "summarize_channel")
-			} else {
+			default:
+				post.AddProp(streaming.ConversationIDProp, convID)
 				post.AddProp(conversations.ThreadIDProp, threadID)
 				post.AddProp(conversations.AnalysisTypeProp, "summarize_thread")
+			}
+			if tc.noRegen {
+				post.AddProp(streaming.NoRegen, "true")
 			}
 			rootID := postID
 			require.NoError(t, convStore.CreateConversation(&store.Conversation{ID: convID, UserID: testUserID, BotID: testBotUserID, RootPostID: &rootID, Operation: operation}))

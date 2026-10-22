@@ -27,11 +27,11 @@ const (
 	ReferencedTranscriptPostID = "referenced_transcript_post_id"
 )
 
-// ErrChannelAnalysisRegenerateUnsupported is returned when regenerating the
-// post that answered a channel analysis. That answer was produced with tools
-// bound to the analyzed channel, which regeneration cannot rebuild. The HTTP
-// layer maps it to 400.
-var ErrChannelAnalysisRegenerateUnsupported = errors.New("a channel analysis cannot be regenerated; run it again instead")
+// ErrNotRegenerable is returned when regenerating a post tagged no_regen, or a
+// channel analysis answer created before those were tagged: it was produced
+// with tools bound to the analyzed channel, which regeneration cannot
+// rebuild. The HTTP layer maps it to 400.
+var ErrNotRegenerable = errors.New("this post cannot be regenerated")
 
 // HandleRegenerate handles post regeneration requests
 func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, post *model.Post, channel *model.Channel) error {
@@ -76,13 +76,9 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 		}
 	}
 
-	if post.GetProp(streaming.NoRegen) != nil {
-		return errors.New("tagged no regen")
-	}
-
 	threadID, _ := post.GetProp(ThreadIDProp).(string)
-	if threadID == "" && isAnalysisPost(post) {
-		return ErrChannelAnalysisRegenerateUnsupported
+	if post.GetProp(streaming.NoRegen) != nil || (threadID == "" && isAnalysisPost(post)) {
+		return ErrNotRegenerable
 	}
 
 	if err := c.checkRegenerateLicense(post); err != nil {
