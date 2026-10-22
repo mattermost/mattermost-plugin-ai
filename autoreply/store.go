@@ -33,8 +33,8 @@ const (
 // MaxInstructionsRunes is the stored/API cap for Setting.Instructions.
 const MaxInstructionsRunes = 8000
 
-// MaxAnalysisModelLen is the stored/API cap for Setting.AnalysisModel in both
-// bytes and runes (VARCHAR(512); model IDs are ASCII).
+// MaxAnalysisModelLen is the stored/API byte cap for Setting.AnalysisModel
+// (VARCHAR(512)).
 const MaxAnalysisModelLen = 512
 
 // IsStorable reports whether the mode is one that may be persisted.

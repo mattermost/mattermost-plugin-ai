@@ -113,35 +113,35 @@ func (s *Service) Get(channelID string) (*Setting, error) {
 }
 
 // Set validates and persists an auto-reply setting for a channel, updates the
-// local cache, and broadcasts an invalidation to peer nodes. mode must be
-// a storable mode (see Mode.IsStorable); turning auto-reply off is
-// Delete, not Set(ModeOff). Validation failures wrap ErrValidation. Returns
-// the stored setting (with UpdateAt populated).
-func (s *Service) Set(channelID, botID string, mode Mode, updatedBy, instructions, analysisModel string) (*Setting, error) {
-	if channelID == "" {
+// local cache, and broadcasts an invalidation to peer nodes. The mode must be
+// storable (see Mode.IsStorable); turning auto-reply off is Delete, not
+// Set(ModeOff). UpdateAt is assigned here. Validation failures wrap
+// ErrValidation. Returns the stored setting.
+func (s *Service) Set(setting Setting) (*Setting, error) {
+	if setting.ChannelID == "" {
 		return nil, fmt.Errorf("channel ID is required: %w", ErrValidation)
 	}
-	if botID == "" {
+	if setting.BotID == "" {
 		return nil, fmt.Errorf("bot ID is required: %w", ErrValidation)
 	}
-	if !mode.IsStorable() {
-		return nil, fmt.Errorf("mode %q is not a storable auto-reply mode: %w", mode, ErrValidation)
+	if !setting.Mode.IsStorable() {
+		return nil, fmt.Errorf("mode %q is not a storable auto-reply mode: %w", setting.Mode, ErrValidation)
 	}
-	if utf8.RuneCountInString(instructions) > MaxInstructionsRunes {
+	if utf8.RuneCountInString(setting.Instructions) > MaxInstructionsRunes {
 		return nil, fmt.Errorf("instructions exceed %d runes: %w", MaxInstructionsRunes, ErrValidation)
 	}
-	if len(analysisModel) > MaxAnalysisModelLen || utf8.RuneCountInString(analysisModel) > MaxAnalysisModelLen {
-		return nil, fmt.Errorf("analysis_model exceeds %d characters: %w", MaxAnalysisModelLen, ErrValidation)
+	if len(setting.AnalysisModel) > MaxAnalysisModelLen {
+		return nil, fmt.Errorf("analysis_model exceeds %d bytes: %w", MaxAnalysisModelLen, ErrValidation)
 	}
 
-	bot := s.bots.GetBotByID(botID)
+	bot := s.bots.GetBotByID(setting.BotID)
 	if bot == nil {
-		return nil, fmt.Errorf("bot %s not found: %w", botID, ErrValidation)
+		return nil, fmt.Errorf("bot %s not found: %w", setting.BotID, ErrValidation)
 	}
 
-	channel, err := s.mmClient.GetChannel(channelID)
+	channel, err := s.mmClient.GetChannel(setting.ChannelID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to look up channel %s: %w", channelID, err)
+		return nil, fmt.Errorf("failed to look up channel %s: %w", setting.ChannelID, err)
 	}
 	if channel.Type == model.ChannelTypeDirect || channel.Type == model.ChannelTypeGroup {
 		return nil, fmt.Errorf("auto-reply cannot be configured for direct or group channels: %w", ErrValidation)
@@ -151,15 +151,7 @@ func (s *Service) Set(channelID, botID string, mode Mode, updatedBy, instruction
 		return nil, fmt.Errorf("bot is not allowed in this channel (%v): %w", restrictionErr, ErrValidation)
 	}
 
-	setting := Setting{
-		ChannelID:     channelID,
-		BotID:         botID,
-		Mode:          mode,
-		UpdatedBy:     updatedBy,
-		UpdateAt:      model.GetMillis(),
-		Instructions:  instructions,
-		AnalysisModel: analysisModel,
-	}
+	setting.UpdateAt = model.GetMillis()
 
 	s.writeMu.Lock()
 	if storeErr := s.store.Set(setting); storeErr != nil {
@@ -167,11 +159,11 @@ func (s *Service) Set(channelID, botID string, mode Mode, updatedBy, instruction
 		return nil, storeErr
 	}
 	s.mu.Lock()
-	s.cache[channelID] = setting
+	s.cache[setting.ChannelID] = setting
 	s.mu.Unlock()
 	s.writeMu.Unlock()
 
-	s.notifyPeers(channelID)
+	s.notifyPeers(setting.ChannelID)
 
 	return &setting, nil
 }

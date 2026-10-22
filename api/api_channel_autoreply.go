@@ -23,15 +23,6 @@ const WebsocketEventChannelAutoReplyUpdated = "channel_autoreply_updated"
 // include instructions up to autoreply.MaxInstructionsRunes.
 const channelAutoReplyMaxRequestBodyBytes = 64 << 10 // 64 KiB
 
-// Wire values for the auto-reply mode enum (fixed cross-phase contract).
-const (
-	channelAutoReplyModeOff            = "off"
-	channelAutoReplyModeRootPosts      = "root_posts"
-	channelAutoReplyModeThreads        = "threads"
-	channelAutoReplyModeAmbient        = "ambient"
-	channelAutoReplyModeAmbientThreads = "ambient_threads"
-)
-
 // ChannelAutoReply is the request and response payload for
 // GET/PUT /channel/{channelid}/autoreply.
 type ChannelAutoReply struct {
@@ -58,7 +49,7 @@ func (a *API) handleGetChannelAutoReply(c *gin.Context) {
 		return
 	}
 	if setting == nil {
-		c.JSON(http.StatusOK, ChannelAutoReply{BotID: "", Mode: channelAutoReplyModeOff})
+		c.JSON(http.StatusOK, ChannelAutoReply{BotID: "", Mode: string(autoreply.ModeOff)})
 		return
 	}
 	c.JSON(http.StatusOK, channelAutoReplyFromSetting(setting))
@@ -69,8 +60,7 @@ func (a *API) handleGetChannelAutoReply(c *gin.Context) {
 // are rejected. Enabling a mode is available at Enterprise Advanced and above,
 // and the experimental ambient modes additionally require the admin's
 // EnableAmbientAutoReply setting; mode "off" deletes the row and is never
-// gated.
-// The requested setting itself is validated by the auto-reply service, whose
+// gated. The requested setting itself is validated by the auto-reply service, whose
 // ErrValidation failures become 400s. On success the new state is published as
 // a channel-scoped websocket event and echoed back.
 func (a *API) handlePutChannelAutoReply(c *gin.Context) {
@@ -117,25 +107,34 @@ func (a *API) handlePutChannelAutoReply(c *gin.Context) {
 	}
 
 	var saved ChannelAutoReply
-	switch req.Mode {
-	case channelAutoReplyModeOff:
+	switch mode := autoreply.Mode(req.Mode); {
+	case mode == autoreply.ModeOff:
 		// "off" is represented by row absence; BotID is irrelevant.
 		if err := a.autoReplyStore.Delete(channel.Id); err != nil {
 			c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to delete channel auto-reply setting: %w", err))
 			return
 		}
-		saved = ChannelAutoReply{BotID: "", Mode: channelAutoReplyModeOff}
-	case channelAutoReplyModeRootPosts, channelAutoReplyModeThreads, channelAutoReplyModeAmbient, channelAutoReplyModeAmbientThreads:
+		saved = ChannelAutoReply{BotID: "", Mode: string(autoreply.ModeOff)}
+	case mode.IsStorable():
 		if !a.requireCapability(c, enterprise.CapChannelAutoReply) {
 			return
 		}
-		if autoreply.Mode(req.Mode).IsAmbient() && !a.config.EnableAmbientAutoReply() {
-			c.AbortWithError(http.StatusForbidden, errors.New("ambient auto-reply is disabled by the system admin"))
+		// 409 rather than 403 so the webapp can tell the admin setting apart
+		// from a missing channel permission.
+		if mode.IsAmbient() && !a.config.EnableAmbientAutoReply() {
+			c.AbortWithError(http.StatusConflict, errors.New("ambient auto-reply is disabled by the system admin"))
 			return
 		}
 		// bot_id is validated by the auto-reply service (present, known, and
 		// allowed in this channel); its ErrValidation failures map to 400.
-		if _, err := a.autoReplyStore.Set(channel.Id, req.BotID, autoreply.Mode(req.Mode), userID, req.Instructions, req.AnalysisModel); err != nil {
+		if _, err := a.autoReplyStore.Set(autoreply.Setting{
+			ChannelID:     channel.Id,
+			BotID:         req.BotID,
+			Mode:          mode,
+			UpdatedBy:     userID,
+			Instructions:  req.Instructions,
+			AnalysisModel: req.AnalysisModel,
+		}); err != nil {
 			if errors.Is(err, autoreply.ErrValidation) {
 				c.AbortWithError(http.StatusBadRequest, fmt.Errorf("invalid auto-reply setting: %w", err))
 				return
@@ -170,8 +169,8 @@ func channelAutoReplyFromSetting(setting *autoreply.Setting) ChannelAutoReply {
 
 // publishChannelAutoReplyUpdated notifies channel members that the auto-reply
 // setting changed so open channel-settings modals can re-sync. The broadcast
-// must be non-nil (the server dereferences it). Payload stays channel_id,
-// bot_id, and mode only.
+// must be non-nil (the server dereferences it). Instructions and
+// analysis_model are deliberately omitted from the payload.
 func (a *API) publishChannelAutoReplyUpdated(channelID string, saved ChannelAutoReply) {
 	if a.mmClient == nil {
 		return

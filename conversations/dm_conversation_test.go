@@ -11,7 +11,6 @@ import (
 	"slices"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/bots"
 	"github.com/mattermost/mattermost-plugin-agents/v2/conversation"
@@ -291,7 +290,6 @@ type dmTestLLM struct {
 
 	noStreamResponseByOp map[string]string
 	noStreamErrByOp      map[string]error
-	noStreamDelay        time.Duration
 	lastNoStreamReq      llm.CompletionRequest
 	lastNoStreamCfg      llm.LanguageModelConfig
 	classifierCalls      int
@@ -318,18 +316,8 @@ func (f *dmTestLLM) ChatCompletion(ctx context.Context, request llm.CompletionRe
 }
 
 func (f *dmTestLLM) ChatCompletionNoStream(ctx context.Context, request llm.CompletionRequest, opts ...llm.LanguageModelOption) (string, error) {
-	if f.noStreamDelay > 0 {
-		select {
-		case <-ctx.Done():
-			return "", ctx.Err()
-		case <-time.After(f.noStreamDelay):
-		}
-	} else {
-		select {
-		case <-ctx.Done():
-			return "", ctx.Err()
-		default:
-		}
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
 
 	var cfg llm.LanguageModelConfig

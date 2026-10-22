@@ -409,21 +409,13 @@ func (f *fakeChannelAutoReplyStore) Get(channelID string) (*autoreply.Setting, e
 	return f.settings[channelID], nil
 }
 
-func (f *fakeChannelAutoReplyStore) Set(channelID, botID string, mode autoreply.Mode, updatedBy, instructions, analysisModel string) (*autoreply.Setting, error) {
+func (f *fakeChannelAutoReplyStore) Set(setting autoreply.Setting) (*autoreply.Setting, error) {
 	if f.setErr != nil {
 		return nil, f.setErr
 	}
-	setting := autoreply.Setting{
-		ChannelID:     channelID,
-		BotID:         botID,
-		Mode:          mode,
-		UpdatedBy:     updatedBy,
-		UpdateAt:      time.Now().UnixMilli(),
-		Instructions:  instructions,
-		AnalysisModel: analysisModel,
-	}
+	setting.UpdateAt = time.Now().UnixMilli()
 	f.setCalls = append(f.setCalls, setting)
-	f.settings[channelID] = &setting
+	f.settings[setting.ChannelID] = &setting
 	return &setting, nil
 }
 

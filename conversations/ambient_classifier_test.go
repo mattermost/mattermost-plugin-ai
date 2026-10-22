@@ -6,6 +6,7 @@ package conversations
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -49,34 +50,68 @@ func TestParseAmbientClassifierOutput(t *testing.T) {
 	}
 }
 
-func TestBoundAmbientThread(t *testing.T) {
+func TestNewestPostsIncluding(t *testing.T) {
+	thread := make([]*model.Post, 25)
+	for i := range thread {
+		thread[i] = &model.Post{Id: fmt.Sprintf("p%d", i), CreateAt: int64(i)}
+	}
+
+	tests := []struct {
+		name      string
+		thread    []*model.Post
+		trigger   *model.Post
+		wantFirst string
+		wantLast  string
+	}{
+		{name: "short thread is kept whole", thread: thread[:3], trigger: thread[2], wantFirst: "p0", wantLast: "p2"},
+		{name: "keeps the newest posts when the trigger is newest", thread: thread, trigger: thread[24], wantFirst: "p5", wantLast: "p24"},
+		{name: "an older trigger replaces the oldest kept post", thread: thread, trigger: thread[1], wantFirst: "p1", wantLast: "p24"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := newestPostsIncluding(tc.thread, tc.trigger, ambientClassifierMaxPosts)
+			require.LessOrEqual(t, len(got), ambientClassifierMaxPosts)
+			require.Equal(t, tc.wantFirst, got[0].Id)
+			require.Equal(t, tc.wantLast, got[len(got)-1].Id)
+		})
+	}
+}
+
+func TestFormatAmbientThreadKeepsNewestRunes(t *testing.T) {
 	users := map[string]*model.User{"u": {Id: "u", Username: "alice"}}
+	old := &model.Post{Id: "old", UserId: "u", Message: strings.Repeat("Ö", ambientClassifierMaxThreadRunes), CreateAt: 1}
+	newest := &model.Post{Id: "new", UserId: "u", Message: "NEWEST-TAIL", CreateAt: 2}
 
-	t.Run("keeps newest 20 including trigger", func(t *testing.T) {
-		posts := make([]*model.Post, 25)
-		for i := 0; i < 25; i++ {
-			posts[i] = &model.Post{Id: string(rune('a' + i)), UserId: "u", Message: strings.Repeat("x", 3) + string(rune('0'+i%10)), CreateAt: int64(i)}
-		}
-		posts[0].Message = "OLDEST"
-		posts[24].Message = "NEWEST"
-		formatted := boundAmbientThread(&mmapi.ThreadData{Posts: posts, UsersByID: users}, posts[24])
-		require.NotContains(t, formatted, "OLDEST")
-		require.Contains(t, formatted, "NEWEST")
+	formatted := formatAmbientThread(&mmapi.ThreadData{Posts: []*model.Post{old, newest}, UsersByID: users})
+
+	require.Equal(t, ambientClassifierMaxThreadRunes, utf8.RuneCountInString(formatted))
+	require.True(t, utf8.ValidString(formatted))
+	require.Contains(t, formatted, "NEWEST-TAIL")
+}
+
+func TestAmbientThreadPosts(t *testing.T) {
+	root := &model.Post{Id: "root", UserId: "u1", CreateAt: 1}
+	reply := &model.Post{Id: "reply", UserId: "u2", RootId: "root", CreateAt: 2}
+
+	t.Run("a top-level post is its own thread without a fetch", func(t *testing.T) {
+		c := &Conversations{mmClient: mmapimocks.NewMockClient(t)}
+		got, err := c.ambientThreadPosts(root)
+		require.NoError(t, err)
+		require.Equal(t, []*model.Post{root}, got)
 	})
 
-	t.Run("includes trigger when missing from the fetch", func(t *testing.T) {
-		existing := []*model.Post{{Id: "old", UserId: "u", Message: "existing", CreateAt: 1}}
-		trigger := &model.Post{Id: "trig", UserId: "u", Message: "TRIGGER-POST", CreateAt: 2}
-		formatted := boundAmbientThread(&mmapi.ThreadData{Posts: existing, UsersByID: users}, trigger)
-		require.Contains(t, formatted, "TRIGGER-POST")
-	})
+	t.Run("a reply missing from the fetched thread is appended in order", func(t *testing.T) {
+		mmClient := mmapimocks.NewMockClient(t)
+		mmClient.EXPECT().GetPostThread("root").Return(&model.PostList{
+			Order: []string{"root"},
+			Posts: map[string]*model.Post{"root": root},
+		}, nil)
+		c := &Conversations{mmClient: mmClient}
 
-	t.Run("trims formatted thread from the start keeping newest runes", func(t *testing.T) {
-		old := &model.Post{Id: "old", UserId: "u", Message: strings.Repeat("O", ambientClassifierMaxThreadRunes), CreateAt: 1}
-		newest := &model.Post{Id: "new", UserId: "u", Message: "NEWEST-TAIL", CreateAt: 2}
-		formatted := boundAmbientThread(&mmapi.ThreadData{Posts: []*model.Post{old, newest}, UsersByID: users}, newest)
-		require.LessOrEqual(t, utf8.RuneCountInString(formatted), ambientClassifierMaxThreadRunes)
-		require.Contains(t, formatted, "NEWEST-TAIL")
+		got, err := c.ambientThreadPosts(reply)
+		require.NoError(t, err)
+		require.Equal(t, []*model.Post{root, reply}, got)
 	})
 }
 
@@ -87,10 +122,6 @@ func TestClassifyAmbientTimeout(t *testing.T) {
 
 	post := &model.Post{Id: "p1", UserId: "u1", Message: "hi", CreateAt: 1}
 	mmClient := mmapimocks.NewMockClient(t)
-	mmClient.EXPECT().GetPostThread("p1").Return(&model.PostList{
-		Order: []string{"p1"},
-		Posts: map[string]*model.Post{"p1": post},
-	}, nil)
 	mmClient.EXPECT().GetUser("u1").Return(&model.User{Id: "u1", Username: "alice"}, nil)
 
 	promptsManager, err := llm.NewPrompts(prompts.PromptsFolder)
@@ -104,7 +135,7 @@ func TestClassifyAmbientTimeout(t *testing.T) {
 	)
 	c := &Conversations{prompts: promptsManager, mmClient: mmClient}
 
-	err = c.classifyAmbientReply(context.Background(), bot, &autoreply.Setting{Mode: autoreply.ModeAmbient}, post)
+	err = c.classifyAmbientReply(context.Background(), bot, &autoreply.Setting{Mode: autoreply.ModeAmbient}, post, []*model.Post{post})
 	require.ErrorIs(t, err, ErrNoResponse)
 }
 

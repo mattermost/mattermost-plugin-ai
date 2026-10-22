@@ -4,10 +4,14 @@
 package conversations
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"maps"
 	"slices"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -29,58 +33,75 @@ const (
 
 var ambientClassifierTimeout = 8 * time.Second
 
-// ambientClassifierJSON is the structured output schema. Parsing still
-// distinguishes a missing should_reply field from false.
+// errAmbientDeclined marks the classifier deciding not to reply. Unlike other
+// auto-reply no-ops it is a deliberate answer, so it must not trigger the
+// @mention reminder.
+var errAmbientDeclined = fmt.Errorf("ambient classifier declined: %w", ErrNoResponse)
+
+// ambientClassifierJSON is the structured output schema.
 type ambientClassifierJSON struct {
 	ShouldReply bool `json:"should_reply"`
 }
 
+// ambientThreadPosts returns the trigger's thread oldest first, always
+// including the trigger. A top-level post is its own thread, so it needs no
+// fetch.
+func (c *Conversations) ambientThreadPosts(trigger *model.Post) ([]*model.Post, error) {
+	if trigger.RootId == "" {
+		return []*model.Post{trigger}, nil
+	}
+	list, err := c.mmClient.GetPostThread(trigger.RootId)
+	if err != nil {
+		return nil, err
+	}
+	posts := slices.Collect(maps.Values(list.Posts))
+	if _, ok := list.Posts[trigger.Id]; !ok {
+		posts = append(posts, trigger)
+	}
+	slices.SortFunc(posts, func(a, b *model.Post) int {
+		return cmp.Or(cmp.Compare(a.CreateAt, b.CreateAt), strings.Compare(a.Id, b.Id))
+	})
+	return posts, nil
+}
+
+// threadHasReplyFrom reports whether userID authored a reply in the thread.
+// The root post is excluded so a root posted by the agent itself does not
+// count as the agent having been brought in.
+func threadHasReplyFrom(thread []*model.Post, userID string) bool {
+	return slices.ContainsFunc(thread, func(p *model.Post) bool {
+		return p.RootId != "" && p.UserId == userID
+	})
+}
+
 // classifyAmbientReply returns nil only when the classifier says the agent
-// should reply. Every other outcome wraps ErrNoResponse (fail-closed). In
-// ambient_threads mode the classifier only runs once the agent has replied in
-// the thread.
+// should reply. Every other outcome wraps ErrNoResponse (fail-closed).
 //
 // TODO(ambient-poc): WithToolsDisabled does not fully disable native provider
-// tools; this POC assumes no native tools are enabled.
-// TODO(ambient-poc): fallback chains may cross services; this POC assumes no
-// provider fallback is in play.
-// TODO(ambient-poc): provider structured-output capability detection is deferred.
-// TODO(ambient-poc): analysis_model discovery/validation is deferred.
-// TODO(ambient-poc): dedupe, concurrency control, rate/cost caps, and
-// deleted-post recheck are deferred.
-func (c *Conversations) classifyAmbientReply(ctx context.Context, bot *bots.Bot, setting *autoreply.Setting, post *model.Post) error {
+// tools, and fallback chains may cross services; this POC assumes neither is in
+// play. Structured-output capability detection, analysis_model validation,
+// dedupe, concurrency control, rate/cost caps, and deleted-post recheck are
+// deferred.
+func (c *Conversations) classifyAmbientReply(ctx context.Context, bot *bots.Bot, setting *autoreply.Setting, trigger *model.Post, thread []*model.Post) error {
 	ctx, span := telemetry.Tracer().Start(ctx, "ambient classifier")
 	defer span.End()
-
-	if bot == nil || bot.LLM() == nil {
-		return fmt.Errorf("ambient classifier has no language model: %w", ErrNoResponse)
-	}
-	if c.prompts == nil {
-		return fmt.Errorf("ambient classifier has no prompts: %w", ErrNoResponse)
-	}
 
 	classifyCtx, cancel := context.WithTimeout(ctx, ambientClassifierTimeout)
 	defer cancel()
 
-	threadID := post.Id
-	if post.RootId != "" {
-		threadID = post.RootId
+	recent := model.NewPostList()
+	for _, p := range newestPostsIncluding(thread, trigger, ambientClassifierMaxPosts) {
+		recent.AddPost(p)
+		recent.AddOrder(p.Id)
 	}
-	threadData, err := mmapi.GetThreadData(c.mmClient, threadID)
-	if err != nil || threadData == nil {
-		return fmt.Errorf("ambient classifier failed to load thread: %w", ErrNoResponse)
-	}
-
-	threadScoped := setting.Mode == autoreply.ModeAmbientThreads
-	if threadScoped && !threadHasReplyFrom(threadData, bot.GetMMBot().UserId) {
-		return fmt.Errorf("agent has not been brought into this thread: %w", ErrNoResponse)
+	threadData, err := mmapi.GetMetadataForPosts(c.mmClient, recent)
+	if err != nil {
+		return fmt.Errorf("ambient classifier failed to load thread authors: %w", ErrNoResponse)
 	}
 
-	formatted := boundAmbientThread(threadData, post)
 	llmCtx := llm.NewContext()
 	llmCtx.Parameters = map[string]any{
 		"Instructions": setting.Instructions,
-		"ThreadScoped": threadScoped,
+		"ThreadScoped": setting.Mode == autoreply.ModeAmbientThreads,
 	}
 
 	prompt, err := c.prompts.Format(prompts.PromptAmbientClassifierSystem, llmCtx)
@@ -91,7 +112,7 @@ func (c *Conversations) classifyAmbientReply(ctx context.Context, bot *bots.Bot,
 	req := llm.CompletionRequest{
 		Posts: []llm.Post{
 			{Role: llm.PostRoleSystem, Message: prompt},
-			{Role: llm.PostRoleUser, Message: wrapAmbientThreadUserMessage(formatted)},
+			{Role: llm.PostRoleUser, Message: wrapAmbientThreadUserMessage(formatAmbientThread(threadData))},
 		},
 		Context:   llmCtx,
 		Operation: llm.OperationAmbientClassification,
@@ -117,90 +138,52 @@ func (c *Conversations) classifyAmbientReply(ctx context.Context, bot *bots.Bot,
 		return fmt.Errorf("ambient classifier output: %v: %w", parseErr, ErrNoResponse)
 	}
 	if !shouldReply {
-		return fmt.Errorf("ambient classifier declined: %w", ErrNoResponse)
+		return errAmbientDeclined
 	}
 	return nil
-}
-
-// threadHasReplyFrom reports whether userID authored a reply in the thread.
-// The root post is excluded so a root posted by the agent itself does not
-// count as the agent having been brought in.
-func threadHasReplyFrom(data *mmapi.ThreadData, userID string) bool {
-	return slices.ContainsFunc(data.Posts, func(p *model.Post) bool {
-		return p != nil && p.RootId != "" && p.UserId == userID
-	})
 }
 
 func wrapAmbientThreadUserMessage(formatted string) string {
 	return "---- Thread Start ----\n" + formatted + "\n---- Thread End ----"
 }
 
-func boundAmbientThread(data *mmapi.ThreadData, trigger *model.Post) string {
-	posts := data.Posts
-	if trigger != nil {
-		found := false
-		for _, p := range posts {
-			if p != nil && p.Id == trigger.Id {
-				found = true
-				break
-			}
-		}
-		if !found {
-			copied := make([]*model.Post, len(posts)+1)
-			copy(copied, posts)
-			copied[len(posts)] = trigger
-			posts = copied
-		}
+// newestPostsIncluding keeps the newest n posts of an oldest-first thread. If
+// the trigger would fall out of that window it replaces the oldest kept post.
+func newestPostsIncluding(thread []*model.Post, trigger *model.Post, n int) []*model.Post {
+	if len(thread) <= n {
+		return thread
 	}
-
-	if len(posts) > ambientClassifierMaxPosts {
-		newest := posts[len(posts)-ambientClassifierMaxPosts:]
-		if trigger != nil {
-			hasTrigger := false
-			for _, p := range newest {
-				if p != nil && p.Id == trigger.Id {
-					hasTrigger = true
-					break
-				}
-			}
-			if !hasTrigger {
-				trimmed := make([]*model.Post, ambientClassifierMaxPosts)
-				trimmed[0] = trigger
-				copy(trimmed[1:], newest[1:])
-				newest = trimmed
-			}
-		}
-		posts = newest
+	newest := thread[len(thread)-n:]
+	if slices.ContainsFunc(newest, func(p *model.Post) bool { return p.Id == trigger.Id }) {
+		return newest
 	}
+	return append([]*model.Post{trigger}, newest[1:]...)
+}
 
-	formatted := format.ThreadData(&mmapi.ThreadData{Posts: posts, UsersByID: data.UsersByID})
-	return trimRunesKeepNewest(formatted, ambientClassifierMaxThreadRunes)
+func formatAmbientThread(data *mmapi.ThreadData) string {
+	return trimRunesKeepNewest(format.ThreadData(data), ambientClassifierMaxThreadRunes)
 }
 
 func trimRunesKeepNewest(s string, maxRunes int) string {
-	if maxRunes <= 0 || s == "" {
-		return s
+	i := len(s)
+	for n := 0; n < maxRunes && i > 0; n++ {
+		_, size := utf8.DecodeLastRuneInString(s[:i])
+		i -= size
 	}
-	if utf8.RuneCountInString(s) <= maxRunes {
-		return s
-	}
-	runes := []rune(s)
-	return string(runes[len(runes)-maxRunes:])
+	return s[i:]
 }
 
+// parseAmbientClassifierOutput distinguishes a missing should_reply from false
+// so a malformed answer fails closed instead of reading as a decline.
 func parseAmbientClassifierOutput(raw string) (bool, error) {
-	raw = llm.StripMarkdownCodeFencing(raw)
-	var payload map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
-		return false, fmt.Errorf("malformed JSON")
+	var payload struct {
+		ShouldReply *bool `json:"should_reply"`
 	}
-	field, ok := payload["should_reply"]
-	if !ok {
-		return false, fmt.Errorf("missing should_reply")
+	if err := json.Unmarshal([]byte(llm.StripMarkdownCodeFencing(raw)), &payload); err != nil {
+		return false, errors.New("malformed JSON")
 	}
-	var shouldReply bool
-	if err := json.Unmarshal(field, &shouldReply); err != nil {
-		return false, fmt.Errorf("malformed should_reply")
+	if payload.ShouldReply == nil {
+		return false, errors.New("missing should_reply")
 	}
-	return shouldReply, nil
+	return *payload.ShouldReply, nil
 }

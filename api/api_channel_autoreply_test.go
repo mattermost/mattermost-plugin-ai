@@ -511,8 +511,8 @@ func TestPutChannelAutoReplyAmbientKillSwitch(t *testing.T) {
 		enabled        bool
 		expectedStatus int
 	}{
-		{name: "ambient is forbidden when disabled by the admin", mode: "ambient", expectedStatus: http.StatusForbidden},
-		{name: "ambient_threads is forbidden when disabled by the admin", mode: "ambient_threads", expectedStatus: http.StatusForbidden},
+		{name: "ambient conflicts with the disabled admin setting", mode: "ambient", expectedStatus: http.StatusConflict},
+		{name: "ambient_threads conflicts with the disabled admin setting", mode: "ambient_threads", expectedStatus: http.StatusConflict},
 		{name: "threads is unaffected by the ambient setting", mode: "threads", expectedStatus: http.StatusOK},
 		{name: "ambient saves when enabled by the admin", mode: "ambient", enabled: true, expectedStatus: http.StatusOK},
 		{name: "ambient_threads saves when enabled by the admin", mode: "ambient_threads", enabled: true, expectedStatus: http.StatusOK},
