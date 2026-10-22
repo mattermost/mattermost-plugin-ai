@@ -412,6 +412,7 @@ const bifrostUnsupportedOperationCode = "unsupported_operation"
 // count-tokens endpoint, signaling callers to fall back to llm.EstimateTokens.
 func (b *LLM) CountTokens(ctx context.Context, request llm.CompletionRequest, opts ...llm.LanguageModelOption) (int, error) {
 	cfg := b.createConfig(opts)
+	request = bufferFiles(request)
 	bifrostReq, err := b.convertToBifrostResponsesRequest(request, cfg)
 	if err != nil {
 		return 0, fmt.Errorf("failed to build count tokens request: %w", err)
@@ -430,6 +431,7 @@ func (b *LLM) CountTokens(ctx context.Context, request llm.CompletionRequest, op
 
 	bifrostCtx, cancel := schemas.NewBifrostContextWithTimeout(ctx, CountTokensTimeout)
 	defer cancel()
+	b.withHopRequest(bifrostCtx, request, cfg)
 	resp, bifrostErr := b.client.CountTokensRequest(bifrostCtx, bifrostReq)
 	if bifrostErr != nil {
 		if bifrostErr.Error != nil && bifrostErr.Error.Code != nil && *bifrostErr.Error.Code == bifrostUnsupportedOperationCode {

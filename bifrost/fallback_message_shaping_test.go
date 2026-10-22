@@ -5,6 +5,7 @@ package bifrost
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -326,4 +327,41 @@ func TestFileReadersAreSentToEveryFallbackHop(t *testing.T) {
 			assert.Nil(t, posts[0].Files[0].Data, "the caller's request must not be modified")
 		})
 	}
+}
+
+// TestCountTokensFallbackIsBuiltForItsOwnHop drives a real count-tokens
+// failover through Bifrost. The fallback must get messages shaped for its own
+// provider, not the primary's, and the image must survive being read once from
+// a one-shot Reader.
+func TestCountTokensFallbackIsBuiltForItsOwnHop(t *testing.T) {
+	oversized := encodeTestImage(t, "image/png", anthropicMaxImageDimension+1000, 1)
+	oversizedBase64 := base64.StdEncoding.EncodeToString(oversized)
+	request := llm.CompletionRequest{Posts: []llm.Post{
+		{Role: llm.PostRoleUser, Message: "look at this", Files: []llm.File{
+			{MimeType: "image/png", Reader: bytes.NewReader(oversized)},
+		}},
+	}}
+
+	hops := []captureHop{
+		{svc: llm.ServiceConfig{Type: llm.ServiceTypeOpenAI, DefaultModel: "gpt-4o"}},
+		{svc: llm.ServiceConfig{Type: llm.ServiceTypeAnthropic, DefaultModel: "claude-sonnet-4-6"}},
+	}
+	llmInstance, captures := newCaptureChain(t, hops, llm.BotConfig{})
+
+	_, err := llmInstance.CountTokens(context.Background(), request)
+	require.Error(t, err, "both capture servers reject the request")
+
+	bodies := loadCaptures(captures)
+	require.NotNil(t, bodies[0], "primary must have been called")
+	require.NotNil(t, bodies[1], "fallback must have been called")
+	primary, err := json.Marshal(bodies[0])
+	require.NoError(t, err)
+	fallback, err := json.Marshal(bodies[1])
+	require.NoError(t, err)
+
+	assert.Equal(t, "claude-sonnet-4-6", bodies[1]["model"])
+	assert.Contains(t, bodies[1], "messages", "the fallback must be sent an Anthropic count_tokens body")
+	assert.Contains(t, string(primary), oversizedBase64, "the OpenAI hop accepts the image")
+	assert.Contains(t, string(fallback), "Image omitted", "the Anthropic hop gets its own image limit")
+	assert.NotContains(t, string(fallback), oversizedBase64)
 }

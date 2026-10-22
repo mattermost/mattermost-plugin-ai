@@ -69,6 +69,18 @@ func hopServiceID(i int) string {
 // keys, and the bot's identity and service are filled in here.
 func captureFailover(t *testing.T, hops []captureHop, bot llm.BotConfig, request llm.CompletionRequest) (*LLM, []map[string]any) {
 	t.Helper()
+	llmInstance, captures := newCaptureChain(t, hops, bot)
+
+	_, err := llmInstance.ChatCompletionNoStream(context.Background(), request, llm.WithToolsDisabled())
+	require.NoError(t, err)
+
+	return llmInstance, loadCaptures(captures)
+}
+
+// newCaptureChain builds the production client for a chain of hops, each
+// served by a captureServer, and returns it with the capture of each hop.
+func newCaptureChain(t *testing.T, hops []captureHop, bot llm.BotConfig) (*LLM, []atomic.Value) {
+	t.Helper()
 	captures := make([]atomic.Value, len(hops))
 	services := make([]llm.ServiceConfig, len(hops))
 	for i, hop := range hops {
@@ -82,15 +94,17 @@ func captureFailover(t *testing.T, hops []captureHop, bot llm.BotConfig, request
 	llmInstance, err := NewFromServiceConfig(services[0], bot, services[1:])
 	require.NoError(t, err)
 	t.Cleanup(llmInstance.Shutdown)
+	return llmInstance, captures
+}
 
-	_, err = llmInstance.ChatCompletionNoStream(context.Background(), request, llm.WithToolsDisabled())
-	require.NoError(t, err)
-
-	bodies := make([]map[string]any, len(hops))
+// loadCaptures returns the body each hop received, nil for a hop that was not
+// tried.
+func loadCaptures(captures []atomic.Value) []map[string]any {
+	bodies := make([]map[string]any, len(captures))
 	for i := range captures {
 		bodies[i], _ = captures[i].Load().(map[string]any)
 	}
-	return llmInstance, bodies
+	return bodies
 }
 
 // captureTwoHopFailover drives a primary -> fallback -> localHop chain whose

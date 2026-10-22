@@ -81,6 +81,17 @@ func (b *LLM) applyHopRequest(req *schemas.BifrostRequest, request llm.Completio
 		}
 		hop.Input, hop.Params = input, params
 		req.ResponsesRequest = &hop
+	case req.CountTokensRequest != nil:
+		// CountTokens strips Params to the function tools, which every hop
+		// shares and count_tokens endpoints require; only the input is
+		// provider-specific.
+		hop := *req.CountTokensRequest
+		input, _, err := b.responsesRequestForHop(request, cfg, hop.Provider, hop.Model)
+		if err != nil {
+			return err
+		}
+		hop.Input = input
+		req.CountTokensRequest = &hop
 	}
 	return nil
 }
