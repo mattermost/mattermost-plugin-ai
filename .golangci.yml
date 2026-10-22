@@ -11,6 +11,7 @@ linters:
     - govet
     - ineffassign
     - misspell
+    - modernize
     - nakedret
     - revive
     - staticcheck
@@ -31,6 +32,34 @@ linters:
       enable-all: true
     misspell:
       locale: US
+    modernize:
+      # Only the `any` analyzer is adopted; list new suite members here on upgrade.
+      disable:
+        - atomictypes
+        - embedlit
+        - errorsastype
+        - forvar
+        - importcomment
+        - mapsloop
+        - minmax
+        - newexpr
+        - omitzero
+        - plusbuild
+        - rangeint
+        - reflecttypeassert
+        - reflecttypefor
+        - slicesbackward
+        - slicesclip
+        - slicescontains
+        - slicessort
+        - stditerators
+        - stringsbuilder
+        - stringscut
+        - stringscutprefix
+        - stringsseq
+        - testingcontext
+        - unsafefuncs
+        - waitgroupgo
   exclusions:
     generated: lax
     presets:

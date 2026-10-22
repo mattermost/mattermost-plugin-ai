@@ -350,7 +350,7 @@ func (p *MattermostToolProvider) toolCreatePostAsUser(mcpContext *MCPToolContext
 	if args.Props != "" {
 		// For simplicity, we'll just add it as a string. In a real implementation,
 		// you might want to parse the JSON properly
-		post.SetProps(map[string]interface{}{"custom_props": args.Props})
+		post.SetProps(map[string]any{"custom_props": args.Props})
 	}
 
 	createdPost, _, err := userClient.CreatePost(ctx, post)

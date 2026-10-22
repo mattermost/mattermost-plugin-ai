@@ -309,7 +309,7 @@ func (p *MattermostToolProvider) registerDynamicTool(server *mcp.Server, mcpTool
 		}
 
 		// Create argument getter that extracts arguments from the MCP request
-		argsGetter := func(target interface{}) error {
+		argsGetter := func(target any) error {
 			// Convert MCP arguments to the target struct
 			argumentsBytes, marshalErr := json.Marshal(req.Params.Arguments)
 			if marshalErr != nil {
@@ -519,7 +519,7 @@ func isAccessAllowed(restrictionTag, currentAccessMode string) bool {
 
 // validateAccessRestrictions validates that no access-restricted fields are present in the JSON data
 // for the current access mode. This prevents clients from sending fields they shouldn't have access to.
-func validateAccessRestrictions(jsonData []byte, target interface{}, currentAccessMode string) error {
+func validateAccessRestrictions(jsonData []byte, target any, currentAccessMode string) error {
 	if currentAccessMode == "" {
 		panic("access mode cannot be empty - indicates uninitialized AccessMode")
 	}
@@ -536,7 +536,7 @@ func validateAccessRestrictions(jsonData []byte, target interface{}, currentAcce
 
 	// Check if the incoming JSON is actually an object/map
 	// If it's not an object, we can't have field restrictions to validate
-	var incomingData map[string]interface{}
+	var incomingData map[string]any
 	if err := json.Unmarshal(jsonData, &incomingData); err != nil {
 		// If JSON can't be parsed as an object, it's likely a primitive value or array
 		// In this case, there are no fields to validate transport restrictions for
