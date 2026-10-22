@@ -493,6 +493,27 @@ func (env *policyEnv) seedAnalysisFollowUpAnswer(t *testing.T, analysisPost *mod
 	return answer
 }
 
+// seedLegacyAnalysisFollowUp records the ordinary conversation that the first
+// reply to legacy analysisPost creates.
+func (env *policyEnv) seedLegacyAnalysisFollowUp(t *testing.T, analysisPost *model.Post) {
+	t.Helper()
+	channelID := env.dm.Id
+	rootID := analysisPost.Id
+	conv := &store.Conversation{
+		ID:           model.NewId(),
+		UserID:       autoReplyUserID,
+		BotID:        autoReplyBotUserID,
+		ChannelID:    &channelID,
+		RootPostID:   &rootID,
+		Operation:    llm.OperationConversation,
+		SystemPrompt: "system",
+	}
+	require.NoError(t, env.convStore.CreateConversation(conv))
+	content, err := json.Marshal([]conversation.ContentBlock{{Type: conversation.BlockTypeText, Text: "first question"}})
+	require.NoError(t, err)
+	require.NoError(t, env.convStore.CreateTurn(&store.Turn{ID: model.NewId(), ConversationID: conv.ID, Role: "user", Content: content, Sequence: 1}))
+}
+
 // TestAnalysisFollowUpRechecksSourceAccess pins that continuing or
 // regenerating a thread or channel analysis re-checks that the user can still
 // read what it analyzed, including when another agent is mentioned in the
@@ -505,6 +526,9 @@ func TestAnalysisFollowUpRechecksSourceAccess(t *testing.T) {
 		source analysisSource
 		// noConversation seeds a legacy analysis post with no conversation.
 		noConversation bool
+		// repliedBefore, with noConversation, seeds the conversation an
+		// earlier reply to the legacy analysis post created.
+		repliedBefore bool
 		// mentionOtherAgent asks the follow-up of a second agent by
 		// mentioning it in the analysis thread.
 		mentionOtherAgent bool
@@ -528,6 +552,8 @@ func TestAnalysisFollowUpRechecksSourceAccess(t *testing.T) {
 		{name: "thread regenerate when the thread cannot be looked up", source: analyzedThread, lookupFails: true, regenerate: true},
 		{name: "legacy thread regenerate after losing access to the thread", source: analyzedThread, noConversation: true, unreadable: true, regenerate: true, wantErr: conversations.ErrAnalysisSourceUnavailable},
 		{name: "legacy thread follow-up after losing access to the thread", source: analyzedThread, noConversation: true, unreadable: true, wantPlaceholder: analysisSourceDeniedEN},
+		{name: "later legacy thread follow-up while the thread is readable", source: analyzedThread, noConversation: true, repliedBefore: true, wantAnswered: true},
+		{name: "later legacy thread follow-up after losing access to the thread", source: analyzedThread, noConversation: true, repliedBefore: true, unreadable: true, wantPlaceholder: analysisSourceDeniedEN},
 		{name: "another agent asked in a thread analysis while the thread is readable", source: analyzedThread, mentionOtherAgent: true, wantAnswered: true},
 		{name: "another agent asked in a thread analysis after losing access to the thread", source: analyzedThread, mentionOtherAgent: true, unreadable: true},
 		{name: "channel follow-up while the channel is readable", source: analyzedChannel, wantAnswered: true},
@@ -550,6 +576,9 @@ func TestAnalysisFollowUpRechecksSourceAccess(t *testing.T) {
 				env.mmClient.unreadableChannels = map[string]bool{policySecretChannel: true}
 			}
 			analysisPost := env.seedAnalysis(t, tc.source, !tc.noConversation)
+			if tc.repliedBefore {
+				env.seedLegacyAnalysisFollowUp(t, analysisPost)
+			}
 
 			if tc.regenerate {
 				target := analysisPost

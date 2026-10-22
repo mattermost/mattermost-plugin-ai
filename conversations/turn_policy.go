@@ -95,7 +95,7 @@ func (c *Conversations) resolveTurnPolicy(ctx context.Context, req turnRequest) 
 		req.conv = conv
 	}
 
-	if err := c.checkAnalysisSource(req, isDM); err != nil {
+	if err := c.checkAnalysisSource(req); err != nil {
 		return nil, err
 	}
 
@@ -184,8 +184,8 @@ func isAnalysisPost(post *model.Post) bool {
 // analysis analyzed before a turn that replays it runs. A source that is gone
 // or unreadable denies with ErrAnalysisSourceUnavailable; failing to look it
 // up is returned as is.
-func (c *Conversations) checkAnalysisSource(req turnRequest, isDM bool) error {
-	analysisPost, err := c.turnAnalysisPost(req, isDM)
+func (c *Conversations) checkAnalysisSource(req turnRequest) error {
+	analysisPost, err := c.turnAnalysisPost(req)
 	if err != nil || analysisPost == nil {
 		return err
 	}
@@ -206,11 +206,11 @@ func (c *Conversations) checkAnalysisSource(req turnRequest, isDM bool) error {
 // turnAnalysisPost returns the analysis post whose source req replays, or nil
 // when req continues no analysis. An analysis conversation is rooted at its
 // analysis post; a legacy analysis post has no conversation. Analyses are
-// posted as thread roots in the requester's DM with the agent, so a turn in
-// such a thread that is not the analysis conversation (another agent
-// mentioned there, or a reply whose conversation is missing) is checked
-// against the thread root.
-func (c *Conversations) turnAnalysisPost(req turnRequest, isDM bool) (*model.Post, error) {
+// posted as thread roots in the requester's DM with the agent, so any other
+// turn in a DM thread (another agent mentioned there, or replies to a legacy
+// analysis post, which continue an ordinary conversation) is checked against
+// the thread root.
+func (c *Conversations) turnAnalysisPost(req turnRequest) (*model.Post, error) {
 	conv, post := req.conv, req.post
 	if conv != nil && isAnalysisOperation(conv.Operation) {
 		if conv.RootPostID == nil || *conv.RootPostID == "" {
@@ -230,7 +230,7 @@ func (c *Conversations) turnAnalysisPost(req turnRequest, isDM bool) (*model.Pos
 	}
 
 	rootID := turnThreadRootID(req)
-	if rootID == "" || req.channel.Type != model.ChannelTypeDirect || (isDM && conv != nil) {
+	if rootID == "" || req.channel.Type != model.ChannelTypeDirect {
 		return nil, nil
 	}
 	root, err := c.getSourcePost(rootID)

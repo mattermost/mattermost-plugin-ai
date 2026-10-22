@@ -23,6 +23,7 @@ import (
 	mmapimocks "github.com/mattermost/mattermost-plugin-agents/v2/mmapi/mocks"
 	"github.com/mattermost/mattermost-plugin-agents/v2/prompts"
 	"github.com/mattermost/mattermost-plugin-agents/v2/store"
+	"github.com/mattermost/mattermost-plugin-agents/v2/streaming"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/stretchr/testify/assert"
@@ -375,7 +376,9 @@ func TestHandleIntervalSetsConversationRootPostID(t *testing.T) {
 
 // TestChannelAnalysisPostsRecordTheAnalyzedChannel pins that the posts
 // answering a channel analysis or interval summary record which channel they
-// analyzed, so continuing them can re-check the requester's access to it.
+// analyzed, so continuing them can re-check the requester's access to it, and
+// are marked non-regenerable so the UI does not offer a regenerate that the
+// server rejects.
 func TestChannelAnalysisPostsRecordTheAnalyzedChannel(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
 	gin.DefaultWriter = io.Discard
@@ -435,6 +438,7 @@ func TestChannelAnalysisPostsRecordTheAnalyzedChannel(t *testing.T) {
 			post := streamingService.dmPosts[0]
 			assert.Equal(t, testChannelID, post.GetProp(conversations.AnalyzedChannelIDProp))
 			assert.Nil(t, post.GetProp(conversations.ThreadIDProp), "a channel analysis analyzed no thread")
+			assert.NotNil(t, post.GetProp(streaming.NoRegen), "a channel analysis cannot be regenerated")
 		})
 	}
 }

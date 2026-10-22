@@ -555,9 +555,11 @@ func makeAnalysisPost(postIDToAnalyze string, analysisType string, conversationI
 	return post
 }
 
-// makeChannelAnalysisPost creates a post for channel analysis results.
+// makeChannelAnalysisPost creates a post for channel analysis results. The
+// post is not regenerable; see conversations.ErrChannelAnalysisRegenerateUnsupported.
 func makeChannelAnalysisPost(channelID string, analysisType string, conversationID string) *model.Post {
 	post := &model.Post{}
+	post.AddProp(streaming.NoRegen, "true")
 	post.AddProp(conversations.AnalyzedChannelIDProp, channelID)
 	post.AddProp(conversations.AnalysisTypeProp, analysisType)
 	if conversationID != "" {
