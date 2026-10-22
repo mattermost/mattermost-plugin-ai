@@ -21,20 +21,22 @@ jest.mock('@/hooks/use_conversation', () => ({
     invalidateConversation: (conversationID: string) => mockInvalidateConversation(conversationID),
 }));
 
-type MockToolCardProps = {
+type MockRenderContext = {
     tool: ToolCall;
     onApprove?: () => void;
     onReject?: () => void;
     isAutoApproved?: boolean;
+    awaitingRequester?: boolean;
+    isCollapsed?: boolean;
 };
 
-const mockToolCard = jest.fn<null, [MockToolCardProps]>(() => null);
+// Mock the registry so these tests cover ToolApprovalSet's decision logic
+// only; routing is covered by registry.test.tsx.
+const mockRenderToolCall = jest.fn<null, [MockRenderContext]>(() => null);
 
-jest.mock('./tool_card', () => ({
+jest.mock('./tool_renderers/registry', () => ({
     __esModule: true,
-    default: (props: MockToolCardProps) => {
-        return mockToolCard(props);
-    },
+    renderToolCall: (ctx: MockRenderContext) => mockRenderToolCall(ctx),
 }));
 
 function makeTool(overrides: Partial<ToolCall>): ToolCall {
@@ -57,21 +59,19 @@ function renderComponent(toolCalls: ToolCall[], approvalStage: ToolApprovalStage
                 approvalStage={approvalStage}
                 canApprove={canApprove}
                 canExpand={true}
-                showArguments={true}
-                showResults={true}
             />
         </IntlProvider>,
     );
 }
 
-function getToolCardProps(toolID: string): MockToolCardProps {
-    const match = mockToolCard.mock.calls.find(([props]) => props.tool.id === toolID);
+function getToolCardProps(toolID: string): MockRenderContext {
+    const match = mockRenderToolCall.mock.calls.find(([ctx]) => ctx.tool.id === toolID);
     expect(match).toBeDefined();
-    return match![0] as MockToolCardProps;
+    return match![0] as MockRenderContext;
 }
 
 beforeEach(() => {
-    mockToolCard.mockClear();
+    mockRenderToolCall.mockClear();
     mockDoToolCall.mockReset();
     mockDoToolCall.mockImplementation(() => Promise.resolve());
     mockInvalidateConversation.mockClear();
@@ -103,13 +103,83 @@ describe('ToolApprovalSet', () => {
         expect(getToolCardProps('tool_pending').isAutoApproved).toBe(false);
     });
 
+    test.each([
+        {name: 'a pending call', stage: 'call' as const, status: ToolCallStatus.Pending},
+        {name: 'a result awaiting the share decision', stage: 'result' as const, status: ToolCallStatus.Success},
+    ])('flags $name as awaiting the requester for an onlooker', ({stage, status}) => {
+        renderComponent([makeTool({id: 'tool_waiting', status})], stage, false);
+
+        expect(getToolCardProps('tool_waiting').awaitingRequester).toBe(true);
+        expect(getToolCardProps('tool_waiting').onApprove).toBeUndefined();
+    });
+
+    test('does not flag an auto-approved call that already ran while another awaits approval', () => {
+        renderComponent([
+            makeTool({id: 'tool_auto', status: ToolCallStatus.AutoApproved}),
+            makeTool({id: 'tool_pending', status: ToolCallStatus.Pending}),
+        ], 'call', false);
+
+        expect(getToolCardProps('tool_auto').awaitingRequester).toBe(false);
+        expect(getToolCardProps('tool_pending').awaitingRequester).toBe(true);
+    });
+
+    test('flags a live redacted call, which carries an empty result, for an onlooker', () => {
+        renderComponent([makeTool({id: 'tool_live', status: ToolCallStatus.Pending, result: ''})], 'call', false);
+
+        expect(getToolCardProps('tool_live').awaitingRequester).toBe(true);
+        expect(getToolCardProps('tool_live').isCollapsed).toBe(true);
+    });
+
+    test('expands an argument-free result for the requester before ownership loads', () => {
+        renderComponent([makeTool({id: 'tool_done', status: ToolCallStatus.Success, result: 'channel info'})], 'result', false);
+
+        expect(getToolCardProps('tool_done').isCollapsed).toBe(false);
+        expect(getToolCardProps('tool_done').awaitingRequester).toBe(false);
+    });
+
+    test('flags a private result awaiting the share decision next to a shared auto-run result', () => {
+        renderComponent([
+            makeTool({id: 'tool_auto', status: ToolCallStatus.AutoApproved, result: 'shared output', decided: true}),
+            makeTool({id: 'tool_manual', status: ToolCallStatus.Success, result: ''}),
+        ], 'result', false);
+
+        expect(getToolCardProps('tool_manual').awaitingRequester).toBe(true);
+        expect(getToolCardProps('tool_manual').isCollapsed).toBe(true);
+        expect(getToolCardProps('tool_auto').awaitingRequester).toBe(false);
+    });
+
+    test('flags an interrupted auto-run round as awaiting the requester for an onlooker', () => {
+        renderComponent([makeTool({id: 'tool_auto_pending', status: ToolCallStatus.Pending, would_auto_execute: true})], 'call', false);
+
+        expect(getToolCardProps('tool_auto_pending').awaitingRequester).toBe(true);
+    });
+
+    test('keeps an onlooker\'s pending cards collapsed by default', () => {
+        renderComponent([makeTool({id: 'tool_pending', status: ToolCallStatus.Pending})], 'call', false);
+
+        expect(getToolCardProps('tool_pending').isCollapsed).toBe(true);
+    });
+
+    test('expands and does not flag a pending call for the requester before ownership loads', () => {
+        renderComponent([makeTool({id: 'tool_pending', status: ToolCallStatus.Pending, arguments: {channel: 'town-square'}})], 'call', false);
+
+        expect(getToolCardProps('tool_pending').isCollapsed).toBe(false);
+        expect(getToolCardProps('tool_pending').awaitingRequester).toBe(false);
+    });
+
+    test('does not flag calls as awaiting the requester for the requester', () => {
+        renderComponent([makeTool({id: 'tool_pending', status: ToolCallStatus.Pending})], 'call', true);
+
+        expect(getToolCardProps('tool_pending').awaitingRequester).toBe(false);
+    });
+
     test('hides pending tools that passed the auto-execution policy', () => {
         renderComponent([
             makeTool({id: 'tool_marked', would_auto_execute: true}),
             makeTool({id: 'tool_manual'}),
         ]);
 
-        expect(mockToolCard.mock.calls.find(([props]) => props.tool.id === 'tool_marked')).toBeUndefined();
+        expect(mockRenderToolCall.mock.calls.find(([ctx]) => ctx.tool.id === 'tool_marked')).toBeUndefined();
 
         const manualTool = getToolCardProps('tool_manual');
         expect(manualTool.onApprove).toEqual(expect.any(Function));

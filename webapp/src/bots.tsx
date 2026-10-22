@@ -34,6 +34,9 @@ export interface LLMBot {
     enabledMCPTools: EnabledMCPTool[] | null;
     autoEnableNewMCPTools: boolean;
 
+    // Optional so the UI degrades to the non-SA UX when the server predates the field.
+    useServiceAccountAuth?: boolean;
+
     // isDefault marks the system-wide default agent. Optional: older servers
     // omit it, in which case we fall back to list ordering.
     isDefault?: boolean;
@@ -81,13 +84,13 @@ export async function fetchAndStoreBots(dispatch: Dispatch): Promise<LLMBot[] | 
     });
 
     dispatch({
-        type: 'SET_SEARCH_ENABLED',
-        searchEnabled: response.searchEnabled,
+        type: 'SET_ALLOW_UNSAFE_LINKS',
+        allowUnsafeLinks: Boolean(response.allowUnsafeLinks),
     });
 
     dispatch({
-        type: 'SET_ALLOW_UNSAFE_LINKS',
-        allowUnsafeLinks: Boolean(response.allowUnsafeLinks),
+        type: 'SET_HTML_ARTIFACTS_ENABLED',
+        htmlArtifactsEnabled: Boolean(response.htmlArtifactsEnabled),
     });
 
     return response.bots;

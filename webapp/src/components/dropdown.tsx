@@ -17,14 +17,19 @@ import {
     useInteractions,
     useRole,
 } from '@floating-ui/react-dom-interactions';
+import {WithTooltip} from '@mattermost/shared/components/tooltip';
 
 const FloatingContainer = styled.div`
     min-width: 16rem;
 	z-index: 2100;
 `;
 
+const TooltipTrigger = styled.span`
+    display: inline-flex;
+`;
+
 type DropdownProps = {
-    target: JSX.Element;
+    target: React.JSX.Element;
     children: React.ReactNode;
     placement?: Placement;
     offset?: Parameters<typeof offset>[0];
@@ -32,8 +37,12 @@ type DropdownProps = {
     shift?: Parameters<typeof shift>[0];
     focusManager?: boolean | Omit<ComponentProps<typeof FloatingFocusManager>, 'context' | 'children'>;
     portal?: boolean;
+    floatingClassName?: string;
     isOpen: boolean;
     onOpenChange?: ((open: boolean) => void);
+
+    /** Host-style tooltip for the trigger; suppressed while the menu is open. */
+    tooltip?: string;
 };
 
 const Dropdown = (props: DropdownProps) => {
@@ -64,6 +73,7 @@ const Dropdown = (props: DropdownProps) => {
 
     let content = (
         <FloatingContainer
+            className={props.floatingClassName}
             {...getFloatingProps({
                 ref: floating,
                 style: {
@@ -88,9 +98,24 @@ const Dropdown = (props: DropdownProps) => {
         );
     }
 
+    // Attach floating-ui reference props first. When a tooltip is present, wrap
+    // the trigger in a span so WithTooltip's aria-describedby lands on the
+    // wrapper — icon-only triggers already expose their name via aria-label.
+    const trigger = cloneElement(props.target, getReferenceProps({ref: reference, ...props.target.props}));
+    const triggerWithTooltip = props.tooltip ? (
+        <WithTooltip
+            title={props.tooltip}
+            disabled={open}
+        >
+            <TooltipTrigger>
+                {trigger}
+            </TooltipTrigger>
+        </WithTooltip>
+    ) : trigger;
+
     return (
         <>
-            {cloneElement(props.target, getReferenceProps({ref: reference, ...props.target.props}))}
+            {triggerWithTooltip}
             <MaybePortal>
                 {open && content}
             </MaybePortal>

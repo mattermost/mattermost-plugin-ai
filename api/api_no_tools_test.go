@@ -39,7 +39,7 @@ type noToolsTestMCPProvider struct {
 	tools []llm.Tool
 }
 
-func (p *noToolsTestMCPProvider) GetToolsForUser(context.Context, string) ([]llm.Tool, *mcp.Errors) {
+func (p *noToolsTestMCPProvider) GetToolsWithSelection(context.Context, mcp.CatalogRequest, mcp.ToolSelection) ([]llm.Tool, *mcp.Errors) {
 	p.calls++
 	return p.tools, nil
 }
@@ -203,7 +203,7 @@ func setupNoToolsAPI(t *testing.T, mcpProvider *noToolsTestMCPProvider, mmClient
 		&model.Bot{UserId: testBotUserID, Username: "matty", DisplayName: "Matty"},
 		fakeLLM,
 	)
-	e.bots.SetBotsForTesting([]*bots.Bot{bot})
+	e.setBots(bot)
 
 	return e, streamingService, convStore
 }

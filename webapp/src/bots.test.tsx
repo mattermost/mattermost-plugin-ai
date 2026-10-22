@@ -35,6 +35,11 @@ jest.mock('@/mm_webapp', () => ({
     useWebSocketClient: () => null,
 }));
 
+jest.mock('react-bootstrap', () => ({
+    OverlayTrigger: () => null,
+    Tooltip: () => null,
+}), {virtual: true});
+
 // @/client is the real HTTP boundary; stub it so persistence is observable and
 // the bot-fetch effect never makes a network call.
 const mockGetAIBots = jest.fn();
@@ -245,14 +250,14 @@ describe('filterBotsByChannelAccess', () => {
 describe('fetchAndStoreBots', () => {
     test('dispatches the bots and feature flags, and returns the bots', async () => {
         const bots = [makeBot('a')];
-        mockGetAIBots.mockResolvedValue({bots, searchEnabled: true, allowUnsafeLinks: 1});
+        mockGetAIBots.mockResolvedValue({bots, searchEnabled: true, allowUnsafeLinks: 1, htmlArtifactsEnabled: true});
         const dispatch = jest.fn();
 
         await expect(fetchAndStoreBots(dispatch)).resolves.toBe(bots);
 
         expect(dispatch).toHaveBeenCalledWith({type: BotsHandler, bots});
-        expect(dispatch).toHaveBeenCalledWith({type: 'SET_SEARCH_ENABLED', searchEnabled: true});
         expect(dispatch).toHaveBeenCalledWith({type: 'SET_ALLOW_UNSAFE_LINKS', allowUnsafeLinks: true});
+        expect(dispatch).toHaveBeenCalledWith({type: 'SET_HTML_ARTIFACTS_ENABLED', htmlArtifactsEnabled: true});
     });
 
     test('returns null and dispatches nothing when the response is falsy', async () => {

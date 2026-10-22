@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/mattermost/mattermost-plugin-agents/v2/accesscontrol"
 	"github.com/mattermost/mattermost-plugin-agents/v2/bots"
 	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmapi/mocks"
@@ -17,6 +18,23 @@ import (
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 	"github.com/stretchr/testify/require"
 )
+
+// newPassthroughAccessChecker builds an ABAC checker that always reports
+// no_policy, so tests exercise pure legacy permission behavior.
+func newPassthroughAccessChecker() *accesscontrol.Checker {
+	return accesscontrol.New(accesscontrol.PassthroughClient{}, nil, accesscontrol.NoMCPServerIDs, nil)
+}
+
+// SetBotsWithAccounts replaces svc's registry with registry, each bot's
+// Mattermost account, served by mockAPI, holding the username the registry
+// lists it under.
+func SetBotsWithAccounts(mockAPI *plugintest.API, svc *bots.MMBots, registry ...*bots.Bot) {
+	for _, bot := range registry {
+		mmBot := bot.GetMMBot()
+		mockAPI.On("GetUser", mmBot.UserId).Return(&model.User{Id: mmBot.UserId, Username: mmBot.Username, IsBot: true}, nil).Maybe()
+	}
+	svc.SetBotsForTesting(registry)
+}
 
 type TestEnvironment struct {
 	conversations *Conversations
@@ -36,7 +54,7 @@ func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 	mmClient := mocks.NewMockClient(t)
 
 	licenseChecker := enterprise.NewLicenseChecker(client)
-	botsService := bots.New(mockAPI, client, licenseChecker, nil, nil, &http.Client{}, nil)
+	botsService := bots.New(mockAPI, client, licenseChecker, nil, nil, newPassthroughAccessChecker(), &http.Client{}, nil)
 
 	conversations := &Conversations{
 		mmClient: mmClient,

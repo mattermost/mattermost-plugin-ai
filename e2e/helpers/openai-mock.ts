@@ -86,11 +86,13 @@ data: [DONE]
 export const responseTest2Text = "Hello! This is a second message."
 
 
+export const SMOCKER_IMAGE = "thiht/smocker";
+
 export class OpenAIMockContainer {
 	container: StartedTestContainer;
 
 	start = async (network: StartedNetwork) => {
-		this.container = await new GenericContainer("thiht/smocker")
+		this.container = await new GenericContainer(SMOCKER_IMAGE)
 			.withExposedPorts(8081)
 			.withNetwork(network)
 			.withNetworkAliases("openai")
@@ -102,6 +104,19 @@ export class OpenAIMockContainer {
 
 	stop = async () => {
 		await this.container.stop()
+	}
+
+	/**
+	 * Count requests Smocker has received (current session) whose request
+	 * (not the mocked response) contains `substring`.
+	 */
+	countRequestsContaining = async (substring: string): Promise<number> => {
+		const response = await fetch(`http://localhost:${this.container.getMappedPort(8081)}/history`);
+		if (!response.ok) {
+			throw new Error(`Failed to read mock history: ${response.status} ${response.statusText}`);
+		}
+		const history: Array<{request?: unknown}> = await response.json();
+		return history.filter((entry) => JSON.stringify(entry.request ?? {}).includes(substring)).length;
 	}
 
 	resetMocks = async (attempt = 0): Promise<void> => {
@@ -182,6 +197,42 @@ export class OpenAIMockContainer {
 			await new Promise(resolve => setTimeout(resolve, backoffMs));
 
 			return this.addMocks(bodies, attempt + 1);
+		}
+	}
+
+	/**
+	 * Add Smocker mocks without replacing existing ones. Use this to sequence a
+	 * later turn after the first turn is idle: addMocks(?reset=true) while a
+	 * ChatCompletion is in flight hangs the next request (empty bot placeholder).
+	 * Each mock is prepended; the last rule in `bodies` has the highest priority
+	 * and outranks mocks already registered in the session.
+	 */
+	appendMocks = async (bodies: any[], attempt = 0): Promise<Response> => {
+		const maxAttempts = 5;
+
+		try {
+			const response = await fetch(`http://localhost:${this.container.getMappedPort(8081)}/mocks`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify(bodies.map(normalizeChatCompletionMockPath)),
+			});
+
+			if (!response.ok) {
+				throw new Error(`Failed to append mocks: ${response.status} ${response.statusText}`);
+			}
+
+			return response;
+		} catch (error) {
+			if (attempt >= maxAttempts - 1) {
+				throw error;
+			}
+
+			const backoffMs = Math.min(2000, 250 * Math.pow(2, attempt));
+			await new Promise(resolve => setTimeout(resolve, backoffMs));
+
+			return this.appendMocks(bodies, attempt + 1);
 		}
 	}
 
@@ -274,7 +325,10 @@ export const RunOpenAIMocks = async (network: StartedNetwork): Promise<OpenAIMoc
  * Follows OpenAI's chat.completions streaming format.
  */
 export function buildToolCallResponse(toolCallId: string, toolName: string, args: string): string {
-	const escapedArgs = args.replace(/"/g, '\\"');
+	// slice off the quotes JSON.stringify adds: naive quote replacement would
+	// corrupt arguments that themselves contain backslashes, such as a nested
+	// JSON string.
+	const escapedArgs = JSON.stringify(args).slice(1, -1);
 	const chunks = [
 		`data: {"id":"chatcmpl-tc1","object":"chat.completion.chunk","created":1708124577,"model":"gpt-mock","choices":[{"index":0,"delta":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"${toolCallId}","type":"function","function":{"name":"${toolName}","arguments":""}}]},"finish_reason":null}]}`,
 		`data: {"id":"chatcmpl-tc1","object":"chat.completion.chunk","created":1708124577,"model":"gpt-mock","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"${escapedArgs}"}}]},"finish_reason":null}]}`,
@@ -285,9 +339,16 @@ export function buildToolCallResponse(toolCallId: string, toolName: string, args
 }
 
 /**
- * Single Smocker rule for POST /chat/completions. Smocker stores mocks in a stack:
- * the last registered mock has the highest priority. Register catch-all rules first
- * and more specific body matchers last.
+ * Single Smocker rule for POST /chat/completions. Smocker prepends each mock, so
+ * the last rule in an addMocks/appendMocks array has the highest priority.
+ * Exhausted times:N rules are skipped (the next matching rule is used). If every
+ * matching rule is exhausted, Smocker returns 666 and the bot post stays empty.
+ * Do not register a no-body catch-all in the same addMocks list as body matchers:
+ * listed last, the catch-all steals every completion. Sequence later turns with
+ * unique bodyContains strings, or appendMocks after the composer is idle.
+ * Do not use times:1 to sequence user-visible turns unless every rule has a unique
+ * bodyContains: leftover title generation and extra tool-loop completions consume
+ * those slots and shift later responses.
  */
 export function buildChatCompletionMockRule(
     sseBody: string,
@@ -369,4 +430,25 @@ export function buildTextResponse(text: string): string {
 	);
 	chunks.push('data: [DONE]');
 	return chunks.join('\n\n') + '\n\n';
+}
+
+/** Matches GenerateTitle ChatCompletionNoStream requests so they do not consume turn mocks. */
+export const TITLE_GENERATION_BODY_MATCH =
+	'Write a short title for the following request. Include only the title and nothing else, no quotations. Request:';
+
+export function titleGenerationMockRule(title = 'E2E title'): any {
+	return buildChatCompletionMockRule(buildTextResponse(title), {
+		bodyContains: TITLE_GENERATION_BODY_MATCH,
+	});
+}
+
+/**
+ * Title-generation siphon plus a catch-all turn response. Use this for a
+ * single user-visible completion. To sequence follow-ups, wait until the
+ * composer is idle, then register the next turn with this helper — do not
+ * use times:1, overlapping history body matchers, or a leftover catch-all
+ * alongside more specific bodyContains rules.
+ */
+export function turnMocksWithTitleSiphon(sseBody: string): any[] {
+	return [titleGenerationMockRule(), buildChatCompletionMockRule(sseBody)];
 }

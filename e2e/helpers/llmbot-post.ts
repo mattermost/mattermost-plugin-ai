@@ -1,5 +1,94 @@
 import { Page, Locator, expect } from '@playwright/test';
 
+const TOOL_ACTIVITY_SELECTOR = '[data-testid="llm-bot-tool-activity"]';
+const TOOL_ACTIVITY_HEADER_SELECTOR = '[data-testid="llm-bot-tool-activity-header"]';
+const TOOL_ACTIVITY_CURRENT_SELECTOR = '[data-testid="llm-bot-tool-activity-current"]';
+const TOOL_ACTIVITY_ROUNDS_SELECTOR = '[data-testid="llm-bot-tool-activity-rounds"]';
+
+/** The status glyph next to a tool name, both on cards and on the collapsed row. */
+export const TOOL_STATUS_SELECTOR = '[data-testid="llm-bot-tool-status"]';
+
+/** One tool call's card: its name, status, and — when expanded — its arguments and result. */
+export const TOOL_CARD_SELECTOR = '[class*="ToolCallCard"]';
+
+/** The glyph ToolStatusIcon renders, exposed as its data-status attribute. */
+export type ToolStatusGlyph = 'running' | 'success' | 'error' | 'rejected';
+
+/**
+ * Expands every collapsed activity area in `scope` and returns the revealed
+ * rounds. Tool cards only exist in the DOM once expanded. Assert labels on the
+ * returned locator: the collapsed row repeats the latest tool's name.
+ * Rounds awaiting the viewer's decision render outside the area already.
+ */
+export async function expandToolActivity(scope: Locator): Promise<Locator> {
+    const areas = scope.locator(TOOL_ACTIVITY_SELECTOR);
+    await expect(areas.first()).toBeVisible({ timeout: 30000 });
+
+    const count = await areas.count();
+    for (let i = 0; i < count; i++) {
+        const area = areas.nth(i);
+        const rounds = area.locator(TOOL_ACTIVITY_ROUNDS_SELECTOR);
+        if ((await rounds.count()) > 0) {
+            continue;
+        }
+
+        await area.locator(TOOL_ACTIVITY_HEADER_SELECTOR).click();
+        await expect(rounds).toHaveCount(1, { timeout: 10000 });
+    }
+
+    return scope.locator(TOOL_ACTIVITY_ROUNDS_SELECTOR);
+}
+
+/** Collapses the first activity area in `scope`. */
+export async function collapseToolActivity(scope: Locator): Promise<void> {
+    const area = scope.locator(TOOL_ACTIVITY_SELECTOR).first();
+    await area.locator(TOOL_ACTIVITY_HEADER_SELECTOR).click();
+    await expect(area.locator(TOOL_ACTIVITY_ROUNDS_SELECTOR)).toHaveCount(0, { timeout: 10000 });
+}
+
+/** Asserts an activity area exists and shows only its one-line header. */
+export async function expectToolActivityCollapsed(scope: Locator): Promise<void> {
+    await expect(scope.locator(TOOL_ACTIVITY_HEADER_SELECTOR).first()).toBeVisible({ timeout: 30000 });
+    await expect(scope.locator(TOOL_ACTIVITY_ROUNDS_SELECTOR)).toHaveCount(0);
+}
+
+/** Asserts the collapsed row names `text` (the latest tool invocation). */
+export async function expectToolActivityCurrent(scope: Locator, text: string): Promise<void> {
+    await expect(scope.locator(TOOL_ACTIVITY_CURRENT_SELECTOR).last()).toContainText(text, { timeout: 30000 });
+}
+
+/** Asserts the "Used N tools" summary and, optionally, its worst-outcome glyph. */
+export async function expectToolActivitySummary(
+    scope: Locator,
+    toolCount: number,
+    status?: ToolStatusGlyph,
+): Promise<void> {
+    const summary = toolCount === 1 ? 'Used 1 tool' : `Used ${toolCount} tools`;
+    const current = scope.locator(TOOL_ACTIVITY_CURRENT_SELECTOR).last();
+    await expect(current).toHaveText(summary, { timeout: 30000 });
+
+    if (status !== undefined) {
+        await expect(current.locator(TOOL_STATUS_SELECTOR)).toHaveAttribute('data-status', status);
+    }
+}
+
+/**
+ * Asserts no activity area. Passes on the first poll, so wait for a stable
+ * post state (a visible approval button or final answer) first.
+ */
+export async function expectNoToolActivity(scope: Locator): Promise<void> {
+    await expect(scope.locator(TOOL_ACTIVITY_SELECTOR)).toHaveCount(0);
+}
+
+/** Everything `post` shows outside its activity area and any text folding into it. */
+export async function mainAreaText(post: Locator): Promise<string> {
+    return post.evaluate((el, selector) => {
+        const clone = el.cloneNode(true) as HTMLElement;
+        clone.querySelectorAll(selector).forEach((node) => node.remove());
+        return clone.textContent ?? '';
+    }, `${TOOL_ACTIVITY_SELECTOR}, [data-testid="llm-bot-folding-text"]`);
+}
+
 /**
  * LLMBotPostHelper - Page object for LLMBot post component interactions
  *
@@ -39,8 +128,6 @@ export class LLMBotPostHelper {
     getReasoningDisplay(postId?: string): Locator {
         const baseLocator = postId ? this.getLLMBotPost(postId) : this.getLLMBotPost();
         // Scope to reasoning rows that actually render the Thinking label.
-        // This avoids matching the precontent "Working..." placeholder row,
-        // which reuses the MinimalReasoningContainer styles.
         return baseLocator.locator(this.reasoningSelector).filter({hasText: 'Thinking'}).first();
     }
 
@@ -73,7 +160,7 @@ export class LLMBotPostHelper {
      */
     getReasoningSpinner(postId?: string): Locator {
         // Scope spinner lookup to the actual reasoning row to avoid matching
-        // the precontent "Working..." spinner.
+        // the spinner on the post's status line.
         return this.getReasoningDisplay(postId).locator('div[class*="LoadingSpinner"]').first();
     }
 
@@ -91,9 +178,9 @@ export class LLMBotPostHelper {
      * @param postId - Optional post ID to scope the search
      */
     getReasoningChevron(postId?: string): Locator {
-        const baseLocator = postId ? this.getLLMBotPost(postId) : this.getLLMBotPost();
-        // ChevronRight is inside MinimalExpandIcon or ExpandedChevron containers
-        return baseLocator.locator('[class*="MinimalExpandIcon"] svg, [class*="ExpandedChevron"] svg').first();
+        // ChevronRight sits in the shared CollapseChevron container, which the
+        // tool activity row also uses — scope to the reasoning row itself.
+        return this.getReasoningDisplay(postId).locator('[class*="CollapseChevron"] svg').first();
     }
 
     /**
@@ -189,7 +276,7 @@ export class LLMBotPostHelper {
     async hoverCitation(index: number, postId?: string): Promise<void> {
         const citationWrapper = this.getCitationWrapper(index, postId);
         await citationWrapper.hover();
-        await this.page.waitForTimeout(300);
+        await expect(this.getCitationTooltip(postId)).toBeVisible();
     }
 
     /**
@@ -341,137 +428,6 @@ export class LLMBotPostHelper {
         await expect(postText).toHaveText(text);
     }
 
-    // ==================== SEARCH SOURCES LOCATORS ====================
-
-    /**
-     * Get the search sources container
-     * @param postId - Optional post ID to scope the search
-     */
-    getSearchSourcesContainer(postId?: string): Locator {
-        const baseLocator = postId ? this.getLLMBotPost(postId) : this.getLLMBotPost();
-        return baseLocator.locator('[class*="SourcesContainer"]');
-    }
-
-    /**
-     * Get the search sources header (clickable to expand/collapse)
-     * @param postId - Optional post ID to scope the search
-     */
-    getSearchSourcesHeader(postId?: string): Locator {
-        const baseLocator = postId ? this.getLLMBotPost(postId) : this.getLLMBotPost();
-        return baseLocator.locator('[class*="SourcesHeader"]');
-    }
-
-    /**
-     * Get the search sources count badge
-     * @param postId - Optional post ID to scope the search
-     */
-    getSearchSourcesCount(postId?: string): Locator {
-        const baseLocator = postId ? this.getLLMBotPost(postId) : this.getLLMBotPost();
-        return baseLocator.locator('[class*="SourceCount"]');
-    }
-
-    /**
-     * Get all source items in the sources list
-     * @param postId - Optional post ID to scope the search
-     */
-    getSearchSourceItems(postId?: string): Locator {
-        const baseLocator = postId ? this.getLLMBotPost(postId) : this.getLLMBotPost();
-        return baseLocator.locator('[class*="SourceItem"]');
-    }
-
-    /**
-     * Get a specific source item by index
-     * @param index - Source index (0-based)
-     * @param postId - Optional post ID to scope the search
-     */
-    getSearchSourceItem(index: number, postId?: string): Locator {
-        return this.getSearchSourceItems(postId).nth(index);
-    }
-
-    /**
-     * Get relevance score element within a source item
-     * @param index - Source index (0-based)
-     * @param postId - Optional post ID to scope the search
-     */
-    getSearchSourceRelevanceScore(index: number, postId?: string): Locator {
-        return this.getSearchSourceItem(index, postId).locator('[class*="RelevanceScore"]');
-    }
-
-    // ==================== SEARCH SOURCES ACTIONS ====================
-
-    /**
-     * Click the search sources header to expand or collapse
-     * @param postId - Optional post ID to target specific post
-     */
-    async clickSearchSourcesHeader(postId?: string): Promise<void> {
-        const header = this.getSearchSourcesHeader(postId);
-        await header.click();
-    }
-
-    // ==================== SEARCH SOURCES ASSERTIONS ====================
-
-    /**
-     * Assert search sources container visibility
-     * @param expected - Expected visibility state
-     * @param postId - Optional post ID to scope the assertion
-     */
-    async expectSearchSourcesVisible(expected: boolean, postId?: string): Promise<void> {
-        const container = this.getSearchSourcesContainer(postId);
-        if (expected) {
-            await expect(container).toBeVisible();
-        } else {
-            await expect(container).not.toBeVisible();
-        }
-    }
-
-    /**
-     * Assert search sources count
-     * @param count - Expected number of sources
-     * @param postId - Optional post ID to scope the assertion
-     */
-    async expectSearchSourcesCount(count: number, postId?: string): Promise<void> {
-        const countBadge = this.getSearchSourcesCount(postId);
-        await expect(countBadge).toHaveText(String(count));
-    }
-
-    /**
-     * Assert search sources list is expanded
-     * @param expected - Expected expansion state
-     * @param postId - Optional post ID to scope the assertion
-     */
-    async expectSearchSourcesExpanded(expected: boolean, postId?: string): Promise<void> {
-        const items = this.getSearchSourceItems(postId);
-        if (expected) {
-            await expect(items.first()).toBeVisible();
-        } else {
-            await expect(items.first()).not.toBeVisible();
-        }
-    }
-
-    /**
-     * Assert relevance score format (should be percentage like "85%")
-     * @param index - Source index (0-based)
-     * @param postId - Optional post ID to scope the assertion
-     */
-    async expectRelevanceScoreFormat(index: number, postId?: string): Promise<void> {
-        const score = this.getSearchSourceRelevanceScore(index, postId);
-        await expect(score).toBeVisible();
-        const text = await score.textContent();
-        expect(text).toMatch(/\d+%/);
-    }
-
-    // ==================== SEARCH SOURCES WAITS ====================
-
-    /**
-     * Wait for search sources to appear with smart polling
-     * @param postId - Optional post ID to scope the wait
-     * @param maxTimeout - Maximum wait time in ms (default: 30 seconds)
-     */
-    async waitForSearchSources(postId?: string, maxTimeout: number = 30000): Promise<void> {
-        const container = this.getSearchSourcesContainer(postId);
-        await expect(container).toBeVisible({ timeout: maxTimeout });
-    }
-
     /**
      * Assert regenerate button visibility
      * @param visible - Expected visibility state
@@ -496,24 +452,14 @@ export class LLMBotPostHelper {
     async waitForPostText(text: string, postId?: string, maxTimeout: number = 300000): Promise<void> {
         const postText = this.getPostText(postId);
 
-        // Poll every 500ms checking if the text has appeared
-        const startTime = Date.now();
-        while (Date.now() - startTime < maxTimeout) {
-            try {
-                const content = await postText.textContent();
-                if (content && content.includes(text)) {
-                    // Text found - wait a bit for final updates
-                    await this.page.waitForTimeout(500);
-                    return;
-                }
-            } catch (error) {
-                // Element not yet available, continue polling
-            }
-            await this.page.waitForTimeout(500);
+        try {
+            await expect.poll(async () => {
+                const content = await postText.textContent({ timeout: 1000 }).catch(() => null);
+                return content?.includes(text) ?? false;
+            }, { timeout: maxTimeout, intervals: [500] }).toBe(true);
+        } catch (error) {
+            throw new Error(`Timeout waiting for post text to contain: ${text}`);
         }
-
-        // If we hit max timeout, throw error with API context if available
-        throw new Error(`Timeout waiting for post text to contain: ${text}`);
     }
 
     /**
@@ -531,21 +477,14 @@ export class LLMBotPostHelper {
             throw new Error('Timeout waiting for reasoning display to appear');
         }
 
-        // Then poll until reasoning spinner disappears (reasoning complete)
+        // Then wait until reasoning spinner disappears (reasoning complete)
         const spinner = this.getReasoningSpinner(postId);
 
-        const startTime = Date.now();
-        while (Date.now() - startTime < maxTimeout) {
-            const isVisible = await spinner.isVisible().catch(() => false);
-            if (!isVisible) {
-                // Spinner gone, reasoning complete - wait a bit for final updates
-                await this.page.waitForTimeout(1000);
-                return;
-            }
-            await this.page.waitForTimeout(500);
+        try {
+            await expect(spinner.filter({ visible: true })).toHaveCount(0, { timeout: maxTimeout });
+        } catch (error) {
+            // If we hit max timeout, that's okay - reasoning might have completed without spinner
         }
-
-        // If we hit max timeout, that's okay - reasoning might have completed without spinner
     }
 
     /**
@@ -559,24 +498,16 @@ export class LLMBotPostHelper {
         const citation = this.getCitationWrapper(index, postId);
         const allCitations = this.getAllCitationIcons(postId);
 
-        // Poll every 500ms checking if citation has appeared
-        const startTime = Date.now();
-        while (Date.now() - startTime < maxTimeout) {
+        try {
+            await expect.poll(async () => {
+                const count = await allCitations.count().catch(() => 0);
+                return count >= index && await citation.isVisible().catch(() => false);
+            }, { timeout: maxTimeout, intervals: [500] }).toBe(true);
+        } catch (error) {
+            // Throw with API context if available
             const count = await allCitations.count().catch(() => 0);
-            if (count >= index) {
-                const isVisible = await citation.isVisible().catch(() => false);
-                if (isVisible) {
-                    // Citation found - wait a bit for final updates
-                    await this.page.waitForTimeout(500);
-                    return;
-                }
-            }
-            await this.page.waitForTimeout(500);
+            throw new Error(`Timeout waiting for citation ${index} to appear (found ${count})`);
         }
-
-        // If we hit max timeout, throw error with API context if available
-        const count = await allCitations.count().catch(() => 0);
-        throw new Error(`Timeout waiting for citation ${index} to appear (found ${count})`);
     }
 
     /**
@@ -660,17 +591,13 @@ export class LLMBotPostHelper {
         // Wait for "Stop Generating" button to disappear (streaming complete)
         const stopButton = this.getStopGeneratingButton();
 
-        // Poll every 500ms until stop button disappears (streaming complete)
-        while (Date.now() - startTime < maxTimeout) {
-            const isVisible = await stopButton.isVisible().catch(() => false);
-            if (!isVisible) {
-                // Stop button gone, streaming complete - wait a bit for final updates
-                await this.page.waitForTimeout(1000);
-                return;
-            }
-            await this.page.waitForTimeout(500);
+        // Wait until the stop button disappears (streaming complete)
+        try {
+            await expect(stopButton.filter({ visible: true })).toHaveCount(0, {
+                timeout: Math.max(maxTimeout - (Date.now() - startTime), 1),
+            });
+        } catch (error) {
+            // If we hit max timeout, that's okay - streaming might have completed without stop button
         }
-
-        // If we hit max timeout, that's okay - streaming might have completed without stop button
     }
 }

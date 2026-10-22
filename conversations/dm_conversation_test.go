@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -27,6 +28,7 @@ import (
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // --- In-memory fake conversation store ------------------------------------
@@ -200,9 +202,9 @@ func (s *fakeConvStore) DeleteResponseTurns(conversationID, postID string) error
 		return nil
 	}
 	userSeq := 0
-	for i := len(turns) - 1; i >= 0; i-- {
-		if turns[i].Role == "user" && turns[i].Sequence < anchorSeq {
-			userSeq = turns[i].Sequence
+	for _, turn := range slices.Backward(turns) {
+		if turn.Role == "user" && turn.Sequence < anchorSeq {
+			userSeq = turn.Sequence
 			break
 		}
 	}
@@ -281,6 +283,11 @@ type dmTestLLM struct {
 	responses []*llm.TextStreamResult
 	callIdx   int
 	requests  []llm.CompletionRequest
+	onChat    func()
+	// callTraces records the trace each call ran under, in call order.
+	callTraces []trace.TraceID
+	// titleDone, when set, is signaled after each title ChatCompletionNoStream.
+	titleDone chan struct{}
 
 	noStreamResponseByOp map[string]string
 	noStreamErrByOp      map[string]error
@@ -288,17 +295,17 @@ type dmTestLLM struct {
 	lastNoStreamReq      llm.CompletionRequest
 	lastNoStreamCfg      llm.LanguageModelConfig
 	classifierCalls      int
-	onChat               func()
 }
 
 func newDMTestLLM(responses ...*llm.TextStreamResult) *dmTestLLM {
 	return &dmTestLLM{responses: responses}
 }
 
-func (f *dmTestLLM) ChatCompletion(_ context.Context, request llm.CompletionRequest, opts ...llm.LanguageModelOption) (*llm.TextStreamResult, error) {
+func (f *dmTestLLM) ChatCompletion(ctx context.Context, request llm.CompletionRequest, opts ...llm.LanguageModelOption) (*llm.TextStreamResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.requests = append(f.requests, request)
+	f.callTraces = append(f.callTraces, trace.SpanContextFromContext(ctx).TraceID())
 	if f.onChat != nil {
 		f.onChat()
 	}
@@ -330,21 +337,30 @@ func (f *dmTestLLM) ChatCompletionNoStream(ctx context.Context, request llm.Comp
 		opt(&cfg)
 	}
 
+	isClassifier := request.Operation == llm.OperationAmbientClassification
 	f.mu.Lock()
-	defer f.mu.Unlock()
+	f.callTraces = append(f.callTraces, trace.SpanContextFromContext(ctx).TraceID())
 	f.lastNoStreamReq = request
 	f.lastNoStreamCfg = cfg
-	if request.Operation == llm.OperationAmbientClassification {
+	if isClassifier {
 		f.classifierCalls++
 	}
-	if err, ok := f.noStreamErrByOp[request.Operation]; ok && err != nil {
-		return "", err
+	opErr := f.noStreamErrByOp[request.Operation]
+	resp, hasResp := f.noStreamResponseByOp[request.Operation]
+	done := f.titleDone
+	f.mu.Unlock()
+
+	if opErr != nil {
+		return "", opErr
 	}
-	if resp, ok := f.noStreamResponseByOp[request.Operation]; ok {
+	if hasResp {
 		return resp, nil
 	}
-	if request.Operation == llm.OperationAmbientClassification {
+	if isClassifier {
 		return "", fmt.Errorf("no classifier response configured")
+	}
+	if done != nil {
+		done <- struct{}{}
 	}
 	return "Test Title", nil
 }
@@ -426,7 +442,9 @@ func setupDMTestEnv(t *testing.T, llmResponses ...*llm.TextStreamResult) *dmTest
 	const (
 		botID     = "bot1"
 		botUserID = "bot1"
-		userID    = "user1"
+		// Well-formed 26-char ID: the agent access gate denies a user ID no
+		// policy can be evaluated against, so the DM never reaches the LLM.
+		userID    = "user12345678901234567890ab"
 		channelID = "dm_channel"
 		teamID    = "team1"
 	)
@@ -446,7 +464,7 @@ func setupDMTestEnv(t *testing.T, llmResponses ...*llm.TextStreamResult) *dmTest
 	mockAPI.On("GetLicense").Return(&model.License{SkuShortName: "advanced"}).Maybe()
 	mockAPI.On("GetTeam", teamID).Return(&model.Team{Id: teamID, Name: "test"}, nil).Maybe()
 
-	botsService := bots.New(mockAPI, client, licenseChecker, nil, nil, &http.Client{}, nil)
+	botsService := bots.New(mockAPI, client, licenseChecker, nil, nil, newPassthroughAccessChecker(), &http.Client{}, nil)
 
 	fLLM := newDMTestLLM(llmResponses...)
 
@@ -471,7 +489,7 @@ func setupDMTestEnv(t *testing.T, llmResponses ...*llm.TextStreamResult) *dmTest
 		channels: map[string]*model.Channel{
 			channelID: channel,
 		},
-		kv:              make(map[string]interface{}),
+		kv:              make(map[string]any),
 		allowCreatePost: true,
 	}
 
@@ -545,11 +563,18 @@ type testMCPClientManager struct {
 	onGetTools func()
 }
 
-func (m *testMCPClientManager) GetToolsForUser(context.Context, string) ([]llm.Tool, *mcp.Errors) {
+func (m *testMCPClientManager) GetToolsWithSelection(_ context.Context, _ mcp.CatalogRequest, selection mcp.ToolSelection) ([]llm.Tool, *mcp.Errors) {
 	if m.onGetTools != nil {
 		m.onGetTools()
 	}
-	return m.tools, m.errors
+
+	tools := make([]llm.Tool, 0, len(m.tools))
+	for _, tool := range m.tools {
+		if selection.Allows(tool.ServerOrigin) {
+			tools = append(tools, tool)
+		}
+	}
+	return tools, m.errors
 }
 
 // --- Test: new DM creates conversation entity and returns stream ----------
@@ -851,7 +876,7 @@ func TestDMUnknownToolReturnsErrorInsteadOfApproval(t *testing.T) {
 		dmMakeTextStream("I cannot use that tool"),
 	)
 
-	llmCtx := &llm.Context{Tools: llm.NewNoTools()}
+	llmCtx := &llm.Context{Tools: llm.NewToolStore()}
 	post := &model.Post{
 		Id:        "post1",
 		UserId:    env.userID,

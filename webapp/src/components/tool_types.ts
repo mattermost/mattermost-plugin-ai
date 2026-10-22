@@ -22,6 +22,10 @@ export type JSONValue =
 // of options. Mirrors llm.UserInteractionSelect on the server.
 export const UserInteractionSelect = 'select';
 
+// UserInteractionConnect marks a tool answered by the user connecting their
+// account to an MCP server. Mirrors llm.UserInteractionConnect on the server.
+export const UserInteractionConnect = 'connect';
+
 // ToolAnswer is a user's answer to a user-interaction tool call. Mirrors
 // mmtools.UserInteractionAnswer on the server.
 export interface ToolAnswer {
@@ -34,6 +38,15 @@ export interface ToolCall {
     name: string;
     description: string;
     server_origin?: string; // omitempty on the server; present only for MCP tools
+
+    // Display name resolved server-side from MCP metadata; absent for
+    // built-in tools and MCP tools without a declared title.
+    title?: string;
+
+    // Unprefixed MCP tool name (e.g. "create_post" for
+    // "mattermost__create_post"). Redacted for non-requesters.
+    mcp_bare_name?: string;
+
     arguments?: JSONValue;
     result?: string;
     status: ToolCallStatus;

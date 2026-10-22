@@ -7,6 +7,7 @@ import {IntlProvider} from 'react-intl';
 
 import {createAgent, updateAgent} from '@/client';
 import {EnabledTool, MaxCustomInstructionsRunes, ServiceInfo, UserAgent} from '@/types/agents';
+import {useCurrentUserHasSystemPermission} from '@/utils/permissions';
 
 import AgentConfigView, {AgentDraft} from './agent_config_view';
 
@@ -30,6 +31,14 @@ jest.mock('react-intl', () => {
     };
 });
 
+jest.mock('@/license', () => ({
+    useIsLicensedFor: jest.fn(() => true),
+}));
+
+jest.mock('@/utils/permissions', () => ({
+    useCurrentUserHasSystemPermission: jest.fn(),
+}));
+
 jest.mock('@/client', () => ({
     createAgent: jest.fn(),
     updateAgent: jest.fn(),
@@ -37,9 +46,15 @@ jest.mock('@/client', () => ({
     getUserMCPTools: jest.fn(),
 }));
 
+jest.mock('@/utils/access_control', () => ({
+    useABACSupport: () => ({supported: false, loading: false}),
+}));
+
 jest.mock('@/hooks/use_mcp_connection_events', () => ({
     useMCPConnectionEvents: jest.fn(),
 }));
+
+const mockedUseCurrentUserHasSystemPermission = useCurrentUserHasSystemPermission as unknown as jest.Mock;
 
 jest.mock('@/components/system_console/bot', () => ({
     ChannelAccessLevel: {
@@ -47,12 +62,21 @@ jest.mock('@/components/system_console/bot', () => ({
     },
     UserAccessLevel: {
         All: 0,
+        AttributeBased: 4,
     },
 }));
 
 jest.mock('./tabs/config_tab', () => ({
     __esModule: true,
-    default: ({draft, onChange, errors = {}}: {draft: AgentDraft; onChange: (updates: Partial<AgentDraft>) => void; errors?: Record<string, string>}) => (
+    default: ({
+        draft,
+        onChange,
+        errors = {},
+    }: {
+        draft: AgentDraft;
+        onChange: (updates: Partial<AgentDraft>) => void;
+        errors?: Record<string, string>;
+    }) => (
         <>
             <input
                 aria-label='Display Name'
@@ -64,6 +88,7 @@ jest.mock('./tabs/config_tab', () => ({
                 value={draft.username}
                 onChange={(e) => onChange({username: e.target.value})}
             />
+            {errors.username && <div>{errors.username}</div>}
             <input
                 aria-label='Max tool turns'
                 value={draft.maxToolTurns}
@@ -82,6 +107,20 @@ jest.mock('./tabs/config_tab', () => ({
                 checked={draft.mcpDynamicToolLoading}
                 onChange={(e) => onChange({mcpDynamicToolLoading: e.target.checked})}
             />
+            <select
+                aria-label='AI Service'
+                value={draft.serviceId}
+                onChange={(e) => onChange({serviceId: e.target.value})}
+            >
+                <option value='svc_1'>{'Mock Service'}</option>
+                <option value='svc_2'>{'Other Service'}</option>
+            </select>
+            <input
+                aria-label='Enable Tools'
+                type='checkbox'
+                checked={!draft.disableTools}
+                onChange={(e) => onChange({disableTools: !e.target.checked})}
+            />
             <button
                 type='button'
                 onClick={() => onChange({serviceId: 'svc_1'})}
@@ -92,19 +131,80 @@ jest.mock('./tabs/config_tab', () => ({
     ),
 }));
 
-jest.mock('./tabs/access_tab', () => ({
-    __esModule: true,
-    default: () => null,
-}));
+jest.mock('./tabs/access_tab', () => {
+    const {useState} = jest.requireActual('react');
+    const {Combobox} = jest.requireActual('@mattermost/compass-ui/components/combobox');
+    const ConfirmationDialog = jest.requireActual('@/components/confirmation_dialog').default;
+
+    const MockAccessTab = ({onChange}: {onChange: (updates: Partial<AgentDraft>) => void}) => {
+        const [showNestedDialog, setShowNestedDialog] = useState(false);
+        return (
+            <>
+                <input
+                    aria-label='Channel access'
+                    type='checkbox'
+                />
+                <button
+                    type='button'
+                    onClick={() => onChange({userAccessLevel: 0})}
+                >
+                    {'Switch user access to everyone'}
+                </button>
+                <Combobox
+                    aria-label='Agent admins'
+                    options={[{value: 'user_1', label: 'Admin User'}]}
+                />
+                <button
+                    type='button'
+                    onClick={() => setShowNestedDialog(true)}
+                >
+                    {'Open nested dialog'}
+                </button>
+                {showNestedDialog && (
+                    <ConfirmationDialog
+                        title='Remove access policy?'
+                        titleId='nested-dialog-title'
+                        message='Nested dialog'
+                        confirmButtonText='Remove'
+                        onConfirm={() => setShowNestedDialog(false)}
+                        onCancel={() => setShowNestedDialog(false)}
+                        managedAccessibility={true}
+                    />
+                )}
+            </>
+        );
+    };
+
+    return {
+        __esModule: true,
+        default: MockAccessTab,
+    };
+});
 
 jest.mock('./tabs/mcps_tab', () => ({
     __esModule: true,
     default: ({
+        useServiceAccountAuth,
+        onChange,
         onReconcileEnabledTools,
     }: {
+        useServiceAccountAuth: boolean;
+        serviceAccountFieldsLocked: boolean;
+        canEditServiceAccountAuth: boolean;
+        onChange: (updates: {useServiceAccountAuth?: boolean}) => void;
         onReconcileEnabledTools?: (cleaned: EnabledTool[]) => void;
     }) => (
         <>
+            <input
+                aria-label='Use service accounts'
+                type='checkbox'
+                checked={useServiceAccountAuth}
+                onChange={(e) => onChange({useServiceAccountAuth: e.target.checked})}
+            />
+            <input
+                aria-label='Automatically enable all MCP tools'
+                type='checkbox'
+            />
             <button
                 type='button'
                 onClick={() => onReconcileEnabledTools?.([])}
@@ -147,9 +247,15 @@ const savedAgent = {
     enabledMCPTools: [],
     autoEnableNewMCPTools: true,
     mcpDynamicToolLoading: true,
+    useServiceAccountAuth: false,
     reasoningEnabled: true,
     reasoningEffort: 'medium',
     thinkingBudget: 0,
+
+    // The server still returns the deprecated per-agent structured output flag;
+    // structured output is now a per-service policy. Keeping it on the fixture
+    // exercises the path where the response carries it and the UI must not
+    // adopt it or send it back.
     structuredOutputEnabled: false,
     maxToolTurns: 30,
 } satisfies UserAgent;
@@ -172,9 +278,12 @@ function renderView(onBack = jest.fn()) {
     };
 }
 
+const serviceAccountFieldsBanner = /Access and MCP tool grants require a system administrator/;
+
 describe('AgentConfigView', () => {
     beforeEach(() => {
         jest.clearAllMocks();
+        mockedUseCurrentUserHasSystemPermission.mockReturnValue(true);
     });
 
     test('confirms before dismissing unsaved changes from back button', async () => {
@@ -239,11 +348,11 @@ describe('AgentConfigView', () => {
                 {server_origin: 'embedded://mattermost', tool_name: 'deleted_tool'},
             ],
             autoEnableNewMCPTools: false,
+            useServiceAccountAuth: false,
             mcpDynamicToolLoading: true,
             reasoningEnabled: true,
             reasoningEffort: 'medium',
             thinkingBudget: 0,
-            structuredOutputEnabled: false,
             maxToolTurns: 30,
         };
 
@@ -264,7 +373,7 @@ describe('AgentConfigView', () => {
         // Open the MCP tab and trigger reconciliation. The mocked McpsTab exposes
         // a button that fires onReconcileEnabledTools with an empty list, which
         // mirrors what the real tab does when every saved tool is orphaned.
-        fireEvent.click(screen.getByRole('button', {name: 'MCPs'}));
+        fireEvent.click(screen.getByRole('tab', {name: 'MCPs'}));
         fireEvent.click(screen.getByRole('button', {name: /Reconcile/}));
 
         fireEvent.click(screen.getByRole('button', {name: 'Cancel'}));
@@ -297,11 +406,11 @@ describe('AgentConfigView', () => {
                         enabledNativeTools: ['web_search'],
                         enabledMCPTools: [],
                         autoEnableNewMCPTools: true,
+                        useServiceAccountAuth: false,
                         mcpDynamicToolLoading: true,
                         reasoningEnabled: true,
                         reasoningEffort: 'medium',
                         thinkingBudget: 0,
-                        structuredOutputEnabled: false,
                         maxToolTurns: 30,
                     }}
                     services={services}
@@ -341,10 +450,10 @@ describe('AgentConfigView', () => {
                         enabledNativeTools: ['web_search'],
                         enabledMCPTools: [],
                         autoEnableNewMCPTools: true,
+                        useServiceAccountAuth: false,
                         reasoningEnabled: true,
                         reasoningEffort: 'medium',
                         thinkingBudget: 0,
-                        structuredOutputEnabled: false,
                         maxToolTurns: 0,
                     }}
                     services={services}
@@ -358,6 +467,55 @@ describe('AgentConfigView', () => {
 
         expect(onBack).toHaveBeenCalledTimes(1);
         expect(screen.queryByRole('dialog', {name: 'Discard changes?'})).toBeNull();
+    });
+
+    test.each([
+        {
+            name: 'closing an open picker menu',
+            dismissChild: () => {
+                const input = screen.getByLabelText('Agent admins');
+                fireEvent.keyDown(input, {key: 'ArrowDown'});
+                expect(input.getAttribute('aria-expanded')).toBe('true');
+
+                fireEvent.keyDown(input, {key: 'Escape'});
+                expect(input.getAttribute('aria-expanded')).toBe('false');
+            },
+        },
+        {
+            name: 'cancelling a nested confirmation dialog',
+            dismissChild: () => {
+                fireEvent.click(screen.getByRole('button', {name: 'Open nested dialog'}));
+                expect(screen.getByRole('dialog', {name: 'Remove access policy?'})).not.toBeNull();
+
+                fireEvent.keyDown(document, {key: 'Escape'});
+                expect(screen.queryByRole('dialog', {name: 'Remove access policy?'})).toBeNull();
+            },
+        },
+    ])('Escape used for $name stays on the page; a plain Escape still goes back', ({dismissChild}) => {
+        const {onBack} = renderView();
+        fireEvent.click(screen.getByRole('tab', {name: 'Access'}));
+
+        dismissChild();
+
+        expect(onBack).not.toHaveBeenCalled();
+
+        fireEvent.keyDown(document, {key: 'Escape'});
+
+        expect(onBack).toHaveBeenCalledTimes(1);
+    });
+
+    test('disabling tools blocks the MCPs tab and leaves it if it was open', () => {
+        renderView();
+
+        fireEvent.click(screen.getByRole('tab', {name: 'MCPs'}));
+        expect(screen.getByLabelText('Use service accounts')).not.toBeNull();
+
+        fireEvent.click(screen.getByRole('tab', {name: 'Configuration'}));
+        fireEvent.click(screen.getByLabelText('Enable Tools'));
+        fireEvent.click(screen.getByRole('tab', {name: 'MCPs'}));
+
+        expect(screen.queryByLabelText('Use service accounts')).toBeNull();
+        expect(screen.getByRole('tab', {name: 'MCPs'}).getAttribute('title')).toBe('Enable Tools to configure MCP integrations');
     });
 
     test('serializes dynamic tool loading default true on create', async () => {
@@ -375,19 +533,80 @@ describe('AgentConfigView', () => {
         }));
     });
 
-    test('serializes explicit dynamic tool loading false on create', async () => {
-        mockCreateAgent.mockResolvedValue({...savedAgent, mcpDynamicToolLoading: false});
+    test.each([
+        {licensed: true, expected: ['web_search']},
+        {licensed: false, expected: []},
+    ])('defaults provider web search on create only where it is licensed (licensed=$licensed)', async ({licensed, expected}) => {
+        const {useIsLicensedFor} = jest.requireMock('@/license') as {useIsLicensedFor: jest.Mock};
+        useIsLicensedFor.mockImplementation((capability: string) => capability !== 'provider_web_search' || licensed);
+        mockCreateAgent.mockResolvedValue(savedAgent);
+        renderView();
+
+        fireEvent.change(screen.getByLabelText('Display Name'), {target: {value: 'My Agent'}});
+        fireEvent.change(screen.getByLabelText('Username'), {target: {value: 'myagent'}});
+        fireEvent.click(screen.getByRole('button', {name: 'Save'}));
+
+        await waitFor(() => expect(mockCreateAgent).toHaveBeenCalledTimes(1));
+        expect(mockCreateAgent).toHaveBeenCalledWith(expect.objectContaining({enabledNativeTools: expected}));
+        useIsLicensedFor.mockReturnValue(true);
+    });
+
+    test('serializes explicit MCP settings on create', async () => {
+        mockCreateAgent.mockResolvedValue({...savedAgent, mcpDynamicToolLoading: false, useServiceAccountAuth: true});
         renderView();
 
         fireEvent.change(screen.getByLabelText('Display Name'), {target: {value: 'My Agent'}});
         fireEvent.change(screen.getByLabelText('Username'), {target: {value: 'myagent'}});
         fireEvent.click(screen.getByLabelText('Dynamic tool loading'));
+        fireEvent.click(screen.getByRole('tab', {name: 'MCPs'}));
+        fireEvent.click(screen.getByLabelText('Use service accounts'));
         fireEvent.click(screen.getByRole('button', {name: 'Save'}));
 
         await waitFor(() => expect(mockCreateAgent).toHaveBeenCalledTimes(1));
         expect(mockCreateAgent).toHaveBeenCalledWith(expect.objectContaining({
             mcpDynamicToolLoading: false,
+            useServiceAccountAuth: true,
         }));
+    });
+
+    // Structured output moved to a per-service policy owned by administrators.
+    // Sending the deprecated per-agent flag would resurrect the old behaviour
+    // for every agent saved from this UI.
+    test('omits the deprecated structured output flag from the create payload', async () => {
+        mockCreateAgent.mockResolvedValue(savedAgent);
+        renderView();
+
+        fireEvent.change(screen.getByLabelText('Display Name'), {target: {value: 'My Agent'}});
+        fireEvent.change(screen.getByLabelText('Username'), {target: {value: 'myagent'}});
+        fireEvent.click(screen.getByText('Select service'));
+        fireEvent.click(screen.getByRole('button', {name: 'Save'}));
+
+        await waitFor(() => expect(mockCreateAgent).toHaveBeenCalledTimes(1));
+        const payload = mockCreateAgent.mock.calls[0][0] as Record<string, unknown>;
+        expect('structuredOutputEnabled' in payload).toBe(false);
+    });
+
+    test('omits the deprecated structured output flag from the update payload even when the agent response carries it', async () => {
+        mockUpdateAgent.mockResolvedValue(savedAgent);
+
+        render(
+            <IntlProvider locale='en'>
+                <AgentConfigView
+                    mode='edit'
+                    agent={savedAgent}
+                    services={services}
+                    onBack={jest.fn()}
+                    onSaved={jest.fn()}
+                />
+            </IntlProvider>,
+        );
+
+        fireEvent.change(screen.getByLabelText('Display Name'), {target: {value: 'Renamed Agent'}});
+        fireEvent.click(screen.getByRole('button', {name: 'Save'}));
+
+        await waitFor(() => expect(mockUpdateAgent).toHaveBeenCalledTimes(1));
+        const payload = mockUpdateAgent.mock.calls[0][1] as Record<string, unknown>;
+        expect('structuredOutputEnabled' in payload).toBe(false);
     });
 
     test('defaults missing edit response dynamic tool loading to true on update', async () => {
@@ -421,6 +640,122 @@ describe('AgentConfigView', () => {
         }));
     });
 
+    describe('renaming an agent', () => {
+        const renderEdit = (onSaved = jest.fn()) => {
+            render(
+                <IntlProvider locale='en'>
+                    <AgentConfigView
+                        mode='edit'
+                        agent={savedAgent}
+                        services={services}
+                        onBack={jest.fn()}
+                        onSaved={onSaved}
+                    />
+                </IntlProvider>,
+            );
+            return {onSaved};
+        };
+
+        test('asks for confirmation and saves the new username only after confirming', async () => {
+            mockUpdateAgent.mockResolvedValue({...savedAgent, name: 'renamed'});
+            const {onSaved} = renderEdit();
+
+            fireEvent.change(screen.getByLabelText('Username'), {target: {value: 'renamed'}});
+            fireEvent.click(screen.getByRole('button', {name: 'Save'}));
+
+            expect(screen.getByRole('dialog', {name: 'Change agent username?'})).not.toBeNull();
+            expect(mockUpdateAgent).not.toHaveBeenCalled();
+
+            fireEvent.click(screen.getByRole('button', {name: 'Change username'}));
+
+            await waitFor(() => expect(mockUpdateAgent).toHaveBeenCalledTimes(1));
+            expect(mockUpdateAgent).toHaveBeenCalledWith('agent_1', expect.objectContaining({username: 'renamed'}));
+            await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+        });
+
+        test('confirming twice while the dialog closes saves only once', async () => {
+            mockUpdateAgent.mockReturnValueOnce(new Promise(() => null));
+            renderEdit();
+
+            fireEvent.change(screen.getByLabelText('Username'), {target: {value: 'renamed'}});
+            fireEvent.click(screen.getByRole('button', {name: 'Save'}));
+            const confirm = screen.getByRole('button', {name: 'Change username'});
+            fireEvent.click(confirm);
+            fireEvent.click(confirm);
+
+            await waitFor(() => expect(mockUpdateAgent).toHaveBeenCalledTimes(1));
+            expect(mockUpdateAgent).toHaveBeenCalledTimes(1);
+        });
+
+        test('keeping the current username does not save', async () => {
+            renderEdit();
+
+            fireEvent.change(screen.getByLabelText('Username'), {target: {value: 'renamed'}});
+            fireEvent.click(screen.getByRole('button', {name: 'Save'}));
+            fireEvent.click(screen.getByRole('button', {name: 'Keep current username'}));
+
+            await waitForElementToBeRemoved(() => screen.queryByRole('dialog', {name: 'Change agent username?'}));
+            expect(mockUpdateAgent).not.toHaveBeenCalled();
+            expect((screen.getByLabelText('Username') as HTMLInputElement).value).toBe('renamed');
+        });
+
+        test('saves without confirmation when the username is unchanged', async () => {
+            mockUpdateAgent.mockResolvedValue(savedAgent);
+            renderEdit();
+
+            fireEvent.change(screen.getByLabelText('Display Name'), {target: {value: 'New Display Name'}});
+            fireEvent.click(screen.getByRole('button', {name: 'Save'}));
+
+            await waitFor(() => expect(mockUpdateAgent).toHaveBeenCalledTimes(1));
+            expect(screen.queryByRole('dialog', {name: 'Change agent username?'})).toBeNull();
+        });
+    });
+
+    test.each([
+        {serviceType: 'anthropic', expected: ''},
+        {serviceType: 'openai', expected: 'medium'},
+    ])('defaults reasoning effort for a new $serviceType agent to "$expected"', async ({serviceType, expected}) => {
+        mockCreateAgent.mockResolvedValue(savedAgent);
+        render(
+            <IntlProvider locale='en'>
+                <AgentConfigView
+                    mode='create'
+                    services={[{...services[0], type: serviceType}]}
+                    onBack={jest.fn()}
+                    onSaved={jest.fn()}
+                />
+            </IntlProvider>,
+        );
+
+        fireEvent.change(screen.getByLabelText('Display Name'), {target: {value: 'My Agent'}});
+        fireEvent.change(screen.getByLabelText('Username'), {target: {value: 'myagent'}});
+        fireEvent.click(screen.getByRole('button', {name: 'Save'}));
+
+        await waitFor(() => expect(mockCreateAgent).toHaveBeenCalledTimes(1));
+        expect(mockCreateAgent).toHaveBeenCalledWith(expect.objectContaining({reasoningEffort: expected}));
+    });
+
+    test('keeps an unset Anthropic effort at the model default when saving an existing agent', async () => {
+        mockUpdateAgent.mockResolvedValue(savedAgent);
+        render(
+            <IntlProvider locale='en'>
+                <AgentConfigView
+                    mode='edit'
+                    agent={{...savedAgent, reasoningEffort: ''}}
+                    services={[{...services[0], type: 'anthropic'}]}
+                    onBack={jest.fn()}
+                    onSaved={jest.fn()}
+                />
+            </IntlProvider>,
+        );
+
+        fireEvent.change(screen.getByLabelText('Display Name'), {target: {value: 'Renamed Agent'}});
+        fireEvent.click(screen.getByRole('button', {name: 'Save'}));
+
+        await waitFor(() => expect(mockUpdateAgent).toHaveBeenCalledTimes(1));
+        expect(mockUpdateAgent).toHaveBeenCalledWith('agent_1', expect.objectContaining({reasoningEffort: ''}));
+    });
+
     test('blocks saving when maxToolTurns exceeds the hard cap', () => {
         render(
             <IntlProvider locale='en'>
@@ -443,11 +778,11 @@ describe('AgentConfigView', () => {
                         enabledNativeTools: ['web_search'],
                         enabledMCPTools: [],
                         autoEnableNewMCPTools: true,
+                        useServiceAccountAuth: false,
                         mcpDynamicToolLoading: true,
                         reasoningEnabled: true,
                         reasoningEffort: 'medium',
                         thinkingBudget: 0,
-                        structuredOutputEnabled: false,
                         maxToolTurns: 30,
                     }}
                     services={services}
@@ -462,6 +797,85 @@ describe('AgentConfigView', () => {
 
         expect(screen.getByText('Max tool turns must be between 1 and 250')).not.toBeNull();
         expect(updateAgent).not.toHaveBeenCalled();
+    });
+
+    // --- Switching away from attribute-based access ---
+
+    const attributeBasedAgent: UserAgent = {
+        ...savedAgent,
+        id: 'agent_abac',
+        name: 'abacagent',
+        displayName: 'ABAC Agent',
+        userAccessLevel: 4,
+    };
+
+    function editViewElement(agent: UserAgent, onBack: jest.Mock, onSaved: jest.Mock) {
+        return (
+            <IntlProvider locale='en'>
+                <AgentConfigView
+                    mode='edit'
+                    agent={agent}
+                    services={services}
+                    onBack={onBack}
+                    onSaved={onSaved}
+                />
+            </IntlProvider>
+        );
+    }
+
+    function renderEditView(agent: UserAgent) {
+        const onSaved = jest.fn();
+        const onBack = jest.fn();
+        const result = render(editViewElement(agent, onBack, onSaved));
+        return {...result, onSaved, onBack};
+    }
+
+    function switchAwayAndSave() {
+        fireEvent.click(screen.getByRole('tab', {name: 'Access'}));
+        fireEvent.click(screen.getByRole('button', {name: 'Switch user access to everyone'}));
+        fireEvent.click(screen.getByRole('button', {name: 'Save'}));
+    }
+
+    test('switching away from attribute-based access saves and closes without a dialog', async () => {
+        mockUpdateAgent.mockResolvedValue({...attributeBasedAgent, userAccessLevel: 0});
+
+        const {onSaved} = renderEditView(attributeBasedAgent);
+        switchAwayAndSave();
+
+        await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+        expect(mockUpdateAgent).toHaveBeenCalledWith('agent_abac', expect.objectContaining({
+            userAccessLevel: 0,
+        }));
+        expect(screen.queryByRole('dialog', {name: 'Delete access policy?'})).toBeNull();
+    });
+
+    test('a failed switch-away update stays open, reports the failure, and can be retried safely', async () => {
+        mockUpdateAgent.
+            mockRejectedValueOnce(new Error('failed to delete access policy: policy storage unavailable')).
+            mockResolvedValueOnce({...attributeBasedAgent, userAccessLevel: 0});
+
+        const {onSaved} = renderEditView(attributeBasedAgent);
+        switchAwayAndSave();
+
+        expect(await screen.findByText('failed to delete access policy: policy storage unavailable')).not.toBeNull();
+        expect(onSaved).not.toHaveBeenCalled();
+        expect(mockUpdateAgent).toHaveBeenCalledTimes(1);
+        expect(screen.queryByRole('dialog', {name: 'Delete access policy?'})).toBeNull();
+
+        fireEvent.click(screen.getByRole('button', {name: 'Save'}));
+
+        await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+        expect(mockUpdateAgent).toHaveBeenCalledTimes(2);
+    });
+
+    test('privilege-only rerenders do not submit an update that could delete the policy', () => {
+        const result = renderEditView(attributeBasedAgent);
+
+        mockedUseCurrentUserHasSystemPermission.mockReturnValue(false);
+        result.rerender(editViewElement(attributeBasedAgent, result.onBack, result.onSaved));
+
+        expect(mockUpdateAgent).not.toHaveBeenCalled();
+        expect(result.onSaved).not.toHaveBeenCalled();
     });
 
     test.each([
@@ -485,6 +899,21 @@ describe('AgentConfigView', () => {
     });
 
     test.each([
+        ['username_held_by_deactivated_bot', 'This username belongs to a deactivated bot account. Permanently delete that bot account to make the username available.'],
+        ['username_taken', 'This username is already taken'],
+        ['', 'This username is already taken'],
+    ])('shows a translated message on the username field for conflict code %s', async (code, expected) => {
+        mockCreateAgent.mockRejectedValue(Object.assign(new Error('username "myagent" is already taken'), {status_code: 409, server_error_id: code}));
+        renderView();
+
+        fireEvent.change(screen.getByLabelText('Display Name'), {target: {value: 'My Agent'}});
+        fireEvent.change(screen.getByLabelText('Username'), {target: {value: 'myagent'}});
+        fireEvent.click(screen.getByRole('button', {name: 'Save'}));
+
+        expect(await screen.findByText(expected)).not.toBeNull();
+    });
+
+    test.each([
         ['ASCII characters', 'a'.repeat(MaxCustomInstructionsRunes + 1)],
         ['astral characters', '😀'.repeat(MaxCustomInstructionsRunes + 1)],
     ])('blocks saving when custom instructions exceed the character limit using %s', (_description, customInstructions) => {
@@ -501,14 +930,17 @@ describe('AgentConfigView', () => {
         expect(createAgent).not.toHaveBeenCalled();
     });
 
-    test('preserves explicit dynamic tool loading false on update', async () => {
-        mockUpdateAgent.mockResolvedValue({...savedAgent, mcpDynamicToolLoading: false});
+    // Update is a full-replace PUT: a payload that drops either flag would
+    // silently revert the saved MCP settings.
+    test('preserves explicit MCP settings on update', async () => {
+        mockUpdateAgent.mockResolvedValue({...savedAgent, mcpDynamicToolLoading: false, useServiceAccountAuth: true});
         const agent = {
             ...savedAgent,
             id: 'agent_dynamic_off',
             name: 'dynamicoff',
             displayName: 'Dynamic Off',
             mcpDynamicToolLoading: false,
+            useServiceAccountAuth: true,
         };
 
         render(
@@ -529,6 +961,47 @@ describe('AgentConfigView', () => {
         await waitFor(() => expect(mockUpdateAgent).toHaveBeenCalledTimes(1));
         expect(mockUpdateAgent).toHaveBeenCalledWith('agent_dynamic_off', expect.objectContaining({
             mcpDynamicToolLoading: false,
+            useServiceAccountAuth: true,
         }));
+    });
+
+    // Parent-level soft-lock: Save stays enabled, banner explains the policy, and
+    // turning SA off clears the lock. Per-control disabled state is covered by
+    // config_tab / access_tab / mcps_tab real-component tests.
+    test('shows service-account soft-lock banner and keeps Save enabled for non-admins', () => {
+        mockedUseCurrentUserHasSystemPermission.mockReturnValue(false);
+        const agent = {
+            ...savedAgent,
+            id: 'agent_sa',
+            name: 'saagent',
+            displayName: 'SA Agent',
+            useServiceAccountAuth: true,
+        };
+
+        render(
+            <IntlProvider locale='en'>
+                <AgentConfigView
+                    mode='edit'
+                    agent={agent}
+                    services={services}
+                    onBack={jest.fn()}
+                    onSaved={jest.fn()}
+                />
+            </IntlProvider>,
+        );
+
+        const saveButton = screen.getByRole('button', {name: 'Save'});
+        expect((saveButton as HTMLButtonElement).disabled).toBe(false);
+        expect(screen.getByText(serviceAccountFieldsBanner)).not.toBeNull();
+
+        fireEvent.change(screen.getByLabelText('Display Name'), {target: {value: 'SA Agent Updated'}});
+        expect((screen.getByRole('button', {name: 'Save'}) as HTMLButtonElement).disabled).toBe(false);
+
+        fireEvent.click(screen.getByRole('tab', {name: 'MCPs'}));
+        expect((screen.getByLabelText('Use service accounts') as HTMLInputElement).disabled).toBe(false);
+
+        fireEvent.click(screen.getByLabelText('Use service accounts'));
+        expect(screen.queryByText(serviceAccountFieldsBanner)).toBeNull();
+        expect((screen.getByRole('button', {name: 'Save'}) as HTMLButtonElement).disabled).toBe(false);
     });
 });

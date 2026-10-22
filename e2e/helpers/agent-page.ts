@@ -1,4 +1,5 @@
 import { Page, Locator, expect } from '@playwright/test';
+import { chooseCompassOption } from './compass-select';
 
 /**
  * AgentPageHelper — Page object for the agent listing page and config view.
@@ -33,12 +34,18 @@ export class AgentPageHelper {
         await this.page.waitForLoadState('domcontentloaded');
         // Neutral ready: shell (heading + tabs/search) and agents fetch finished — not only the create button
         // (e.g. users without manage permission might differ in future).
-        await this.page.getByRole('heading', { name: 'Agents' }).waitFor({ state: 'visible', timeout: 15000 });
+        await this.getListingHeading().waitFor({ state: 'visible', timeout: 15000 });
         await this.getSearchInput().waitFor({ state: 'visible', timeout: 15000 });
         await expect(this.page.getByText('Loading agents...')).not.toBeVisible({ timeout: 15000 });
     }
 
     // --- Listing Page Locators ---
+
+    /** Mattermost's global header also renders a screen-reader-only "Agents" h1 once the product loads. */
+    getListingHeading(): Locator {
+        return this.page.getByRole('heading', { name: 'Agents', exact: true })
+            .and(this.page.locator(':not(#global-header *)'));
+    }
 
     getCreateButton(): Locator {
         return this.page.getByText('Create agent');
@@ -110,7 +117,7 @@ export class AgentPageHelper {
     }
 
     getModalTab(tabName: 'Configuration' | 'Access' | 'MCPs'): Locator {
-        return this.page.getByRole('button', {name: tabName, exact: true});
+        return this.page.getByRole('tab', {name: tabName, exact: true});
     }
 
     getModalSaveButton(): Locator {
@@ -132,7 +139,7 @@ export class AgentPageHelper {
     }
 
     getAIServiceSelect(): Locator {
-        return this.getExactLabel('AI Service').locator('xpath=following-sibling::*[1]//select[1]');
+        return this.page.getByRole('combobox', {name: 'AI Service', exact: true});
     }
 
     getServiceSelect(): Locator {
@@ -141,14 +148,6 @@ export class AgentPageHelper {
 
     getCustomInstructionsInput(): Locator {
         return this.page.getByPlaceholder('How would you like the agent to respond?');
-    }
-
-    getBooleanFieldRadios(label: string): Locator {
-        return this.getLabeledSection(label).locator('input[type="radio"]');
-    }
-
-    async setBooleanField(label: string, value: boolean): Promise<void> {
-        await this.getBooleanFieldRadios(label).nth(value ? 0 : 1).click();
     }
 
     getNativeToolsSection(sectionTitle: 'Native Claude Tools' | 'Native OpenAI Tools'): Locator {
@@ -165,15 +164,11 @@ export class AgentPageHelper {
     }
 
     getReasoningEffortSelect(): Locator {
-        return this.getExactLabel('Reasoning Effort').locator('xpath=ancestor::div[1]//select[1]');
+        return this.page.getByRole('combobox', {name: 'Reasoning Effort', exact: true});
     }
 
-    getThinkingBudgetInput(): Locator {
-        return this.getExactLabel('Thinking Budget (tokens)').locator('xpath=following-sibling::input[1]');
-    }
-
-    getStructuredOutputNote(): Locator {
-        return this.page.getByText('Requests that ask for structured JSON output will skip extended thinking', {exact: false});
+    getThinkingEffortSelect(): Locator {
+        return this.page.getByRole('combobox', {name: 'Thinking Effort', exact: true});
     }
 
     getAdvancedConfigurationToggle(): Locator {
@@ -212,6 +207,14 @@ export class AgentPageHelper {
         return this.getDiscardChangesDialog().getByRole('button', { name: 'Keep editing' });
     }
 
+    getRenameDialog(): Locator {
+        return this.page.getByRole('dialog', { name: 'Change agent username?' });
+    }
+
+    getRenameConfirmButton(): Locator {
+        return this.getRenameDialog().getByRole('button', { name: 'Change username' });
+    }
+
     // --- MCPs Tab ---
 
     getMCPSearchInput(): Locator {
@@ -219,8 +222,7 @@ export class AgentPageHelper {
     }
 
     getToolToggles(): Locator {
-        // Tool toggles are custom button elements styled as switches
-        return this.page.locator('button[class*="Toggle"]');
+        return this.page.getByRole('switch');
     }
 
     // --- Convenience Methods ---
@@ -235,7 +237,7 @@ export class AgentPageHelper {
         await this.getDisplayNameInput().fill(opts.displayName);
         await this.getUsernameInput().fill(opts.username);
         if (opts.serviceLabel) {
-            await this.getServiceSelect().selectOption({ label: opts.serviceLabel });
+            await chooseCompassOption(this.getServiceSelect(), opts.serviceLabel);
         }
         if (opts.instructions) {
             await this.getCustomInstructionsInput().fill(opts.instructions);

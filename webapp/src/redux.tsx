@@ -6,6 +6,7 @@ import {GlobalState} from '@mattermost/types/store';
 
 import {makeCallsPostButtonClickedHandler} from './calls_button';
 import {getCustomPrompts as fetchCustomPromptsAPI, getCustomPromptPins} from './client';
+import {licenseAllows} from './license';
 import manifest from './manifest';
 import {CustomPrompt} from './types';
 
@@ -21,20 +22,21 @@ export async function setupRedux(registry: any, store: WebappStore) {
     const reducer = combineReducers({
         callsPostButtonClickedTranscription,
         bots,
-        botChannelId,
         selectedPostId,
-        searchEnabled,
         allowUnsafeLinks,
+        htmlArtifactsEnabled,
         customPrompts,
         pinnedPromptIds,
         showCustomPromptsModal,
     });
     registry.registerReducer(reducer);
 
-    store.dispatch({
-        type: CallsClickHandler as any,
-        handler: makeCallsPostButtonClickedHandler(store.dispatch),
-    });
+    if (licenseAllows(store.getState(), 'meetings')) {
+        store.dispatch({
+            type: CallsClickHandler as any,
+            handler: makeCallsPostButtonClickedHandler(store.dispatch, store.getState),
+        });
+    }
 
     // This is a workaround for a bug where the RHS was inaccessible to
     // users that where not system admins. This is unable to be fixed properly
@@ -74,15 +76,6 @@ function bots(state = null, action: any) {
     }
 }
 
-function searchEnabled(state = false, action: any) {
-    switch (action.type) {
-    case 'SET_SEARCH_ENABLED':
-        return action.searchEnabled;
-    default:
-        return state;
-    }
-}
-
 function allowUnsafeLinks(state = false, action: any) {
     switch (action.type) {
     case 'SET_ALLOW_UNSAFE_LINKS':
@@ -92,10 +85,10 @@ function allowUnsafeLinks(state = false, action: any) {
     }
 }
 
-function botChannelId(state = '', action: any) {
+function htmlArtifactsEnabled(state = false, action: any) {
     switch (action.type) {
-    case 'SET_AI_BOT_CHANNEL':
-        return action.botChannelId;
+    case 'SET_HTML_ARTIFACTS_ENABLED':
+        return action.htmlArtifactsEnabled;
     default:
         return state;
     }

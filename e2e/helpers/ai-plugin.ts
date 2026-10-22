@@ -12,7 +12,7 @@ export class AIPlugin {
   constructor(page: Page) {
     this.page = page;
     this.appBarIcon = page.locator('#app-bar-icon-mattermost-ai');
-    this.rhsPostTextarea = page.locator("#rhsContainer").locator('textarea');
+    this.rhsPostTextarea = page.locator('#rhsContainer').locator('textarea');
     this.rhsSendButton = page.locator('#rhsContainer').getByTestId('SendMessageButton');
     this.regenerateButton = page.getByRole('button', { name: 'Regenerate' });
     this.chatHistoryButton = page.getByTestId('chat-history');
@@ -64,7 +64,6 @@ export class AIPlugin {
       // Wait for the icon to be in a stable, clickable state
       // This helps with timing issues where the element is visible but not yet interactive
       await this.appBarIcon.waitFor({ state: 'visible', timeout: 5000 });
-      await this.page.waitForTimeout(500); // Small delay to ensure the icon is fully rendered
 
       // Retry click with error handling for obscured/not clickable elements
       let clicked = false;
@@ -82,8 +81,6 @@ export class AIPlugin {
             } catch (e) {
                throw error;
             }
-          } else {
-            await this.page.waitForTimeout(1000);
           }
         }
       }
@@ -95,8 +92,45 @@ export class AIPlugin {
   }
 
   async sendMessage(message: string) {
+    // Both the new-chat tab (AdvancedTextEditor, location RHS_COMMENT) and
+    // ThreadViewer (after analysis / summarize) use reply_textbox inside the
+    // plugin RHS. New-chat does not submit on Enter — click Send Now.
+    // ThreadViewer's split Send Now is often disabled; Enter submits replies.
+    const rhs = this.getRhsContainer();
+    const composer = rhs.getByTestId('reply_textbox');
+    if (await composer.isVisible().catch(() => false)) {
+      await expect(composer).toBeEnabled({ timeout: 30000 });
+      await composer.click();
+      await composer.fill(message);
+      const send = rhs.getByTestId('SendMessageButton');
+      const newChat = rhs.getByTestId('rhs-new-tab-create-post');
+      if (await newChat.isVisible().catch(() => false)) {
+        await expect(send).toBeEnabled({ timeout: 10000 });
+        await send.click();
+        return;
+      }
+      if (await send.isEnabled().catch(() => false)) {
+        await send.click();
+      } else {
+        await composer.press('Enter');
+      }
+      return;
+    }
+
     await this.rhsPostTextarea.fill(message);
     await this.rhsSendButton.click();
+  }
+
+  /** Wait until no in-progress generation remains in the plugin RHS. */
+  async waitForGeneratingToStop() {
+    await expect(this.getRhsContainer().getByTestId('stop-generating-button').filter({ visible: true })).toHaveCount(0, { timeout: 30000 });
+  }
+
+  /** Wait until ThreadViewer is not generating and the reply box accepts input. */
+  async waitForThreadComposerIdle() {
+    await this.waitForGeneratingToStop();
+    const threadReply = this.getRhsContainer().getByTestId('reply_textbox');
+    await expect(threadReply).toBeEnabled({ timeout: 30000 });
   }
 
   async regenerateResponse() {
@@ -130,13 +164,16 @@ export class AIPlugin {
     // Increased timeout to 30s for CI
     await expect(rhsContainer.getByText(expectedText).last()).toBeVisible({timeout: 30000});
 
-    // 2. CRITICAL: Wait for streaming to finish (Stop button to disappear)
-    // This ensures the UI is completely ready for the next interaction
-    const stopButton = this.page.getByRole('button', { name: /stop/i });
-    await expect(stopButton).not.toBeVisible({ timeout: 30000 });
+    // 2. Wait for streaming to finish. There can be more than one stop
+    // control (one per generating post); require all of them to be gone.
+    await this.waitForGeneratingToStop();
 
-    // 3. Ensure Send button is visible (it may be disabled if textarea is empty, but it should be present)
-    // The button being present means the UI has switched back from "generating" mode
+    // 3. ThreadViewer uses reply_textbox; new-chat uses the plugin composer.
+    const threadReply = this.getRhsContainer().getByTestId('reply_textbox');
+    if (await threadReply.isVisible().catch(() => false)) {
+      await expect(threadReply).toBeEnabled({ timeout: 30000 });
+      return;
+    }
     await expect(this.rhsSendButton).toBeVisible({ timeout: 30000 });
   }
 
@@ -178,7 +215,7 @@ export class AIPlugin {
     const isVisible = await closeButton.isVisible().catch(() => false);
     if (isVisible) {
       await closeButton.click();
-      await this.page.waitForTimeout(500);
+      await expect(closeButton).toBeHidden({ timeout: 10000 });
     }
   }
 
@@ -208,10 +245,9 @@ export class AIPlugin {
   async triggerEmbeddingSearch(query: string) {
     // Open the search bar
     await this.page.getByRole('button', { name: 'Search' }).click();
-    // Wait for search options to appear
-    await this.page.waitForTimeout(500);
-    // Select the Agents search type
+    // Select the Agents search type once the search options have appeared
     const agentsRadio = this.page.getByRole('radio', { name: /Agents/i });
+    await expect(agentsRadio).toBeVisible({ timeout: 10000 });
     await agentsRadio.click();
     // Enter search query and execute
     await this.page.getByRole('searchbox', { name: 'Search' }).fill(query);
@@ -224,7 +260,6 @@ export class AIPlugin {
   async expectAgentsSearchVisible() {
     // Open the search bar
     await this.page.getByRole('button', { name: 'Search' }).click();
-    await this.page.waitForTimeout(500);
     // Verify Agents radio option is visible
     const agentsRadio = this.page.getByRole('radio', { name: /Agents/i });
     await expect(agentsRadio).toBeVisible({ timeout: 10000 });
@@ -232,6 +267,10 @@ export class AIPlugin {
 
   async openChannelAnalysisPopover() {
     const popover = this.page.locator('.channel-summarize-popover');
+
+    // A popover that was just submitted stays visible while it fades out (it drops the
+    // `in` class first); treating it as open would act on a popover about to unmount.
+    await expect(this.page.locator('.channel-summarize-popover:not(.in)')).toHaveCount(0, { timeout: 10000 });
     if (await popover.isVisible().catch(() => false)) {
       return;
     }

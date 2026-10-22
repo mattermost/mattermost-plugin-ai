@@ -31,7 +31,7 @@ type channelAnalysisMCPProvider struct {
 	tools []llm.Tool
 }
 
-func (p *channelAnalysisMCPProvider) GetToolsForUser(context.Context, string) ([]llm.Tool, *mcp.Errors) {
+func (p *channelAnalysisMCPProvider) GetToolsWithSelection(context.Context, mcp.CatalogRequest, mcp.ToolSelection) ([]llm.Tool, *mcp.Errors) {
 	return p.tools, nil
 }
 
@@ -147,7 +147,7 @@ func setupChannelAnalysisAPI(t *testing.T, dynamicLoading bool) (*TestEnvironmen
 		&model.Bot{UserId: testBotUserID, Username: "matty", DisplayName: "Matty"},
 		fakeLLM,
 	)
-	e.bots.SetBotsForTesting([]*bots.Bot{bot})
+	e.setBots(bot)
 
 	channel := &model.Channel{Id: testChannelID, Type: model.ChannelTypeOpen, TeamId: "teamid", DisplayName: "Test Channel"}
 	e.mockAPI.On("GetChannel", testChannelID).Return(channel, nil)

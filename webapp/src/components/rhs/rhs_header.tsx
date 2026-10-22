@@ -1,10 +1,13 @@
 // Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import {ChevronDownIcon} from '@mattermost/compass-icons/components';
+import {ChevronDownIcon, ClockOutlineIcon, PencilOutlineIcon} from '@mattermost/compass-icons/components';
 import React from 'react';
 import styled from 'styled-components';
 import {FormattedMessage} from 'react-intl';
+
+import {Button} from '@mattermost/compass-ui/components/button';
+import {Icon} from '@mattermost/compass-ui/components/icon';
 
 import {DotMenuButton} from '../dot_menu';
 
@@ -12,7 +15,6 @@ import {BotDropdown} from '../bot_selector';
 
 import {LLMBot} from '@/bots';
 
-import {Button} from './common';
 import ContextUsageIndicator from './context_usage_indicator';
 import ToolProviderPopover, {UserMCPServerInfo} from './tool_provider_popover';
 
@@ -33,23 +35,28 @@ const RHSHeader = (props: Props) => {
     let historyButton = null;
     if (props.currentTab === 'threads') {
         historyButton = (
-            <ButtonDisabled>
-                <i className='icon-clock-outline'/>
+            <CurrentViewTitle>
+                <Icon
+                    size='16'
+                    glyph={<ClockOutlineIcon/>}
+                />
                 <FormattedMessage defaultMessage='Chat history'/>
-            </ButtonDisabled>
+            </CurrentViewTitle>
         );
     } else {
         historyButton = (
-            <HistoryButton
+            <Button
+                emphasis='quaternary'
+                size='x-small'
+                leadingIcon={<Icon glyph={<ClockOutlineIcon/>}/>}
                 data-testid='chat-history'
                 onClick={() => {
                     props.setCurrentTab('threads');
                     props.selectPost('');
                 }}
             >
-                <i className='icon-clock-outline'/>
                 <FormattedMessage defaultMessage='View chat history'/>
-            </HistoryButton>
+            </Button>
         );
     }
     const currentBotName = props.activeBot?.displayName ?? '';
@@ -65,13 +72,16 @@ const RHSHeader = (props: Props) => {
                 )}
                 {props.currentTab === 'new' ? (
                     <>
-                        <ToolProviderPopover
-                            disabledServers={props.disabledServers}
-                            onDisabledServersChange={props.onDisabledServersChange}
-                            preloadedServers={props.preloadedServers}
-                            enabledMCPTools={props.activeBot?.enabledMCPTools}
-                            autoEnableNewMCPTools={props.activeBot?.autoEnableNewMCPTools}
-                        />
+                        {/* SA agents have no per-user connections or preferences to manage. */}
+                        {props.activeBot?.useServiceAccountAuth !== true && (
+                            <ToolProviderPopover
+                                disabledServers={props.disabledServers}
+                                onDisabledServersChange={props.onDisabledServersChange}
+                                preloadedServers={props.preloadedServers}
+                                enabledMCPTools={props.activeBot?.enabledMCPTools}
+                                autoEnableNewMCPTools={props.activeBot?.autoEnableNewMCPTools}
+                            />
+                        )}
                         {props.bots && (
                             <BotDropdown
                                 bots={props.bots}
@@ -88,7 +98,10 @@ const RHSHeader = (props: Props) => {
                         )}
                     </>
                 ) : (
-                    <NewChatButton
+                    <Button
+                        emphasis='tertiary'
+                        size='x-small'
+                        leadingIcon={<Icon glyph={<PencilOutlineIcon/>}/>}
                         data-testid='new-chat'
                         className='new-button'
                         onClick={() => {
@@ -96,42 +109,23 @@ const RHSHeader = (props: Props) => {
                             props.selectPost('');
                         }}
                     >
-                        <i className='icon icon-pencil-outline'/>
                         <FormattedMessage defaultMessage='New chat'/>
-                    </NewChatButton>
+                    </Button>
                 )}
             </RightControls>
         </Header>
     );
 };
 
-const HistoryButton = styled(Button)`
-    height: 28px;
-    padding: 8px;
-    color: rgba(var(--center-channel-color-rgb), 0.64);
-`;
-
-const ButtonDisabled = styled(Button)`
-    height: 28px;
-    padding: 8px;
-	&:hover {
-		background: transparent;
-		color: rgb(var(--center-channel-color));
-		cursor: unset;
-	}
-`;
-
-const NewChatButton = styled(Button)`
-    padding: 6px 12px;
-	color: rgb(var(--link-color-rgb));
-	&:hover {
-		color: rgb(var(--link-color-rgb));
-        background-color: rgba(var(--button-bg-rgb), 0.08);
-	}
-
-	&:active {
-		background-color: rgba(var(--button-bg-rgb), 0.12);
-	}
+const CurrentViewTitle = styled.div`
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 8px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+    color: var(--center-channel-color);
 `;
 
 const Header = styled.div`
@@ -152,7 +146,7 @@ const RightControls = styled.div`
     margin-left: auto;
 `;
 
-const SelectorDropdown = styled(DotMenuButton)<{isActive: boolean}>`
+const SelectorDropdown = styled(DotMenuButton)<{$isActive: boolean}>`
 	display: flex;
 	align-items: center;
 	padding: 2px 4px 2px 6px;
@@ -165,12 +159,12 @@ const SelectorDropdown = styled(DotMenuButton)<{isActive: boolean}>`
 	font-weight: 600;
 	line-height: 16px;
 
-    color: ${(props) => (props.isActive ? 'var(--button-bg)' : 'var(--center-channel-color-rgb)')};
-    background-color: ${(props) => (props.isActive ? 'rgba(var(--button-bg-rgb), 0.16)' : 'rgba(var(--center-channel-color-rgb), 0.08)')};
+    color: ${(props) => (props.$isActive ? 'var(--button-bg)' : 'var(--center-channel-color-rgb)')};
+    background-color: ${(props) => (props.$isActive ? 'rgba(var(--button-bg-rgb), 0.16)' : 'rgba(var(--center-channel-color-rgb), 0.08)')};
 
     &:hover {
-        color: ${(props) => (props.isActive ? 'var(--button-bg)' : 'var(--center-channel-color-rgb)')};
-        background-color: ${(props) => (props.isActive ? 'rgba(var(--button-bg-rgb), 0.16)' : 'rgba(var(--center-channel-color-rgb), 0.16)')};
+        color: ${(props) => (props.$isActive ? 'var(--button-bg)' : 'var(--center-channel-color-rgb)')};
+        background-color: ${(props) => (props.$isActive ? 'rgba(var(--button-bg-rgb), 0.16)' : 'rgba(var(--center-channel-color-rgb), 0.16)')};
     }
 
     svg {

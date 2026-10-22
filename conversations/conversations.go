@@ -6,6 +6,7 @@ package conversations
 import (
 	stdcontext "context"
 	"fmt"
+	"sync"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/bots"
 	"github.com/mattermost/mattermost-plugin-agents/v2/conversation"
@@ -14,6 +15,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llmcontext"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mcp"
+	"github.com/mattermost/mattermost-plugin-agents/v2/mcpserver/auth"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmapi"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmtools"
 	"github.com/mattermost/mattermost-plugin-agents/v2/prompts"
@@ -22,6 +24,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/telemetry"
 	"github.com/mattermost/mattermost-plugin-agents/v2/toolrunner"
 	"github.com/mattermost/mattermost/server/public/model"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const ThreadIDProp = "referenced_thread"
@@ -113,8 +116,20 @@ type DMConversationResult struct {
 
 // CreateOrGetDMConversation creates or retrieves a conversation for a DM.
 // This is separated from ProcessDMRequest so the conversation_id can be
-// set on the response post before it is created.
+// set on the response post before it is created. Callers without a session
+// fail closed on attachments.
 func (c *Conversations) CreateOrGetDMConversation(
+	botID string,
+	postingUser *model.User,
+	channel *model.Channel,
+	post *model.Post,
+	llmCtx *llm.Context,
+) (*DMConversationResult, error) {
+	return c.createOrGetDMConversation("", botID, postingUser, channel, post, llmCtx)
+}
+
+func (c *Conversations) createOrGetDMConversation(
+	sessionID string,
 	botID string,
 	postingUser *model.User,
 	channel *model.Channel,
@@ -149,6 +164,7 @@ func (c *Conversations) CreateOrGetDMConversation(
 		channelID := channel.Id
 		result, err := c.convService.CreateConversation(conversation.CreateConversationParams{
 			UserID:       postingUser.Id,
+			SessionID:    sessionID,
 			BotID:        botID,
 			ChannelID:    &channelID,
 			RootPostID:   &postID,
@@ -166,6 +182,7 @@ func (c *Conversations) CreateOrGetDMConversation(
 
 	result, err := c.convService.GetOrCreateConversation(conversation.GetOrCreateParams{
 		UserID:       postingUser.Id,
+		SessionID:    sessionID,
 		BotID:        botID,
 		ChannelID:    channel.Id,
 		RootPostID:   post.RootId,
@@ -184,6 +201,10 @@ func (c *Conversations) CreateOrGetDMConversation(
 // DMStreamResult is the return value of ProcessDMRequest.
 type DMStreamResult struct {
 	Stream *llm.TextStreamResult
+	// release ends the request's span, stops forwarding Stream and cancels
+	// the tool loop. Call it once the consumer stops reading, including when
+	// it never starts.
+	release func()
 }
 
 // ProcessDMRequest builds a completion request from the conversation and
@@ -211,8 +232,22 @@ func (c *Conversations) processDMRequest(
 	maxToolTurns int,
 	beforeProvider func(),
 ) (*DMStreamResult, error) {
-	ctx, span := telemetry.Tracer().Start(ctx, "process dm request")
-	defer span.End()
+	ctx, span := telemetry.Tracer().Start(ctx, "process dm request",
+		trace.WithAttributes(telemetry.ConversationID.String(convID)),
+	)
+	// The tool loop keeps running after this returns; on success the span
+	// ends when the returned stream closes so it covers that work.
+	// The tool loop gets its own cancel so a reply that stops reading (a
+	// stopped stream) also stops the loop and its in-flight LLM call,
+	// instead of leaving it blocked on a send nobody will receive.
+	loopCtx, cancelLoop := stdcontext.WithCancel(ctx)
+	spanHandedOff := false
+	defer func() {
+		if !spanHandedOff {
+			cancelLoop()
+			span.End()
+		}
+	}()
 
 	if c.convService == nil {
 		return nil, fmt.Errorf("conversation service not configured")
@@ -225,20 +260,23 @@ func (c *Conversations) processDMRequest(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get conversation: %w", err)
 	}
-	completionReq, err := c.convService.BuildCompletionRequest(conv, llmCtx)
+	completionReq, err := c.convService.BuildCompletionRequest(
+		conv,
+		llmCtx,
+		conversation.BuildOptions{SessionID: auth.SessionIDFromContext(ctx)},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build completion request: %w", err)
 	}
 
-	runner := toolrunner.New(lm, toolrunner.WithMaxRounds(maxToolTurns))
 	if beforeProvider != nil {
 		beforeProvider()
 	}
-	runResult, err := runner.Run(ctx, *completionReq, c.shouldAutoExecuteTool(llmCtx, true), func(turns []toolrunner.ToolTurn) {
-		if writeErr := c.convService.WriteToolTurns(convID, turns, true); writeErr != nil {
-			c.mmClient.LogError("Failed to write tool turns", "error", writeErr, "conversation_id", convID)
-		}
-	})
+	runResult, err := c.runToolLoop(loopCtx, lm, maxToolTurns, *completionReq,
+		c.shouldAutoExecuteTool(llmCtx, true),
+		convID,
+		func([]toolrunner.ToolTurn) bool { return true },
+		nil, "Failed to write tool turns", "conversation_id", convID)
 	if err != nil {
 		return nil, fmt.Errorf("tool runner failed: %w", err)
 	}
@@ -248,7 +286,107 @@ func (c *Conversations) processDMRequest(
 		stream = mmtools.DecorateStreamWithAnnotations(stream, webSearchData, nil)
 	}
 
-	return &DMStreamResult{Stream: stream}, nil
+	spanHandedOff = true
+	wrapped, releaseSpan := endSpanOnStreamClose(stream, span)
+	release := func() {
+		releaseSpan()
+		cancelLoop()
+	}
+	return &DMStreamResult{Stream: wrapped, release: release}, nil
+}
+
+// endSpanOnStreamClose forwards every event of stream and ends span when the
+// stream ends (an end or error event, or the channel closing), so a span
+// around lazily-produced work lasts as long as it. The span ends before the
+// terminal event is forwarded: consumers stop reading at that event, and
+// must not observe the span still open afterwards.
+//
+// The returned release ends the span at once and stops forwarding; the rest
+// of upstream is drained so earlier stages can finish. A consumer that stops
+// reading early (a canceled reply) or never starts must call it, or the span
+// stays open while the tool loop runs on.
+func endSpanOnStreamClose(stream *llm.TextStreamResult, span trace.Span) (*llm.TextStreamResult, func()) {
+	out := make(chan llm.TextStreamEvent)
+	done := make(chan struct{})
+	var once sync.Once
+	// release ends the span itself: the forwarder may be blocked reading
+	// upstream (mid tool call) and not notice done until the next event.
+	release := func() {
+		once.Do(func() {
+			close(done)
+			span.End()
+		})
+	}
+	go func() {
+		defer close(out)
+		defer span.End() // idempotent; covers a close without a terminal event
+		// After release, keep reading upstream and drop the events instead of
+		// returning: an upstream stage such as the citation decorator sends
+		// with a plain blocking send and would hang forever if nobody read.
+		// Release also cancels the tool loop, so upstream closes soon after.
+		released := false
+		for event := range stream.Stream {
+			if !released {
+				select {
+				case <-done:
+					released = true
+				default:
+				}
+			}
+			if released {
+				continue
+			}
+			if event.Type == llm.EventTypeEnd || event.Type == llm.EventTypeError {
+				span.End()
+			}
+			select {
+			case out <- event:
+			case <-done:
+				released = true
+			}
+		}
+	}()
+	return &llm.TextStreamResult{Stream: out}, release
+}
+
+// runToolLoop runs the ToolRunner over req, persisting each intermediate tool
+// round to the conversation as it completes. sharedForTurns decides the shared
+// flag written with each round; writeFailMsg (plus writeFailArgs) is logged
+// when persisting a round fails.
+func (c *Conversations) runToolLoop(
+	ctx stdcontext.Context,
+	lm llm.LanguageModel,
+	maxRounds int,
+	req llm.CompletionRequest,
+	shouldExecute func(llm.ToolCall) bool,
+	convID string,
+	sharedForTurns func([]toolrunner.ToolTurn) bool,
+	opts []llm.LanguageModelOption,
+	writeFailMsg string,
+	writeFailArgs ...any,
+) (*toolrunner.ToolRunResult, error) {
+	opts = c.withProviderWebSearchLicense(opts)
+	runner := toolrunner.New(lm, toolrunner.WithMaxRounds(maxRounds), toolrunner.WithToolErrorResult(llmcontext.MCPToolErrorResult))
+	return runner.Run(ctx, req, shouldExecute, func(turns []toolrunner.ToolTurn) {
+		if writeErr := c.convService.WriteToolTurns(convID, turns, sharedForTurns(turns)); writeErr != nil {
+			c.mmClient.LogError(writeFailMsg, append([]any{"error", writeErr}, writeFailArgs...)...)
+		}
+	}, opts...)
+}
+
+// withProviderWebSearchLicense omits the provider-native web search tool below
+// Professional so the request is sent without it. A nil checker fails closed.
+func (c *Conversations) withProviderWebSearchLicense(opts []llm.LanguageModelOption) []llm.LanguageModelOption {
+	if c.licenseChecker.Allows(enterprise.CapProviderWebSearch) {
+		return opts
+	}
+	return append([]llm.LanguageModelOption{llm.WithSkipNativeWebSearch()}, opts...)
+}
+
+// channelMentionToolCallingEnabled reports whether the admin config allows
+// tool calling for channel mentions.
+func (c *Conversations) channelMentionToolCallingEnabled() bool {
+	return c.configProvider != nil && c.configProvider.EnableChannelMentionToolCalling()
 }
 
 // shouldAutoExecuteTool returns a callback that decides whether a tool call

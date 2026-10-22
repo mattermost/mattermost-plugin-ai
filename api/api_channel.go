@@ -61,15 +61,8 @@ func (a *API) channelAuthorizationRequired(c *gin.Context) {
 	userID := c.GetHeader("Mattermost-User-Id")
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 	bot := c.MustGet(ContextBotKey).(*bots.Bot)
-	if err := a.bots.CheckUsageRestrictions(userID, bot, channel); err != nil {
+	if err := a.bots.CheckUsageRestrictions(c.Request.Context(), userID, bot, channel); err != nil {
 		c.AbortWithError(http.StatusForbidden, err)
-		return
-	}
-}
-
-func (a *API) channelAnalysisLicenseRequired(c *gin.Context) {
-	if !a.licenseChecker.IsBasicsLicensed() {
-		c.AbortWithError(http.StatusForbidden, errors.New("feature not licensed"))
 		return
 	}
 }
@@ -108,16 +101,26 @@ func (a *API) handleChannelAnalysis(c *gin.Context) {
 
 	opts := []llm.ContextOption{
 		a.contextBuilder.WithLLMContextPreloadedMCPTools(channelAnalysisRequiredMCPTools),
-		a.contextBuilder.WithLLMContextDefaultTools(c.Request.Context(), toolBot),
+		a.contextBuilder.WithLLMContextTools(c.Request.Context(), toolBot),
 	}
 
-	// If the channel is a DM/GM and we have a team ID from the client, use it for context
+	// If the channel is a DM/GM and we have a team ID from the client, use it for
+	// context, but only when the requesting user is a member of that team.
 	if (channel.Type == model.ChannelTypeDirect || channel.Type == model.ChannelTypeGroup) && data.TeamID != "" {
-		team, teamErr := a.pluginAPI.Team.Get(data.TeamID)
-		if teamErr == nil && team != nil {
-			opts = append(opts, func(c *llm.Context) {
-				c.Team = team
-			})
+		isMember, memberErr := bots.TeamMemberActive(a.pluginAPI, data.TeamID, userID)
+		if memberErr != nil {
+			a.pluginAPI.Log.Warn("Unable to confirm team membership for channel analysis context",
+				"userID", userID,
+				"teamID", data.TeamID,
+				"error", memberErr.Error())
+		}
+		if isMember {
+			team, teamErr := a.pluginAPI.Team.Get(data.TeamID)
+			if teamErr == nil && team != nil {
+				opts = append(opts, func(c *llm.Context) {
+					c.Team = team
+				})
+			}
 		}
 	}
 
@@ -161,7 +164,7 @@ func (a *API) handleChannelAnalysis(c *gin.Context) {
 	}
 
 	// Create analysis post with conversation ID for streaming turn persistence
-	analysisPost := a.makeAnalysisPost(user.Locale, "", data.AnalysisType, result.ConversationID)
+	analysisPost := makeAnalysisPost("", data.AnalysisType, result.ConversationID)
 
 	if err := a.streamingService.StreamToNewDM(telemetry.DetachContext(c.Request.Context()), bot.GetMMBot().UserId, result.Stream, user.Id, analysisPost, ""); err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
@@ -192,7 +195,7 @@ func channelAnalysisToolBot(bot *bots.Bot) *bots.Bot {
 	// so load the MCP catalog even when the agent uses a narrower allowlist.
 	cfg.AutoEnableNewMCPTools = true
 	cfg.EnabledMCPTools = nil
-	return bots.NewBot(cfg, bot.GetService(), bot.GetMMBot(), bot.LLM())
+	return bot.WithConfig(cfg)
 }
 
 func channelAnalysisToolAvailability(store *llm.ToolStore) ([]string, []string) {

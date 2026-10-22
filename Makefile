@@ -31,11 +31,12 @@ default: all
 # Verify environment, and define PLUGIN_ID, PLUGIN_VERSION, HAS_SERVER and HAS_WEBAPP as needed.
 include build/setup.mk
 
-# The public/ directory contains the bridgeclient Go module for external consumption,
-# not HTTP assets. Override HAS_PUBLIC to prevent bundling these files.
+# The public/ directory contains the bridgeclient Go package (part of the root
+# module) for external consumption, not HTTP assets. Override HAS_PUBLIC to
+# prevent bundling these files.
 # TODO: Move bridgeclient to a top-level client/ directory for a cleaner import path.
 HAS_PUBLIC :=
-$(info Note: public/ directory contains Go modules, not HTTP assets - skipping bundle)
+$(info Note: public/ directory contains Go packages, not HTTP assets - skipping bundle)
 
 BUNDLE_NAME ?= $(PLUGIN_ID)-$(PLUGIN_VERSION).tar.gz
 BUNDLE_DIR ?= dist
@@ -265,11 +266,16 @@ apply:
 # Pinned tool versions. Bump these here, not at the install site — keeping the
 # pins in one place lets contributors update a tool with a single edit and
 # makes Go-version-skew fixes obvious.
-GOLANGCI_LINT_VERSION    ?= v2.0.2
+GOLANGCI_LINT_VERSION    ?= v2.15.0
 GOTESTSUM_VERSION        ?= v1.7.0
-MATTERMOST_GOVET_VERSION ?= 3f08281c344327ac09364f196b15f9a81c7eff08
+MATTERMOST_GOVET_VERSION ?= 2fbfca354651528bffd39e63d7c5a2b32e6adf3e
+
+# `go install pkg@version` ignores our go.mod, so pin the toolchain explicitly;
+# golangci-lint refuses to lint code targeting a newer Go than it was built with.
+GO_TOOLS_TOOLCHAIN := go$(shell GOWORK=off $(GO) list -m -f '{{.GoVersion}}')
 
 ## Install go tools.
+install-go-tools: export GOTOOLCHAIN = $(GO_TOOLS_TOOLCHAIN)
 install-go-tools:
 	@echo Installing go tools
 	$(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
@@ -291,6 +297,10 @@ check-style: manifest-check apply webapp/node_modules install-go-tools
 ifneq ($(HAS_WEBAPP),)
 	cd webapp && npm run lint
 	cd webapp && npm run check-types
+# Drift tripwire for the window.Components editor contract: always checks the
+# mirrors against the committed host snapshot; additionally probes a live
+# mattermost webapp checkout (and the snapshot's freshness) when one is found.
+	cd webapp && npm run check-editor-contract
 endif
 
 # It's highly recommended to run go-vet first
@@ -300,7 +310,8 @@ ifneq ($(HAS_SERVER),)
 	@echo Running golangci-lint
 	$(GO) vet ./...
 	$(GOBIN)/golangci-lint run ./...
-	$(GO) vet -vettool=$(GOBIN)/mattermost-govet -license -license.year=2023 ./...
+	# npm dependencies can contain Go packages; do not lint third-party sources.
+	$(GO) vet -vettool=$(GOBIN)/mattermost-govet -license -license.year=2023 $$($(GO) list ./... | awk '!/\/node_modules\//')
 	$(MAKE) loadtest-controller-lint
 endif
 
@@ -430,6 +441,13 @@ evalviewer:
 	@echo Building evalviewer...
 	$(GO) build $(GO_BUILD_FLAGS) -C cmd/evalviewer -o ../../bin/evalviewer .
 
+# Packages with evals. Eval test names end in "Eval" so -run skips unit tests;
+# mcpserver evals boot Mattermost containers and need Docker.
+EVAL_PACKAGES = ./conversations ./threads ./channels ./react ./mcpserver
+# EVAL_TEST_PARALLEL limits how many packages run at once, for providers with
+# low rate limits.
+EVAL_TEST_FLAGS = -run 'Eval$$' -timeout 30m $(if $(EVAL_TEST_PARALLEL),-p $(EVAL_TEST_PARALLEL))
+
 ## Runs evaluations interactively with TUI for packages with evals.
 ## Environment variables:
 ##   LLM_PROVIDER: openai, anthropic, azure, all, or comma-separated (default: all)
@@ -440,24 +458,18 @@ evalviewer:
 ##   AZURE_OPENAI_API_KEY: Azure OpenAI API key
 ##   AZURE_OPENAI_ENDPOINT: Azure OpenAI endpoint URL
 ##   AZURE_OPENAI_MODEL: Model to use for Azure OpenAI (overrides code default)
+##   GOEVALS: Runs per eval; repeated runs are combined by majority vote (default: 1)
 .PHONY: evals
 evals: evalviewer
 	@echo Running evaluations interactively...
-	./bin/evalviewer run -v ./conversations ./threads ./channels ./react
+	./bin/evalviewer run -v $(EVAL_TEST_FLAGS) $(EVAL_PACKAGES)
 
 ## Runs evaluations in CI mode (non-interactive) for packages with evals.
 ## Uses the same environment variables as the evals target.
 .PHONY: evals-ci
 evals-ci: evalviewer
 	@echo Running evaluations in CI mode...
-	./bin/evalviewer check -v ./conversations ./threads ./channels ./react
-
-## Runs evaluations and generates GitHub comment (always succeeds).
-## Uses the same environment variables as the evals target.
-.PHONY: evals-comment
-evals-comment: evalviewer
-	@echo Running evaluations and generating GitHub comment...
-	./bin/evalviewer comment -v ./conversations ./threads ./channels ./react
+	./bin/evalviewer check -v $(EVAL_TEST_FLAGS) $(EVAL_PACKAGES)
 
 ## Runs MCP server evaluations testing tool output quality and agentic flows.
 ## Requires: OPENAI_API_KEY (or other provider keys), Docker for testcontainers.
@@ -465,7 +477,7 @@ evals-comment: evalviewer
 .PHONY: mcp-evals
 mcp-evals:
 	@echo Running MCP server evaluations...
-	GOEVALS=1 $(GO) test -v ./mcpserver/ -run "Eval" -timeout 10m
+	GOEVALS=1 $(GO) test -v ./mcpserver/ $(EVAL_TEST_FLAGS)
 
 ## Builds and installs the plugin to a server, updating the webapp automatically when changed.
 .PHONY: watch

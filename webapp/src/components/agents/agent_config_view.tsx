@@ -6,6 +6,11 @@ import styled from 'styled-components';
 import {FormattedMessage, useIntl} from 'react-intl';
 import {ArrowLeftIcon} from '@mattermost/compass-icons/components';
 
+import {Button} from '@mattermost/compass-ui/components/button';
+import {Icon} from '@mattermost/compass-ui/components/icon';
+import {IconButton} from '@mattermost/compass-ui/components/icon-button';
+import {SectionNotice} from '@mattermost/compass-ui/components/section-notice';
+
 import {createAgent, updateAgent, uploadAgentAvatar} from '@/client';
 import {
     UserAgent,
@@ -19,8 +24,12 @@ import {
     codePointLength,
 } from '@/types/agents';
 import {ChannelAccessLevel, UserAccessLevel} from '@/components/system_console/bot';
-import {PrimaryButton, TertiaryButton} from '@/components/assets/buttons';
+import {defaultReasoningEffort} from '@/components/system_console/reasoning_config';
 import ConfirmationDialog from '@/components/confirmation_dialog';
+import {UnderlineTab, UnderlineTabs} from '@/components/underline_tabs';
+import {useIsLicensedFor} from '@/license';
+import {useABACSupport} from '@/utils/access_control';
+import {useCurrentUserHasSystemPermission} from '@/utils/permissions';
 
 import ConfigTab from './tabs/config_tab';
 import AccessTab from './tabs/access_tab';
@@ -45,6 +54,7 @@ export type AgentDraft = {
     enabledTools: EnabledTool[];
     autoEnableNewMCPTools: boolean;
     mcpDynamicToolLoading: boolean;
+    useServiceAccountAuth: boolean;
     model: string;
     enableVision: boolean;
     disableTools: boolean;
@@ -52,7 +62,6 @@ export type AgentDraft = {
     reasoningEnabled: boolean;
     reasoningEffort: string;
     thinkingBudget: number;
-    structuredOutputEnabled: boolean;
     maxToolTurns: number;
 }
 
@@ -70,6 +79,7 @@ const emptyDraft: AgentDraft = {
     enabledTools: [],
     autoEnableNewMCPTools: true,
     mcpDynamicToolLoading: true,
+    useServiceAccountAuth: false,
     model: '',
     enableVision: true,
     disableTools: false,
@@ -77,7 +87,6 @@ const emptyDraft: AgentDraft = {
     reasoningEnabled: true,
     reasoningEffort: 'medium',
     thinkingBudget: 0,
-    structuredOutputEnabled: false,
     maxToolTurns: DefaultMaxToolTurns,
 };
 
@@ -116,6 +125,7 @@ function draftToCreateAgentPayload(draft: AgentDraft): CreateAgentRequest {
         enabledMCPTools: draft.enabledTools,
         autoEnableNewMCPTools: draft.autoEnableNewMCPTools,
         mcpDynamicToolLoading: draft.mcpDynamicToolLoading,
+        useServiceAccountAuth: draft.useServiceAccountAuth,
         model: draft.model,
         enableVision: draft.enableVision,
         disableTools: draft.disableTools,
@@ -123,7 +133,6 @@ function draftToCreateAgentPayload(draft: AgentDraft): CreateAgentRequest {
         reasoningEnabled: draft.reasoningEnabled,
         reasoningEffort: draft.reasoningEffort,
         thinkingBudget: draft.thinkingBudget,
-        structuredOutputEnabled: draft.structuredOutputEnabled,
         maxToolTurns: draft.maxToolTurns,
     };
 }
@@ -147,6 +156,7 @@ function draftToUpdateAgentPayload(draft: AgentDraft): UpdateAgentRequest {
         enabledMCPTools: draft.enabledTools,
         autoEnableNewMCPTools: draft.autoEnableNewMCPTools,
         mcpDynamicToolLoading: draft.mcpDynamicToolLoading,
+        useServiceAccountAuth: draft.useServiceAccountAuth,
         model: draft.model,
         enableVision: draft.enableVision,
         disableTools: draft.disableTools,
@@ -154,12 +164,12 @@ function draftToUpdateAgentPayload(draft: AgentDraft): UpdateAgentRequest {
         reasoningEnabled: draft.reasoningEnabled,
         reasoningEffort: draft.reasoningEffort,
         thinkingBudget: draft.thinkingBudget,
-        structuredOutputEnabled: draft.structuredOutputEnabled,
         maxToolTurns: draft.maxToolTurns,
     };
 }
 
-function agentToDraft(agent: UserAgent): AgentDraft {
+function agentToDraft(agent: UserAgent, services: ServiceInfo[]): AgentDraft {
+    const serviceType = services.find((s) => s.id === agent.serviceID)?.type;
     return {
         displayName: agent.displayName,
         username: agent.name,
@@ -174,14 +184,14 @@ function agentToDraft(agent: UserAgent): AgentDraft {
         enabledTools: agent.enabledMCPTools ?? [],
         autoEnableNewMCPTools: agent.autoEnableNewMCPTools ?? false,
         mcpDynamicToolLoading: agent.mcpDynamicToolLoading ?? true,
+        useServiceAccountAuth: agent.useServiceAccountAuth ?? false,
         model: agent.model ?? '',
         enableVision: agent.enableVision ?? true,
         disableTools: agent.disableTools ?? false,
         enabledNativeTools: agent.enabledNativeTools ?? [],
         reasoningEnabled: agent.reasoningEnabled ?? true,
-        reasoningEffort: agent.reasoningEffort || 'medium',
+        reasoningEffort: agent.reasoningEffort || defaultReasoningEffort(serviceType),
         thinkingBudget: agent.thinkingBudget ?? 0,
-        structuredOutputEnabled: agent.structuredOutputEnabled ?? false,
         maxToolTurns: agent.maxToolTurns && agent.maxToolTurns > 0 ? agent.maxToolTurns : DefaultMaxToolTurns,
     };
 }
@@ -195,37 +205,61 @@ type Props = {
 }
 
 const DISCARD_CHANGES_TITLE_ID = 'discard-agent-changes-title';
+const RENAME_AGENT_TITLE_ID = 'rename-agent-title';
 
 const AgentConfigView = (props: Props) => {
     const {mode, agent, services, onBack, onSaved} = props;
     const intl = useIntl();
 
+    // Parent owns the manage_system check via useCurrentUserHasSystemPermission.
+    const canEditServiceAccountAuth = useCurrentUserHasSystemPermission('manage_system');
+    const {supported: abacSupported} = useABACSupport();
+    const providerWebSearchLicensed = useIsLicensedFor('provider_web_search');
+
     const [activeTab, setActiveTab] = useState<Tab>('config');
     const initialDraft = useMemo(() => {
         if (agent) {
-            return agentToDraft(agent);
+            return agentToDraft(agent, services);
         }
         const draft = cloneDraft(emptyDraft);
         if (services.length > 0) {
             draft.serviceId = services[0].id;
+            draft.reasoningEffort = defaultReasoningEffort(services[0].type);
+        }
+
+        // Provider-native web search is on by default where it is available.
+        if (!providerWebSearchLicensed) {
+            draft.enabledNativeTools = draft.enabledNativeTools.filter((tool) => tool !== 'web_search');
         }
         return draft;
-    }, [agent, services]);
+    }, [agent, services, providerWebSearchLicensed]);
     const [draft, setDraft] = useState<AgentDraft>(initialDraft);
     const [baselineDraft, setBaselineDraft] = useState<AgentDraft>(initialDraft);
     const [avatarFile, setAvatarFile] = useState<File | null>(null);
     const [saving, setSaving] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [showDiscardDialog, setShowDiscardDialog] = useState(false);
-    const showDiscardDialogRef = useRef(false);
-    showDiscardDialogRef.current = showDiscardDialog;
+    const [showRenameDialog, setShowRenameDialog] = useState(false);
+    const dialogOpenRef = useRef(false);
+    dialogOpenRef.current = showDiscardDialog || showRenameDialog;
+
+    const savedUsername = (mode === 'edit' && agent?.name) || '';
+    const isRenaming = savedUsername !== '' && draft.username !== savedUsername;
+
+    // Soft-lock Access / MCP grants while SA stays on for non-admins.
+    // Save stays enabled so managers can still edit day-to-day config (including
+    // AI service, tools, and dynamic tool loading).
+    const serviceAccountFieldsLocked = !canEditServiceAccountAuth && draft.useServiceAccountAuth;
+
+    // The MCPs tab stays reachable while fields-locked so the off switch is available.
+    const mcpsTabDisabled = draft.disableTools && !serviceAccountFieldsLocked;
 
     // Leave MCPs tab if tools are disabled
     useEffect(() => {
-        if (draft.disableTools && activeTab === 'mcps') {
+        if (mcpsTabDisabled && activeTab === 'mcps') {
             setActiveTab('config');
         }
-    }, [draft.disableTools, activeTab]);
+    }, [mcpsTabDisabled, activeTab]);
 
     const isDirty = useMemo(
         () => avatarFile !== null || !draftsEqual(draft, baselineDraft),
@@ -236,9 +270,10 @@ const AgentConfigView = (props: Props) => {
         if (saving) {
             return;
         }
-        if (showDiscardDialogRef.current) {
+        if (dialogOpenRef.current) {
             return;
         }
+
         if (isDirty) {
             setShowDiscardDialog(true);
             return;
@@ -255,13 +290,14 @@ const AgentConfigView = (props: Props) => {
         setShowDiscardDialog(false);
     }, []);
 
-    // Escape key: same as back — confirm when there are unsaved changes
+    // Escape key: same as back — confirm when there are unsaved changes.
+    // Skip Escapes a child already handled (e.g. closing a picker menu or a nested dialog).
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {
-            if (e.key !== 'Escape') {
+            if (e.key !== 'Escape' || e.defaultPrevented) {
                 return;
             }
-            if (showDiscardDialogRef.current) {
+            if (dialogOpenRef.current) {
                 return;
             }
             e.preventDefault();
@@ -321,14 +357,7 @@ const AgentConfigView = (props: Props) => {
         return errs;
     }, [draft, intl]);
 
-    const handleSave = useCallback(async () => {
-        const validationErrors = validate();
-        if (Object.keys(validationErrors).length > 0) {
-            setErrors(validationErrors);
-            setActiveTab('config');
-            return;
-        }
-        setErrors({});
+    const save = useCallback(async () => {
         setSaving(true);
 
         try {
@@ -351,11 +380,16 @@ const AgentConfigView = (props: Props) => {
             // Clear dirty state so onSaved -> onBack flow doesn't trigger discard prompt
             setBaselineDraft(cloneDraft(draft));
             setAvatarFile(null);
+
             onSaved(savedAgent);
         } catch (e: any) {
             const message = (typeof e?.message === 'string' ? e.message : '').trim();
             if (e?.status_code === 409 || (message.includes('username') && (message.includes('taken') || message.includes('conflict')))) {
-                setErrors({username: intl.formatMessage({defaultMessage: 'This username is already taken'})});
+                if (e?.server_error_id === 'username_held_by_deactivated_bot') {
+                    setErrors({username: intl.formatMessage({defaultMessage: 'This username belongs to a deactivated bot account. Permanently delete that bot account to make the username available.'})});
+                } else {
+                    setErrors({username: intl.formatMessage({defaultMessage: 'This username is already taken'})});
+                }
                 setActiveTab('config');
             } else if (e?.status_code === 403 && !message) {
                 setErrors({general: intl.formatMessage({defaultMessage: 'You do not have permission to perform this action.'})});
@@ -370,7 +404,31 @@ const AgentConfigView = (props: Props) => {
         } finally {
             setSaving(false);
         }
-    }, [mode, agent, draft, avatarFile, intl, onSaved, validate]);
+    }, [mode, agent, draft, avatarFile, intl, onSaved]);
+
+    const handleSave = useCallback(() => {
+        const validationErrors = validate();
+        if (Object.keys(validationErrors).length > 0) {
+            setErrors(validationErrors);
+            setActiveTab('config');
+            return;
+        }
+        setErrors({});
+        if (isRenaming) {
+            setShowRenameDialog(true);
+            return;
+        }
+        save();
+    }, [validate, isRenaming, save]);
+
+    const handleRenameConfirm = useCallback(() => {
+        setShowRenameDialog(false);
+        save();
+    }, [save]);
+
+    const handleRenameCancel = useCallback(() => {
+        setShowRenameDialog(false);
+    }, []);
 
     const title = mode === 'create' ? intl.formatMessage({defaultMessage: 'New Agent'}) : draft.displayName || intl.formatMessage({defaultMessage: 'Edit Agent'});
 
@@ -380,89 +438,143 @@ const AgentConfigView = (props: Props) => {
                 <ViewHeader>
                     <HeaderLeading>
                         <BackButton
-                            type='button'
+                            icon={<Icon glyph={<ArrowLeftIcon/>}/>}
+                            size='medium'
                             onClick={requestBack}
                             disabled={saving}
                             aria-label={intl.formatMessage({defaultMessage: 'Back to agents'})}
-                        >
-                            <ArrowLeftIcon size={20}/>
-                        </BackButton>
+                        />
                         <ViewTitle>{title}</ViewTitle>
                     </HeaderLeading>
                 </ViewHeader>
 
-                <TabsContainer>
-                    <TabButton
+                <ConfigTabs role='tablist'>
+                    <UnderlineTab
+                        type='button'
+                        role='tab'
+                        id='agent-config-tab'
+                        aria-controls='agent-config-panel'
+                        aria-selected={activeTab === 'config'}
+                        tabIndex={activeTab === 'config' ? 0 : -1}
                         $active={activeTab === 'config'}
                         onClick={() => setActiveTab('config')}
                     >
                         <FormattedMessage defaultMessage='Configuration'/>
-                    </TabButton>
-                    <TabButton
+                    </UnderlineTab>
+                    <UnderlineTab
+                        type='button'
+                        role='tab'
+                        id='agent-access-tab'
+                        aria-controls='agent-access-panel'
+                        aria-selected={activeTab === 'access'}
+                        tabIndex={activeTab === 'access' ? 0 : -1}
                         $active={activeTab === 'access'}
                         onClick={() => setActiveTab('access')}
                     >
                         <FormattedMessage defaultMessage='Access'/>
-                    </TabButton>
-                    <TabButton
+                    </UnderlineTab>
+                    <UnderlineTab
+                        type='button'
+                        role='tab'
+                        id='agent-mcps-tab'
+                        aria-controls='agent-mcps-panel'
+                        aria-selected={activeTab === 'mcps'}
+                        tabIndex={activeTab === 'mcps' ? 0 : -1}
                         $active={activeTab === 'mcps'}
-                        disabled={draft.disableTools}
-                        title={draft.disableTools ? intl.formatMessage({defaultMessage: 'Enable Tools to configure MCP integrations'}) : ''}
-                        onClick={() => {
-                            if (!draft.disableTools) {
-                                setActiveTab('mcps');
-                            }
-                        }}
+                        disabled={mcpsTabDisabled}
+                        {...(mcpsTabDisabled ? {title: intl.formatMessage({defaultMessage: 'Enable Tools to configure MCP integrations'})} : {})}
+                        onClick={() => setActiveTab('mcps')}
                     >
                         <FormattedMessage defaultMessage='MCPs'/>
-                    </TabButton>
-                </TabsContainer>
+                    </UnderlineTab>
+                </ConfigTabs>
 
                 <ViewBody>
-                    {errors.general && <ErrorBanner>{errors.general}</ErrorBanner>}
+                    {errors.general && (
+                        <Notice
+                            type='danger'
+                            title={errors.general}
+                        />
+                    )}
+                    {serviceAccountFieldsLocked && (
+                        <div role='status'>
+                            <Notice
+                                type='warning'
+                                title={<FormattedMessage defaultMessage='This agent uses service account authentication. Access and MCP tool grants require a system administrator while that setting is enabled. Other settings can still be saved, or turn the setting off on the MCPs tab.'/>}
+                            />
+                        </div>
+                    )}
 
                     {activeTab === 'config' && (
-                        <ConfigTab
-                            draft={draft}
-                            onChange={updateDraft}
-                            onAvatarChange={setAvatarFile}
-                            botUserId={agent?.botUserID}
-                            services={services}
-                            errors={errors}
-                            usernameLocked={mode === 'edit'}
-                        />
+                        <div
+                            role='tabpanel'
+                            id='agent-config-panel'
+                            aria-labelledby='agent-config-tab'
+                        >
+                            <ConfigTab
+                                draft={draft}
+                                onChange={updateDraft}
+                                onAvatarChange={setAvatarFile}
+                                botUserId={agent?.botUserID}
+                                services={services}
+                                errors={errors}
+                                savedUsername={savedUsername}
+                            />
+                        </div>
                     )}
                     {activeTab === 'access' && (
-                        <AccessTab
-                            draft={draft}
-                            onChange={updateDraft}
-                        />
+                        <div
+                            role='tabpanel'
+                            id='agent-access-panel'
+                            aria-labelledby='agent-access-tab'
+                        >
+                            <AccessTab
+                                draft={draft}
+                                baselineUserAccessLevel={baselineDraft.userAccessLevel}
+                                onChange={updateDraft}
+                                serviceAccountFieldsLocked={serviceAccountFieldsLocked}
+                                agentId={agent?.id}
+                                abacSupported={abacSupported}
+                                isSystemAdmin={canEditServiceAccountAuth}
+                            />
+                        </div>
                     )}
                     {activeTab === 'mcps' && (
-                        <McpsTab
-                            enabledTools={draft.enabledTools}
-                            autoEnableNewMCPTools={draft.autoEnableNewMCPTools}
-                            onChange={(updates) => updateDraft(updates)}
-                            onReconcileEnabledTools={reconcileEnabledTools}
-                        />
+                        <div
+                            role='tabpanel'
+                            id='agent-mcps-panel'
+                            aria-labelledby='agent-mcps-tab'
+                        >
+                            <McpsTab
+                                agentId={agent?.id}
+                                enabledTools={draft.enabledTools}
+                                autoEnableNewMCPTools={draft.autoEnableNewMCPTools}
+                                useServiceAccountAuth={draft.useServiceAccountAuth}
+                                serviceAccountFieldsLocked={serviceAccountFieldsLocked}
+                                canEditServiceAccountAuth={canEditServiceAccountAuth}
+                                onChange={(updates) => updateDraft(updates)}
+                                onReconcileEnabledTools={reconcileEnabledTools}
+                            />
+                        </div>
                     )}
                 </ViewBody>
 
                 <ViewFooter>
-                    <CancelButton
-                        type='button'
+                    <Button
+                        emphasis='tertiary'
                         onClick={requestBack}
                         disabled={saving}
                     >
                         <FormattedMessage defaultMessage='Cancel'/>
-                    </CancelButton>
-                    <SaveButton
+                    </Button>
+                    <Button
+                        emphasis='primary'
                         onClick={handleSave}
-                        disabled={saving}
+                        loading={saving}
                     >
                         {saving ? <FormattedMessage defaultMessage='Saving...'/> : <FormattedMessage defaultMessage='Save'/>
                         }
-                    </SaveButton>
+                    </Button>
                 </ViewFooter>
             </ViewContainer>
             <ConfirmationDialog
@@ -477,6 +589,50 @@ const AgentConfigView = (props: Props) => {
                 onConfirm={handleDiscardConfirm}
                 onCancel={handleDiscardCancel}
                 isDestructive={true}
+                managedAccessibility={true}
+                zIndex={2100}
+            />
+            <ConfirmationDialog
+                show={showRenameDialog}
+                titleId={RENAME_AGENT_TITLE_ID}
+                title={<FormattedMessage defaultMessage='Change agent username?'/>}
+                message={(
+                    <>
+                        <FormattedMessage
+                            defaultMessage='The agent will be renamed from <b>@{oldName}</b> to <b>@{newName}</b>. Its direct messages, channel memberships, and conversation history are kept. After the change:'
+                            values={{
+                                oldName: savedUsername,
+                                newName: draft.username,
+                                b: (chunks: React.ReactNode) => <strong>{chunks}</strong>,
+                            }}
+                        />
+                        <RenameConsequences>
+                            <li>
+                                <FormattedMessage
+                                    defaultMessage='Existing messages that mention @{oldName} will no longer link to the agent.'
+                                    values={{oldName: savedUsername}}
+                                />
+                            </li>
+                            <li>
+                                <FormattedMessage
+                                    defaultMessage='People must mention @{newName} to reach the agent, and slash commands, scripts, or integrations that use @{oldName} must be updated.'
+                                    values={{oldName: savedUsername, newName: draft.username}}
+                                />
+                            </li>
+                            <li>
+                                <FormattedMessage
+                                    defaultMessage='@{oldName} becomes available, so another user or bot could claim it.'
+                                    values={{oldName: savedUsername}}
+                                />
+                            </li>
+                        </RenameConsequences>
+                    </>
+                )}
+                confirmButtonText={<FormattedMessage defaultMessage='Change username'/>}
+                cancelButtonText={<FormattedMessage defaultMessage='Keep current username'/>}
+                onConfirm={handleRenameConfirm}
+                onCancel={handleRenameCancel}
+                confirmPending={saving}
                 managedAccessibility={true}
                 zIndex={2100}
             />
@@ -498,22 +654,26 @@ const ViewHeader = styled.div`
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 48px 0 16px 0;
+    padding: var(--spacing-xxxxxl) 0 var(--spacing-l) 0;
     flex-shrink: 0;
+`;
+
+const ConfigTabs = styled(UnderlineTabs)`
+    padding: 0 var(--spacing-l);
 `;
 
 const HeaderLeading = styled.div`
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--spacing-xs);
     min-width: 0;
 `;
 
 const ViewTitle = styled.h1`
-    font-family: 'Metropolis', sans-serif;
-    font-weight: 600;
-    font-size: 22px;
-    line-height: 28px;
+    font-family: var(--font-family-heading, 'Metropolis', sans-serif);
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-500);
+    line-height: var(--line-height-500);
     color: var(--center-channel-color);
     margin: 0;
     white-space: nowrap;
@@ -521,93 +681,39 @@ const ViewTitle = styled.h1`
     text-overflow: ellipsis;
 `;
 
-const BackButton = styled.button`
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 8px;
-    margin-left: -8px;
-    border-radius: 4px;
-    color: rgba(var(--center-channel-color-rgb), 0.64);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    &:hover:not(:disabled) {
-        background: rgba(var(--center-channel-color-rgb), 0.08);
-        color: var(--center-channel-color);
-    }
-
-    &:disabled {
-        cursor: not-allowed;
-        opacity: 0.4;
-    }
-`;
-
-const TabsContainer = styled.div`
-    display: flex;
-    box-sizing: border-box;
-    width: 100%;
-    border-bottom: 1px solid rgba(var(--center-channel-color-rgb), 0.12);
-    flex-shrink: 0;
-`;
-
-const TabButton = styled.button<{$active: boolean}>`
-    padding: 12px 16px;
-    border: none;
-    background: none;
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 600;
-    color: ${(p) => (p.$active ? 'var(--button-bg)' : 'rgba(var(--center-channel-color-rgb), 0.64)')};
-    border-bottom: 2px solid ${(p) => (p.$active ? 'var(--button-bg)' : 'transparent')};
-    transition: color 0.2s ease, border-color 0.2s ease;
-    margin-bottom: -1px;
-
-    &:hover:not(:disabled) {
-        color: ${(p) => (p.$active ? 'var(--button-bg)' : 'var(--center-channel-color)')};
-    }
-
-    &:disabled {
-        opacity: 0.4;
-        cursor: not-allowed;
-    }
+const BackButton = styled(IconButton)`
+    margin-left: calc(-1 * var(--spacing-xs));
 `;
 
 const ViewBody = styled.div`
-    padding: 32px 16px;
+    padding: var(--spacing-xxxl) var(--spacing-l);
     flex: 1;
     min-height: 0;
     overflow-y: auto;
 `;
 
-const ErrorBanner = styled.div`
-    padding: 10px 12px;
-    margin-bottom: 16px;
-    background: rgba(var(--dnd-indicator-rgb, 210, 75, 78), 0.08);
-    border-radius: 4px;
-    border: 1px solid rgba(var(--dnd-indicator-rgb, 210, 75, 78), 0.3);
-    color: var(--dnd-indicator, #D24B4E);
-    font-size: 14px;
+const Notice = styled(SectionNotice)`
+    margin-bottom: var(--spacing-l);
+`;
+
+const RenameConsequences = styled.ul`
+    margin: 12px 0 0;
+    padding-left: 20px;
+
+    li + li {
+        margin-top: 4px;
+    }
 `;
 
 const ViewFooter = styled.div`
     display: flex;
     justify-content: flex-end;
     align-items: center;
-    padding: 16px 0;
-    gap: 8px;
+    padding: var(--spacing-l) 0;
+    gap: var(--spacing-xs);
     flex-shrink: 0;
     background: var(--center-channel-bg);
     border-top: 1px solid rgba(var(--center-channel-color-rgb), 0.08);
-`;
-
-const CancelButton = styled(TertiaryButton)`
-    height: 40px;
-`;
-
-const SaveButton = styled(PrimaryButton)`
-    height: 40px;
 `;
 
 export default AgentConfigView;

@@ -82,7 +82,42 @@ export class MattermostPage {
         // Wait for navigation to complete and channel view to be visible
         // Using a more generous timeout and proper wait strategy for parallel test runs
         await this.page.waitForURL(/.*\/test\/channels\/.*/, { timeout: channelTimeout });
-        await this.page.getByTestId('channel_view').waitFor({ state: 'visible', timeout: channelTimeout });
+        await this.waitForChannelView(channelTimeout);
+    }
+
+    /**
+     * The Mattermost webapp occasionally fails to lazy-load one of its static chunks right after
+     * login (ChunkLoadError / "Loading CSS chunk N failed") and then never renders the channel view.
+     * Reload once in that case instead of waiting out the full timeout.
+     */
+    private async waitForChannelView(timeout: number) {
+        const channelView = this.page.getByTestId('channel_view');
+        let onPageError: (error: Error) => void = () => {};
+        const chunkLoadFailed = new Promise<'chunk-load-failed'>((resolve) => {
+            onPageError = (error: Error) => {
+                if (/Loading (CSS )?chunk \S+ failed/.test(error.message)) {
+                    resolve('chunk-load-failed');
+                }
+            };
+        });
+        this.page.on('pageerror', onPageError);
+
+        const startedAt = Date.now();
+        let outcome: 'visible' | 'chunk-load-failed';
+        try {
+            outcome = await Promise.race([
+                channelView.waitFor({ state: 'visible', timeout }).then(() => 'visible' as const),
+                chunkLoadFailed,
+            ]);
+        } finally {
+            this.page.off('pageerror', onPageError);
+        }
+
+        if (outcome === 'chunk-load-failed') {
+            await this.page.reload({ waitUntil: 'domcontentloaded' });
+            const remaining = Math.max(timeout - (Date.now() - startedAt), 30000);
+            await channelView.waitFor({ state: 'visible', timeout: remaining });
+        }
     }
 
     async sendChannelMessage(message: string) {
@@ -141,7 +176,7 @@ export class MattermostPage {
         const skewMs = 5000;
         const deadline = Date.now() + observeDuration;
 
-        while (Date.now() < deadline) {
+        await expect.poll(async () => {
             const posts = await fetchPostsForChannel(client, channelId);
             const botPosts = posts.filter(
                 (p) => p.user_id === botUserId && p.create_at >= sinceMs - skewMs,
@@ -151,12 +186,12 @@ export class MattermostPage {
                     `Expected no bot reply post, but found ${botPosts.length} bot post(s) after user message (sinceMs=${sinceMs}).`,
                 );
             }
-            const remaining = deadline - Date.now();
-            if (remaining <= 0) {
-                break;
-            }
-            await this.page.waitForTimeout(Math.min(pollInterval, remaining));
-        }
+            return Date.now() >= deadline;
+        }, {
+            message: `Observation window of ${observeDuration}ms for bot DM reply did not complete.`,
+            timeout: observeDuration + 30000,
+            intervals: [pollInterval],
+        }).toBe(true);
     }
 
     /**
@@ -257,8 +292,9 @@ export class MattermostPage {
                 await rhsContainer.waitFor({ state: 'visible', timeout: 10000 });
             }
 
-            // Wait a bit for posts to load
-            await this.page.waitForTimeout(500);
+            await expect(
+                rhsContainer.getByTestId('chat-history').or(rhsContainer.getByTestId('new-chat')).first(),
+            ).toBeVisible({ timeout: 10000 });
         }
     }
 
@@ -278,7 +314,7 @@ export class MattermostPage {
         const team = teams[0];
 
         await this.page.goto(`${mattermost.url()}/${team.name}/messages/@${botUsername}`);
-        await this.page.waitForTimeout(2000);
+        await expect(this.postTextbox).toBeVisible({ timeout: 30000 });
     }
 }
 
