@@ -331,6 +331,8 @@ func TestAmbientAutoReply(t *testing.T) {
 				require.Equal(t, 128, env.llm.lastNoStreamCfg.MaxGeneratedTokens)
 				require.NotNil(t, env.llm.lastNoStreamCfg.JSONOutputFormat)
 				require.Equal(t, tc.expectModel, env.llm.lastNoStreamCfg.Model)
+				require.NotNil(t, env.llm.lastNoStreamReq.Context.RequestingUser, "the classifier must be attributed so fallbacks are restricted")
+				require.Equal(t, autoReplyUserID, env.llm.lastNoStreamReq.Context.RequestingUser.Id)
 				combined := ""
 				for _, p := range env.llm.lastNoStreamReq.Posts {
 					combined += p.Message

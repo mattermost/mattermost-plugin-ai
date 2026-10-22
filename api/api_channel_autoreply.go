@@ -34,13 +34,12 @@ type ChannelAutoReply struct {
 
 // handleGetChannelAutoReply returns the channel's auto-reply setting. Readable
 // by any channel member (PermissionReadChannel is enforced by the router
-// middleware). GET is not license-gated so the current state is always
-// readable; writing an enabled mode is available at Enterprise Advanced and
-// above.
-//
-// TODO(ambient-poc): manager-only instruction reads are deferred; any channel
-// member who can GET this route currently receives saved instructions.
+// middleware), but the ambient instructions and analysis model are returned
+// only to users who can manage the setting. GET is not license-gated so the
+// current state is always readable; writing an enabled mode is available at
+// Enterprise Advanced and above.
 func (a *API) handleGetChannelAutoReply(c *gin.Context) {
+	userID := c.GetHeader("Mattermost-User-Id")
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 
 	setting, err := a.autoReplyStore.Get(channel.Id)
@@ -52,7 +51,28 @@ func (a *API) handleGetChannelAutoReply(c *gin.Context) {
 		c.JSON(http.StatusOK, ChannelAutoReply{BotID: "", Mode: string(autoreply.ModeOff)})
 		return
 	}
-	c.JSON(http.StatusOK, channelAutoReplyFromSetting(setting))
+	resp := channelAutoReplyFromSetting(setting)
+	if resp.Instructions != "" || resp.AnalysisModel != "" {
+		perm := channelManagePermission(channel)
+		if perm == nil || !a.pluginAPI.User.HasPermissionToChannel(userID, channel.Id, perm) {
+			resp.Instructions = ""
+			resp.AnalysisModel = ""
+		}
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+// channelManagePermission returns the permission that governs a channel's
+// auto-reply setting, or nil for DM/GM channels, which cannot have one.
+func channelManagePermission(channel *model.Channel) *model.Permission {
+	switch channel.Type {
+	case model.ChannelTypeOpen:
+		return model.PermissionManagePublicChannelProperties
+	case model.ChannelTypePrivate:
+		return model.PermissionManagePrivateChannelProperties
+	default:
+		return nil
+	}
 }
 
 // handlePutChannelAutoReply updates the channel's auto-reply setting. Requires
@@ -68,13 +88,8 @@ func (a *API) handlePutChannelAutoReply(c *gin.Context) {
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 	audit.AddParam(auditRec(c), audit.KeyChannelID, channel.Id)
 
-	var perm *model.Permission
-	switch channel.Type {
-	case model.ChannelTypeOpen:
-		perm = model.PermissionManagePublicChannelProperties
-	case model.ChannelTypePrivate:
-		perm = model.PermissionManagePrivateChannelProperties
-	default: // ChannelTypeDirect, ChannelTypeGroup
+	perm := channelManagePermission(channel)
+	if perm == nil {
 		c.AbortWithError(http.StatusBadRequest,
 			errors.New("auto-reply cannot be configured for direct or group message channels"))
 		return
@@ -97,13 +112,10 @@ func (a *API) handlePutChannelAutoReply(c *gin.Context) {
 
 	// Body values are recorded before validation so fail records carry them
 	// too; TruncateID clamps them since they are unvalidated request input.
-	// Instructions are never audited.
+	// Instructions and analysis_model are configuration content, never audited.
 	audit.AddParam(auditRec(c), "mode", audit.TruncateID(req.Mode))
 	if req.BotID != "" {
 		audit.AddParam(auditRec(c), "bot_user_id", audit.TruncateID(req.BotID))
-	}
-	if req.AnalysisModel != "" {
-		audit.AddParam(auditRec(c), "analysis_model", audit.TruncateID(req.AnalysisModel))
 	}
 
 	var saved ChannelAutoReply

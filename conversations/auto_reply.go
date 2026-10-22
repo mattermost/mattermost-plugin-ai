@@ -87,7 +87,7 @@ func (c *Conversations) handleAutoReply(ctx context.Context, setting *autoreply.
 		if setting.Mode == autoreply.ModeAmbientThreads && !threadHasReplyFrom(thread, bot.GetMMBot().UserId) {
 			return fmt.Errorf("auto-reply mode ambient_threads ignores threads the agent has not replied in: %w", ErrNoResponse)
 		}
-		if classErr := c.classifyAmbientReply(ctx, bot, setting, post, thread); classErr != nil {
+		if classErr := c.classifyAmbientReply(ctx, bot, setting, post, postingUser.Id, thread); classErr != nil {
 			return classErr
 		}
 	}

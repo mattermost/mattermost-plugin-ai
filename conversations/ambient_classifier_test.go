@@ -94,25 +94,34 @@ func TestAmbientThreadPosts(t *testing.T) {
 	root := &model.Post{Id: "root", UserId: "u1", CreateAt: 1}
 	reply := &model.Post{Id: "reply", UserId: "u2", RootId: "root", CreateAt: 2}
 
-	t.Run("a top-level post is its own thread without a fetch", func(t *testing.T) {
-		c := &Conversations{mmClient: mmapimocks.NewMockClient(t)}
-		got, err := c.ambientThreadPosts(root)
-		require.NoError(t, err)
-		require.Equal(t, []*model.Post{root}, got)
-	})
+	tests := []struct {
+		name    string
+		trigger *model.Post
+		fetched *model.PostList // nil means no fetch is expected
+		want    []*model.Post
+	}{
+		{name: "a top-level post is its own thread without a fetch", trigger: root, want: []*model.Post{root}},
+		{
+			name:    "a reply missing from the fetched thread is appended in order",
+			trigger: reply,
+			fetched: &model.PostList{Order: []string{"root"}, Posts: map[string]*model.Post{"root": root}},
+			want:    []*model.Post{root, reply},
+		},
+	}
 
-	t.Run("a reply missing from the fetched thread is appended in order", func(t *testing.T) {
-		mmClient := mmapimocks.NewMockClient(t)
-		mmClient.EXPECT().GetPostThread("root").Return(&model.PostList{
-			Order: []string{"root"},
-			Posts: map[string]*model.Post{"root": root},
-		}, nil)
-		c := &Conversations{mmClient: mmClient}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mmClient := mmapimocks.NewMockClient(t)
+			if tc.fetched != nil {
+				mmClient.EXPECT().GetPostThread(tc.trigger.RootId).Return(tc.fetched, nil)
+			}
+			c := &Conversations{mmClient: mmClient}
 
-		got, err := c.ambientThreadPosts(reply)
-		require.NoError(t, err)
-		require.Equal(t, []*model.Post{root, reply}, got)
-	})
+			got, err := c.ambientThreadPosts(tc.trigger)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
 }
 
 func TestClassifyAmbientTimeout(t *testing.T) {
@@ -135,7 +144,7 @@ func TestClassifyAmbientTimeout(t *testing.T) {
 	)
 	c := &Conversations{prompts: promptsManager, mmClient: mmClient}
 
-	err = c.classifyAmbientReply(context.Background(), bot, &autoreply.Setting{Mode: autoreply.ModeAmbient}, post, []*model.Post{post})
+	err = c.classifyAmbientReply(context.Background(), bot, &autoreply.Setting{Mode: autoreply.ModeAmbient}, post, "u1", []*model.Post{post})
 	require.ErrorIs(t, err, ErrNoResponse)
 }
 

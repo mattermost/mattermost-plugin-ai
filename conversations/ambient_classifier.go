@@ -81,7 +81,7 @@ func threadHasReplyFrom(thread []*model.Post, userID string) bool {
 // play. Structured-output capability detection, analysis_model validation,
 // dedupe, concurrency control, rate/cost caps, and deleted-post recheck are
 // deferred.
-func (c *Conversations) classifyAmbientReply(ctx context.Context, bot *bots.Bot, setting *autoreply.Setting, trigger *model.Post, thread []*model.Post) error {
+func (c *Conversations) classifyAmbientReply(ctx context.Context, bot *bots.Bot, setting *autoreply.Setting, trigger *model.Post, postingUserID string, thread []*model.Post) error {
 	ctx, span := telemetry.Tracer().Start(ctx, "ambient classifier")
 	defer span.End()
 
@@ -99,6 +99,9 @@ func (c *Conversations) classifyAmbientReply(ctx context.Context, bot *bots.Bot,
 	}
 
 	llmCtx := llm.NewContext()
+	// The posting user attributes the request so provider fallbacks are limited
+	// to services that user may use; thread content must not reach others.
+	llmCtx.RequestingUser = &model.User{Id: postingUserID}
 	llmCtx.Parameters = map[string]any{
 		"Instructions": setting.Instructions,
 		"ThreadScoped": setting.Mode == autoreply.ModeAmbientThreads,

@@ -90,9 +90,26 @@ func TestGetChannelAutoReply(t *testing.T) {
 			expectedBody:   fmt.Sprintf(`{"bot_id":%q,"mode":"threads"}`, testBotUserID),
 		},
 		{
-			name: "ambient setting echoes instructions and analysis model",
+			name: "ambient setting hides instructions and analysis model from members who cannot manage it",
 			envSetup: func(e *TestEnvironment) {
 				e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionReadChannel).Return(true)
+				e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionManagePublicChannelProperties).Return(false)
+				e.autoReplyStore.settings["channelid"] = &autoreply.Setting{
+					ChannelID:     "channelid",
+					BotID:         testBotUserID,
+					Mode:          autoreply.ModeAmbient,
+					Instructions:  "only billing questions",
+					AnalysisModel: "gpt-4o-mini",
+				}
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody:   fmt.Sprintf(`{"bot_id":%q,"mode":"ambient"}`, testBotUserID),
+		},
+		{
+			name: "ambient setting echoes instructions and analysis model to channel managers",
+			envSetup: func(e *TestEnvironment) {
+				e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionReadChannel).Return(true)
+				e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionManagePublicChannelProperties).Return(true)
 				e.autoReplyStore.settings["channelid"] = &autoreply.Setting{
 					ChannelID:     "channelid",
 					BotID:         testBotUserID,
@@ -789,8 +806,11 @@ func TestChannelAutoReplyAuditRecords(t *testing.T) {
 	}
 }
 
-func TestChannelAutoReplyAuditOmitsInstructions(t *testing.T) {
-	const plantedInstructions = "PLANTED-AMBIENT-INSTRUCTIONS-SECRET"
+func TestChannelAutoReplyAuditOmitsAmbientConfig(t *testing.T) {
+	const (
+		plantedInstructions = "PLANTED-AMBIENT-INSTRUCTIONS-SECRET"
+		plantedModel        = "PLANTED-ANALYSIS-MODEL"
+	)
 
 	e := setupChannelAutoReplyTest(t, model.ChannelTypeOpen)
 	defer e.Cleanup(t)
@@ -799,7 +819,7 @@ func TestChannelAutoReplyAuditOmitsInstructions(t *testing.T) {
 	e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionManagePublicChannelProperties).Return(true)
 	records := e.CaptureAuditRecords()
 
-	body := fmt.Sprintf(`{"bot_id":%q,"mode":"ambient","instructions":%q,"analysis_model":"gpt-4o-mini"}`, testBotUserID, plantedInstructions)
+	body := fmt.Sprintf(`{"bot_id":%q,"mode":"ambient","instructions":%q,"analysis_model":%q}`, testBotUserID, plantedInstructions, plantedModel)
 	resp := e.doChannelAutoReplyRequest(t, http.MethodPut, body)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Len(t, *records, 1)
@@ -807,10 +827,11 @@ func TestChannelAutoReplyAuditOmitsInstructions(t *testing.T) {
 	rec := (*records)[0]
 	require.Equal(t, AuditEventUpdateChannelAutoReply, rec.EventName)
 	require.Equal(t, "ambient", rec.EventData.Parameters["mode"])
-	require.Equal(t, "gpt-4o-mini", rec.EventData.Parameters["analysis_model"])
+	require.NotContains(t, rec.EventData.Parameters, "analysis_model")
 	require.NotContains(t, rec.EventData.Parameters, "instructions")
 
 	raw, err := json.Marshal(rec)
 	require.NoError(t, err)
 	require.NotContains(t, string(raw), plantedInstructions)
+	require.NotContains(t, string(raw), plantedModel)
 }
