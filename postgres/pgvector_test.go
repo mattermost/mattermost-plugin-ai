@@ -2296,10 +2296,11 @@ func TestConcurrentStoreOperations(t *testing.T) {
 			}(i)
 		}
 
-		// Wait for all goroutines to complete
+		// Individual stores may lose the race; only the final state matters.
 		for range numGoroutines {
-			// Just drain the channel - we don't need to track errors for this test
-			<-errChan
+			if storeErr := <-errChan; storeErr != nil {
+				t.Logf("concurrent store failed: %v", storeErr)
+			}
 		}
 
 		// Some operations may fail due to race conditions, but the system should remain consistent
