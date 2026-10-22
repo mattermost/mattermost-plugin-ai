@@ -25,6 +25,9 @@ const (
 	// ModeAmbient classifies each eligible post and replies only when the
 	// classifier returns should_reply=true.
 	ModeAmbient Mode = "ambient"
+	// ModeAmbientThreads is ModeAmbient restricted to threads the agent has
+	// already replied in, which in practice means an @mention brought it in.
+	ModeAmbientThreads Mode = "ambient_threads"
 )
 
 // MaxInstructionsRunes is the stored/API cap for Setting.Instructions.
@@ -36,7 +39,12 @@ const MaxAnalysisModelLen = 512
 
 // IsStorable reports whether the mode is one that may be persisted.
 func (m Mode) IsStorable() bool {
-	return m == ModeRootPosts || m == ModeThreads || m == ModeAmbient
+	return m == ModeRootPosts || m == ModeThreads || m.IsAmbient()
+}
+
+// IsAmbient reports whether the mode gates replies on the ambient classifier.
+func (m Mode) IsAmbient() bool {
+	return m == ModeAmbient || m == ModeAmbientThreads
 }
 
 // Setting is one channel's auto-reply configuration. A channel with no Setting

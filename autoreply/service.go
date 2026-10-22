@@ -114,7 +114,7 @@ func (s *Service) Get(channelID string) (*Setting, error) {
 
 // Set validates and persists an auto-reply setting for a channel, updates the
 // local cache, and broadcasts an invalidation to peer nodes. mode must be
-// ModeRootPosts, ModeThreads, or ModeAmbient; turning auto-reply off is
+// a storable mode (see Mode.IsStorable); turning auto-reply off is
 // Delete, not Set(ModeOff). Validation failures wrap ErrValidation. Returns
 // the stored setting (with UpdateAt populated).
 func (s *Service) Set(channelID, botID string, mode Mode, updatedBy, instructions, analysisModel string) (*Setting, error) {

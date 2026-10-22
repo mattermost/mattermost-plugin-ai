@@ -278,6 +278,14 @@ func TestServiceSetSuccess(t *testing.T) {
 				return llm.BotConfig{ChannelAccessLevel: llm.ChannelAccessLevelAll}
 			},
 		},
+		{
+			name:        "open channel with ambient threads mode",
+			mode:        ModeAmbientThreads,
+			channelType: model.ChannelTypeOpen,
+			botCfg: func(string) llm.BotConfig {
+				return llm.BotConfig{ChannelAccessLevel: llm.ChannelAccessLevelAll}
+			},
+		},
 	}
 
 	for _, tc := range tests {

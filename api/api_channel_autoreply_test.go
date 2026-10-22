@@ -504,6 +504,42 @@ func TestPutChannelAutoReplyUnlicensed(t *testing.T) {
 	}
 }
 
+func TestPutChannelAutoReplyAmbientKillSwitch(t *testing.T) {
+	tests := []struct {
+		name           string
+		mode           string
+		enabled        bool
+		expectedStatus int
+	}{
+		{name: "ambient is forbidden when disabled by the admin", mode: "ambient", expectedStatus: http.StatusForbidden},
+		{name: "ambient_threads is forbidden when disabled by the admin", mode: "ambient_threads", expectedStatus: http.StatusForbidden},
+		{name: "threads is unaffected by the ambient setting", mode: "threads", expectedStatus: http.StatusOK},
+		{name: "ambient saves when enabled by the admin", mode: "ambient", enabled: true, expectedStatus: http.StatusOK},
+		{name: "ambient_threads saves when enabled by the admin", mode: "ambient_threads", enabled: true, expectedStatus: http.StatusOK},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			e := setupChannelAutoReplyTest(t, model.ChannelTypeOpen)
+			defer e.Cleanup(t)
+			e.config.enableAmbientAutoReply = tc.enabled
+			e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionReadChannel).Return(true)
+			e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionManagePublicChannelProperties).Return(true)
+
+			body := fmt.Sprintf(`{"bot_id":%q,"mode":%q,"instructions":"only billing"}`, testBotUserID, tc.mode)
+			resp := e.doChannelAutoReplyRequest(t, http.MethodPut, body)
+			require.Equal(t, tc.expectedStatus, resp.StatusCode)
+
+			if tc.expectedStatus != http.StatusOK {
+				require.Empty(t, e.autoReplyStore.setCalls, "a forbidden request must not persist")
+				return
+			}
+			require.Len(t, e.autoReplyStore.setCalls, 1)
+			require.Equal(t, autoreply.Mode(tc.mode), e.autoReplyStore.setCalls[0].Mode)
+		})
+	}
+}
+
 func TestPutChannelAutoReplyByLevel(t *testing.T) {
 	enablingBody := fmt.Sprintf(`{"bot_id":%q,"mode":"root_posts"}`, testBotUserID)
 
@@ -555,6 +591,7 @@ func TestPutChannelAutoReplyByLevel(t *testing.T) {
 func TestPutChannelAutoReplyPersistsAndPublishes(t *testing.T) {
 	e := setupChannelAutoReplyTest(t, model.ChannelTypeOpen)
 	defer e.Cleanup(t)
+	e.config.enableAmbientAutoReply = true
 	e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionReadChannel).Return(true)
 	e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionManagePublicChannelProperties).Return(true)
 
@@ -757,6 +794,7 @@ func TestChannelAutoReplyAuditOmitsInstructions(t *testing.T) {
 
 	e := setupChannelAutoReplyTest(t, model.ChannelTypeOpen)
 	defer e.Cleanup(t)
+	e.config.enableAmbientAutoReply = true
 	e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionReadChannel).Return(true)
 	e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionManagePublicChannelProperties).Return(true)
 	records := e.CaptureAuditRecords()

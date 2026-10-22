@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"time"
 	"unicode/utf8"
 
@@ -35,7 +36,9 @@ type ambientClassifierJSON struct {
 }
 
 // classifyAmbientReply returns nil only when the classifier says the agent
-// should reply. Every other outcome wraps ErrNoResponse (fail-closed).
+// should reply. Every other outcome wraps ErrNoResponse (fail-closed). In
+// ambient_threads mode the classifier only runs once the agent has replied in
+// the thread.
 //
 // TODO(ambient-poc): WithToolsDisabled does not fully disable native provider
 // tools; this POC assumes no native tools are enabled.
@@ -68,10 +71,16 @@ func (c *Conversations) classifyAmbientReply(ctx context.Context, bot *bots.Bot,
 		return fmt.Errorf("ambient classifier failed to load thread: %w", ErrNoResponse)
 	}
 
+	threadScoped := setting.Mode == autoreply.ModeAmbientThreads
+	if threadScoped && !threadHasReplyFrom(threadData, bot.GetMMBot().UserId) {
+		return fmt.Errorf("agent has not been brought into this thread: %w", ErrNoResponse)
+	}
+
 	formatted := boundAmbientThread(threadData, post)
 	llmCtx := llm.NewContext()
 	llmCtx.Parameters = map[string]any{
 		"Instructions": setting.Instructions,
+		"ThreadScoped": threadScoped,
 	}
 
 	prompt, err := c.prompts.Format(prompts.PromptAmbientClassifierSystem, llmCtx)
@@ -111,6 +120,15 @@ func (c *Conversations) classifyAmbientReply(ctx context.Context, bot *bots.Bot,
 		return fmt.Errorf("ambient classifier declined: %w", ErrNoResponse)
 	}
 	return nil
+}
+
+// threadHasReplyFrom reports whether userID authored a reply in the thread.
+// The root post is excluded so a root posted by the agent itself does not
+// count as the agent having been brought in.
+func threadHasReplyFrom(data *mmapi.ThreadData, userID string) bool {
+	return slices.ContainsFunc(data.Posts, func(p *model.Post) bool {
+		return p != nil && p.RootId != "" && p.UserId == userID
+	})
 }
 
 func wrapAmbientThreadUserMessage(formatted string) string {

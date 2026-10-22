@@ -25,10 +25,11 @@ const channelAutoReplyMaxRequestBodyBytes = 64 << 10 // 64 KiB
 
 // Wire values for the auto-reply mode enum (fixed cross-phase contract).
 const (
-	channelAutoReplyModeOff       = "off"
-	channelAutoReplyModeRootPosts = "root_posts"
-	channelAutoReplyModeThreads   = "threads"
-	channelAutoReplyModeAmbient   = "ambient"
+	channelAutoReplyModeOff            = "off"
+	channelAutoReplyModeRootPosts      = "root_posts"
+	channelAutoReplyModeThreads        = "threads"
+	channelAutoReplyModeAmbient        = "ambient"
+	channelAutoReplyModeAmbientThreads = "ambient_threads"
 )
 
 // ChannelAutoReply is the request and response payload for
@@ -65,8 +66,10 @@ func (a *API) handleGetChannelAutoReply(c *gin.Context) {
 
 // handlePutChannelAutoReply updates the channel's auto-reply setting. Requires
 // the channel-management permission matching the channel type; DM/GM channels
-// are rejected. Enabling (root_posts/threads/ambient) is available at Enterprise
-// Advanced and above; mode "off" deletes the row and is never license-gated.
+// are rejected. Enabling a mode is available at Enterprise Advanced and above,
+// and the experimental ambient modes additionally require the admin's
+// EnableAmbientAutoReply setting; mode "off" deletes the row and is never
+// gated.
 // The requested setting itself is validated by the auto-reply service, whose
 // ErrValidation failures become 400s. On success the new state is published as
 // a channel-scoped websocket event and echoed back.
@@ -122,8 +125,12 @@ func (a *API) handlePutChannelAutoReply(c *gin.Context) {
 			return
 		}
 		saved = ChannelAutoReply{BotID: "", Mode: channelAutoReplyModeOff}
-	case channelAutoReplyModeRootPosts, channelAutoReplyModeThreads, channelAutoReplyModeAmbient:
+	case channelAutoReplyModeRootPosts, channelAutoReplyModeThreads, channelAutoReplyModeAmbient, channelAutoReplyModeAmbientThreads:
 		if !a.requireCapability(c, enterprise.CapChannelAutoReply) {
+			return
+		}
+		if autoreply.Mode(req.Mode).IsAmbient() && !a.config.EnableAmbientAutoReply() {
+			c.AbortWithError(http.StatusForbidden, errors.New("ambient auto-reply is disabled by the system admin"))
 			return
 		}
 		// bot_id is validated by the auto-reply service (present, known, and

@@ -74,6 +74,10 @@ func (c *channelFollowUpTestConfig) EnableChannelMentionToolCalling() bool {
 	return c.enableChannelMentionToolCalling
 }
 
+func (c *channelFollowUpTestConfig) EnableAmbientAutoReply() bool {
+	return false
+}
+
 func (c *channelFollowUpTestConfig) AllowNativeWebSearchInChannels() bool {
 	return false
 }

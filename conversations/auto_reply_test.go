@@ -73,6 +73,7 @@ type autoReplyTestEnv struct {
 	settings      *fakeAutoReplySettings
 	channel       *model.Channel
 	llm           *dmTestLLM
+	config        *testToolCallingConfig
 }
 
 // autoReplyBotConfig is the default unrestricted agent configuration used by
@@ -153,6 +154,7 @@ func setupAutoReplyTestEnv(t *testing.T, botConfigs []llm.BotConfig, llmResponse
 
 	convFakeStore := newFakeConvStore()
 	convSvc := conversation.NewService(convFakeStore, promptsManager, mmClient, botService)
+	cfg := &testToolCallingConfig{enableAmbientAutoReply: true}
 
 	convs := conversations.New(
 		promptsManager,
@@ -164,7 +166,7 @@ func setupAutoReplyTestEnv(t *testing.T, botConfigs []llm.BotConfig, llmResponse
 		licenseChecker,
 		i18n.Init(),
 		nil, // meetings
-		&testToolCallingConfig{},
+		cfg,
 	)
 	convs.SetConversationService(convSvc)
 
@@ -182,6 +184,7 @@ func setupAutoReplyTestEnv(t *testing.T, botConfigs []llm.BotConfig, llmResponse
 		settings:      settings,
 		channel:       channel,
 		llm:           fLLM,
+		config:        cfg,
 	}
 }
 
@@ -817,6 +820,66 @@ func TestAmbientAutoReply(t *testing.T) {
 			promptContains: []string{"ONLY-BILLING-QUESTIONS", "---- Instructions Start ----"},
 		},
 		{
+			name:           "ambient prompt omits thread-scoped guidance",
+			mode:           autoreply.ModeAmbient,
+			classifierJSON: falseJSON,
+			buildPost: func(env *autoReplyTestEnv) *model.Post {
+				return env.threadReply(autoReplyUserID, "follow up", true)
+			},
+			expectClassify: true,
+			promptOmits:    []string{"@mentioned earlier in this thread"},
+		},
+		{
+			name:           "ambient_threads replies once the agent has replied in the thread",
+			mode:           autoreply.ModeAmbientThreads,
+			instructions:   "ONLY-BILLING-QUESTIONS",
+			analysisModel:  "override-model",
+			classifierJSON: trueJSON,
+			buildPost: func(env *autoReplyTestEnv) *model.Post {
+				return env.threadReply(autoReplyUserID, "and the invoice?", true)
+			},
+			expectFired:    true,
+			expectClassify: true,
+			expectModel:    "override-model",
+			promptContains: []string{"ONLY-BILLING-QUESTIONS", "@mentioned earlier in this thread"},
+		},
+		{
+			name:           "ambient_threads false is fail-closed",
+			mode:           autoreply.ModeAmbientThreads,
+			classifierJSON: falseJSON,
+			buildPost: func(env *autoReplyTestEnv) *model.Post {
+				return env.threadReply(autoReplyUserID, "thanks all", true)
+			},
+			expectClassify: true,
+		},
+		{
+			name:           "ambient_threads ignores threads the agent has not replied in",
+			mode:           autoreply.ModeAmbientThreads,
+			classifierJSON: trueJSON,
+			buildPost: func(env *autoReplyTestEnv) *model.Post {
+				return env.threadReply(autoReplyUserID, "what about this?", false)
+			},
+		},
+		{
+			name:           "ambient_threads ignores top-level posts",
+			mode:           autoreply.ModeAmbientThreads,
+			classifierJSON: trueJSON,
+			buildPost: func(env *autoReplyTestEnv) *model.Post {
+				return env.rootPost(autoReplyUserID, "need help with billing")
+			},
+		},
+		{
+			name:           "ambient_threads does not count a root post authored by the agent",
+			mode:           autoreply.ModeAmbientThreads,
+			classifierJSON: trueJSON,
+			buildPost: func(env *autoReplyTestEnv) *model.Post {
+				root := &model.Post{Id: autoReplyRootID, ChannelId: autoReplyChannelID, UserId: autoReplyBotUserID, CreateAt: 100, Message: "daily digest"}
+				reply := &model.Post{Id: autoReplyReplyID, ChannelId: autoReplyChannelID, UserId: autoReplyUserID, RootId: autoReplyRootID, CreateAt: 200, Message: "nice"}
+				env.setThread(autoReplyRootID, root, reply)
+				return reply
+			},
+		},
+		{
 			name: "threads mode skips the classifier",
 			mode: autoreply.ModeThreads,
 			buildPost: func(env *autoReplyTestEnv) *model.Post {
@@ -939,6 +1002,32 @@ func TestAmbientAutoReply(t *testing.T) {
 			} else {
 				require.Zero(t, env.llm.classifierCalls)
 			}
+		})
+	}
+}
+
+func TestAmbientAutoReplyAdminKillSwitch(t *testing.T) {
+	for _, mode := range []autoreply.Mode{autoreply.ModeAmbient, autoreply.ModeAmbientThreads} {
+		t.Run(string(mode), func(t *testing.T) {
+			env := setupAutoReplyTestEnv(t,
+				[]llm.BotConfig{autoReplyBotConfig()},
+				dmMakeTextStream("canned reply"),
+			)
+			env.config.enableAmbientAutoReply = false
+			env.llm.noStreamResponseByOp = map[string]string{
+				llm.OperationAmbientClassification: `{"should_reply":true}`,
+			}
+			env.settings.set(autoreply.Setting{
+				ChannelID: autoReplyChannelID,
+				BotID:     autoReplyBotUserID,
+				Mode:      mode,
+			})
+
+			env.conversations.MessageHasBeenPosted(nil, env.threadReply(autoReplyUserID, "and the invoice?", true))
+
+			require.Empty(t, env.mmClient.createdPosts, "a disabled ambient mode must never reply")
+			require.Zero(t, env.llm.classifierCalls, "a disabled ambient mode must not spend a classifier call")
+			require.Empty(t, env.mmClient.loggedErrors())
 		})
 	}
 }
