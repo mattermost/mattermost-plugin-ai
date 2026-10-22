@@ -10,6 +10,8 @@ import (
 
 type aliasedClient = http.Client
 
+var configuredTimeout = 5 * time.Second
+
 type notAClient struct {
 	Transport http.RoundTripper
 }
@@ -18,6 +20,12 @@ var (
 	missing = http.Client{} // want `http.Client without Timeout`
 
 	withTimeout = http.Client{Timeout: time.Second}
+
+	zeroTimeout = http.Client{Timeout: 0} // want `http.Client without Timeout`
+
+	negativeTimeout = http.Client{Timeout: -time.Second} // want `http.Client without Timeout`
+
+	variableTimeout = http.Client{Timeout: configuredTimeout}
 
 	pointer = &http.Client{Transport: http.DefaultTransport} // want `http.Client without Timeout`
 
