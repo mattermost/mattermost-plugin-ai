@@ -26,6 +26,9 @@ linters:
         - empty
         - go-require
         - len
+    gocritic:
+      enabled-checks:
+        - emptyStringTest
     govet:
       disable:
         - fieldalignment

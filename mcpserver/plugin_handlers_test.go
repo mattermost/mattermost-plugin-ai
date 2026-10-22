@@ -653,7 +653,7 @@ func newHangingAndHealthyPluginForwarder(t *testing.T, hungPluginID string, heal
 }
 
 func splitPluginHTTPPath(path string) (pluginID, rest string) {
-	if len(path) > 0 && path[0] == '/' {
+	if path != "" && path[0] == '/' {
 		path = path[1:]
 	}
 	if idx := indexByte(path, '/'); idx >= 0 {
