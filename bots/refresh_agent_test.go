@@ -458,7 +458,7 @@ func TestRefreshAgentWaitsForInFlightRebuild(t *testing.T) {
 
 	select {
 	case <-refreshDone:
-		t.Fatal("RefreshAgent must wait for the in-flight rebuild to swap its registry")
+		require.FailNow(t, "RefreshAgent must wait for the in-flight rebuild to swap its registry")
 	case <-time.After(50 * time.Millisecond):
 	}
 	close(release)

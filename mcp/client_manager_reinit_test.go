@@ -278,7 +278,7 @@ func TestReInitDiscardsInFlightInvalidatedOrigin(t *testing.T) {
 			select {
 			case <-done:
 			case <-time.After(3 * time.Second):
-				t.Fatal("in-flight connect did not finish after ReInit")
+				require.FailNow(t, "in-flight connect did not finish after ReInit")
 			}
 			require.Nil(t, cachedUserClient(manager, "alice", "first"),
 				"an origin invalidated during dial must not commit a stale session")
@@ -506,7 +506,7 @@ func TestClientManagerReInitRaceSafe(t *testing.T) {
 	case <-done:
 	case <-time.After(20 * time.Second):
 		stop.Store(true)
-		t.Fatal("timed out running concurrent ReInit against runtime operations")
+		require.FailNow(t, "timed out running concurrent ReInit against runtime operations")
 	}
 
 	manager.Close()

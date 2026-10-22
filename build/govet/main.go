@@ -10,6 +10,7 @@ import (
 	"github.com/mattermost/mattermost/tools/mattermost-govet/license"
 	"github.com/mattermost/mattermost/tools/mattermost-govet/mutexLock"
 	"github.com/mattermost/mattermost/tools/mattermost-govet/noSelectStar"
+	"github.com/mattermost/mattermost/tools/mattermost-govet/tFatal"
 	"golang.org/x/tools/go/analysis/unitchecker"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/build/govet/httpclienttimeout"
@@ -24,6 +25,7 @@ func main() {
 		license.Analyzer,
 		mutexLock.Analyzer,
 		noSelectStar.Analyzer,
+		tFatal.Analyzer,
 		httpclienttimeout.Analyzer,
 	)
 }
