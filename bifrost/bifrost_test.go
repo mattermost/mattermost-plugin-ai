@@ -1000,9 +1000,7 @@ func TestPromptCaching(t *testing.T) {
 			b := &LLM{
 				provider:  tt.provider,
 				fallbacks: testHops(tt.fallbacks, nil),
-				registrations: map[schemas.ModelProvider]registration{
-					customProviderName(schemas.Anthropic, "svc2"): {base: schemas.Anthropic},
-				},
+				account:   testAccount(customAccount(schemas.Anthropic, "svc2")),
 			}
 			cfg := llm.LanguageModelConfig{Model: "test-model", MaxGeneratedTokens: 100}
 
@@ -2465,6 +2463,23 @@ func testHops(fallbacks []schemas.Fallback, ids []string) []fallbackHop {
 		hops = append(hops, hop)
 	}
 	return hops
+}
+
+// testAccount registers entries the way New does.
+func testAccount(entries ...*providerAccount) *multiProviderAccount {
+	account := newMultiProviderAccount()
+	for _, entry := range entries {
+		account.addProvider(entry)
+	}
+	return account
+}
+
+// customAccount is a fallback registered as a custom provider slot.
+func customAccount(base schemas.ModelProvider, serviceID string) *providerAccount {
+	return &providerAccount{
+		ProviderSettings: ProviderSettings{Provider: base},
+		name:             customProviderName(base, serviceID),
+	}
 }
 
 func TestConvertToBifrostRequest_RestrictedFallbacks(t *testing.T) {

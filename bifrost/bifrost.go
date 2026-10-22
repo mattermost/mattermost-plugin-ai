@@ -79,25 +79,10 @@ type LLM struct {
 	// alternative providers when the primary fails.
 	fallbacks []fallbackHop
 
-	// registrations maps each Bifrost registration name (including custom
-	// fallback slots such as "anthropic::svc2") to the service registered
-	// under it.
-	registrations map[schemas.ModelProvider]registration
-}
-
-// registration is one service registered with the Bifrost client.
-type registration struct {
-	base schemas.ModelProvider
-	// outputTokenLimit is a fallback service's configured output token limit;
-	// zero means unset. The primary's limit is the request default, which
-	// callers may override, so it is not set here.
-	outputTokenLimit int
-	// chatOnly marks a fallback whose Responses requests Bifrost sends as
-	// chat completions.
-	chatOnly bool
-	// fileDownloads marks a route that can serve captured files. Fallbacks of
-	// the same provider type have distinct routes.
-	fileDownloads bool
+	// account holds every service registered with the Bifrost client, keyed by
+	// registration name (including custom fallback slots such as
+	// "anthropic::svc2"). It is read-only once New returns.
+	account *multiProviderAccount
 }
 
 // fallbackHop pairs a Bifrost fallback with the durable service ID it came
@@ -198,12 +183,6 @@ func New(cfg Config) (*LLM, error) {
 	// slot, otherwise it silently inherits the earlier service's base URL and
 	// key at fallback time.
 	usedNames := map[schemas.ModelProvider]bool{primaryEntry.registeredName(): true}
-	registrations := map[schemas.ModelProvider]registration{
-		primaryEntry.registeredName(): {
-			base:          cfg.Provider,
-			fileDownloads: supportsProviderFileDownloadProvider(cfg.Provider),
-		},
-	}
 
 	// Redact the primary and every fallback key from error/log surfaces, even
 	// key formats the generic redaction patterns don't recognize.
@@ -217,6 +196,7 @@ func New(cfg Config) (*LLM, error) {
 		entry := &providerAccount{
 			ProviderSettings: fb.ProviderSettings,
 			keyless:          fb.IsKeyLess,
+			outputTokenLimit: fb.OutputTokenLimit,
 		}
 
 		// A fallback needs its own custom-provider slot when it collides on an
@@ -240,12 +220,6 @@ func New(cfg Config) (*LLM, error) {
 
 		account.addProvider(entry)
 		usedNames[name] = true
-		registrations[name] = registration{
-			base:             fb.Provider,
-			outputTokenLimit: fb.OutputTokenLimit,
-			chatOnly:         entry.chatOnly,
-			fileDownloads:    supportsProviderFileDownloadProvider(fb.Provider),
-		}
 		fallbacks = append(fallbacks, fallbackHop{
 			fallback: schemas.Fallback{
 				Provider: name,
@@ -280,7 +254,7 @@ func New(cfg Config) (*LLM, error) {
 		thinkingBudget:     cfg.ThinkingBudget,
 		useResponsesAPI:    cfg.UseResponsesAPI,
 		fallbacks:          fallbacks,
-		registrations:      registrations,
+		account:            account,
 	}, nil
 }
 
@@ -483,8 +457,11 @@ func (b *LLM) ProviderServices() *llm.ProviderServices {
 // hasFileDownloadRoute reports whether any registered route can serve
 // captured files.
 func (b *LLM) hasFileDownloadRoute() bool {
-	for _, reg := range b.registrations {
-		if reg.fileDownloads {
+	if b.account == nil {
+		return false
+	}
+	for _, entry := range b.account.entries {
+		if supportsProviderFileDownloadProvider(entry.Provider) {
 			return true
 		}
 	}
@@ -520,7 +497,7 @@ func (b *LLM) DownloadProviderFile(ctx context.Context, ref llm.ProviderFileRefe
 	if ref.ID == "" {
 		return fail(errors.New("file id is required"))
 	}
-	if !b.registrations[providerRoute].fileDownloads {
+	if entry := b.registration(providerRoute); entry == nil || !supportsProviderFileDownloadProvider(entry.Provider) {
 		return fail(errors.New("provider file route is not available"))
 	}
 

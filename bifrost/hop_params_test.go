@@ -441,10 +441,10 @@ func TestHopReasoningFollowsTheModelsMessagesAPI(t *testing.T) {
 				provider:         schemas.Anthropic,
 				reasoningEnabled: tt.reasoningEnabled,
 				reasoningEffort:  tt.effort,
-				registrations: map[schemas.ModelProvider]registration{
-					schemas.Anthropic: {base: schemas.Anthropic},
-					tt.provider:       {base: tt.provider},
-				},
+				account: testAccount(
+					&providerAccount{ProviderSettings: ProviderSettings{Provider: schemas.Anthropic}},
+					&providerAccount{ProviderSettings: ProviderSettings{Provider: tt.provider}},
+				),
 			}
 			cfg := llm.LanguageModelConfig{Model: tt.model, MaxGeneratedTokens: 16000}
 
@@ -468,10 +468,10 @@ func TestApplyHopParamsLeavesSharedParamsIntact(t *testing.T) {
 		provider:         schemas.Anthropic,
 		reasoningEffort:  "xhigh",
 		reasoningEnabled: true,
-		registrations: map[schemas.ModelProvider]registration{
-			schemas.Anthropic: {base: schemas.Anthropic},
-			customProviderName(schemas.Anthropic, "svc2"): {base: schemas.Anthropic},
-		},
+		account: testAccount(
+			&providerAccount{ProviderSettings: ProviderSettings{Provider: schemas.Anthropic}},
+			customAccount(schemas.Anthropic, "svc2"),
+		),
 	}
 	cfg := llm.LanguageModelConfig{Model: "claude-opus-4-7", MaxGeneratedTokens: 200000}
 	primary := &schemas.BifrostRequest{ChatRequest: b.convertToBifrostRequest(llm.CompletionRequest{

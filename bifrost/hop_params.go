@@ -94,8 +94,8 @@ func (b *LLM) responsesHopParams(params schemas.ResponsesParameters, name schema
 // primary's.
 func (b *LLM) configForHop(cfg llm.LanguageModelConfig, name schemas.ModelProvider, model string) llm.LanguageModelConfig {
 	cfg.Model = model
-	if limit := b.registrations[name].outputTokenLimit; limit > 0 {
-		cfg.MaxGeneratedTokens = min(cfg.MaxGeneratedTokens, limit)
+	if entry := b.registration(name); entry != nil && entry.outputTokenLimit > 0 {
+		cfg.MaxGeneratedTokens = min(cfg.MaxGeneratedTokens, entry.outputTokenLimit)
 	}
 	cfg.MaxGeneratedTokens = clampToModelOutputLimit(model, cfg.MaxGeneratedTokens)
 	return cfg
@@ -119,8 +119,17 @@ func maxTokensParam(cfg llm.LanguageModelConfig) *int {
 
 // baseProvider returns the provider type behind a Bifrost registration name.
 func (b *LLM) baseProvider(name schemas.ModelProvider) schemas.ModelProvider {
-	if reg, ok := b.registrations[name]; ok {
-		return reg.base
+	if entry := b.registration(name); entry != nil {
+		return entry.Provider
 	}
 	return name
+}
+
+// registration returns the service registered under name, or nil when no
+// service is.
+func (b *LLM) registration(name schemas.ModelProvider) *providerAccount {
+	if b.account == nil {
+		return nil
+	}
+	return b.account.entries[name]
 }

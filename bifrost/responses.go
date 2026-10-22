@@ -239,9 +239,10 @@ func convertToResponsesTools(request llm.CompletionRequest, cfg llm.LanguageMode
 // block should be sent.
 func (b *LLM) responsesReasoningFor(name schemas.ModelProvider, cfg llm.LanguageModelConfig) *schemas.ResponsesParametersReasoning {
 	provider := messagesAPIProvider(b.baseProvider(name), cfg.Model)
+	entry := b.registration(name)
 	// Bifrost sends a chat-only hop's Responses request as a chat completion
 	// and keeps reasoning_effort, so it gets the chat path's reasoning below.
-	if (provider == schemas.OpenAI || provider == schemas.Azure) && !b.registrations[name].chatOnly {
+	if (provider == schemas.OpenAI || provider == schemas.Azure) && (entry == nil || !entry.chatOnly) {
 		if b.thinkingOff(cfg) {
 			return nil
 		}
