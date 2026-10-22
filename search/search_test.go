@@ -15,8 +15,10 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise"
 	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise/enterprisetest"
 	"github.com/mattermost/mattermost-plugin-agents/v2/indexer"
+	"github.com/mattermost/mattermost-plugin-agents/v2/mcpserver/auth"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmapi"
 	mmapimocks "github.com/mattermost/mattermost-plugin-agents/v2/mmapi/mocks"
+	"github.com/mattermost/mattermost-plugin-agents/v2/scopedsession"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -622,4 +624,55 @@ func TestExecuteSearchNotConfigured(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "embedding search not configured")
 	require.Nil(t, results)
+}
+
+func TestSearchUnderScopedSession(t *testing.T) {
+	scope := &model.SessionScope{
+		Permissions: model.ScopeReadPermissions,
+		Resources:   model.SessionScopeResources{ChannelIDs: []string{"trigger"}, OpenTeamPublicChannels: true},
+	}
+
+	tests := []struct {
+		name       string
+		compliance bool
+		expected   model.SessionScopeResources
+	}{
+		{name: "searches the scope instead of memberships", expected: scope.Resources},
+		{name: "compliance mode drops open-team channels", compliance: true, expected: model.SessionScopeResources{ChannelIDs: []string{"trigger"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			session := &model.Session{Id: model.NewId(), ExpiresAt: model.GetMillis() + 60_000}
+			registry := scopedsession.NewRegistry(nil)
+			registry.Register(session, scope)
+
+			mockEmbedding := mocks.NewMockEmbeddingSearch(t)
+			mockClient := mmapimocks.NewMockClient(t)
+			allowVectorIndexStateRead(mockClient)
+			mockClient.On("GetConfig").Return(&model.Config{ComplianceSettings: model.ComplianceSettings{Enable: new(tt.compliance)}})
+			expected := tt.expected
+			mockEmbedding.On("Search", mock.Anything, "evidence", embeddings.SearchOptions{
+				Limit:  5,
+				UserID: "bot",
+				Scope:  &expected,
+			}).Return([]embeddings.SearchResult{}, nil)
+
+			s := New(func() embeddings.EmbeddingSearch { return mockEmbedding }, mockClient, licensedChecker())
+			s.SetScopeRegistry(registry)
+			_, err := s.Search(auth.WithSessionID(context.Background(), session.Id), "evidence", Options{UserID: "bot"})
+			require.NoError(t, err)
+		})
+	}
+
+	t.Run("a failed scope lookup fails the search", func(t *testing.T) {
+		mockEmbedding := mocks.NewMockEmbeddingSearch(t)
+		mockClient := mmapimocks.NewMockClient(t)
+		allowVectorIndexStateRead(mockClient)
+		registry := scopedsession.NewRegistry(func(string) (*model.Session, error) { return nil, errors.New("db down") })
+
+		s := New(func() embeddings.EmbeddingSearch { return mockEmbedding }, mockClient, licensedChecker())
+		s.SetScopeRegistry(registry)
+		_, err := s.Search(auth.WithSessionID(context.Background(), model.NewId()), "evidence", Options{UserID: "bot"})
+		require.Error(t, err)
+	})
 }
