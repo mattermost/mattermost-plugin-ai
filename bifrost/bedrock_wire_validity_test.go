@@ -20,38 +20,52 @@ import (
 const bedrockClaudeModel = "anthropic.claude-sonnet-4-6"
 
 // bedrockWireRequests builds posts on the chat path for chains that reach a
-// Bedrock hop and converts each with Bifrost's Bedrock converter, returning
-// the Converse body that hop would receive keyed by chain name.
+// Bedrock hop and converts the Bedrock hop's request with Bifrost's Bedrock
+// converter, returning the Converse body that hop would receive keyed by chain
+// name. A Bedrock fallback's request is the one the hook rebuilds for it.
 func bedrockWireRequests(t *testing.T, posts []llm.Post) map[string][]byte {
 	t.Helper()
 
-	chains := map[string]*LLM{
-		"Bedrock primary": {provider: schemas.Bedrock},
-		"OpenAI-compatible chat primary with a Bedrock fallback": {
-			provider:  schemas.OpenAI,
-			fallbacks: testHops([]schemas.Fallback{{Provider: schemas.Bedrock, Model: bedrockClaudeModel}}, nil),
+	chains := []struct {
+		name         string
+		b            *LLM
+		primaryModel string
+		// bedrockFallback is whether Bedrock is reached as a fallback.
+		bedrockFallback bool
+	}{
+		{name: "Bedrock primary", b: &LLM{provider: schemas.Bedrock}, primaryModel: bedrockClaudeModel},
+		{
+			name: "OpenAI-compatible chat primary with a Bedrock fallback",
+			b: &LLM{
+				provider:  schemas.OpenAI,
+				fallbacks: testHops([]schemas.Fallback{{Provider: schemas.Bedrock, Model: bedrockClaudeModel}}, nil),
+			},
+			primaryModel:    "gpt-4o",
+			bedrockFallback: true,
 		},
-	}
-	primaryModels := map[string]string{
-		"Bedrock primary": bedrockClaudeModel,
-		"OpenAI-compatible chat primary with a Bedrock fallback": "gpt-4o",
 	}
 
 	ctx, cancel := schemas.NewBifrostContextWithCancel(context.Background())
 	defer cancel()
 
+	request := llm.CompletionRequest{Posts: posts}
 	bodies := make(map[string][]byte, len(chains))
-	for name, b := range chains {
-		cfg := llm.LanguageModelConfig{Model: primaryModels[name], MaxGeneratedTokens: 1024}
-		req := b.convertToBifrostRequest(llm.CompletionRequest{Posts: posts}, cfg)
-		bedrockHop := *req
-		bedrockHop.Provider, bedrockHop.Model = schemas.Bedrock, bedrockClaudeModel
+	for _, chain := range chains {
+		cfg := llm.LanguageModelConfig{Model: chain.primaryModel, MaxGeneratedTokens: 1024}
+		bedrockReq := chain.b.convertToBifrostRequest(request, cfg)
+		if chain.bedrockFallback {
+			hop := *bedrockReq
+			hop.Provider, hop.Model = schemas.Bedrock, bedrockClaudeModel
+			hopReq := &schemas.BifrostRequest{ChatRequest: &hop}
+			require.NoError(t, chain.b.applyHopRequest(hopReq, request, cfg))
+			bedrockReq = hopReq.ChatRequest
+		}
 
-		wire, err := bedrock.ToBedrockChatCompletionRequest(ctx, &bedrockHop)
+		wire, err := bedrock.ToBedrockChatCompletionRequest(ctx, bedrockReq)
 		require.NoError(t, err)
 		body, err := json.Marshal(wire)
 		require.NoError(t, err)
-		bodies[name] = body
+		bodies[chain.name] = body
 	}
 	return bodies
 }

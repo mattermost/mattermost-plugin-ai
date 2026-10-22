@@ -169,6 +169,37 @@ func readFileData(file llm.File) ([]byte, error) {
 	return io.ReadAll(file.Reader)
 }
 
+// bufferFiles returns request with the bytes of every image file read into
+// Data. Each fallback hop rebuilds its messages, and a Reader can be read only
+// once. A file that cannot be read keeps neither Data nor Reader, which
+// multimodalContent reports as unreadable. The caller's posts are not modified.
+func bufferFiles(request llm.CompletionRequest) llm.CompletionRequest {
+	request.Posts = slices.Clone(request.Posts)
+	for i := range request.Posts {
+		if len(request.Posts[i].Files) == 0 {
+			continue
+		}
+		request.Posts[i].Files = slices.Clone(request.Posts[i].Files)
+		for j := range request.Posts[i].Files {
+			file := &request.Posts[i].Files[j]
+			if len(file.Data) > 0 || file.Reader == nil || !llm.IsSupportedImageMimeType(file.MimeType) {
+				continue
+			}
+			data, err := io.ReadAll(file.Reader)
+			switch {
+			case err != nil:
+				file.Reader = nil
+			case len(data) > 0:
+				file.Data, file.Reader = data, nil
+			default:
+				// An empty file reads as empty every time.
+				file.Reader = bytes.NewReader(nil)
+			}
+		}
+	}
+	return request
+}
+
 // New creates a new LLM instance with the given configuration. It errors when
 // a fallback cannot be registered, so a misconfigured fallback chain fails at
 // setup instead of silently shrinking.

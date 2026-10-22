@@ -25,15 +25,15 @@ func isBlank(s string) bool {
 	return strings.TrimSpace(s) == ""
 }
 
-// normalizePosts removes what a hop of chain would reject from a conversation,
-// so the chat and Responses paths render the same valid history: blank text,
-// tool calls that cannot form a tool_use/tool_result pair, and, for strict
-// chains, reasoning without a provider signature. Posts left with nothing to
-// send are dropped. For strict chains, a tool round directly followed by a
-// user post (one that was stopped, awaited approval, or ended without an
+// normalizePosts removes what a hop with rules would reject from a
+// conversation, so the chat and Responses paths render the same valid history:
+// blank text, tool calls that cannot form a tool_use/tool_result pair, and,
+// for strict hops, reasoning without a provider signature. Posts left with
+// nothing to send are dropped. For strict hops, a tool round directly followed
+// by a user post (one that was stopped, awaited approval, or ended without an
 // answer) gets a placeholder answer, so roles keep alternating. The text of a
 // user post with files is checked by multimodalContent.
-func normalizePosts(posts []llm.Post, chain requestChain) []llm.Post {
+func normalizePosts(posts []llm.Post, rules messageRules) []llm.Post {
 	normalized := make([]llm.Post, 0, len(posts))
 	for _, post := range posts {
 		switch post.Role {
@@ -45,13 +45,13 @@ func normalizePosts(posts []llm.Post, chain requestChain) []llm.Post {
 			if isBlank(post.Message) && len(post.Files) == 0 {
 				continue
 			}
-			if chain.strictMessages && len(normalized) > 0 {
+			if rules.strictMessages && len(normalized) > 0 {
 				if prev := normalized[len(normalized)-1]; prev.Role == llm.PostRoleBot && len(prev.ToolUse) > 0 {
 					normalized = append(normalized, llm.Post{Role: llm.PostRoleBot, Message: missingAnswerPlaceholder})
 				}
 			}
 		case llm.PostRoleBot:
-			p, ok := normalizeBotPost(post, chain.strictMessages)
+			p, ok := normalizeBotPost(post, rules.strictMessages)
 			if !ok {
 				continue
 			}

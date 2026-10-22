@@ -21,7 +21,8 @@ func (b *LLM) streamChat(ctx context.Context, request llm.CompletionRequest, cfg
 	)
 	bifrostCtx, cancel := schemas.NewBifrostContextWithTimeout(ctx, b.streamingTimeout*10)
 	defer cancel()
-	b.withHopParams(bifrostCtx, cfg)
+	request = bufferFiles(request)
+	b.withHopRequest(bifrostCtx, request, cfg)
 
 	// Convert to Bifrost request
 	bifrostReq := b.convertToBifrostRequest(request, cfg)
@@ -191,19 +192,28 @@ func (b *LLM) chatReasoningFor(name schemas.ModelProvider, cfg llm.LanguageModel
 	return reasoning
 }
 
-// convertToBifrostRequest converts our CompletionRequest to Bifrost's format.
+// convertToBifrostRequest converts our CompletionRequest to Bifrost's format,
+// built for the primary. Bifrost replays it to each fallback, whose body the
+// hopRequestPlugin rebuilds with chatRequestForHop.
 func (b *LLM) convertToBifrostRequest(request llm.CompletionRequest, cfg llm.LanguageModelConfig) *schemas.BifrostChatRequest {
-	request, chain := b.prepareRequest(request, cfg.Model)
-	messages := convertMessages(request.Posts, chain)
-	tools := convertTools(request, cfg)
-
-	req := &schemas.BifrostChatRequest{
+	messages, params := b.chatRequestForHop(request, cfg, b.provider, cfg.Model)
+	return &schemas.BifrostChatRequest{
 		Provider: b.provider,
 		Model:    cfg.Model,
 		Input:    messages,
+		Params:   params,
+		// Attach fallback chain so Bifrost retries with alternative providers on failure.
+		Fallbacks: b.requestFallbacks(request),
 	}
+}
 
-	// Set parameters
+// chatRequestForHop returns the messages and parameters for model on the
+// provider registered as name, shaped for that hop's own rules.
+func (b *LLM) chatRequestForHop(request llm.CompletionRequest, cfg llm.LanguageModelConfig, name schemas.ModelProvider, model string) ([]schemas.ChatMessage, *schemas.ChatParameters) {
+	rules := b.messageRulesFor(name, model, countRequestImages(request.Posts))
+	messages := convertMessages(normalizePosts(request.Posts, rules), rules)
+	tools := convertTools(request, cfg)
+
 	var params schemas.ChatParameters
 	if len(tools) > 0 {
 		params.Tools = tools
@@ -216,19 +226,14 @@ func (b *LLM) convertToBifrostRequest(request llm.CompletionRequest, cfg llm.Lan
 	if cfg.JSONOutputFormat != nil {
 		params.ResponseFormat = buildChatResponseFormat(cfg.JSONOutputFormat)
 	}
-	if chain.promptCaching {
+	if rules.promptCaching {
 		params.CacheControl = &schemas.CacheControl{Type: schemas.CacheControlTypeEphemeral}
 	}
-	req.Params = b.chatHopParams(params, req.Provider, req.Model, cfg)
-
-	// Attach fallback chain so Bifrost retries with alternative providers on failure.
-	req.Fallbacks = chain.fallbacks
-
-	return req
+	return messages, b.chatHopParams(params, name, model, cfg)
 }
 
-// convertMessages converts posts normalized for chain to Bifrost ChatMessage format.
-func convertMessages(posts []llm.Post, chain requestChain) []schemas.ChatMessage {
+// convertMessages converts posts normalized for rules to Bifrost ChatMessage format.
+func convertMessages(posts []llm.Post, rules messageRules) []schemas.ChatMessage {
 	messages := make([]schemas.ChatMessage, 0, len(posts))
 
 	for _, post := range posts {
@@ -249,7 +254,7 @@ func convertMessages(posts []llm.Post, chain requestChain) []schemas.ChatMessage
 				msg = schemas.ChatMessage{
 					Role: schemas.ChatMessageRoleUser,
 					Content: &schemas.ChatMessageContent{
-						ContentBlocks: createMultimodalContent(post, chain.imageDimensionLimit),
+						ContentBlocks: createMultimodalContent(post, rules.imageDimensionLimit),
 					},
 				}
 			} else {
@@ -331,7 +336,7 @@ func convertMessages(posts []llm.Post, chain requestChain) []schemas.ChatMessage
 
 	// Bifrost does not merge same-role turns for Anthropic or Bedrock on the
 	// chat path, and Bedrock Converse rejects them.
-	if chain.strictMessages {
+	if rules.strictMessages {
 		messages = mergeConsecutiveSameRoleMessages(messages)
 	}
 

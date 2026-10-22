@@ -434,18 +434,20 @@ func TestConvertMessagesReasoningDetails(t *testing.T) {
 			expectedLen: 1,
 		},
 		{
-			name:        "skips unsigned reasoning behind an Anthropic fallback",
-			provider:    schemas.OpenAI,
-			fallbacks:   []schemas.Fallback{{Provider: schemas.Anthropic, Model: "claude-sonnet-4-6"}},
-			posts:       unsignedPosts,
-			expectedLen: 1,
+			name:              "primary keeps unsigned reasoning with an Anthropic fallback",
+			provider:          schemas.OpenAI,
+			fallbacks:         []schemas.Fallback{{Provider: schemas.Anthropic, Model: "claude-sonnet-4-6"}},
+			posts:             unsignedPosts,
+			expectedLen:       1,
+			expectedReasoning: unsignedPosts[0].Reasoning,
 		},
 		{
-			name:        "skips unsigned reasoning behind a Bedrock fallback",
-			provider:    schemas.Gemini,
-			fallbacks:   []schemas.Fallback{{Provider: schemas.Bedrock, Model: "anthropic.claude-sonnet-4-6"}},
-			posts:       unsignedPosts,
-			expectedLen: 1,
+			name:              "primary keeps unsigned reasoning with a Bedrock fallback",
+			provider:          schemas.Gemini,
+			fallbacks:         []schemas.Fallback{{Provider: schemas.Bedrock, Model: "anthropic.claude-sonnet-4-6"}},
+			posts:             unsignedPosts,
+			expectedLen:       1,
+			expectedReasoning: unsignedPosts[0].Reasoning,
 		},
 		{
 			name:     "preserves unsigned reasoning for non-Anthropic",
@@ -950,8 +952,9 @@ func TestAnthropicSchemaKeepsThinkingWireRequest(t *testing.T) {
 
 // TestPromptCaching verifies that automatic prompt caching (top-level
 // cache_control) is requested for Anthropic and reaches the Anthropic wire
-// request, but is never attached for other providers or for Anthropic with
-// non-Anthropic fallbacks (where the marker would 400 the fallback request).
+// request, but is never attached for other providers. A non-Anthropic
+// fallback's request is rebuilt without it; TestMessageShapingIsBuiltPerFallbackHop covers
+// that on the wire.
 func TestPromptCaching(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -974,7 +977,7 @@ func TestPromptCaching(t *testing.T) {
 			name:      "anthropic with openai fallback",
 			provider:  schemas.Anthropic,
 			fallbacks: []schemas.Fallback{{Provider: schemas.OpenAI}},
-			want:      false,
+			want:      true,
 		},
 		{
 			name:     "openai",

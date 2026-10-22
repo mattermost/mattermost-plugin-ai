@@ -460,10 +460,10 @@ func TestHopReasoningFollowsTheModelsMessagesAPI(t *testing.T) {
 	}
 }
 
-// TestApplyHopParamsLeavesSharedParamsIntact guards the shallow-copy
-// hazard: Bifrost's fallback request shares Params with the primary, so the
-// hook must replace Params instead of writing through the shared pointer.
-func TestApplyHopParamsLeavesSharedParamsIntact(t *testing.T) {
+// TestApplyHopRequestLeavesSharedRequestIntact guards the shallow-copy
+// hazard: Bifrost's fallback request shares Input and Params with the primary,
+// so the hook must replace them instead of writing through the shared values.
+func TestApplyHopRequestLeavesSharedRequestIntact(t *testing.T) {
 	b := &LLM{
 		provider:         schemas.Anthropic,
 		reasoningEffort:  "xhigh",
@@ -474,21 +474,27 @@ func TestApplyHopParamsLeavesSharedParamsIntact(t *testing.T) {
 		),
 	}
 	cfg := llm.LanguageModelConfig{Model: "claude-opus-4-7", MaxGeneratedTokens: 200000}
-	primary := &schemas.BifrostRequest{ChatRequest: b.convertToBifrostRequest(llm.CompletionRequest{
-		Posts: []llm.Post{{Role: llm.PostRoleUser, Message: "hi"}},
-	}, cfg)}
-	sharedParams := primary.ChatRequest.Params
+	request := llm.CompletionRequest{Posts: []llm.Post{{Role: llm.PostRoleUser, Message: "hi"}}}
+	primary := &schemas.BifrostRequest{ChatRequest: b.convertToBifrostRequest(request, cfg)}
+	sharedParams, sharedInput := primary.ChatRequest.Params, primary.ChatRequest.Input
 
 	hop := *primary.ChatRequest
 	hop.Provider = customProviderName(schemas.Anthropic, "svc2")
 	hop.Model = "claude-opus-4-6"
-	b.applyHopParams(&schemas.BifrostRequest{ChatRequest: &hop}, cfg)
+	hopReq := &schemas.BifrostRequest{ChatRequest: &hop}
+	require.NoError(t, b.applyHopRequest(hopReq, request, cfg))
 
-	require.NotNil(t, hop.Params.Reasoning)
-	assert.Equal(t, "high", *hop.Params.Reasoning.Effort, "the Opus 4.6 hop must get an effort it accepts")
-	require.NotNil(t, hop.Params.MaxCompletionTokens)
-	assert.Equal(t, 128000, *hop.Params.MaxCompletionTokens, "the Opus 4.6 hop must get its own output limit")
+	rebuilt := hopReq.ChatRequest
+	assert.Equal(t, hop.Provider, rebuilt.Provider)
+	assert.Equal(t, hop.Model, rebuilt.Model)
+	assert.Equal(t, primary.ChatRequest.Fallbacks, rebuilt.Fallbacks)
+	require.NotNil(t, rebuilt.Params.Reasoning)
+	assert.Equal(t, "high", *rebuilt.Params.Reasoning.Effort, "the Opus 4.6 hop must get an effort it accepts")
+	require.NotNil(t, rebuilt.Params.MaxCompletionTokens)
+	assert.Equal(t, 128000, *rebuilt.Params.MaxCompletionTokens, "the Opus 4.6 hop must get its own output limit")
 	assert.Same(t, sharedParams, primary.ChatRequest.Params)
+	assert.NotSame(t, sharedParams, rebuilt.Params)
 	assert.Equal(t, "xhigh", *sharedParams.Reasoning.Effort, "the primary's shared params must be untouched")
 	assert.Equal(t, 200000, *sharedParams.MaxCompletionTokens, "the primary's shared params must be untouched")
+	assert.Equal(t, sharedInput, primary.ChatRequest.Input, "the primary's shared input must be untouched")
 }

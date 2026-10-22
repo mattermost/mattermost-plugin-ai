@@ -10,64 +10,79 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 )
 
-// hopParamsKey carries a request's hopParams resolver on its Bifrost
+// hopRequestKey carries a request's hopRequest rebuilder on its Bifrost
 // context. A Bifrost client is shared by every agent on a service, so the
-// agent's settings travel with the request, not the plugin.
-type hopParamsKey struct{}
+// request being served travels with it, not the plugin.
+type hopRequestKey struct{}
 
-// hopParams rewrites one attempt's model-specific parameters for that
-// attempt's provider and model.
-type hopParams func(req *schemas.BifrostRequest)
+// hopRequest rebuilds one fallback attempt's request for that attempt's
+// provider and model.
+type hopRequest func(req *schemas.BifrostRequest) error
 
-// hopParamsPlugin recomputes the max output tokens and reasoning block on
-// every Bifrost attempt. Bifrost retries fallbacks with the primary request's
-// parameters and only swaps the provider and model, but both are
-// model-specific: a primary's output limit can exceed what a fallback model
-// accepts, Opus 5.5 rejects the thinking:{type:"disabled"} that Sonnet 5
+// hopRequestPlugin gives every fallback attempt a request built for its own
+// provider and model. Bifrost retries a fallback with the primary's built
+// request and only swaps the provider and model, but the body is
+// provider-specific: image limits, strict message rules, prompt caching, a
+// primary's output limit that can exceed what a fallback model accepts, and
+// reasoning (Opus 5.5 rejects the thinking:{type:"disabled"} that Sonnet 5
 // needs, Opus 4.6 rejects xhigh, and an effort meant to minimize an always-on
-// model's thinking turns thinking on for a budget-based or Gemini fallback.
-type hopParamsPlugin struct{}
+// model's thinking turns thinking on for a budget-based or Gemini fallback).
+type hopRequestPlugin struct{}
 
-func (hopParamsPlugin) GetName() string { return "mattermost-ai-hop-params" }
+func (hopRequestPlugin) GetName() string { return "mattermost-ai-hop-request" }
 
-func (hopParamsPlugin) Cleanup() error { return nil }
+func (hopRequestPlugin) Cleanup() error { return nil }
 
-func (hopParamsPlugin) PreRequestHook(*schemas.BifrostContext, *schemas.BifrostRequest) error {
+func (hopRequestPlugin) PreRequestHook(*schemas.BifrostContext, *schemas.BifrostRequest) error {
 	return nil
 }
 
-// PreLLMHook runs once per attempt, with the fallback's provider and model
-// already swapped in.
-func (hopParamsPlugin) PreLLMHook(ctx *schemas.BifrostContext, req *schemas.BifrostRequest) (*schemas.BifrostRequest, *schemas.LLMPluginShortCircuit, error) {
-	if resolve, ok := ctx.Value(hopParamsKey{}).(hopParams); ok && req != nil {
-		resolve(req)
+// PreLLMHook runs once per attempt, with a fallback's provider and model
+// already swapped in. The primary's request is built by the request builders,
+// so only fallbacks are rebuilt; an attempt whose index is unknown is rebuilt
+// too, since the rebuilt request is correct for any hop.
+func (hopRequestPlugin) PreLLMHook(ctx *schemas.BifrostContext, req *schemas.BifrostRequest) (*schemas.BifrostRequest, *schemas.LLMPluginShortCircuit, error) {
+	if index, ok := ctx.Value(schemas.BifrostContextKeyFallbackIndex).(int); ok && index == 0 {
+		return req, nil, nil
+	}
+	if rebuild, ok := ctx.Value(hopRequestKey{}).(hopRequest); ok && req != nil {
+		return req, nil, rebuild(req)
 	}
 	return req, nil, nil
 }
 
-func (hopParamsPlugin) PostLLMHook(_ *schemas.BifrostContext, resp *schemas.BifrostResponse, bifrostErr *schemas.BifrostError) (*schemas.BifrostResponse, *schemas.BifrostError, error) {
+func (hopRequestPlugin) PostLLMHook(_ *schemas.BifrostContext, resp *schemas.BifrostResponse, bifrostErr *schemas.BifrostError) (*schemas.BifrostResponse, *schemas.BifrostError, error) {
 	return resp, bifrostErr, nil
 }
 
-// withHopParams attaches the per-attempt resolver for cfg as requested,
-// before any clamp to a service's or model's output limit.
-func (b *LLM) withHopParams(ctx *schemas.BifrostContext, cfg llm.LanguageModelConfig) {
-	ctx.SetValue(hopParamsKey{}, hopParams(func(req *schemas.BifrostRequest) {
-		b.applyHopParams(req, cfg)
+// withHopRequest attaches the per-attempt rebuilder for request as
+// requested, before any clamp to a service's or model's output limit.
+func (b *LLM) withHopRequest(ctx *schemas.BifrostContext, request llm.CompletionRequest, cfg llm.LanguageModelConfig) {
+	ctx.SetValue(hopRequestKey{}, hopRequest(func(req *schemas.BifrostRequest) error {
+		return b.applyHopRequest(req, request, cfg)
 	}))
 }
 
-// applyHopParams replaces the attempt's max output tokens and reasoning block
-// with the ones for its provider and model. Bifrost's fallback copy is
-// shallow, so Params is shared across attempts and must be replaced rather
-// than modified.
-func (b *LLM) applyHopParams(req *schemas.BifrostRequest, cfg llm.LanguageModelConfig) {
+// applyHopRequest replaces the attempt's input and parameters with ones built
+// for its provider and model. Bifrost's fallback copy is shallow, so the input
+// and parameters are shared across attempts and must be replaced rather than
+// modified.
+func (b *LLM) applyHopRequest(req *schemas.BifrostRequest, request llm.CompletionRequest, cfg llm.LanguageModelConfig) error {
 	switch {
-	case req.ChatRequest != nil && req.ChatRequest.Params != nil:
-		req.ChatRequest.Params = b.chatHopParams(*req.ChatRequest.Params, req.ChatRequest.Provider, req.ChatRequest.Model, cfg)
-	case req.ResponsesRequest != nil && req.ResponsesRequest.Params != nil:
-		req.ResponsesRequest.Params = b.responsesHopParams(*req.ResponsesRequest.Params, req.ResponsesRequest.Provider, req.ResponsesRequest.Model, cfg)
+	case req.ChatRequest != nil:
+		hop := *req.ChatRequest
+		hop.Input, hop.Params = b.chatRequestForHop(request, cfg, hop.Provider, hop.Model)
+		req.ChatRequest = &hop
+	case req.ResponsesRequest != nil:
+		hop := *req.ResponsesRequest
+		input, params, err := b.responsesRequestForHop(request, cfg, hop.Provider, hop.Model)
+		if err != nil {
+			return err
+		}
+		hop.Input, hop.Params = input, params
+		req.ResponsesRequest = &hop
 	}
+	return nil
 }
 
 // chatHopParams returns params with the max output tokens and reasoning block
