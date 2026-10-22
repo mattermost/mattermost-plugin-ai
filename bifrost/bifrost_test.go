@@ -1000,8 +1000,8 @@ func TestPromptCaching(t *testing.T) {
 			b := &LLM{
 				provider:  tt.provider,
 				fallbacks: testHops(tt.fallbacks, nil),
-				baseProviders: map[schemas.ModelProvider]schemas.ModelProvider{
-					customProviderName(schemas.Anthropic, "svc2"): schemas.Anthropic,
+				registrations: map[schemas.ModelProvider]registration{
+					customProviderName(schemas.Anthropic, "svc2"): {base: schemas.Anthropic},
 				},
 			}
 			cfg := llm.LanguageModelConfig{Model: "test-model", MaxGeneratedTokens: 100}

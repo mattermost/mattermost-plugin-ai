@@ -6,6 +6,7 @@ package bifrost
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/maximhq/bifrost/core/schemas"
 
@@ -158,44 +159,40 @@ func createResponsesMultimodalContent(post llm.Post, maxDim int) []schemas.Respo
 // server tool to direct model invocation. See webToolResponsesTool.
 const anthropicDirectToolCaller = "direct"
 
-// sandboxEnabled reports whether the agent explicitly enabled the provider code
-// sandbox (the code_interpreter native tool — Anthropic's code_execution).
-func (b *LLM) sandboxEnabled() bool {
-	return b.isNativeToolEnabled(llm.NativeToolCodeInterpreter)
-}
-
 // webToolResponsesTool builds a native web_search / web_fetch tool definition.
 //
-// Unless the agent explicitly enabled the code sandbox (code_interpreter),
-// AllowedCallers is pinned to "direct" — Anthropic's documented opt-out from
-// dynamic filtering, which would otherwise auto-provision the code-execution
-// sandbox on newer Claude models:
+// Unless the agent explicitly enabled the code sandbox (code_interpreter —
+// Anthropic's code_execution), AllowedCallers is pinned to "direct" —
+// Anthropic's documented opt-out from dynamic filtering, which would otherwise
+// auto-provision the code-execution sandbox on newer Claude models:
 // https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool#dynamic-filtering
 // Bifrost strips the field for providers that don't accept it; pinned by
 // TestWebSearchAllowedCallersStrippedForOpenAI and
 // TestAnthropicOnlyWebFetchDroppedForOpenAI.
-func (b *LLM) webToolResponsesTool(toolType schemas.ResponsesToolType) schemas.ResponsesTool {
+func webToolResponsesTool(toolType schemas.ResponsesToolType, sandboxEnabled bool) schemas.ResponsesTool {
 	tool := schemas.ResponsesTool{Type: toolType}
-	if !b.sandboxEnabled() {
+	if !sandboxEnabled {
 		tool.AllowedCallers = []string{anthropicDirectToolCaller}
 	}
 	return tool
 }
 
-// convertToResponsesTools creates Responses API tools including native tools and function tools.
-func (b *LLM) convertToResponsesTools(request llm.CompletionRequest, cfg llm.LanguageModelConfig) []schemas.ResponsesTool {
+// convertToResponsesTools creates Responses API tools including the enabled
+// native tools and function tools.
+func convertToResponsesTools(request llm.CompletionRequest, cfg llm.LanguageModelConfig, nativeTools []string) []schemas.ResponsesTool {
 	var result []schemas.ResponsesTool
+	sandboxEnabled := slices.Contains(nativeTools, llm.NativeToolCodeInterpreter)
 
 	// Add native tools (always add when configured, regardless of ToolsDisabled)
-	for _, nativeTool := range b.enabledNativeTools {
+	for _, nativeTool := range nativeTools {
 		switch nativeTool {
 		case llm.NativeToolWebSearch:
 			if cfg.SkipNativeWebSearch {
 				continue
 			}
-			result = append(result, b.webToolResponsesTool(schemas.ResponsesToolTypeWebSearch))
+			result = append(result, webToolResponsesTool(schemas.ResponsesToolTypeWebSearch, sandboxEnabled))
 		case llm.NativeToolWebFetch:
-			result = append(result, b.webToolResponsesTool(schemas.ResponsesToolTypeWebFetch))
+			result = append(result, webToolResponsesTool(schemas.ResponsesToolTypeWebFetch, sandboxEnabled))
 		case llm.NativeToolCodeInterpreter:
 			// OpenAI rejects code_interpreter without a container; "auto"
 			// provisions a fresh one per request. Anthropic ignores it.
@@ -210,8 +207,8 @@ func (b *LLM) convertToResponsesTools(request llm.CompletionRequest, cfg llm.Lan
 
 	// When NativeWebSearchAllowed is true but web_search is not in enabledNativeTools,
 	// add it dynamically. SkipNativeWebSearch is the license gate for that tool.
-	if !cfg.SkipNativeWebSearch && cfg.NativeWebSearchAllowed && !b.isNativeToolEnabled(llm.NativeToolWebSearch) {
-		result = append(result, b.webToolResponsesTool(schemas.ResponsesToolTypeWebSearch))
+	if !cfg.SkipNativeWebSearch && cfg.NativeWebSearchAllowed && !slices.Contains(nativeTools, llm.NativeToolWebSearch) {
+		result = append(result, webToolResponsesTool(schemas.ResponsesToolTypeWebSearch, sandboxEnabled))
 	}
 
 	// Keep function tools defined when the history has tool_use blocks; the
@@ -241,10 +238,10 @@ func (b *LLM) convertToResponsesTools(request llm.CompletionRequest, cfg llm.Lan
 // for cfg.Model on the provider registered as name, or nil when no reasoning
 // block should be sent.
 func (b *LLM) responsesReasoningFor(name schemas.ModelProvider, cfg llm.LanguageModelConfig) *schemas.ResponsesParametersReasoning {
-	provider := b.baseProvider(name)
+	provider := messagesAPIProvider(b.baseProvider(name), cfg.Model)
 	// Bifrost sends a chat-only hop's Responses request as a chat completion
 	// and keeps reasoning_effort, so it gets the chat path's reasoning below.
-	if (provider == schemas.OpenAI || provider == schemas.Azure) && !b.chatOnlyProviders[name] {
+	if (provider == schemas.OpenAI || provider == schemas.Azure) && !b.registrations[name].chatOnly {
 		if b.thinkingOff(cfg) {
 			return nil
 		}
@@ -280,7 +277,7 @@ func (b *LLM) responsesReasoningFor(name schemas.ModelProvider, cfg llm.Language
 func (b *LLM) convertToBifrostResponsesRequest(request llm.CompletionRequest, cfg llm.LanguageModelConfig) (*schemas.BifrostResponsesRequest, error) {
 	request, chain := b.prepareRequest(request, cfg.Model)
 	messages := convertToResponsesMessages(request.Posts, chain)
-	tools := b.convertToResponsesTools(request, cfg)
+	tools := convertToResponsesTools(request, cfg, b.enabledNativeTools)
 
 	req := &schemas.BifrostResponsesRequest{
 		Provider: b.provider,

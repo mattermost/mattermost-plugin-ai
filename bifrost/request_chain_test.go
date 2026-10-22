@@ -14,14 +14,14 @@ import (
 
 func TestRequestChain(t *testing.T) {
 	customAnthropic := customProviderName(schemas.Anthropic, "svc2")
-	baseProviders := map[schemas.ModelProvider]schemas.ModelProvider{
-		schemas.OpenAI:    schemas.OpenAI,
-		schemas.Anthropic: schemas.Anthropic,
-		schemas.Gemini:    schemas.Gemini,
-		schemas.Bedrock:   schemas.Bedrock,
-		schemas.Vertex:    schemas.Vertex,
-		schemas.Azure:     schemas.Azure,
-		customAnthropic:   schemas.Anthropic,
+	registrations := map[schemas.ModelProvider]registration{
+		schemas.OpenAI:    {base: schemas.OpenAI},
+		schemas.Anthropic: {base: schemas.Anthropic},
+		schemas.Gemini:    {base: schemas.Gemini},
+		schemas.Bedrock:   {base: schemas.Bedrock},
+		schemas.Vertex:    {base: schemas.Vertex},
+		schemas.Azure:     {base: schemas.Azure},
+		customAnthropic:   {base: schemas.Anthropic},
 	}
 	tests := []struct {
 		name            string
@@ -117,7 +117,7 @@ func TestRequestChain(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			b := &LLM{provider: tt.provider, fallbacks: testHops(tt.fallbacks, nil), baseProviders: baseProviders}
+			b := &LLM{provider: tt.provider, fallbacks: testHops(tt.fallbacks, nil), registrations: registrations}
 			files := make([]llm.File, tt.imageCount)
 			for i := range files {
 				files[i] = llm.File{MimeType: "image/png"}

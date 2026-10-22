@@ -134,8 +134,11 @@ func TestMessageShapingCoversEveryFallbackHop(t *testing.T) {
 		// wantReached is how many hops, in order, receive the request.
 		wantReached      int
 		wantImageOmitted bool
-		// wantStrict is whether the body follows Anthropic's message rules:
-		// no unsigned reasoning, and (on the chat path) no repeated roles.
+		// wantStrict is whether the chain has a hop with strict message
+		// rules: no hop receives unsigned reasoning and, on the chat path, no
+		// role repeats. Bifrost strips unsigned thinking for Anthropic itself,
+		// so the reasoning check does not depend on our normalization;
+		// TestBedrockChatRequestsAreValidConverse covers the hop that does.
 		wantStrict bool
 		chatPath   bool
 		// wantNativeTools is, per reached hop, the native tools its body
@@ -262,7 +265,7 @@ func TestMessageShapingCoversEveryFallbackHop(t *testing.T) {
 				assert.Contains(t, body, emptyToolResultPlaceholder, "%s blank tool results get the placeholder (#995)", label)
 				assert.NotContains(t, body, "stray result", "%s nameless orphan results are dropped", label)
 				if tt.wantStrict {
-					assert.NotContains(t, body, unsignedReasoning, "%s must not replay unsigned reasoning", label)
+					assert.NotContains(t, body, unsignedReasoning, "%s must not receive unsigned reasoning", label)
 				}
 				if tt.wantStrict && tt.chatPath {
 					if _, isChat := parsed["messages"]; isChat {

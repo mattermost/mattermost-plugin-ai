@@ -264,6 +264,59 @@ func TestGetLLMProviderServicesForNonDownloadablePrimary(t *testing.T) {
 	}
 }
 
+func TestSandboxFileGatesFollowTheServingChain(t *testing.T) {
+	openAI := llm.ServiceConfig{ID: "openai-svc", Type: llm.ServiceTypeOpenAI, APIKey: "k", DefaultModel: "gpt-5"}
+	anthropic := llm.ServiceConfig{ID: "anthropic-svc", Type: llm.ServiceTypeAnthropic, APIKey: "k2", DefaultModel: "claude-sonnet-4-6"}
+	openAIWithAnthropicFallback := openAI
+	openAIWithAnthropicFallback.FallbackServiceID = anthropic.ID
+
+	tests := []struct {
+		name        string
+		services    []llm.ServiceConfig
+		primaryID   string
+		wantPromise bool
+		wantAttach  bool
+	}{
+		{
+			name:       "OpenAI primary with an Anthropic fallback attaches files but does not promise them",
+			services:   []llm.ServiceConfig{openAIWithAnthropicFallback, anthropic},
+			primaryID:  openAI.ID,
+			wantAttach: true,
+		},
+		{
+			name:        "Anthropic primary promises and attaches files",
+			services:    []llm.ServiceConfig{anthropic},
+			primaryID:   anthropic.ID,
+			wantPromise: true,
+			wantAttach:  true,
+		},
+		{
+			name:      "OpenAI alone neither promises nor attaches files",
+			services:  []llm.ServiceConfig{openAI},
+			primaryID: openAI.ID,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &mockConfig{services: tt.services}
+			agentStore := &stubAgentStore{agents: []llm.BotConfig{{
+				ID: "bot1", Name: "sandbox", DisplayName: "Sandbox", ServiceID: tt.primaryID,
+				EnabledNativeTools: []string{llm.NativeToolCodeInterpreter},
+			}}}
+			mmBots := newEnsureBotsHarness(t, cfg, agentStore, enterpriseAdvancedLicense())
+
+			require.NoError(t, mmBots.EnsureBots())
+			bots := mmBots.GetAllBots()
+			require.Len(t, bots, 1)
+			require.True(t, bots[0].HasNativeCodeExecutionEnabled())
+
+			assert.Equal(t, tt.wantPromise, bots[0].ShouldPromiseSandboxFiles(), "prompt gate")
+			assert.Equal(t, tt.wantAttach, bots[0].CanAttachSandboxFiles(), "attach gate")
+		})
+	}
+}
+
 func TestGetLLMLoadTestMockInvalidProfileJSON(t *testing.T) {
 	cfg := &mockConfig{}
 	mmBots := newTestMMBots(t, cfg)

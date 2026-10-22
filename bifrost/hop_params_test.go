@@ -175,6 +175,26 @@ func TestReasoningIsResolvedPerFallbackHop(t *testing.T) {
 			wantFallback:    wantAnthropic{thinkingType: "adaptive", effort: "low", display: "omitted"},
 		},
 		{
+			name:         "Claude on an Azure fallback gets the effort an Anthropic hop gets",
+			primaryModel: "claude-opus-4-7", fallbackType: llm.ServiceTypeAzure, fallbackModel: "claude-opus-4-6",
+			reasoningEnabled: true, effort: "high",
+			wantPrimary:  wantAnthropic{thinkingType: "adaptive", effort: "high"},
+			wantFallback: wantAnthropic{thinkingType: "adaptive", effort: "high"},
+		},
+		{
+			name:         "Sonnet 5 off on an Azure fallback disables thinking",
+			primaryModel: "claude-opus-5-5", fallbackType: llm.ServiceTypeAzure, fallbackModel: "claude-sonnet-5",
+			wantPrimary:  wantAnthropic{thinkingType: "adaptive", effort: "low", display: "omitted"},
+			wantFallback: wantAnthropic{thinkingType: "disabled"},
+		},
+		{
+			name:         "Responses path disables thinking for Sonnet 5 on an Azure fallback",
+			primaryModel: "claude-opus-5-5", fallbackType: llm.ServiceTypeAzure, fallbackModel: "claude-sonnet-5",
+			nativeWebSearch: true,
+			wantPrimary:     wantAnthropic{thinkingType: "adaptive", effort: "low", display: "omitted"},
+			wantFallback:    wantAnthropic{thinkingType: "disabled"},
+		},
+		{
 			name:         "Opus 5.5 off does not ask a Gemini fallback for thoughts",
 			primaryModel: "claude-opus-5-5", fallbackType: llm.ServiceTypeGemini, fallbackModel: "gemini-2.5-flash",
 			wantPrimary:     wantAnthropic{thinkingType: "adaptive", effort: "low", display: "omitted"},
@@ -392,6 +412,54 @@ func TestChatOnlyFallbackGetsChatPathReasoning(t *testing.T) {
 	}
 }
 
+// TestHopReasoningFollowsTheModelsMessagesAPI checks that a Claude model on
+// Vertex or Azure, which Bifrost sends to Anthropic's Messages API, gets the
+// reasoning an Anthropic hop with the same model gets, on both API paths.
+// Vertex cannot be pointed at a test server, so it is checked here rather
+// than through a captured failover.
+func TestHopReasoningFollowsTheModelsMessagesAPI(t *testing.T) {
+	tests := []struct {
+		name             string
+		provider         schemas.ModelProvider
+		model            string
+		reasoningEnabled bool
+		effort           string
+		wantAnthropic    bool
+	}{
+		{name: "Sonnet 5 off on Vertex", provider: schemas.Vertex, model: "claude-sonnet-5@20260101", wantAnthropic: true},
+		{name: "Opus 5.5 off on Vertex", provider: schemas.Vertex, model: "claude-opus-5-5", wantAnthropic: true},
+		{name: "Opus 4.6 high on Vertex", provider: schemas.Vertex, model: "claude-opus-4-6", reasoningEnabled: true, effort: "high", wantAnthropic: true},
+		{name: "Sonnet 5 off on Azure", provider: schemas.Azure, model: "claude-sonnet-5", wantAnthropic: true},
+		{name: "Opus 4.6 high on Azure", provider: schemas.Azure, model: "claude-opus-4-6", reasoningEnabled: true, effort: "high", wantAnthropic: true},
+		{name: "Gemini on Vertex keeps Gemini reasoning", provider: schemas.Vertex, model: "gemini-2.5-pro", reasoningEnabled: true, effort: "high"},
+		{name: "GPT on Azure keeps OpenAI reasoning", provider: schemas.Azure, model: "gpt-5", reasoningEnabled: true, effort: "high"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b := &LLM{
+				provider:         schemas.Anthropic,
+				reasoningEnabled: tt.reasoningEnabled,
+				reasoningEffort:  tt.effort,
+				registrations: map[schemas.ModelProvider]registration{
+					schemas.Anthropic: {base: schemas.Anthropic},
+					tt.provider:       {base: tt.provider},
+				},
+			}
+			cfg := llm.LanguageModelConfig{Model: tt.model, MaxGeneratedTokens: 16000}
+
+			chatHop, chatAnthropic := b.chatReasoningFor(tt.provider, cfg), b.chatReasoningFor(schemas.Anthropic, cfg)
+			responsesHop, responsesAnthropic := b.responsesReasoningFor(tt.provider, cfg), b.responsesReasoningFor(schemas.Anthropic, cfg)
+			if tt.wantAnthropic {
+				assert.Equal(t, chatAnthropic, chatHop, "chat path")
+				assert.Equal(t, responsesAnthropic, responsesHop, "Responses path")
+				return
+			}
+			assert.NotEqual(t, responsesAnthropic, responsesHop, "Responses path")
+		})
+	}
+}
+
 // TestApplyHopParamsLeavesSharedParamsIntact guards the shallow-copy
 // hazard: Bifrost's fallback request shares Params with the primary, so the
 // hook must replace Params instead of writing through the shared pointer.
@@ -400,9 +468,9 @@ func TestApplyHopParamsLeavesSharedParamsIntact(t *testing.T) {
 		provider:         schemas.Anthropic,
 		reasoningEffort:  "xhigh",
 		reasoningEnabled: true,
-		baseProviders: map[schemas.ModelProvider]schemas.ModelProvider{
-			schemas.Anthropic: schemas.Anthropic,
-			customProviderName(schemas.Anthropic, "svc2"): schemas.Anthropic,
+		registrations: map[schemas.ModelProvider]registration{
+			schemas.Anthropic: {base: schemas.Anthropic},
+			customProviderName(schemas.Anthropic, "svc2"): {base: schemas.Anthropic},
 		},
 	}
 	cfg := llm.LanguageModelConfig{Model: "claude-opus-4-7", MaxGeneratedTokens: 200000}

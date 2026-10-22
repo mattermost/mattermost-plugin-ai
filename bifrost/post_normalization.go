@@ -15,6 +15,12 @@ import (
 // or tool result may be replayed with blank content.
 const emptyToolResultPlaceholder = "(no output)"
 
+// missingAnswerPlaceholder stands in for the answer of a tool round that a
+// user post directly follows. Bedrock's chat converter sends tool results as a
+// user message without merging it into the next one, and Converse rejects
+// consecutive user messages.
+const missingAnswerPlaceholder = "(no response)"
+
 func isBlank(s string) bool {
 	return strings.TrimSpace(s) == ""
 }
@@ -23,8 +29,10 @@ func isBlank(s string) bool {
 // so the chat and Responses paths render the same valid history: blank text,
 // tool calls that cannot form a tool_use/tool_result pair, and, for strict
 // chains, reasoning without a provider signature. Posts left with nothing to
-// send are dropped. The text of a user post with files is checked by
-// multimodalContent.
+// send are dropped. For strict chains, a tool round directly followed by a
+// user post (one that was stopped, awaited approval, or ended without an
+// answer) gets a placeholder answer, so roles keep alternating. The text of a
+// user post with files is checked by multimodalContent.
 func normalizePosts(posts []llm.Post, chain requestChain) []llm.Post {
 	normalized := make([]llm.Post, 0, len(posts))
 	for _, post := range posts {
@@ -36,6 +44,11 @@ func normalizePosts(posts []llm.Post, chain requestChain) []llm.Post {
 		case llm.PostRoleUser:
 			if isBlank(post.Message) && len(post.Files) == 0 {
 				continue
+			}
+			if chain.strictMessages && len(normalized) > 0 {
+				if prev := normalized[len(normalized)-1]; prev.Role == llm.PostRoleBot && len(prev.ToolUse) > 0 {
+					normalized = append(normalized, llm.Post{Role: llm.PostRoleBot, Message: missingAnswerPlaceholder})
+				}
 			}
 		case llm.PostRoleBot:
 			p, ok := normalizeBotPost(post, chain.strictMessages)

@@ -79,20 +79,25 @@ type LLM struct {
 	// alternative providers when the primary fails.
 	fallbacks []fallbackHop
 
-	// baseProviders maps each Bifrost registration name (including custom
-	// fallback slots such as "anthropic::svc2") to its base provider type.
-	baseProviders map[schemas.ModelProvider]schemas.ModelProvider
-	// outputTokenLimits maps each fallback's Bifrost registration name to its
-	// service's configured output token limit; zero or absent means unset. The
-	// primary's limit is the request default, which callers may override.
-	outputTokenLimits map[schemas.ModelProvider]int
-	// chatOnlyProviders holds the registration names of fallbacks registered
-	// chat-only, whose Responses requests Bifrost sends as chat completions.
-	chatOnlyProviders map[schemas.ModelProvider]bool
+	// registrations maps each Bifrost registration name (including custom
+	// fallback slots such as "anthropic::svc2") to the service registered
+	// under it.
+	registrations map[schemas.ModelProvider]registration
+}
 
-	// providerFileDownloadRoutes are registered Bifrost routes that can serve
-	// captured files. Fallbacks of the same provider type have distinct routes.
-	providerFileDownloadRoutes map[schemas.ModelProvider]bool
+// registration is one service registered with the Bifrost client.
+type registration struct {
+	base schemas.ModelProvider
+	// outputTokenLimit is a fallback service's configured output token limit;
+	// zero means unset. The primary's limit is the request default, which
+	// callers may override, so it is not set here.
+	outputTokenLimit int
+	// chatOnly marks a fallback whose Responses requests Bifrost sends as
+	// chat completions.
+	chatOnly bool
+	// fileDownloads marks a route that can serve captured files. Fallbacks of
+	// the same provider type have distinct routes.
+	fileDownloads bool
 }
 
 // fallbackHop pairs a Bifrost fallback with the durable service ID it came
@@ -193,18 +198,16 @@ func New(cfg Config) (*LLM, error) {
 	// slot, otherwise it silently inherits the earlier service's base URL and
 	// key at fallback time.
 	usedNames := map[schemas.ModelProvider]bool{primaryEntry.registeredName(): true}
-	baseProviders := map[schemas.ModelProvider]schemas.ModelProvider{primaryEntry.registeredName(): cfg.Provider}
-	outputTokenLimits := map[schemas.ModelProvider]int{}
-	chatOnlyProviders := make(map[schemas.ModelProvider]bool)
+	registrations := map[schemas.ModelProvider]registration{
+		primaryEntry.registeredName(): {
+			base:          cfg.Provider,
+			fileDownloads: supportsProviderFileDownloadProvider(cfg.Provider),
+		},
+	}
 
 	// Redact the primary and every fallback key from error/log surfaces, even
 	// key formats the generic redaction patterns don't recognize.
 	redactKeys := []string{cfg.APIKey}
-
-	providerFileDownloadRoutes := make(map[schemas.ModelProvider]bool)
-	if supportsProviderFileDownloadProvider(cfg.Provider) {
-		providerFileDownloadRoutes[primaryEntry.registeredName()] = true
-	}
 
 	var fallbacks []fallbackHop
 	for _, fb := range cfg.Fallbacks {
@@ -237,13 +240,11 @@ func New(cfg Config) (*LLM, error) {
 
 		account.addProvider(entry)
 		usedNames[name] = true
-		baseProviders[name] = fb.Provider
-		outputTokenLimits[name] = fb.OutputTokenLimit
-		if entry.chatOnly {
-			chatOnlyProviders[name] = true
-		}
-		if supportsProviderFileDownloadProvider(fb.Provider) {
-			providerFileDownloadRoutes[name] = true
+		registrations[name] = registration{
+			base:             fb.Provider,
+			outputTokenLimit: fb.OutputTokenLimit,
+			chatOnly:         entry.chatOnly,
+			fileDownloads:    supportsProviderFileDownloadProvider(fb.Provider),
 		}
 		fallbacks = append(fallbacks, fallbackHop{
 			fallback: schemas.Fallback{
@@ -265,24 +266,21 @@ func New(cfg Config) (*LLM, error) {
 	}
 
 	return &LLM{
-		client:                     client,
-		provider:                   cfg.Provider,
-		apiKey:                     cfg.APIKey,
-		fallbackAPIKeys:            redactKeys[1:],
-		defaultModel:               cfg.DefaultModel,
-		inputTokenLimit:            cfg.InputTokenLimit,
-		outputTokenLimit:           cfg.OutputTokenLimit,
-		streamingTimeout:           streamingTimeout,
-		enabledNativeTools:         cfg.EnabledNativeTools,
-		reasoningEnabled:           cfg.ReasoningEnabled,
-		reasoningEffort:            cfg.ReasoningEffort,
-		thinkingBudget:             cfg.ThinkingBudget,
-		useResponsesAPI:            cfg.UseResponsesAPI,
-		fallbacks:                  fallbacks,
-		baseProviders:              baseProviders,
-		outputTokenLimits:          outputTokenLimits,
-		chatOnlyProviders:          chatOnlyProviders,
-		providerFileDownloadRoutes: providerFileDownloadRoutes,
+		client:             client,
+		provider:           cfg.Provider,
+		apiKey:             cfg.APIKey,
+		fallbackAPIKeys:    redactKeys[1:],
+		defaultModel:       cfg.DefaultModel,
+		inputTokenLimit:    cfg.InputTokenLimit,
+		outputTokenLimit:   cfg.OutputTokenLimit,
+		streamingTimeout:   streamingTimeout,
+		enabledNativeTools: cfg.EnabledNativeTools,
+		reasoningEnabled:   cfg.ReasoningEnabled,
+		reasoningEffort:    cfg.ReasoningEffort,
+		thinkingBudget:     cfg.ThinkingBudget,
+		useResponsesAPI:    cfg.UseResponsesAPI,
+		fallbacks:          fallbacks,
+		registrations:      registrations,
 	}, nil
 }
 
@@ -456,7 +454,7 @@ func (b *LLM) applyCompletionBetaHeaders(bifrostCtx *schemas.BifrostContext) {
 	// Anthropic can be a fallback rather than the primary — so key the beta
 	// opt-in off the routes, mirroring DownloadProviderFile. Only providers
 	// needing the beta register a route; others ignore the extra header.
-	if len(b.providerFileDownloadRoutes) == 0 || !b.isNativeToolEnabled(llm.NativeToolCodeInterpreter) {
+	if !b.hasFileDownloadRoute() || !b.isNativeToolEnabled(llm.NativeToolCodeInterpreter) {
 		return
 	}
 
@@ -476,10 +474,21 @@ func (b *LLM) applyCompletionBetaHeaders(bifrostCtx *schemas.BifrostContext) {
 // route exposes the downloader.
 func (b *LLM) ProviderServices() *llm.ProviderServices {
 	services := &llm.ProviderServices{}
-	if len(b.providerFileDownloadRoutes) > 0 {
+	if b.hasFileDownloadRoute() {
 		services.FileDownloader = b
 	}
 	return services
+}
+
+// hasFileDownloadRoute reports whether any registered route can serve
+// captured files.
+func (b *LLM) hasFileDownloadRoute() bool {
+	for _, reg := range b.registrations {
+		if reg.fileDownloads {
+			return true
+		}
+	}
+	return false
 }
 
 // DownloadProviderFile fetches a provider-side file. The captured reference
@@ -511,7 +520,7 @@ func (b *LLM) DownloadProviderFile(ctx context.Context, ref llm.ProviderFileRefe
 	if ref.ID == "" {
 		return fail(errors.New("file id is required"))
 	}
-	if !b.providerFileDownloadRoutes[providerRoute] {
+	if !b.registrations[providerRoute].fileDownloads {
 		return fail(errors.New("provider file route is not available"))
 	}
 

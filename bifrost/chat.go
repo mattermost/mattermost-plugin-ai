@@ -180,7 +180,7 @@ func (b *LLM) streamChat(ctx context.Context, request llm.CompletionRequest, cfg
 // the provider registered as name, or nil when no reasoning block should be
 // sent.
 func (b *LLM) chatReasoningFor(name schemas.ModelProvider, cfg llm.LanguageModelConfig) *schemas.ChatReasoning {
-	params, ok := b.providerReasoning(b.baseProvider(name), cfg)
+	params, ok := b.providerReasoning(messagesAPIProvider(b.baseProvider(name), cfg.Model), cfg)
 	if !ok {
 		return nil
 	}
@@ -195,7 +195,7 @@ func (b *LLM) chatReasoningFor(name schemas.ModelProvider, cfg llm.LanguageModel
 func (b *LLM) convertToBifrostRequest(request llm.CompletionRequest, cfg llm.LanguageModelConfig) *schemas.BifrostChatRequest {
 	request, chain := b.prepareRequest(request, cfg.Model)
 	messages := convertMessages(request.Posts, chain)
-	tools := b.convertTools(request, cfg)
+	tools := convertTools(request, cfg)
 
 	req := &schemas.BifrostChatRequest{
 		Provider: b.provider,
@@ -415,7 +415,7 @@ func createMultimodalContent(post llm.Post, maxDim int) []schemas.ChatContentBlo
 }
 
 // convertTools converts llm.Tool to Bifrost ChatTool format.
-func (b *LLM) convertTools(request llm.CompletionRequest, cfg llm.LanguageModelConfig) []schemas.ChatTool {
+func convertTools(request llm.CompletionRequest, cfg llm.LanguageModelConfig) []schemas.ChatTool {
 	if request.Context == nil || request.Context.Tools == nil {
 		return nil
 	}
