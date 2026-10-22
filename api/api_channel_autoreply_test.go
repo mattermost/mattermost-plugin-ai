@@ -165,6 +165,38 @@ func TestGetChannelAutoReply(t *testing.T) {
 	}
 }
 
+func TestGetChannelAutoReplyRedactsAmbientConfigInPrivateChannels(t *testing.T) {
+	tests := []struct {
+		name         string
+		canManage    bool
+		expectedBody string
+	}{
+		{name: "private channel manager sees ambient config", canManage: true, expectedBody: fmt.Sprintf(`{"bot_id":%q,"mode":"ambient_threads","instructions":"only billing"}`, testBotUserID)},
+		{name: "private channel member without manage permission does not", canManage: false, expectedBody: fmt.Sprintf(`{"bot_id":%q,"mode":"ambient_threads"}`, testBotUserID)},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			e := setupChannelAutoReplyTest(t, model.ChannelTypePrivate)
+			defer e.Cleanup(t)
+			e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionReadChannel).Return(true)
+			e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionManagePrivateChannelProperties).Return(tc.canManage)
+			e.autoReplyStore.settings["channelid"] = &autoreply.Setting{
+				ChannelID:    "channelid",
+				BotID:        testBotUserID,
+				Mode:         autoreply.ModeAmbientThreads,
+				Instructions: "only billing",
+			}
+
+			resp := e.doChannelAutoReplyRequest(t, http.MethodGet, "")
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			require.JSONEq(t, tc.expectedBody, string(body))
+		})
+	}
+}
+
 func TestPutChannelAutoReplyPermissionMatrix(t *testing.T) {
 	validBody := fmt.Sprintf(`{"bot_id":%q,"mode":"root_posts"}`, testBotUserID)
 

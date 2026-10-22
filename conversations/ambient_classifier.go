@@ -77,8 +77,8 @@ func threadHasReplyFrom(thread []*model.Post, userID string) bool {
 // should reply. Every other outcome wraps ErrNoResponse (fail-closed).
 //
 // TODO(ambient-poc): WithToolsDisabled does not fully disable native provider
-// tools, and fallback chains may cross services; this POC assumes neither is in
-// play. Structured-output capability detection, analysis_model validation,
+// tools; this POC assumes none are enabled. Structured-output capability
+// detection, analysis_model validation,
 // dedupe, concurrency control, rate/cost caps, and deleted-post recheck are
 // deferred.
 func (c *Conversations) classifyAmbientReply(ctx context.Context, bot *bots.Bot, setting *autoreply.Setting, trigger *model.Post, postingUserID string, thread []*model.Post) error {
