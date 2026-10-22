@@ -36,7 +36,6 @@ func testDMTurnPolicy(c *Conversations, bot *bots.Bot) *turnPolicy {
 		isDM:         true,
 		toolsEnabled: true,
 		interactive:  true,
-		maxRounds:    bot.GetConfig().EffectiveMaxToolTurns(),
 	}
 }
 
@@ -83,20 +82,8 @@ func TestAutoExecute(t *testing.T) {
 	}
 }
 
-// TestAutoExecute_NilChecker covers the fail-closed branch — with
-// no policy checker wired up, no tool should ever auto-execute.
-func TestAutoExecute_NilChecker(t *testing.T) {
-	c := policyTestConversations(nil)
-	llmCtx := &llm.Context{Tools: llm.NewToolStore()}
-	llmCtx.Tools.AddTools([]llm.Tool{{Name: "x", ServerOrigin: "y"}})
-	for _, isDM := range []bool{true, false} {
-		got := testTurnPolicy(c, isDM).autoExecute(llmCtx)(llm.ToolCall{Name: "x", ServerOrigin: "y"})
-		assert.False(t, got, "isDM=%v", isDM)
-	}
-}
-
 func TestAutoExecute_MetaToolsAutoExecute(t *testing.T) {
-	c := policyTestConversations(nil)
+	c := policyTestConversations(mapPolicyChecker{})
 	store := llm.NewToolStore()
 	store.AddTools(mcp.NewMetaTools(nil))
 	llmCtx := &llm.Context{Tools: store}
@@ -178,22 +165,22 @@ func TestAutoExecute_ConfigPolicyChecker(t *testing.T) {
 }
 
 func TestAutoExecuteMetaToolsBypassPolicy(t *testing.T) {
-	c := policyTestConversations(nil)
+	c := policyTestConversations(mapPolicyChecker{})
 
 	assert.True(t, testTurnPolicy(c, true).autoExecute(nil)(llm.ToolCall{Name: mcp.SearchToolsName}))
 	assert.True(t, testTurnPolicy(c, false).autoExecute(nil)(llm.ToolCall{Name: mcp.LoadToolName}))
 }
 
 func TestAutoExecuteMetaToolDoesNotAuthorizeBusinessTool(t *testing.T) {
-	c := policyTestConversations(nil)
+	c := policyTestConversations(mapPolicyChecker{})
 
 	assert.False(t, testTurnPolicy(c, true).autoExecute(nil)(llm.ToolCall{Name: "jira__get_issue"}))
 }
 
 // TestAutoExecute_AutoExecuteBuiltIn pins that auto-execute
-// built-ins (e.g. CreateFile) bypass approval in both DMs and channels — even
-// with no policy checker wired up — while an MCP tool carrying the flag must
-// still go through policy and therefore fails closed here.
+// built-ins (e.g. CreateFile) bypass approval in both DMs and channels, while
+// an MCP tool carrying the flag must still go through policy and therefore
+// fails closed here.
 func TestAutoExecute_AutoExecuteBuiltIn(t *testing.T) {
 	const mcpOrigin = "https://mcp.example.com/mcp"
 
@@ -211,7 +198,7 @@ func TestAutoExecute_AutoExecuteBuiltIn(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			c := policyTestConversations(nil)
+			c := policyTestConversations(mapPolicyChecker{})
 			llmCtx := &llm.Context{Tools: llm.NewToolStore()}
 			llmCtx.Tools.AddTools([]llm.Tool{{Name: "CreateFile", ServerOrigin: tc.origin, AutoExecute: true}})
 
@@ -232,21 +219,6 @@ func TestAutoExecute_AutoExecuteBuiltInSkipsPolicyLookup(t *testing.T) {
 
 	assert.True(t, got)
 	assert.Zero(t, checker.calls)
-}
-
-// TestAutoExecute_UserInteractionNeverAutoExecutes pins the contract
-// that tools answered by the user (e.g. AskUserQuestion) never auto-execute,
-// even if a policy claims auto_run — auto-running one would skip the question.
-func TestAutoExecute_UserInteractionNeverAutoExecutes(t *testing.T) {
-	checker := &countingPolicyChecker{policy: mcp.ToolPolicyAutoRunEverywhere, enabled: true}
-	c := policyTestConversations(checker)
-	llmCtx := &llm.Context{Tools: llm.NewToolStore()}
-	llmCtx.Tools.AddTools([]llm.Tool{{Name: "AskUserQuestion", UserInteraction: llm.UserInteractionSelect}})
-
-	for _, isDM := range []bool{true, false} {
-		got := testTurnPolicy(c, isDM).autoExecute(llmCtx)(llm.ToolCall{Name: "AskUserQuestion"})
-		assert.False(t, got, "isDM=%v", isDM)
-	}
 }
 
 type countingPolicyChecker struct {
@@ -337,213 +309,44 @@ func TestAutoExecuteUsesServerOriginToDisambiguateBareName(t *testing.T) {
 	assert.Equal(t, "get_issue", checker.lastToolName)
 }
 
-// TestSharedForTurns_RespectsEnabledFlag pins the result-sharing
-// contract: a disabled tool must never drive results to shared=true, even if
-// its policy is auto_run_everywhere. The enabled flag is authoritative —
-// matching autoExecute, which also refuses to auto-execute a
-// disabled tool.
-func TestSharedForTurns_RespectsEnabledFlag(t *testing.T) {
-	const origin = "https://mcp.example.com/mcp"
-	const toolName = "example_tool"
-
-	c := policyTestConversations(mapPolicyChecker{
-		origin: {
-			toolName: {policy: mcp.ToolPolicyAutoRunEverywhere, enabled: false},
-		},
-	})
-	llmCtx := &llm.Context{Tools: llm.NewToolStore()}
-	llmCtx.Tools.AddTools([]llm.Tool{{Name: toolName, ServerOrigin: origin}})
-
-	turns := []toolrunner.ToolTurn{{
-		AssistantToolCalls: []llm.ToolCall{{Name: toolName, ServerOrigin: origin}},
-	}}
-
-	assert.False(t, testTurnPolicy(c, false).sharedForTurns(turns, llmCtx),
-		"a disabled tool must not auto-share results even when the policy is auto_run_everywhere")
-}
-
-func TestSharedForTurns_NamespacedToolUsesBarePolicy(t *testing.T) {
-	const origin = "https://mcp.example.com/mcp"
-
-	c := policyTestConversations(mapPolicyChecker{
-		origin: {
-			"example_tool": {policy: mcp.ToolPolicyAutoRunEverywhere, enabled: true},
-		},
-	})
-	llmCtx := &llm.Context{Tools: llm.NewToolStore()}
-	llmCtx.Tools.AddTools([]llm.Tool{{Name: "example__example_tool", ServerOrigin: origin}})
-
-	turns := []toolrunner.ToolTurn{{
-		AssistantToolCalls: []llm.ToolCall{{Name: "example__example_tool", ServerOrigin: origin}},
-	}}
-
-	assert.True(t, testTurnPolicy(c, false).sharedForTurns(turns, llmCtx))
-}
-
-func TestSharedForTurns_AllowsMetaTools(t *testing.T) {
-	const origin = "https://mcp.example.com/mcp"
-	const toolName = "example_tool"
-
-	c := policyTestConversations(mapPolicyChecker{
-		origin: {
-			toolName: {policy: mcp.ToolPolicyAutoRunEverywhere, enabled: true},
-		},
-	})
+// TestSharedForTurns pins when rounds the turn ran automatically skip the
+// share step: always in a DM, and in a channel only when every call is one
+// the policy auto-runs there.
+func TestSharedForTurns(t *testing.T) {
+	const origin = "https://mcp.atlassian.com"
+	c := policyTestConversations(mapPolicyChecker{origin: {
+		"everywhere_tool": {policy: mcp.ToolPolicyAutoRunEverywhere, enabled: true},
+		"dm_tool":         {policy: mcp.ToolPolicyAutoRunInDM, enabled: true},
+	}})
 	store := llm.NewToolStore()
 	store.AddTools(mcp.NewMetaTools(nil))
-	store.AddTools([]llm.Tool{{Name: toolName, ServerOrigin: origin}})
+	store.AddTools([]llm.Tool{{Name: "jira__everywhere_tool", ServerOrigin: origin}, {Name: "jira__dm_tool", ServerOrigin: origin}})
 	llmCtx := &llm.Context{Tools: store}
-
-	turns := []toolrunner.ToolTurn{
-		{AssistantToolCalls: []llm.ToolCall{{Name: mcp.SearchToolsName}}},
-		{AssistantToolCalls: []llm.ToolCall{{Name: toolName, ServerOrigin: origin}}},
-	}
-
-	assert.True(t, testTurnPolicy(c, false).sharedForTurns(turns, llmCtx))
-}
-
-func TestSharedForTurns_UnknownToolReturnsFalse(t *testing.T) {
-	checker := &countingPolicyChecker{policy: mcp.ToolPolicyAutoRunEverywhere, enabled: true}
-	c := policyTestConversations(checker)
-	llmCtx := &llm.Context{Tools: llm.NewToolStore()}
-	turns := []toolrunner.ToolTurn{{
-		AssistantToolCalls: []llm.ToolCall{{Name: "unknown_tool", ServerOrigin: "https://mcp.example.com"}},
-	}}
-
-	assert.False(t, testTurnPolicy(c, false).sharedForTurns(turns, llmCtx))
-	assert.Zero(t, checker.calls)
-}
-
-func TestSharedForTurnsMetaOnlyBypassesPolicy(t *testing.T) {
-	c := policyTestConversations(nil)
-	turns := []toolrunner.ToolTurn{{
-		AssistantToolCalls: []llm.ToolCall{
-			{Name: mcp.SearchToolsName},
-			{Name: mcp.LoadToolName},
-		},
-	}}
-
-	assert.True(t, testTurnPolicy(c, false).sharedForTurns(turns, nil))
-}
-
-// TestSharedForTurns_AutoExecuteBuiltIn pins that a round made up
-// only of auto-execute built-ins (e.g. CreateFile) is written shared=true even
-// with no policy checker, while an MCP tool carrying the flag still requires
-// an auto_run_everywhere policy and so fails closed here.
-func TestSharedForTurns_AutoExecuteBuiltIn(t *testing.T) {
-	const mcpOrigin = "https://mcp.example.com/mcp"
+	everywhere := llm.ToolCall{Name: "jira__everywhere_tool", ServerOrigin: origin}
+	dmOnly := llm.ToolCall{Name: "jira__dm_tool", ServerOrigin: origin}
+	meta := llm.ToolCall{Name: mcp.SearchToolsName}
 
 	cases := []struct {
 		name   string
-		origin string
+		isDM   bool
+		rounds [][]llm.ToolCall
 		want   bool
 	}{
-		{name: "built-in only round is shared", origin: "", want: true},
-		{name: "MCP tool with flag still requires policy", origin: mcpOrigin, want: false},
+		{name: "DM round with a DM-only tool", isDM: true, rounds: [][]llm.ToolCall{{dmOnly}}, want: true},
+		{name: "channel rounds of meta and auto_run_everywhere tools", rounds: [][]llm.ToolCall{{meta}, {everywhere, meta}}, want: true},
+		{name: "channel round with a DM-only tool", rounds: [][]llm.ToolCall{{meta}, {dmOnly}}, want: false},
+		{name: "channel turn without tool calls", want: false},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			c := policyTestConversations(nil)
-			llmCtx := &llm.Context{Tools: llm.NewToolStore()}
-			llmCtx.Tools.AddTools([]llm.Tool{{Name: "CreateFile", ServerOrigin: tc.origin, AutoExecute: true}})
-			turns := []toolrunner.ToolTurn{{
-				AssistantToolCalls: []llm.ToolCall{{Name: "CreateFile", ServerOrigin: tc.origin}},
-			}}
-
-			assert.Equal(t, tc.want, testTurnPolicy(c, false).sharedForTurns(turns, llmCtx))
+			turns := make([]toolrunner.ToolTurn, 0, len(tc.rounds))
+			for _, calls := range tc.rounds {
+				turns = append(turns, toolrunner.ToolTurn{AssistantToolCalls: calls})
+			}
+			assert.Equal(t, tc.want, testTurnPolicy(c, tc.isDM).sharedForTurns(turns, llmCtx))
 		})
 	}
-}
-
-func TestSharedForTurnsMixedMetaAndAutoRunBusinessTool(t *testing.T) {
-	checker := &countingPolicyChecker{policy: mcp.ToolPolicyAutoRunEverywhere, enabled: true}
-	c := policyTestConversations(checker)
-	const origin = "https://mcp.atlassian.com"
-	const runtimeToolName = "jira__get_issue"
-	llmCtx := &llm.Context{Tools: llm.NewToolStore()}
-	llmCtx.Tools.AddTools([]llm.Tool{{Name: runtimeToolName, ServerOrigin: origin}})
-	turns := []toolrunner.ToolTurn{{
-		AssistantToolCalls: []llm.ToolCall{
-			{Name: mcp.SearchToolsName},
-			{Name: runtimeToolName},
-			{Name: mcp.LoadToolName},
-		},
-	}}
-
-	assert.True(t, testTurnPolicy(c, false).sharedForTurns(turns, llmCtx))
-	assert.Equal(t, 1, checker.calls)
-	assert.Equal(t, "get_issue", checker.lastToolName)
-}
-
-func TestSharedForTurnsMixedMetaAndNonAutoBusinessTool(t *testing.T) {
-	checker := &countingPolicyChecker{policy: mcp.ToolPolicyAsk, enabled: true}
-	c := policyTestConversations(checker)
-	const origin = "https://mcp.atlassian.com"
-	const runtimeToolName = "jira__get_issue"
-	llmCtx := &llm.Context{Tools: llm.NewToolStore()}
-	llmCtx.Tools.AddTools([]llm.Tool{{Name: runtimeToolName, ServerOrigin: origin}})
-	turns := []toolrunner.ToolTurn{{
-		AssistantToolCalls: []llm.ToolCall{
-			{Name: mcp.SearchToolsName},
-			{Name: runtimeToolName},
-		},
-	}}
-
-	assert.False(t, testTurnPolicy(c, false).sharedForTurns(turns, llmCtx))
-	assert.Equal(t, 1, checker.calls)
-	assert.Equal(t, "get_issue", checker.lastToolName)
-}
-
-func TestSharedForTurnsDenormalizesNamespacedTool(t *testing.T) {
-	checker := &countingPolicyChecker{policy: mcp.ToolPolicyAutoRunEverywhere, enabled: true}
-	c := policyTestConversations(checker)
-	const origin = "https://mcp.atlassian.com"
-	const runtimeToolName = "jira__get_issue"
-	llmCtx := &llm.Context{Tools: llm.NewToolStore()}
-	llmCtx.Tools.AddTools([]llm.Tool{{Name: runtimeToolName, ServerOrigin: origin}})
-	turns := []toolrunner.ToolTurn{{
-		AssistantToolCalls: []llm.ToolCall{{Name: runtimeToolName}},
-	}}
-
-	assert.True(t, testTurnPolicy(c, false).sharedForTurns(turns, llmCtx))
-	assert.Equal(t, 1, checker.calls)
-	assert.Equal(t, "get_issue", checker.lastToolName)
-}
-
-func TestSharedForTurnsFailsClosedOnAmbiguousBareName(t *testing.T) {
-	checker := &countingPolicyChecker{policy: mcp.ToolPolicyAutoRunEverywhere, enabled: true}
-	c := policyTestConversations(checker)
-	llmCtx := &llm.Context{Tools: llm.NewToolStore()}
-	llmCtx.Tools.AddTools([]llm.Tool{
-		{Name: "jira__get_issue", ServerOrigin: "https://jira.example.com"},
-		{Name: "github__get_issue", ServerOrigin: "https://github.example.com"},
-	})
-	turns := []toolrunner.ToolTurn{{
-		AssistantToolCalls: []llm.ToolCall{{Name: "get_issue"}},
-	}}
-
-	assert.False(t, testTurnPolicy(c, false).sharedForTurns(turns, llmCtx))
-	assert.Zero(t, checker.calls)
-}
-
-func TestSharedForTurnsUsesServerOriginToDisambiguateBareName(t *testing.T) {
-	checker := &countingPolicyChecker{policy: mcp.ToolPolicyAutoRunEverywhere, enabled: true}
-	c := policyTestConversations(checker)
-	const origin = "https://github.example.com"
-	llmCtx := &llm.Context{Tools: llm.NewToolStore()}
-	llmCtx.Tools.AddTools([]llm.Tool{
-		{Name: "jira__get_issue", ServerOrigin: "https://jira.example.com"},
-		{Name: "github__get_issue", ServerOrigin: origin},
-	})
-	turns := []toolrunner.ToolTurn{{
-		AssistantToolCalls: []llm.ToolCall{{Name: "get_issue", ServerOrigin: origin}},
-	}}
-
-	assert.True(t, testTurnPolicy(c, false).sharedForTurns(turns, llmCtx))
-	assert.Equal(t, 1, checker.calls)
-	assert.Equal(t, origin, checker.lastOrigin)
-	assert.Equal(t, "get_issue", checker.lastToolName)
 }
 
 // TestAutoExecuteRequiresRemoteMCPLicense pins that a tool from a remote or

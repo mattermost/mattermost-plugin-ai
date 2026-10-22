@@ -217,60 +217,6 @@ func TestApplyBotChannelAutoEverywhereToolFilter_NamespacedToolUsesBarePolicy(t 
 	require.Equal(t, "server__everywhere_tool", tools[0].Name)
 }
 
-func TestApplyToolAvailabilityBeforeBotChannelFilterPreservesDisabledToolsInfo(t *testing.T) {
-	origin := "https://mcp.example.com/mcp"
-	c := &Conversations{
-		toolPolicyChecker: mapPolicyChecker{
-			origin: {
-				"everywhere_tool": {policy: mcp.ToolPolicyAutoRunEverywhere, enabled: true},
-				"ask_tool":        {policy: mcp.ToolPolicyAsk, enabled: true},
-			},
-		},
-	}
-
-	llmContext := &llm.Context{
-		Tools: llm.NewToolStore(),
-	}
-	llmContext.Tools.AddTools([]llm.Tool{
-		{Name: "builtin", Description: "builtin tool", ServerOrigin: "", Resolver: func(_ context.Context, _ *llm.Context, _ llm.ToolArgumentGetter) (string, error) { return "", nil }},
-		{Name: "everywhere_tool", Description: "auto everywhere", ServerOrigin: origin, Resolver: func(_ context.Context, _ *llm.Context, _ llm.ToolArgumentGetter) (string, error) { return "", nil }},
-		{Name: "ask_tool", Description: "needs approval", ServerOrigin: origin, Resolver: func(_ context.Context, _ *llm.Context, _ llm.ToolArgumentGetter) (string, error) { return "", nil }},
-	})
-
-	toolsDisabled := applyToolAvailability(llmContext, false, true)
-	require.False(t, toolsDisabled)
-
-	c.applyBotChannelAutoEverywhereToolFilter(llmContext)
-
-	tools := llmContext.Tools.GetTools()
-	require.Len(t, tools, 1)
-	require.Equal(t, "everywhere_tool", tools[0].Name)
-
-	disabledNames := make([]string, 0, len(llmContext.DisabledToolsInfo))
-	for _, info := range llmContext.DisabledToolsInfo {
-		disabledNames = append(disabledNames, info.Name)
-	}
-	require.ElementsMatch(t, []string{"builtin", "ask_tool"}, disabledNames)
-}
-
-func TestApplyBotChannelAutoEverywhereToolFilter_nilCheckerFailClosed(t *testing.T) {
-	origin := "https://mcp.example.com/mcp"
-	c := &Conversations{toolPolicyChecker: nil}
-
-	llmContext := &llm.Context{
-		Tools: llm.NewToolStore(),
-	}
-	llmContext.Tools.AddTools([]llm.Tool{
-		{Name: "builtin", ServerOrigin: "", Resolver: func(_ context.Context, _ *llm.Context, _ llm.ToolArgumentGetter) (string, error) { return "", nil }},
-		{Name: "mcp_tool", ServerOrigin: origin, Resolver: func(_ context.Context, _ *llm.Context, _ llm.ToolArgumentGetter) (string, error) { return "", nil }},
-	})
-
-	c.applyBotChannelAutoEverywhereToolFilter(llmContext)
-
-	require.Empty(t, llmContext.Tools.GetTools())
-	require.Len(t, llmContext.DisabledToolsInfo, 2)
-}
-
 func TestBotChannelAutoEverywhereFilterKeepsMetaTools(t *testing.T) {
 	origin := "https://mcp.example.com/mcp"
 	c := &Conversations{
@@ -308,34 +254,6 @@ func TestBotChannelAutoEverywhereFilterKeepsMetaTools(t *testing.T) {
 	require.ElementsMatch(t, []string{"builtin", "ask_tool"}, disabledNames)
 }
 
-func TestBotChannelAutoEverywhereFilterKeepsMetaToolsWithNilChecker(t *testing.T) {
-	c := &Conversations{toolPolicyChecker: nil}
-
-	llmContext := &llm.Context{
-		Tools: llm.NewToolStore(),
-	}
-	llmContext.Tools.AddTools([]llm.Tool{
-		{Name: mcp.SearchToolsName, Description: "search meta", Resolver: func(_ context.Context, _ *llm.Context, _ llm.ToolArgumentGetter) (string, error) { return "", nil }},
-		{Name: mcp.LoadToolName, Description: "load meta", Resolver: func(_ context.Context, _ *llm.Context, _ llm.ToolArgumentGetter) (string, error) { return "", nil }},
-		{Name: "builtin", Description: "builtin tool", Resolver: func(_ context.Context, _ *llm.Context, _ llm.ToolArgumentGetter) (string, error) { return "", nil }},
-		{Name: "ask_tool", Description: "needs approval", ServerOrigin: "https://mcp.example.com", Resolver: func(_ context.Context, _ *llm.Context, _ llm.ToolArgumentGetter) (string, error) { return "", nil }},
-	})
-
-	c.applyBotChannelAutoEverywhereToolFilter(llmContext)
-
-	toolNames := make([]string, 0, len(llmContext.Tools.GetTools()))
-	for _, tool := range llmContext.Tools.GetTools() {
-		toolNames = append(toolNames, tool.Name)
-	}
-	require.ElementsMatch(t, []string{mcp.SearchToolsName, mcp.LoadToolName}, toolNames)
-
-	disabledNames := make([]string, 0, len(llmContext.DisabledToolsInfo))
-	for _, info := range llmContext.DisabledToolsInfo {
-		disabledNames = append(disabledNames, info.Name)
-	}
-	require.ElementsMatch(t, []string{"builtin", "ask_tool"}, disabledNames)
-}
-
 // TestBotChannelAutoEverywhereKeepToolAutoExecuteBuiltIn pins that
 // auto-execute built-ins survive the strict bot-channel filter like
 // meta-tools do, while a plain built-in and an MCP tool carrying the flag are
@@ -353,35 +271,9 @@ func TestBotChannelAutoEverywhereKeepToolAutoExecuteBuiltIn(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.want, botChannelAutoEverywhereKeepTool(nil, tc.tool))
+			require.Equal(t, tc.want, botChannelAutoEverywhereKeepTool(mapPolicyChecker{}, tc.tool))
 		})
 	}
-}
-
-func TestBotChannelAutoEverywhereFilterKeepsAutoExecuteBuiltInWithNilChecker(t *testing.T) {
-	c := &Conversations{toolPolicyChecker: nil}
-
-	llmContext := &llm.Context{
-		Tools: llm.NewToolStore(),
-	}
-	llmContext.Tools.AddTools([]llm.Tool{
-		{Name: "CreateFile", AutoExecute: true, Resolver: func(_ context.Context, _ *llm.Context, _ llm.ToolArgumentGetter) (string, error) { return "", nil }},
-		{Name: "builtin", Resolver: func(_ context.Context, _ *llm.Context, _ llm.ToolArgumentGetter) (string, error) { return "", nil }},
-	})
-
-	c.applyBotChannelAutoEverywhereToolFilter(llmContext)
-
-	toolNames := make([]string, 0, len(llmContext.Tools.GetTools()))
-	for _, tool := range llmContext.Tools.GetTools() {
-		toolNames = append(toolNames, tool.Name)
-	}
-	require.ElementsMatch(t, []string{"CreateFile"}, toolNames)
-
-	disabledNames := make([]string, 0, len(llmContext.DisabledToolsInfo))
-	for _, info := range llmContext.DisabledToolsInfo {
-		disabledNames = append(disabledNames, info.Name)
-	}
-	require.ElementsMatch(t, []string{"builtin"}, disabledNames)
 }
 
 func TestBotChannelAutoEverywhereFilterDenormalizesNamespacedTool(t *testing.T) {
@@ -412,8 +304,8 @@ func TestBotChannelAutoEverywhereFilterDenormalizesNamespacedTool(t *testing.T) 
 
 // TestChannelFollowUpStrictRegistry pins which catalog a resumed run gets:
 // a channel run whose initiator cannot be confirmed as a present human is
-// limited to auto_run_everywhere tools, and DMs are never limited, whoever
-// started the run.
+// limited to auto_run_everywhere tools, failing to look the initiator up is
+// an error, and DMs are never limited, whoever started the run.
 func TestChannelFollowUpStrictRegistry(t *testing.T) {
 	const origin = "https://mcp.atlassian.com"
 
@@ -434,23 +326,33 @@ func TestChannelFollowUpStrictRegistry(t *testing.T) {
 		postID        string
 		setupMMClient func(mmClient *mocks.MockClient)
 		expectAskTool bool
+		wantErr       bool
 	}{
 		{
-			name:    "initiating post lookup failure fails closed",
+			name:    "initiating post lookup failure is an error",
 			channel: channel,
 			postID:  "bot-post",
 			setupMMClient: func(mmClient *mocks.MockClient) {
-				mmClient.On("GetPost", "initiator-post").Return((*model.Post)(nil), errors.New("missing post")).Once()
+				mmClient.On("GetPost", "initiator-post").Return((*model.Post)(nil), errors.New("database unavailable")).Once()
 			},
-			expectAskTool: false,
+			wantErr: true,
 		},
 		{
-			name:    "initiating user lookup failure fails closed",
+			name:    "initiating user lookup failure is an error",
 			channel: channel,
 			postID:  "bot-post",
 			setupMMClient: func(mmClient *mocks.MockClient) {
 				mmClient.On("GetPost", "initiator-post").Return(&model.Post{Id: "initiator-post", UserId: "root-user"}, nil).Once()
-				mmClient.On("GetUser", "root-user").Return((*model.User)(nil), errors.New("missing user")).Once()
+				mmClient.On("GetUser", "root-user").Return((*model.User)(nil), errors.New("database unavailable")).Once()
+			},
+			wantErr: true,
+		},
+		{
+			name:    "deleted initiating post is limited to auto everywhere",
+			channel: channel,
+			postID:  "bot-post",
+			setupMMClient: func(mmClient *mocks.MockClient) {
+				mmClient.On("GetPost", "initiator-post").Return((*model.Post)(nil), pluginapi.ErrNotFound).Once()
 			},
 			expectAskTool: false,
 		},
@@ -538,6 +440,10 @@ func TestChannelFollowUpStrictRegistry(t *testing.T) {
 				conv:    conv,
 				post:    &model.Post{Id: tt.postID, UserId: "bot-id"},
 			})
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
 			require.NoError(t, err)
 			llmContext := policy.buildContext(context.Background(), "Failed to load user tool preferences")
 
@@ -577,17 +483,19 @@ func TestChannelMentionSystemPromptDynamicToolWorkflow(t *testing.T) {
 			builder := newChannelFollowUpTestBuilder(t, []llm.Tool{
 				channelFollowUpTestMCPTool("fusion__create_geojson", "https://fusion.example.com", "Build a GeoJSON document"),
 			}, &channelFollowUpTestConfig{enableChannelMentionToolCalling: tt.allowToolsInChannel})
-			bot := channelFollowUpTestBot()
-			llmContext := builder.BuildLLMContextUserRequest(
-				bot,
-				&model.User{Id: testRequesterID, Username: "user", Locale: "en"},
-				&model.Channel{Id: "channel-id", TeamId: "team-id", Type: tt.channelType},
-				builder.WithLLMContextTools(context.Background(), bot),
-			)
+			isDM := tt.channelType == model.ChannelTypeDirect
+			policy := &turnPolicy{
+				c: &Conversations{contextBuilder: builder, toolPolicyChecker: mapPolicyChecker{}},
+				turnRequest: turnRequest{
+					bot:     channelFollowUpTestBot(),
+					user:    &model.User{Id: testRequesterID, Username: "user", Locale: "en"},
+					channel: &model.Channel{Id: "channel-id", TeamId: "team-id", Type: tt.channelType},
+				},
+				isDM:         isDM,
+				toolsEnabled: isDM || tt.allowToolsInChannel,
+			}
+			llmContext := policy.buildContext(context.Background(), "")
 			require.NotNil(t, llmContext.Tools.GetTool(mcp.SearchToolsName))
-
-			toolsDisabled := applyToolAvailability(llmContext, tt.channelType == model.ChannelTypeDirect, tt.allowToolsInChannel)
-			require.Equal(t, tt.wantToolsDisabled, toolsDisabled)
 
 			systemPrompt, err := promptsEngine.Format(prompts.PromptDirectMessageQuestionSystem, llmContext)
 			require.NoError(t, err)

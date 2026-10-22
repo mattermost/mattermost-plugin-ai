@@ -340,11 +340,6 @@ func (a *API) handleRegenerate(c *gin.Context) {
 		return
 	}
 
-	if !a.isConversationOwner(post, userID) {
-		c.AbortWithError(http.StatusForbidden, errors.New("only the original poster can regenerate"))
-		return
-	}
-
 	if err := a.conversationsService.HandleRegenerate(c.Request.Context(), userID, post, channel); err != nil {
 		abortWithServiceError(c, err, regenerateHTTPStatus)
 		return
@@ -358,7 +353,8 @@ func regenerateHTTPStatus(err error) int {
 	switch {
 	case errors.Is(err, conversations.ErrChannelAnalysisRegenerateUnsupported):
 		return http.StatusBadRequest
-	case errors.Is(err, mmapi.ErrFileActionForbidden),
+	case errors.Is(err, conversations.ErrNotRequester),
+		errors.Is(err, mmapi.ErrFileActionForbidden),
 		errors.Is(err, bots.ErrUsageRestriction),
 		errors.Is(err, conversations.ErrAnalysisSourceUnavailable):
 		return http.StatusForbidden
@@ -372,11 +368,6 @@ func (a *API) handleToolCall(c *gin.Context) {
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 	rec := auditRec(c)
-
-	if !a.isConversationOwner(post, userID) {
-		c.AbortWithError(http.StatusForbidden, errors.New("only the original requester can approve/reject tool calls"))
-		return
-	}
 
 	var data struct {
 		AcceptedToolIDs []string `json:"accepted_tool_ids" binding:"required"`
@@ -429,11 +420,6 @@ func (a *API) handleToolResult(c *gin.Context) {
 	post := c.MustGet(ContextPostKey).(*model.Post)
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 	rec := auditRec(c)
-
-	if !a.isConversationOwner(post, userID) {
-		c.AbortWithError(http.StatusForbidden, errors.New("only the original requester can approve/reject tool results"))
-		return
-	}
 
 	var data struct {
 		AcceptedToolIDs []string `json:"accepted_tool_ids" binding:"required"`

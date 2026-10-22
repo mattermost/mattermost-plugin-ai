@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -41,12 +42,10 @@ var policyWeatherCall = llm.ToolCall{
 }
 
 // policyEnv is an auto-reply test environment with a remote MCP weather tool
-// that counts its executions, a tool policy checker, and the agent's DM with
-// autoReplyUserID.
+// that counts its executions and the agent's DM with autoReplyUserID.
 type policyEnv struct {
 	*autoReplyTestEnv
 	dm         *model.Channel
-	checker    *dmPolicyChecker
 	executions *atomic.Int32
 }
 
@@ -70,15 +69,13 @@ func setupPolicyEnv(t *testing.T, botConfigs []llm.BotConfig, llmResponses ...*l
 			return "72F and sunny", nil
 		},
 	}}
-	checker := newDMPolicyChecker()
-	env.conversations.SetToolPolicyChecker(checker)
 
 	dm := &model.Channel{Id: policyDMChannelID, Type: model.ChannelTypeDirect, Name: autoReplyBotUserID + "__" + autoReplyUserID}
 	env.mmClient.channels[dm.Id] = dm
 	env.mmClient.posts = map[string]*model.Post{}
 	env.streaming.finished = make(chan string, 8)
 
-	return &policyEnv{autoReplyTestEnv: env, dm: dm, checker: checker, executions: executions}
+	return &policyEnv{autoReplyTestEnv: env, dm: dm, executions: executions}
 }
 
 func (env *policyEnv) waitForStream(t *testing.T) {
@@ -280,18 +277,49 @@ func TestDMTurnInteractivityFollowsWhoStartedIt(t *testing.T) {
 	}
 }
 
+// TestBotRunWithToolCallingOffListsEachDisabledToolOnce pins that a channel
+// run a bot started while channel tool calling is off tells the model about
+// each unavailable tool once.
+func TestBotRunWithToolCallingOffListsEachDisabledToolOnce(t *testing.T) {
+	env := setupPolicyEnv(t, []llm.BotConfig{policyBotConfig()}, dmMakeTextStream("answer"))
+	env.toolProvider.tools = []llm.Tool{{
+		Name:        "lookup_user",
+		Description: "Looks up a user",
+		Resolver: func(context.Context, *llm.Context, llm.ToolArgumentGetter) (string, error) {
+			return "", nil
+		},
+	}}
+	post := env.rootPost(autoReplyForeignBotID, "@"+autoReplyBotUsername+" what is the weather")
+	post.AddProp(conversations.ActivateAIProp, true)
+
+	env.conversations.MessageHasBeenPosted(nil, post)
+	env.waitForStream(t)
+
+	requests := env.llmRequests()
+	require.Len(t, requests, 1)
+	names := make([]string, 0, len(requests[0].Context.DisabledToolsInfo))
+	for _, info := range requests[0].Context.DisabledToolsInfo {
+		names = append(names, info.Name)
+	}
+	assert.Contains(t, names, "lookup_user")
+	assert.Len(t, names, len(slices.Compact(slices.Sorted(slices.Values(names)))), "disabled tools listed more than once: %v", names)
+}
+
 // TestToolApprovalUsesTheRunsActivation pins that what approving a tool call
 // may run follows the post that started that run, not the thread root: a run
 // a bot started with activate_ai cannot run tools that run would not have
-// been offered, a run whose initiator cannot be verified fails closed, and a
-// run with tool calling off (an automated invoker, or channel tool calling
-// disabled) refuses the approval without changing it.
+// been offered, a run whose initiator is gone fails closed, failing to look
+// the initiator up is an error, and a run with tool calling off (an automated
+// invoker, or channel tool calling disabled) refuses the approval without
+// changing it.
 func TestToolApprovalUsesTheRunsActivation(t *testing.T) {
+	errInitiatorLookup := errors.New("database unavailable")
 	tests := []struct {
 		name               string
 		root               func() *model.Post
 		initiator          func() *model.Post
 		hideInitiator      bool
+		initiatorErr       error
 		channelToolCalling bool
 		wantErr            error
 		wantExecutions     int32
@@ -321,6 +349,14 @@ func TestToolApprovalUsesTheRunsActivation(t *testing.T) {
 			initiator:          func() *model.Post { return humanPost("what is the weather") },
 			hideInitiator:      true,
 			channelToolCalling: true,
+		},
+		{
+			name:               "run whose initiating post cannot be looked up",
+			root:               func() *model.Post { return humanPost("hello") },
+			initiator:          func() *model.Post { return humanPost("what is the weather") },
+			initiatorErr:       errInitiatorLookup,
+			channelToolCalling: true,
+			wantErr:            errInitiatorLookup,
 		},
 		{
 			name: "run a webhook started",
@@ -353,6 +389,9 @@ func TestToolApprovalUsesTheRunsActivation(t *testing.T) {
 			botPost := env.seedRun(t, env.channel, root, initiator, pendingWeatherBlock(), nil)
 			if tc.hideInitiator {
 				delete(env.mmClient.posts, initiator.Id)
+			}
+			if tc.initiatorErr != nil {
+				env.mmClient.postErrors = map[string]error{initiator.Id: tc.initiatorErr}
 			}
 			before := env.state()
 
@@ -456,19 +495,22 @@ func (env *policyEnv) seedAnalysisFollowUpAnswer(t *testing.T, analysisPost *mod
 
 // TestAnalysisFollowUpRechecksSourceAccess pins that continuing or
 // regenerating a thread or channel analysis re-checks that the user can still
-// read what it analyzed. Losing access, the content being deleted, or the
-// analysis not recording what it analyzed all deny without replaying the
-// content to the LLM; failing to look the content up is an error, not a
-// denial.
+// read what it analyzed, including when another agent is mentioned in the
+// analysis thread. Losing access, the content being deleted, or the analysis
+// not recording what it analyzed all deny without replaying the content to
+// the LLM; failing to look the content up is an error, not a denial.
 func TestAnalysisFollowUpRechecksSourceAccess(t *testing.T) {
 	tests := []struct {
 		name   string
 		source analysisSource
 		// noConversation seeds a legacy analysis post with no conversation.
 		noConversation bool
-		unreadable     bool
-		threadGone     bool
-		lookupFails    bool
+		// mentionOtherAgent asks the follow-up of a second agent by
+		// mentioning it in the analysis thread.
+		mentionOtherAgent bool
+		unreadable        bool
+		threadGone        bool
+		lookupFails       bool
 		// regenerate regenerates the analysis post, or with
 		// regenerateFollowUp, the agent's answer to a follow-up, instead of
 		// asking a follow-up.
@@ -485,6 +527,9 @@ func TestAnalysisFollowUpRechecksSourceAccess(t *testing.T) {
 		{name: "thread regenerate after losing access to the thread", source: analyzedThread, unreadable: true, regenerate: true, wantErr: conversations.ErrAnalysisSourceUnavailable},
 		{name: "thread regenerate when the thread cannot be looked up", source: analyzedThread, lookupFails: true, regenerate: true},
 		{name: "legacy thread regenerate after losing access to the thread", source: analyzedThread, noConversation: true, unreadable: true, regenerate: true, wantErr: conversations.ErrAnalysisSourceUnavailable},
+		{name: "legacy thread follow-up after losing access to the thread", source: analyzedThread, noConversation: true, unreadable: true, wantPlaceholder: analysisSourceDeniedEN},
+		{name: "another agent asked in a thread analysis while the thread is readable", source: analyzedThread, mentionOtherAgent: true, wantAnswered: true},
+		{name: "another agent asked in a thread analysis after losing access to the thread", source: analyzedThread, mentionOtherAgent: true, unreadable: true},
 		{name: "channel follow-up while the channel is readable", source: analyzedChannel, wantAnswered: true},
 		{name: "channel follow-up after losing access to the channel", source: analyzedChannel, unreadable: true, wantPlaceholder: analysisSourceDeniedEN},
 		{name: "follow-up of an analysis that records no source", source: analyzedNothingRecorded, wantPlaceholder: analysisSourceDeniedEN},
@@ -494,7 +539,7 @@ func TestAnalysisFollowUpRechecksSourceAccess(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			env := setupPolicyEnv(t, []llm.BotConfig{policyBotConfig()}, dmMakeTextStream("follow-up answer"))
+			env := setupPolicyEnv(t, []llm.BotConfig{policyBotConfig(), autoReplySecondBotConfig()}, dmMakeTextStream("follow-up answer"))
 			if !tc.threadGone {
 				env.mmClient.posts[policyThreadPostID] = &model.Post{Id: policyThreadPostID, ChannelId: policySecretChannel, UserId: autoReplyOtherUserID, Message: "secret plans"}
 			}
@@ -523,6 +568,10 @@ func TestAnalysisFollowUpRechecksSourceAccess(t *testing.T) {
 			}
 
 			reply := &model.Post{Id: model.NewId(), UserId: autoReplyUserID, ChannelId: env.dm.Id, RootId: analysisPost.Id, Message: "what should we do next?"}
+			if tc.mentionOtherAgent {
+				reply.Message = "@" + autoReplyBot2Username + " " + reply.Message
+			}
+			env.setThread(analysisPost.Id, analysisPost, reply)
 			env.conversations.MessageHasBeenPosted(nil, reply)
 
 			if tc.wantAnswered {
@@ -531,6 +580,9 @@ func TestAnalysisFollowUpRechecksSourceAccess(t *testing.T) {
 				return
 			}
 			assert.Empty(t, env.llmRequests(), "the analyzed content must not be replayed to the LLM")
+			if tc.wantPlaceholder == "" {
+				return
+			}
 			require.NotEmpty(t, env.mmClient.updatedPosts, "the placeholder must explain why there is no answer")
 			placeholder := env.mmClient.updatedPosts[len(env.mmClient.updatedPosts)-1]
 			assert.Equal(t, tc.wantPlaceholder, placeholder.Message)
@@ -802,6 +854,7 @@ func TestTurnEntryPointPolicyInvariants(t *testing.T) {
 				requireNothingRan(t, env, before)
 				assert.Empty(t, env.mmClient.createdPosts, "a blocked requester gets no reply")
 				assert.Empty(t, env.mmClient.dmPosts, "a blocked requester gets no DM")
+				assert.Zero(t, env.mmClient.directChannelRequests, "a blocked requester gets no DM channel")
 			})
 
 			t.Run("only DM turns run without the multiplayer license", func(t *testing.T) {

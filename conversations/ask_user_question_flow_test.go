@@ -143,13 +143,14 @@ func TestHandleToolCallAnswersUserQuestion(t *testing.T) {
 
 			streamingService := &loadedStateStreamingService{}
 			c := &Conversations{
-				configProvider:   &channelFollowUpTestConfig{enableChannelMentionToolCalling: true},
-				mmClient:         mmClient,
-				contextBuilder:   loadedStateBuilder(t),
-				bots:             botsService,
-				licenseChecker:   enterprisetest.CheckerAt(enterprise.LevelProfessional),
-				convService:      conversation.NewService(convStore, nil, nil, nil),
-				streamingService: streamingService,
+				toolPolicyChecker: mapPolicyChecker{},
+				configProvider:    &channelFollowUpTestConfig{enableChannelMentionToolCalling: true},
+				mmClient:          mmClient,
+				contextBuilder:    loadedStateBuilder(t),
+				bots:              botsService,
+				licenseChecker:    enterprisetest.CheckerAt(enterprise.LevelProfessional),
+				convService:       conversation.NewService(convStore, nil, nil, nil),
+				streamingService:  streamingService,
 			}
 
 			approvalPost := &model.Post{Id: approvalPostID, UserId: "bot-id"}
@@ -268,13 +269,14 @@ func TestHandleToolCallMixedBatchInChannelAwaitsShareDecision(t *testing.T) {
 	seedRequesterInitiator(t, convStore, conv.ID, mmClient)
 
 	c := &Conversations{
-		configProvider:   &channelFollowUpTestConfig{enableChannelMentionToolCalling: true},
-		mmClient:         mmClient,
-		contextBuilder:   loadedStateBuilder(t),
-		bots:             botsService,
-		licenseChecker:   enterprisetest.CheckerAt(enterprise.LevelProfessional),
-		convService:      conversation.NewService(convStore, nil, nil, nil),
-		streamingService: &loadedStateStreamingService{},
+		toolPolicyChecker: mapPolicyChecker{},
+		configProvider:    &channelFollowUpTestConfig{enableChannelMentionToolCalling: true},
+		mmClient:          mmClient,
+		contextBuilder:    loadedStateBuilder(t),
+		bots:              botsService,
+		licenseChecker:    enterprisetest.CheckerAt(enterprise.LevelProfessional),
+		convService:       conversation.NewService(convStore, nil, nil, nil),
+		streamingService:  &loadedStateStreamingService{},
 	}
 
 	approvalPost := &model.Post{Id: approvalPostID, UserId: "bot-id"}
@@ -375,11 +377,12 @@ func TestStreamToolFollowUpInteractiveFlag(t *testing.T) {
 			bot := loadedStateBot(lm)
 			streamingService := &loadedStateStreamingService{}
 			c := &Conversations{
-				mmClient:         mmClient,
-				contextBuilder:   loadedStateBuilder(t),
-				bots:             passthroughBotsService(bot),
-				convService:      conversation.NewService(convStore, nil, nil, nil),
-				streamingService: streamingService,
+				toolPolicyChecker: mapPolicyChecker{},
+				mmClient:          mmClient,
+				contextBuilder:    loadedStateBuilder(t),
+				bots:              passthroughBotsService(bot),
+				convService:       conversation.NewService(convStore, nil, nil, nil),
+				streamingService:  streamingService,
 			}
 
 			post := &model.Post{Id: botPostID, UserId: "bot-id"}

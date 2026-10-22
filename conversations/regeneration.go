@@ -63,7 +63,7 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 			return errors.New("post missing conversation_id for ownership check")
 		}
 		if requester != userID {
-			return errors.New("only the original poster can regenerate")
+			return ErrNotRequester
 		}
 	} else {
 		var err error
@@ -72,7 +72,7 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 			return fmt.Errorf("failed to get conversation for ownership check: %w", err)
 		}
 		if conv.UserID != userID {
-			return errors.New("only the original poster can regenerate")
+			return ErrNotRequester
 		}
 	}
 
@@ -241,17 +241,14 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 
 // checkRegenerateLicense gates regenerating a post by the capability of the
 // operation that produced it. Thread summaries are available at Professional
-// and above, channel summaries at Professional and above, and transcription
-// summaries at Enterprise and above. Other conversation posts are not gated.
+// and above, and transcription summaries at Enterprise and above. Other
+// conversation posts are not gated; channel analyses cannot be regenerated.
 func (c *Conversations) checkRegenerateLicense(post *model.Post) error {
 	if post.GetProp(ReferencedRecordingFileID) != nil || post.GetProp(ReferencedTranscriptPostID) != nil {
 		return c.licenseChecker.Check(enterprise.CapMeetings)
 	}
 	if threadID, _ := post.GetProp(ThreadIDProp).(string); threadID != "" {
 		return c.licenseChecker.Check(enterprise.CapThreadSummarization)
-	}
-	if post.GetProp(AnalysisTypeProp) != nil {
-		return c.licenseChecker.Check(enterprise.CapChannelSummarization)
 	}
 	return nil
 }

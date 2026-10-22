@@ -65,6 +65,11 @@ type SearchRequest struct {
 // in the background with a tool-calling conversation that searches
 // Mattermost. ctx must outlive the request and carry the user's session ID.
 func (c *Conversations) HandleSearch(ctx context.Context, bot *bots.Bot, user *model.User, req SearchRequest) (*model.Post, error) {
+	// Getting the DM creates it, so a requester who may not use the agent
+	// is refused first.
+	if err := c.bots.CheckUsageRestrictionsForUser(ctx, bot, user.Id); err != nil {
+		return nil, err
+	}
 	channel, err := c.mmClient.GetDirectChannel(user.Id, bot.GetMMBot().UserId)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get DM channel: %w", err)

@@ -507,8 +507,8 @@ func setupDMTestEnv(t *testing.T, llmResponses ...*llm.TextStreamResult) *dmTest
 		i18nBundle,
 		nil, // meetings
 		&testToolCallingConfig{},
+		policyChecker,
 	)
-	convs.SetToolPolicyChecker(policyChecker)
 	convs.SetConversationService(convSvc)
 
 	return &dmTestEnv{

@@ -33,7 +33,7 @@ import (
 const plantedToolArgument = "SECRET-ARGUMENT-c2VjcmV0LXZhbHVl"
 
 // TestHandleToolCallAuditRecordsDecision proves HandleToolCall enriches an
-// audit record carried in ctx with the agent and the tool names it resolved:
+// audit record carried in ctx with the tool names it resolved:
 // clicked accepts and auto-executions land in accepted_tools, everything
 // still pending lands in rejected_tools, previously resolved blocks appear in
 // neither, and tool arguments never enter the record.
@@ -147,7 +147,6 @@ func TestHandleToolCallAuditRecordsDecision(t *testing.T) {
 			require.NoError(t, c.HandleToolCall(ctx, testRequesterID, approvalPost, channel, tc.acceptedIDs, nil))
 			streamingService.waitForStreaming()
 
-			assert.Equal(t, "bot-id", rec.EventData.Parameters[audit.KeyAgentID])
 			assert.Equal(t, tc.wantAccepted, rec.EventData.Parameters["accepted_tools"])
 			assert.Equal(t, tc.wantRejected, rec.EventData.Parameters["rejected_tools"])
 
@@ -215,7 +214,6 @@ func TestHandleToolResultAuditRecordsDecision(t *testing.T) {
 
 	require.NoError(t, c.HandleToolResult(ctx, testRequesterID, clickedPost, channel, []string{"tool-use-a"}))
 
-	assert.Equal(t, "bot-id", rec.EventData.Parameters[audit.KeyAgentID])
 	assert.Equal(t, []string{"jira__get_issue"}, rec.EventData.Parameters["accepted_tools"])
 	assert.Equal(t, []string{"jira__transition_issue"}, rec.EventData.Parameters["rejected_tools"])
 
@@ -230,7 +228,6 @@ func TestHandleToolResultAuditRecordsDecision(t *testing.T) {
 	repeatCtx := audit.WithRecord(context.Background(), repeatRec)
 	require.NoError(t, c.HandleToolResult(repeatCtx, testRequesterID, clickedPost, channel, []string{"tool-use-a"}))
 
-	assert.Equal(t, "bot-id", repeatRec.EventData.Parameters[audit.KeyAgentID])
 	assert.NotContains(t, repeatRec.EventData.Parameters, "accepted_tools")
 	assert.NotContains(t, repeatRec.EventData.Parameters, "rejected_tools")
 }

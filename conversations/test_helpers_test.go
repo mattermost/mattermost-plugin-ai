@@ -54,6 +54,9 @@ type fakeMMClient struct {
 	// dmChannelID, when set, is the channel DM posts are created in.
 	dmChannelID string
 	dmPosts     []*model.Post
+	// directChannelRequests counts GetDirectChannel calls, which create the
+	// DM in production.
+	directChannelRequests int
 	// postErrors are returned by GetPost for their post IDs.
 	postErrors map[string]error
 	// unreadableChannels are channels HasPermissionToChannel denies.
@@ -212,6 +215,7 @@ func (c *fakeMMClient) GetChannel(channelID string) (*model.Channel, error) {
 }
 
 func (c *fakeMMClient) GetDirectChannel(string, string) (*model.Channel, error) {
+	c.directChannelRequests++
 	if c.dmChannelID == "" {
 		return nil, errors.New("not implemented")
 	}

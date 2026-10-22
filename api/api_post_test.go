@@ -287,10 +287,10 @@ func TestHandleStopLogsClusterPublishErrors(t *testing.T) {
 
 // TestToolApprovalAuditRecords proves the tool approval endpoints enrich the
 // middleware-created audit record with the objects of the human decision: the
-// approval post, its channel, the accepted tool-use block IDs, and — once the
-// service layer is reached — the agent whose tool calls are being resolved.
-// Without these parameters an auditor cannot link the authorization to the
-// server-level records the approved tools produce afterwards.
+// approval post, its channel, the agent whose tool calls are being resolved,
+// and the accepted tool-use block IDs. Without these parameters an auditor
+// cannot link the authorization to the server-level records the approved
+// tools produce afterwards.
 func TestToolApprovalAuditRecords(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
 	gin.DefaultWriter = io.Discard
@@ -312,8 +312,7 @@ func TestToolApprovalAuditRecords(t *testing.T) {
 		conversationOwner   string
 		body                string
 		expectedStatus      int
-		expectedAcceptedIDs []string // nil asserts the parameter is absent
-		expectAgentID       bool
+		expectedAcceptedIDs []string
 	}{
 		{
 			name:                "tool_call reaching the service records the decision objects",
@@ -322,15 +321,15 @@ func TestToolApprovalAuditRecords(t *testing.T) {
 			body:                `{"accepted_tool_ids":["tool-use-1","tool-use-2"]}`,
 			expectedStatus:      http.StatusBadRequest,
 			expectedAcceptedIDs: []string{"tool-use-1", "tool-use-2"},
-			expectAgentID:       true,
 		},
 		{
-			name:              "tool_call requester mismatch records post and channel on the 403 fail",
-			endpoint:          "/post/" + postID + "/tool_call",
-			event:             AuditEventToolCallApproval,
-			conversationOwner: testOtherUserID,
-			body:              `{"accepted_tool_ids":["tool-use-1"]}`,
-			expectedStatus:    http.StatusForbidden,
+			name:                "tool_call requester mismatch records the decision objects on the 403 fail",
+			endpoint:            "/post/" + postID + "/tool_call",
+			event:               AuditEventToolCallApproval,
+			conversationOwner:   testOtherUserID,
+			body:                `{"accepted_tool_ids":["tool-use-1"]}`,
+			expectedStatus:      http.StatusForbidden,
+			expectedAcceptedIDs: []string{"tool-use-1"},
 		},
 		{
 			name:                "tool_result reaching the service records the decision objects",
@@ -339,7 +338,6 @@ func TestToolApprovalAuditRecords(t *testing.T) {
 			body:                `{"accepted_tool_ids":["tool-use-1"]}`,
 			expectedStatus:      http.StatusBadRequest,
 			expectedAcceptedIDs: []string{"tool-use-1"},
-			expectAgentID:       true,
 		},
 	}
 
@@ -349,6 +347,7 @@ func TestToolApprovalAuditRecords(t *testing.T) {
 			defer e.Cleanup(t)
 
 			records := e.CaptureAuditRecords()
+			convStore := e.useConversations()
 
 			e.setupTestBot(llm.BotConfig{Name: "permtest", DisplayName: "Permission Bot"})
 			e.api.licenseChecker = enterprise.NewLicenseChecker(e.client)
@@ -359,11 +358,11 @@ func TestToolApprovalAuditRecords(t *testing.T) {
 				post.AddProp(streaming.LLMRequesterUserIDProp, testUserID)
 			} else {
 				post.AddProp(streaming.ConversationIDProp, conversationID)
-				e.conversationStore.conversations[conversationID] = &store.Conversation{
+				require.NoError(t, convStore.CreateConversation(&store.Conversation{
 					ID:     conversationID,
 					UserID: test.conversationOwner,
 					BotID:  testBotUserID,
-				}
+				}))
 			}
 
 			e.mockAPI.On("GetPost", postID).Return(post, nil)
@@ -388,17 +387,8 @@ func TestToolApprovalAuditRecords(t *testing.T) {
 			assert.Equal(t, postID, rec.EventData.Parameters[audit.KeyPostID])
 			assert.Equal(t, channelID, rec.EventData.Parameters[audit.KeyChannelID])
 
-			if test.expectedAcceptedIDs != nil {
-				assert.Equal(t, test.expectedAcceptedIDs, rec.EventData.Parameters["accepted_tool_ids"])
-			} else {
-				assert.NotContains(t, rec.EventData.Parameters, "accepted_tool_ids",
-					"a request denied before body binding must not claim accepted tool IDs")
-			}
-
-			if test.expectAgentID {
-				assert.Equal(t, testBotUserID, rec.EventData.Parameters[audit.KeyAgentID],
-					"service-layer enrichment must reach the same record via the request context")
-			}
+			assert.Equal(t, testBotUserID, rec.EventData.Parameters[audit.KeyAgentID])
+			assert.Equal(t, test.expectedAcceptedIDs, rec.EventData.Parameters["accepted_tool_ids"])
 
 			assert.Equal(t, model.AuditStatusFail, rec.Status)
 			assert.Equal(t, test.expectedStatus, rec.Error.Code)
@@ -524,7 +514,7 @@ func (e *TestEnvironment) useConversations() *mockConvServiceStore {
 	client := mmapi.NewClient(e.client)
 	convStore := newMockConvServiceStore()
 	convService := conversation.NewService(convStore, e.api.prompts, client, e.bots)
-	svc := conversations.New(e.api.prompts, client, e.api.streamingService, e.api.contextBuilder, e.bots, nil, enterprise.NewLicenseChecker(e.client), nil, nil, e.config)
+	svc := conversations.New(e.api.prompts, client, e.api.streamingService, e.api.contextBuilder, e.bots, nil, enterprise.NewLicenseChecker(e.client), nil, nil, e.config, askForEveryTool)
 	svc.SetConversationService(convService)
 	e.api.conversationsService = svc
 	e.api.SetConversationService(convService)
@@ -536,7 +526,7 @@ func (e *TestEnvironment) useConversations() *mockConvServiceStore {
 // requester who may no longer use the agent that wrote the post, not the
 // default agent; that stopping your own run never needs the agent; that an
 // agent's channel restrictions do not apply in its own DM; and that posts no
-// agent wrote are refused.
+// agent wrote, and runs someone else requested, are refused.
 func TestPostResumeRoutesUseThePostsAgent(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
 	gin.DefaultWriter = io.Discard
@@ -573,6 +563,7 @@ func TestPostResumeRoutesUseThePostsAgent(t *testing.T) {
 		postAuthor     string
 		defaultAgent   func(*llm.BotConfig)
 		postAgent      func(*llm.BotConfig)
+		notOwner       bool
 		wantForbidden  bool
 		wantBadRequest bool
 	}{
@@ -586,6 +577,7 @@ func TestPostResumeRoutesUseThePostsAgent(t *testing.T) {
 			cfg.ChannelIDs = []string{"otherchannel00000000000000"}
 		}},
 		{name: "post no agent wrote", postAuthor: testUserID, defaultAgent: unrestricted, postAgent: unrestricted, wantBadRequest: true},
+		{name: "run someone else requested", postAuthor: postBotUserID, defaultAgent: unrestricted, postAgent: unrestricted, notOwner: true},
 	}
 
 	for _, route := range routes {
@@ -606,7 +598,11 @@ func TestPostResumeRoutesUseThePostsAgent(t *testing.T) {
 					bots.NewBot(postCfg, llm.ServiceConfig{}, &model.Bot{UserId: postBotUserID, Username: "postbot"}, nil),
 				)
 
-				require.NoError(t, convStore.CreateConversation(&store.Conversation{ID: convID, UserID: testUserID, BotID: postBotUserID, Operation: "conversation"}))
+				owner := testUserID
+				if test.notOwner {
+					owner = testOtherUserID
+				}
+				require.NoError(t, convStore.CreateConversation(&store.Conversation{ID: convID, UserID: owner, BotID: postBotUserID, Operation: "conversation"}))
 				post := &model.Post{Id: postID, UserId: test.postAuthor, ChannelId: channelID}
 				post.AddProp(streaming.ConversationIDProp, convID)
 				e.mockAPI.On("GetPost", postID).Return(post, nil)
@@ -632,7 +628,7 @@ func TestPostResumeRoutesUseThePostsAgent(t *testing.T) {
 				switch {
 				case test.wantBadRequest:
 					wantFailStatus = http.StatusBadRequest
-				case test.wantForbidden && route.runsAgent:
+				case test.notOwner, test.wantForbidden && route.runsAgent:
 					wantFailStatus = http.StatusForbidden
 				}
 				if wantFailStatus != 0 {

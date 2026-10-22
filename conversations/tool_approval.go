@@ -39,9 +39,9 @@ var ErrStaleToolClick = errors.New("stale or duplicate tool-approval click")
 var ErrPostMissingConversationID = errors.New("post missing conversation_id")
 
 // ErrNotRequester is returned when a user other than the original conversation
-// requester attempts to approve or reject tool calls/results. The HTTP layer
-// maps this to 403 Forbidden.
-var ErrNotRequester = errors.New("only the original requester can approve/reject tool calls")
+// requester tries to regenerate a response or decide on its tool calls or
+// results. The HTTP layer maps this to 403 Forbidden.
+var ErrNotRequester = errors.New("only the original requester can act on this conversation")
 
 // ErrInvalidToolAnswer is returned when an accepted user-interaction tool call
 // (e.g. AskUserQuestion) arrives without a valid answer. The pending state is
@@ -104,11 +104,10 @@ type toolDecision struct {
 // HandleToolResult: resume into the originating run's trace (falling back to a
 // fresh trace when the post or its assistant turn is missing), open a new-root
 // span named spanName, resolve the bot and conversation for the clicked post,
-// tag the request's audit record with the agent ID, verify the caller is the
-// conversation requester, load the turns, resolve the run's policy, and
-// refuse channel decisions while channel tool calling is off. On error the
-// span is ended before returning; on success the caller must defer
-// span.End().
+// verify the caller is the conversation requester, load the turns, resolve
+// the run's policy, and refuse decisions on a run whose tools are disabled.
+// On error the span is ended before returning; on success the caller must
+// defer span.End().
 func (c *Conversations) beginToolDecision(ctx context.Context, spanName, logMsg, userID string, post *model.Post, channel *model.Channel, acceptedCount int) (*toolDecision, error) {
 	ctx = c.rehydrateRunTrace(ctx, post)
 
@@ -125,13 +124,6 @@ func (c *Conversations) beginToolDecision(ctx context.Context, spanName, logMsg,
 	if bot == nil {
 		return fail(fmt.Errorf("unable to get bot"))
 	}
-
-	// Enrich the request's audit record (nil outside an audited request) with
-	// which agent's tool calls this human decision concerns. Tool names are
-	// added by the handler once the resolution is known; arguments, results,
-	// and answers never enter the record.
-	auditRec := audit.RecordFromContext(ctx)
-	audit.AddParam(auditRec, audit.KeyAgentID, bot.GetMMBot().UserId)
 
 	convID, ok := post.GetProp(streaming.ConversationIDProp).(string)
 	if !ok || convID == "" {
@@ -166,14 +158,14 @@ func (c *Conversations) beginToolDecision(ctx context.Context, spanName, logMsg,
 	if err != nil {
 		return fail(err)
 	}
-	if !policy.isDM && !c.channelMentionToolCallingEnabled() {
+	if !policy.toolsEnabled {
 		return fail(ErrToolCallingDisabled)
 	}
 
 	return &toolDecision{
 		ctx:      ctx,
 		span:     span,
-		auditRec: auditRec,
+		auditRec: audit.RecordFromContext(ctx),
 		convID:   convID,
 		conv:     conv,
 		turns:    turns,
@@ -202,24 +194,19 @@ func (c *Conversations) HandleToolCall(ctx context.Context, userID string, post 
 		return err
 	}
 
-	// Accepting a tool executes it, which a run with tools disabled must
-	// never do. Accepting tools from remote/external MCP servers is
-	// available at Enterprise and above. Built-in and embedded Mattermost MCP
-	// tools are available at every license level. Rejections are always
-	// allowed — they execute nothing. Blocks marked WouldAutoExecute are not
-	// gated here: their resume re-checks the policy's auto-execute decision,
-	// which refuses them on the same license, so they resolve to a
-	// rejection instead of blocking the whole submission on a possibly
-	// stale marker.
+	// Accepting tools from remote/external MCP servers is available at
+	// Enterprise and above. Built-in and embedded Mattermost MCP tools are
+	// available at every license level. Rejections are always allowed —
+	// they execute nothing. Blocks marked WouldAutoExecute are not gated
+	// here: their resume re-checks the policy's auto-execute decision, which
+	// refuses them on the same license, so they resolve to a rejection
+	// instead of blocking the whole submission on a possibly stale marker.
 	for _, b := range pendingBlocks {
 		if b.Type != conversation.BlockTypeToolUse || !slices.Contains(acceptedToolIDs, b.ID) {
 			continue
 		}
 		if b.Status != conversation.StatusPending && b.Status != conversation.StatusAccepted {
 			continue
-		}
-		if b.UserInteraction == "" && !policy.toolsEnabled {
-			return ErrToolCallingDisabled
 		}
 		if licenseErr := c.remoteMCPDecisionAllowed(b.ServerOrigin); licenseErr != nil {
 			return licenseErr

@@ -62,6 +62,8 @@ type MeetingsService interface {
 	SummarizeTranscription(ctx stdcontext.Context, bot *bots.Bot, transcription *subtitles.Subtitles, context *llm.Context) (*llm.TextStreamResult, error)
 }
 
+// New creates the conversations service. toolPolicyChecker is required: tool
+// decisions consult it without a nil check.
 func New(
 	prompts *llm.Prompts,
 	mmClient mmapi.Client,
@@ -73,30 +75,26 @@ func New(
 	i18nBundle *i18n.Bundle,
 	meetingsService MeetingsService,
 	configProvider ConfigProvider,
+	toolPolicyChecker mcp.ToolPolicyChecker,
 ) *Conversations {
 	return &Conversations{
-		prompts:          prompts,
-		mmClient:         mmClient,
-		streamingService: streamingService,
-		contextBuilder:   contextBuilder,
-		bots:             botsService,
-		db:               db,
-		licenseChecker:   licenseChecker,
-		i18n:             i18nBundle,
-		meetingsService:  meetingsService,
-		configProvider:   configProvider,
+		prompts:           prompts,
+		mmClient:          mmClient,
+		streamingService:  streamingService,
+		contextBuilder:    contextBuilder,
+		bots:              botsService,
+		db:                db,
+		licenseChecker:    licenseChecker,
+		i18n:              i18nBundle,
+		meetingsService:   meetingsService,
+		configProvider:    configProvider,
+		toolPolicyChecker: toolPolicyChecker,
 	}
 }
 
 // SetMeetingsService sets the meetings service (used to break circular dependency during initialization)
 func (c *Conversations) SetMeetingsService(meetingsService MeetingsService) {
 	c.meetingsService = meetingsService
-}
-
-// SetToolPolicyChecker sets the per-tool policy checker used for auto-approval
-// and DM auto-run decisions.
-func (c *Conversations) SetToolPolicyChecker(checker mcp.ToolPolicyChecker) {
-	c.toolPolicyChecker = checker
 }
 
 // SetAutoReplySettings sets the per-channel auto-reply settings lookup.

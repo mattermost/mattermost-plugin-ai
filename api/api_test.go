@@ -766,6 +766,10 @@ func (e *TestEnvironment) setBots(registry ...*bots.Bot) {
 	e.bots.SetBotsForTesting(registry)
 }
 
+// askForEveryTool is a tool policy checker that never lets a tool run
+// without approval.
+var askForEveryTool = mcp.ToolPolicyFunc(func(string, string) (string, bool) { return mcp.ToolPolicyAsk, false })
+
 func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 	mockAPI := &plugintest.API{}
 	noopMetrics := &metrics.NoopMetrics{}
@@ -815,6 +819,7 @@ func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 		nil,
 		nil,
 		cfg,
+		askForEveryTool,
 	)
 
 	api := New(
@@ -1192,6 +1197,11 @@ func TestPostRouter(t *testing.T) {
 				},
 			},
 		} {
+			// The agent-post routes check access to the post's agent in the
+			// service; TestPostResumeRoutesUseThePostsAgent covers them.
+			if name == "user not allowed" && (urlName == "stop" || urlName == "regenerate") {
+				continue
+			}
 			t.Run(urlName+" "+name, func(t *testing.T) {
 				e := SetupTestEnvironment(t)
 				defer e.Cleanup(t)

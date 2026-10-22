@@ -59,8 +59,6 @@ type turnPolicy struct {
 	// in a channel (auto_run_everywhere), for runs nobody is present to
 	// approve.
 	autoEverywhereOnly bool
-	convOpts           []llm.ContextOption
-	maxRounds          int
 }
 
 // resolveTurnPolicy checks that req may run and derives how it runs. Gates
@@ -97,20 +95,17 @@ func (c *Conversations) resolveTurnPolicy(ctx context.Context, req turnRequest) 
 		req.conv = conv
 	}
 
-	if err := c.checkAnalysisSource(req.user.Id, req.conv, req.post); err != nil {
+	if err := c.checkAnalysisSource(req, isDM); err != nil {
 		return nil, err
 	}
 
-	p := &turnPolicy{
-		c:           c,
-		turnRequest: req,
-		isDM:        isDM,
-		convOpts:    c.conversationToolOptions(req.bot, req.conv),
-		maxRounds:   req.bot.GetConfig().EffectiveMaxToolTurns(),
-	}
+	p := &turnPolicy{c: c, turnRequest: req, isDM: isDM}
 	initiator, initiatingUser := req.trigger, req.user
 	if req.trigger == nil {
-		initiator, initiatingUser = c.runInitiator(req.conv, req.post)
+		var err error
+		if initiator, initiatingUser, err = c.runInitiator(req.conv, req.post); err != nil {
+			return nil, err
+		}
 	}
 	if isDM {
 		p.toolsEnabled = true
@@ -128,11 +123,8 @@ func (p *turnPolicy) setChannelRunTools(initiator *model.Post, initiatingUser *m
 	configEnabled := p.c.channelMentionToolCallingEnabled()
 	switch {
 	case initiator == nil || initiatingUser == nil || isBotActivateAI(initiator, initiatingUser):
-		// Auto-approval needs a policy checker; without one an unattended
-		// run would strand pending approvals. The catalog stays limited
-		// either way, and the filter keeps no business tools without one.
-		p.toolsEnabled = configEnabled && p.c.toolPolicyChecker != nil
-		p.autoEverywhereOnly = true
+		p.toolsEnabled = configEnabled
+		p.autoEverywhereOnly = configEnabled
 	case isAutomatedInvoker(initiator, initiatingUser):
 	default:
 		p.toolsEnabled = configEnabled
@@ -141,24 +133,31 @@ func (p *turnPolicy) setChannelRunTools(initiator *model.Post, initiatingUser *m
 }
 
 // runInitiator returns the post that started the run which produced post,
-// and its author. Either is nil when it cannot be found.
-func (c *Conversations) runInitiator(conv *store.Conversation, post *model.Post) (*model.Post, *model.User) {
-	if conv == nil || post == nil || c.convService == nil {
-		return nil, nil
+// and its author. Both are nil when the run has no recorded initiating post or
+// that post no longer exists; failing to look them up is an error.
+func (c *Conversations) runInitiator(conv *store.Conversation, post *model.Post) (*model.Post, *model.User, error) {
+	if conv == nil || post == nil {
+		return nil, nil, nil
 	}
 	turn, err := c.convService.GetInitiatingUserTurn(conv.ID, post.Id)
-	if err != nil || turn == nil || turn.PostID == nil {
-		return nil, nil
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to look up the run's initiating turn: %w", err)
+	}
+	if turn == nil || turn.PostID == nil {
+		return nil, nil, nil
 	}
 	initiator, err := c.mmClient.GetPost(*turn.PostID)
-	if err != nil || initiator == nil {
-		return nil, nil
+	if mmapi.IsNotFound(err) {
+		return nil, nil, nil
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get the run's initiating post: %w", err)
 	}
 	initiatingUser, err := c.mmClient.GetUser(initiator.UserId)
-	if err != nil || initiatingUser == nil {
-		return nil, nil
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get the run's initiating user: %w", err)
 	}
-	return initiator, initiatingUser
+	return initiator, initiatingUser, nil
 }
 
 // isAnalysisOperation reports whether conversations of operation replay
@@ -181,30 +180,14 @@ func isAnalysisPost(post *model.Post) bool {
 	return threadID != "" || post.GetProp(AnalysisTypeProp) != nil || post.GetProp(AnalyzedChannelIDProp) != nil
 }
 
-// checkAnalysisSource re-checks that userID can still read what an analysis
-// analyzed before conv, or post when it is an analysis post, is continued.
-// The analysis post records the source: post itself when it is the
-// conversation's root (or has no conversation), otherwise conv's root post.
-// A source that is gone or unreadable denies with
-// ErrAnalysisSourceUnavailable; failing to look it up is returned as is.
-func (c *Conversations) checkAnalysisSource(userID string, conv *store.Conversation, post *model.Post) error {
-	var analysisPost *model.Post
-	switch {
-	case conv != nil && isAnalysisOperation(conv.Operation):
-		if conv.RootPostID == nil || *conv.RootPostID == "" {
-			return fmt.Errorf("analysis conversation has no analysis post: %w", ErrAnalysisSourceUnavailable)
-		}
-		analysisPost = post
-		if post == nil || post.Id != *conv.RootPostID {
-			var err error
-			if analysisPost, err = c.getSourcePost(*conv.RootPostID); err != nil {
-				return fmt.Errorf("failed to get analysis post: %w", err)
-			}
-		}
-	case conv == nil && isAnalysisPost(post):
-		analysisPost = post
-	default:
-		return nil
+// checkAnalysisSource re-checks that the requester can still read what an
+// analysis analyzed before a turn that replays it runs. A source that is gone
+// or unreadable denies with ErrAnalysisSourceUnavailable; failing to look it
+// up is returned as is.
+func (c *Conversations) checkAnalysisSource(req turnRequest, isDM bool) error {
+	analysisPost, err := c.turnAnalysisPost(req, isDM)
+	if err != nil || analysisPost == nil {
+		return err
 	}
 
 	if threadID, _ := analysisPost.GetProp(ThreadIDProp).(string); threadID != "" {
@@ -212,12 +195,66 @@ func (c *Conversations) checkAnalysisSource(userID string, conv *store.Conversat
 		if err != nil {
 			return fmt.Errorf("failed to get analyzed thread: %w", err)
 		}
-		return c.checkSourceChannel(userID, threadPost.ChannelId)
+		return c.checkSourceChannel(req.user.Id, threadPost.ChannelId)
 	}
 	if channelID, _ := analysisPost.GetProp(AnalyzedChannelIDProp).(string); channelID != "" {
-		return c.checkSourceChannel(userID, channelID)
+		return c.checkSourceChannel(req.user.Id, channelID)
 	}
 	return fmt.Errorf("analysis post records no analyzed thread or channel: %w", ErrAnalysisSourceUnavailable)
+}
+
+// turnAnalysisPost returns the analysis post whose source req replays, or nil
+// when req continues no analysis. An analysis conversation is rooted at its
+// analysis post; a legacy analysis post has no conversation. Analyses are
+// posted as thread roots in the requester's DM with the agent, so a turn in
+// such a thread that is not the analysis conversation (another agent
+// mentioned there, or a reply whose conversation is missing) is checked
+// against the thread root.
+func (c *Conversations) turnAnalysisPost(req turnRequest, isDM bool) (*model.Post, error) {
+	conv, post := req.conv, req.post
+	if conv != nil && isAnalysisOperation(conv.Operation) {
+		if conv.RootPostID == nil || *conv.RootPostID == "" {
+			return nil, fmt.Errorf("analysis conversation has no analysis post: %w", ErrAnalysisSourceUnavailable)
+		}
+		if post != nil && post.Id == *conv.RootPostID {
+			return post, nil
+		}
+		analysisPost, err := c.getSourcePost(*conv.RootPostID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get analysis post: %w", err)
+		}
+		return analysisPost, nil
+	}
+	if conv == nil && isAnalysisPost(post) {
+		return post, nil
+	}
+
+	rootID := turnThreadRootID(req)
+	if rootID == "" || req.channel.Type != model.ChannelTypeDirect || (isDM && conv != nil) {
+		return nil, nil
+	}
+	root, err := c.getSourcePost(rootID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get thread root: %w", err)
+	}
+	if !isAnalysisPost(root) {
+		return nil, nil
+	}
+	return root, nil
+}
+
+// turnThreadRootID returns the root of the thread req runs in, or "" when it
+// is not in a thread.
+func turnThreadRootID(req turnRequest) string {
+	switch {
+	case req.trigger != nil:
+		return req.trigger.RootId
+	case req.conv != nil && req.conv.RootPostID != nil:
+		return *req.conv.RootPostID
+	case req.post != nil:
+		return req.post.RootId
+	}
+	return ""
 }
 
 // getSourcePost gets a post an analysis depends on. A post that no longer
@@ -253,12 +290,15 @@ func (p *turnPolicy) buildContext(ctx context.Context, prefsLogMessage string, e
 			return botChannelAutoEverywhereKeepTool(p.c.toolPolicyChecker, tool)
 		}))
 	}
-	opts = append(opts, p.convOpts...)
+	opts = append(opts, p.c.conversationToolOptions(p.bot, p.conv)...)
 	opts = append(opts, extraOpts...)
 
 	llmContext := p.c.buildConversationContextWithTools(ctx, p.bot, p.user, p.channel, prefsLogMessage, opts...)
-	applyToolAvailability(llmContext, p.isDM, p.toolsEnabled)
-	if p.autoEverywhereOnly {
+	switch {
+	case !p.toolsEnabled:
+		// Disabled tools stay listed so the model can still describe them.
+		llmContext.DisabledToolsInfo = llmContext.Tools.GetToolsInfo()
+	case p.autoEverywhereOnly:
 		p.c.applyBotChannelAutoEverywhereToolFilter(llmContext)
 	}
 	return llmContext
@@ -282,11 +322,6 @@ func (p *turnPolicy) autoExecute(llmCtx *llm.Context) func(llm.ToolCall) bool {
 		if !found {
 			return false
 		}
-		// Interaction tools are answered by the user; auto-executing one
-		// would bypass the question entirely.
-		if lookup.Tool.UserInteraction != "" {
-			return false
-		}
 		if p.c.remoteMCPDecisionAllowed(lookup.ServerOrigin) != nil {
 			return false
 		}
@@ -294,9 +329,6 @@ func (p *turnPolicy) autoExecute(llmCtx *llm.Context) func(llm.ToolCall) bool {
 		// still go through policy.
 		if isAutoExecuteBuiltIn(lookup.Tool) {
 			return true
-		}
-		if p.c.toolPolicyChecker == nil {
-			return false
 		}
 		policy, enabled := p.c.toolPolicyChecker.GetToolPolicy(lookup.ServerOrigin, lookup.BareName)
 		if !enabled {
@@ -324,35 +356,18 @@ func (c *Conversations) remoteMCPDecisionAllowed(serverOrigin string) error {
 
 // sharedForTurns reports whether tool rounds the turn ran automatically may
 // be written as shared, skipping the result-approval step. DM results are
-// always shared; in a channel every call must be one that needs no approval
-// anywhere.
+// always shared; in a channel every call must be one the policy auto-runs
+// there, which only auto_run_everywhere tools are.
 func (p *turnPolicy) sharedForTurns(turns []toolrunner.ToolTurn, llmCtx *llm.Context) bool {
 	if p.isDM {
 		return true
 	}
+	autoExecute := p.autoExecute(llmCtx)
 	sawToolCall := false
 	for _, turn := range turns {
 		for _, tc := range turn.AssistantToolCalls {
 			sawToolCall = true
-			if isMCPMetaToolCall(tc, llmCtx) {
-				continue
-			}
-			var lookup llm.ToolLookup
-			var found bool
-			if llmCtx != nil {
-				lookup, found = llmCtx.Tools.LookupTool(tc.Name, tc.ServerOrigin)
-			}
-			if !found {
-				return false
-			}
-			if isAutoExecuteBuiltIn(lookup.Tool) {
-				continue
-			}
-			if p.c.toolPolicyChecker == nil {
-				return false
-			}
-			policy, enabled := p.c.toolPolicyChecker.GetToolPolicy(lookup.ServerOrigin, lookup.BareName)
-			if !enabled || !mcp.IsToolPolicyAutoRunEverywhere(policy) {
+			if !autoExecute(tc) {
 				return false
 			}
 		}
@@ -360,13 +375,13 @@ func (p *turnPolicy) sharedForTurns(turns []toolrunner.ToolTurn, llmCtx *llm.Con
 	return sawToolCall
 }
 
-// runToolLoop runs the ToolRunner over req with the turn's round cap and
-// auto-execute decision, persisting each intermediate tool round to convID as
-// it completes. writeFailMsg (plus writeFailArgs) is logged when persisting a
-// round fails.
+// runToolLoop runs the ToolRunner over req with the agent's round cap and the
+// turn's auto-execute decision, persisting each intermediate tool round to
+// convID as it completes. writeFailMsg (plus writeFailArgs) is logged when
+// persisting a round fails.
 func (p *turnPolicy) runToolLoop(ctx context.Context, llmCtx *llm.Context, convID string, req llm.CompletionRequest, writeFailMsg string, writeFailArgs ...any) (*toolrunner.ToolRunResult, error) {
 	opts := p.c.withProviderWebSearchLicense(p.c.toolsDisabledLLMOptions(p.bot, !p.toolsEnabled))
-	runner := toolrunner.New(p.bot.LLM(), toolrunner.WithMaxRounds(p.maxRounds), toolrunner.WithToolErrorResult(llmcontext.MCPToolErrorResult))
+	runner := toolrunner.New(p.bot.LLM(), toolrunner.WithMaxRounds(p.bot.GetConfig().EffectiveMaxToolTurns()), toolrunner.WithToolErrorResult(llmcontext.MCPToolErrorResult))
 	return runner.Run(ctx, req, p.autoExecute(llmCtx), func(turns []toolrunner.ToolTurn) {
 		if writeErr := p.c.convService.WriteToolTurns(convID, turns, p.sharedForTurns(turns, llmCtx)); writeErr != nil {
 			p.c.mmClient.LogError(writeFailMsg, append([]any{"error", writeErr}, writeFailArgs...)...)

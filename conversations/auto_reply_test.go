@@ -67,9 +67,11 @@ type autoReplyTestEnv struct {
 	botService    *bots.MMBots
 	fakeLLM       *dmTestLLM
 	mcpMgr        *testMCPClientManager
+	toolProvider  *testToolProvider
 	settings      *fakeAutoReplySettings
 	channel       *model.Channel
 	config        *testToolCallingConfig
+	checker       *dmPolicyChecker
 	streaming     *fakeStreamingService
 }
 
@@ -145,7 +147,8 @@ func setupAutoReplyTestEnv(t *testing.T, botConfigs []llm.BotConfig, llmResponse
 	}
 
 	mcpMgr := &testMCPClientManager{}
-	contextBuilder := llmcontext.NewLLMContextBuilder(pluginClient, &testToolProvider{}, mcpMgr, &mockConfigProvider{})
+	toolProvider := &testToolProvider{}
+	contextBuilder := llmcontext.NewLLMContextBuilder(pluginClient, toolProvider, mcpMgr, &mockConfigProvider{})
 	promptsManager, err := llm.NewPrompts(prompts.PromptsFolder)
 	require.NoError(t, err)
 
@@ -154,6 +157,7 @@ func setupAutoReplyTestEnv(t *testing.T, botConfigs []llm.BotConfig, llmResponse
 
 	config := &testToolCallingConfig{}
 	streamingService := &fakeStreamingService{}
+	checker := newDMPolicyChecker()
 	convs := conversations.New(
 		promptsManager,
 		mmClient,
@@ -165,6 +169,7 @@ func setupAutoReplyTestEnv(t *testing.T, botConfigs []llm.BotConfig, llmResponse
 		i18n.Init(),
 		nil, // meetings
 		config,
+		checker,
 	)
 	convs.SetConversationService(convSvc)
 
@@ -179,9 +184,11 @@ func setupAutoReplyTestEnv(t *testing.T, botConfigs []llm.BotConfig, llmResponse
 		botService:    botService,
 		fakeLLM:       fLLM,
 		mcpMgr:        mcpMgr,
+		toolProvider:  toolProvider,
 		settings:      settings,
 		channel:       channel,
 		config:        config,
+		checker:       checker,
 		streaming:     streamingService,
 	}
 }
@@ -738,7 +745,7 @@ func TestAutoReplyLicenseGate(t *testing.T) {
 			BotID:     autoReplyBotUserID,
 			Mode:      autoreply.ModeThreads,
 		})
-		nilConv := conversations.New(nil, env.mmClient, nil, nil, env.botService, nil, nil, nil, nil, nil)
+		nilConv := conversations.New(nil, env.mmClient, nil, nil, env.botService, nil, nil, nil, nil, nil, env.checker)
 		nilConv.SetAutoReplySettings(env.settings)
 
 		nilConv.MessageHasBeenPosted(nil, env.rootPost(autoReplyUserID, "hello there"))

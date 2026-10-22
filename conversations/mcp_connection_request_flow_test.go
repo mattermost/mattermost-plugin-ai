@@ -269,13 +269,14 @@ func newConnectionTestConversations(t *testing.T, provider llmcontext.MCPToolPro
 
 	streamingService := &loadedStateStreamingService{}
 	c := &Conversations{
-		mmClient:         mmClient,
-		configProvider:   config,
-		contextBuilder:   llmcontext.NewLLMContextBuilder(pluginAPI, &channelFollowUpTestToolProvider{}, provider, config),
-		bots:             botsService,
-		convService:      conversation.NewService(convStore, nil, nil, nil),
-		streamingService: streamingService,
-		licenseChecker:   licenseChecker,
+		toolPolicyChecker: mapPolicyChecker{},
+		mmClient:          mmClient,
+		configProvider:    config,
+		contextBuilder:    llmcontext.NewLLMContextBuilder(pluginAPI, &channelFollowUpTestToolProvider{}, provider, config),
+		bots:              botsService,
+		convService:       conversation.NewService(convStore, nil, nil, nil),
+		streamingService:  streamingService,
+		licenseChecker:    licenseChecker,
 	}
 
 	approvalPost := &model.Post{Id: approvalPostID, UserId: "bot-id"}
