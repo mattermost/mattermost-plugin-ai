@@ -40,6 +40,7 @@ type fakeMMClient struct {
 	kv                   map[string]any
 	createdPosts         []*model.Post
 	allowCreatePost      bool
+	config               *model.Config
 	updatedPosts         []*model.Post
 	kvDeletes            []string
 	posts                map[string]*model.Post
@@ -214,6 +215,9 @@ func (c *fakeMMClient) PublishWebSocketEvent(event string, payload map[string]an
 }
 
 func (c *fakeMMClient) GetConfig() *model.Config {
+	if c.config != nil {
+		return c.config
+	}
 	return &model.Config{}
 }
 

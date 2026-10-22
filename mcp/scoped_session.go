@@ -174,8 +174,14 @@ func (m *ClientManager) forgetScopedRun(run *ScopedRun) {
 // RevokeScopedSessionsForBot ends every live scoped run of botUserID on this
 // node, for when the agent's scoped mode is turned off or its bot goes away.
 func (m *ClientManager) RevokeScopedSessionsForBot(botUserID string) {
+	m.RevokeScopedSessionsWhere(func(id string) bool { return id == botUserID })
+}
+
+// RevokeScopedSessionsWhere ends every live scoped run on this node whose bot
+// lapsed reports true for.
+func (m *ClientManager) RevokeScopedSessionsWhere(lapsed func(botUserID string) bool) {
 	for _, run := range m.liveScopedRuns() {
-		if run.BotUserID() == botUserID {
+		if lapsed(run.BotUserID()) {
 			_ = run.Close()
 		}
 	}

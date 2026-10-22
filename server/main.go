@@ -516,6 +516,19 @@ func (p *Plugin) OnActivate() error {
 	)
 	contextBuilder.SetMCPDynamicToolTelemetry(metricsService)
 
+	// End live scoped runs as soon as their agent can no longer run scoped:
+	// the setting was turned off, the bot went away, or a prerequisite lapsed.
+	// Every node reloads its registry and config, so this runs on each one.
+	revokeLapsedScopedRuns := func() {
+		mcpClientManager.RevokeScopedSessionsWhere(func(botUserID string) bool {
+			bot := bots.GetBotByID(botUserID)
+			return bot == nil || !contextBuilder.ScopedChannelModeAvailable(bot)
+		})
+	}
+	bots.AddRegistryListener(revokeLapsedScopedRuns)
+	p.configuration.RegisterUpdateListener(revokeLapsedScopedRuns)
+	p.licenseChangeListeners = append(p.licenseChangeListeners, revokeLapsedScopedRuns)
+
 	conversationsService := conversations.New(
 		prompts,
 		mmClient,

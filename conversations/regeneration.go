@@ -93,6 +93,14 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 	referenceRecordingFileIDProp := post.GetProp(ReferencedRecordingFileID)
 	referencedTranscriptPostProp := post.GetProp(ReferencedTranscriptPostID)
 	var result *llm.TextStreamResult
+	// Streaming below is synchronous, so the regenerated run ends when this
+	// returns.
+	var releaseRun func()
+	defer func() {
+		if releaseRun != nil {
+			releaseRun()
+		}
+	}()
 	switch {
 	case threadIDProp != nil:
 		threadID := threadIDProp.(string)
@@ -217,11 +225,12 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 
 		// Use the conversation entity path for regeneration.
 		if c.convService != nil {
-			regenResult, regenErr := c.regenerateViaConversation(ctx, bot, user, channel, post, respondingToPostID)
+			regenResult, release, regenErr := c.regenerateViaConversation(ctx, bot, user, channel, post, respondingToPostID)
 			if regenErr != nil {
 				return fmt.Errorf("could not regenerate via conversation: %w", regenErr)
 			}
 			result = regenResult
+			releaseRun = release
 		} else {
 			return errors.New("conversation service not configured for regeneration")
 		}
@@ -259,7 +268,8 @@ func (c *Conversations) checkRegenerateLicense(post *model.Post) error {
 }
 
 // regenerateViaConversation rebuilds the completion request from the conversation entity
-// and runs the ToolRunner to produce a new response stream.
+// and runs the ToolRunner to produce a new response stream. On success the
+// caller must call release once the stream has been consumed.
 func (c *Conversations) regenerateViaConversation(
 	ctx stdcontext.Context,
 	bot *bots.Bot,
@@ -267,29 +277,39 @@ func (c *Conversations) regenerateViaConversation(
 	channel *model.Channel,
 	post *model.Post,
 	respondingToPostID string,
-) (*llm.TextStreamResult, error) {
+) (_ *llm.TextStreamResult, release func(), err error) {
 	convIDProp, _ := post.GetProp(streaming.ConversationIDProp).(string)
 	if convIDProp == "" {
-		return nil, errors.New("post missing conversation_id for regeneration")
+		return nil, nil, errors.New("post missing conversation_id for regeneration")
 	}
 
 	conv, err := c.convService.GetConversation(convIDProp)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get conversation for regen: %w", err)
+		return nil, nil, fmt.Errorf("failed to get conversation for regen: %w", err)
 	}
+
+	isDM := mmapi.IsDMWith(bot.GetMMBot().UserId, channel)
 
 	// Regeneration is triggered by the requester clicking the regen control,
 	// so the user is interactively present.
+	opts := []llm.ContextOption{
+		c.contextBuilder.WithLLMContextInteractive(),
+		c.contextBuilder.WithLLMContextResponseFiles(),
+	}
+	if !isDM {
+		opts = append(opts, c.scopedTurnOptions(bot, channel, respondingToPostID, conv)...)
+	}
 	llmContext := c.buildConversationContextWithTools(
 		ctx, bot, user, channel,
 		"Failed to load user tool preferences on regen, proceeding without filtering",
-		append([]llm.ContextOption{
-			c.contextBuilder.WithLLMContextInteractive(),
-			c.contextBuilder.WithLLMContextResponseFiles(),
-		}, c.conversationToolOptions(bot, conv)...)...,
+		append(opts, c.conversationToolOptions(bot, conv)...)...,
 	)
+	defer func() {
+		if err != nil {
+			llmContext.ReleaseScopedSession()
+		}
+	}()
 
-	isDM := mmapi.IsDMWith(bot.GetMMBot().UserId, channel)
 	toolsDisabled := applyToolAvailability(llmContext, isDM, c.channelMentionToolCallingEnabled())
 
 	// Build the request BEFORE scrubbing — ExcludeAfterPostID needs the anchor.
@@ -301,7 +321,7 @@ func (c *Conversations) regenerateViaConversation(
 		SessionID:                auth.SessionIDFromContext(ctx),
 	})
 	if buildErr != nil {
-		return nil, fmt.Errorf("failed to build completion request for regen: %w", buildErr)
+		return nil, nil, fmt.Errorf("failed to build completion request for regen: %w", buildErr)
 	}
 
 	// Scrub the prior generation so the stream runs identically to a first.
@@ -324,8 +344,8 @@ func (c *Conversations) regenerateViaConversation(
 		c.toolsDisabledLLMOptions(bot, toolsDisabled), "Failed to write tool turns on regen")
 
 	if runErr != nil {
-		return nil, fmt.Errorf("tool runner failed on regen: %w", runErr)
+		return nil, nil, fmt.Errorf("tool runner failed on regen: %w", runErr)
 	}
 
-	return c.decorateStreamWithCreatedFiles(ctx, bot, runResult.Stream, post, nil, llmContext, llmContext), nil
+	return c.decorateStreamWithCreatedFiles(ctx, bot, runResult.Stream, post, nil, llmContext, llmContext), llmContext.ReleaseScopedSession, nil
 }

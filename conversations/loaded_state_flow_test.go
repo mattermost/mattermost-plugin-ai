@@ -766,7 +766,7 @@ func TestRegenerateRestoresLoadsBeforeAnchorButDropsLoadsInScrubbedGeneration(t 
 	post := &model.Post{Id: regenPostID}
 	post.AddProp(streaming.ConversationIDProp, conv.ID)
 
-	streamResult, err := c.regenerateViaConversation(
+	streamResult, release, err := c.regenerateViaConversation(
 		context.Background(),
 		bot,
 		&model.User{Id: "user-id", Username: "user"},
@@ -775,6 +775,7 @@ func TestRegenerateRestoresLoadsBeforeAnchorButDropsLoadsInScrubbedGeneration(t 
 		"root-post-id",
 	)
 	require.NoError(t, err)
+	defer release()
 	_, readErr := streamResult.ReadAll()
 	require.NoError(t, readErr)
 
