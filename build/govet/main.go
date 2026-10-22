@@ -8,6 +8,7 @@ import (
 	"log"
 
 	"github.com/mattermost/mattermost/tools/mattermost-govet/errorAssertions"
+	"github.com/mattermost/mattermost/tools/mattermost-govet/errorVars"
 	"github.com/mattermost/mattermost/tools/mattermost-govet/errorVarsName"
 	"github.com/mattermost/mattermost/tools/mattermost-govet/license"
 	"github.com/mattermost/mattermost/tools/mattermost-govet/mutexLock"
@@ -26,6 +27,7 @@ func main() {
 
 	unitchecker.Main(
 		errorAssertions.Analyzer,
+		errorVars.Analyzer,
 		errorVarsName.Analyzer,
 		license.Analyzer,
 		mutexLock.Analyzer,
