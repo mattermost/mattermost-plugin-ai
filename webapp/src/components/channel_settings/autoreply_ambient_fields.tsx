@@ -3,7 +3,10 @@
 
 import React, {useState} from 'react';
 import {FormattedMessage} from 'react-intl';
+import {useSelector} from 'react-redux';
 import styled from 'styled-components';
+
+import {getAmbientAutoReplyEnabled} from '@/selectors';
 
 import {useChannelAutoReplyDraft} from './autoreply_state';
 
@@ -29,6 +32,7 @@ const ANALYSIS_MODEL_ID = 'autoreply-analysis-model';
 
 export const AutoReplyInstructionsField = ({informChange}: Props) => {
     const draft = useChannelAutoReplyDraft();
+    const ambientEnabled = useSelector(getAmbientAutoReplyEnabled);
     const [local, setLocal] = useState<string | null>(null);
 
     if (!draft) {
@@ -52,8 +56,13 @@ export const AutoReplyInstructionsField = ({informChange}: Props) => {
                 }}
             />
             <HelpText>
-                <FormattedMessage defaultMessage='Instructions for when the agent should reply. Used when Ambient is selected.'/>
+                <FormattedMessage defaultMessage='Instructions for when the agent should reply. Used by both ambient modes.'/>
             </HelpText>
+            {!ambientEnabled && (
+                <HelpText data-testid='autoreply-ambient-disabled'>
+                    <FormattedMessage defaultMessage='Ambient auto-replies are turned off by your system admin.'/>
+                </HelpText>
+            )}
         </Container>
     );
 };
@@ -87,7 +96,7 @@ export const AutoReplyAnalysisModelField = ({informChange}: Props) => {
                 }}
             />
             <HelpText>
-                <FormattedMessage defaultMessage='Model id used to decide whether to reply. Used when Ambient is selected.'/>
+                <FormattedMessage defaultMessage='Model id used to decide whether to reply. Used by both ambient modes.'/>
             </HelpText>
         </Container>
     );

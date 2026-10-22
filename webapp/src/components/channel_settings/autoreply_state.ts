@@ -8,7 +8,7 @@ import {LLMBot, filterBotsByChannelAccess, resolveActiveBot} from '@/bots';
 
 // Save failures are stored as machine-readable kinds; the picker maps them to
 // localized messages inside React so they follow the live locale.
-export type ChannelAutoReplySaveErrorKind = 'forbidden' | 'no_agent' | 'generic';
+export type ChannelAutoReplySaveErrorKind = 'forbidden' | 'no_agent' | 'ambient_disabled' | 'generic';
 
 // Module-level draft bridging the host's schema callbacks (loadValues/onSave)
 // and custom settings (agent picker, ambient instructions, analysis model),
@@ -76,6 +76,7 @@ export function parseChannelAutoReplyMode(raw: string | undefined): ChannelAutoR
     case 'root_posts':
     case 'threads':
     case 'ambient':
+    case 'ambient_threads':
         return raw;
     default:
         return 'off';

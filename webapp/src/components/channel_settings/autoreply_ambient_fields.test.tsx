@@ -41,6 +41,15 @@ jest.mock('@/client', () => ({
     getChannelAutoReply: jest.fn(),
 }));
 
+let mockAmbientEnabled = true;
+jest.mock('@/selectors', () => ({
+    getAmbientAutoReplyEnabled: () => mockAmbientEnabled,
+}));
+jest.mock('react-redux', () => ({
+    ...jest.requireActual('react-redux'),
+    useSelector: (selector: (state: unknown) => unknown) => selector({}),
+}));
+
 const CHANNEL_ID = 'chan1';
 
 function seedDraft(overrides: {instructions?: string; analysis_model?: string} = {}) {
@@ -57,6 +66,7 @@ function seedDraft(overrides: {instructions?: string; analysis_model?: string} =
 }
 
 beforeEach(() => {
+    mockAmbientEnabled = true;
     setChannelAutoReplyDraft(null);
 });
 
@@ -113,6 +123,16 @@ describe('AutoReplyInstructionsField', () => {
         });
 
         expect((screen.getByTestId('autoreply-instructions') as HTMLTextAreaElement).value).toBe('local instructions');
+    });
+
+    test('shows a notice only when the admin has turned ambient auto-replies off', () => {
+        seedDraft();
+        const {rerender} = render(<AutoReplyInstructionsField informChange={jest.fn()}/>);
+        expect(screen.queryByTestId('autoreply-ambient-disabled')).toBeNull();
+
+        mockAmbientEnabled = false;
+        rerender(<AutoReplyInstructionsField informChange={jest.fn()}/>);
+        expect(screen.getByTestId('autoreply-ambient-disabled').textContent).toBe('Ambient auto-replies are turned off by your system admin.');
     });
 
     test('renders nothing when no draft is hydrated', () => {

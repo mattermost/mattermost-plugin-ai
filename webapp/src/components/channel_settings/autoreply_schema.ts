@@ -18,6 +18,7 @@ import {
 } from '@/utils/permissions';
 import manifest from '@/manifest';
 import {licenseAllows} from '@/license';
+import {getAmbientAutoReplyEnabled} from '@/selectors';
 
 import {AutoReplyAgentPicker} from './autoreply_agent_picker';
 import {AutoReplyAnalysisModelField, AutoReplyInstructionsField} from './autoreply_ambient_fields';
@@ -116,7 +117,7 @@ export const makeLoadValues = (store: WebappStore) => async (channel: Channel): 
     };
 };
 
-export const makeOnSave = () => async (values: ChannelSettingsValues, channel: Channel): Promise<void> => {
+export const makeOnSave = (store: WebappStore) => async (values: ChannelSettingsValues, channel: Channel): Promise<void> => {
     const mode = parseChannelAutoReplyMode(values.mode);
     let botId: string;
     let instructions: string;
@@ -130,6 +131,7 @@ export const makeOnSave = () => async (values: ChannelSettingsValues, channel: C
     case 'root_posts':
     case 'threads':
     case 'ambient':
+    case 'ambient_threads':
         botId = values.bot_id ?? '';
         instructions = values.instructions ?? '';
         analysisModel = values.analysis_model ?? '';
@@ -142,6 +144,10 @@ export const makeOnSave = () => async (values: ChannelSettingsValues, channel: C
     if (mode !== 'off' && !botId) {
         setChannelAutoReplySaveError('no_agent');
         throw new Error('no agent selected for channel auto-reply');
+    }
+    if ((mode === 'ambient' || mode === 'ambient_threads') && !getAmbientAutoReplyEnabled(store.getState())) {
+        setChannelAutoReplySaveError('ambient_disabled');
+        throw new Error('ambient auto-reply is disabled by the system admin');
     }
     const saved: ChannelAutoReplySettings = {
         bot_id: botId,
@@ -204,8 +210,13 @@ export function makeChannelAutoReplySchema(store: WebappStore, intl: IntlShape):
                         },
                         {
                             value: 'ambient',
-                            text: intl.formatMessage({defaultMessage: 'Ambient'}),
+                            text: intl.formatMessage({defaultMessage: 'Ambient (Experimental)'}),
                             helpText: intl.formatMessage({defaultMessage: 'The agent watches the channel and replies only when it decides a response is useful.'}),
+                        },
+                        {
+                            value: 'ambient_threads',
+                            text: intl.formatMessage({defaultMessage: 'Ambient in mentioned threads (Experimental)'}),
+                            helpText: intl.formatMessage({defaultMessage: 'Once the agent is @-mentioned in a thread, it keeps watching that thread and replies only when it decides a response is useful.'}),
                         },
                     ],
                 },
@@ -232,6 +243,6 @@ export function makeChannelAutoReplySchema(store: WebappStore, intl: IntlShape):
             ],
         }],
         loadValues: makeLoadValues(store),
-        onSave: makeOnSave(),
+        onSave: makeOnSave(store),
     };
 }

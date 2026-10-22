@@ -25,6 +25,7 @@ export async function setupRedux(registry: any, store: WebappStore) {
         selectedPostId,
         allowUnsafeLinks,
         htmlArtifactsEnabled,
+        ambientAutoReplyEnabled,
         customPrompts,
         pinnedPromptIds,
         showCustomPromptsModal,
@@ -89,6 +90,15 @@ function htmlArtifactsEnabled(state = false, action: any) {
     switch (action.type) {
     case 'SET_HTML_ARTIFACTS_ENABLED':
         return action.htmlArtifactsEnabled;
+    default:
+        return state;
+    }
+}
+
+function ambientAutoReplyEnabled(state = false, action: any) {
+    switch (action.type) {
+    case 'SET_AMBIENT_AUTO_REPLY_ENABLED':
+        return action.ambientAutoReplyEnabled;
     default:
         return state;
     }

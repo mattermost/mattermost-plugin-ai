@@ -931,7 +931,7 @@ export async function updateUserToolPreferences(prefs: {disabled_servers: string
     });
 }
 
-export type ChannelAutoReplyMode = 'off' | 'root_posts' | 'threads' | 'ambient';
+export type ChannelAutoReplyMode = 'off' | 'root_posts' | 'threads' | 'ambient' | 'ambient_threads';
 
 export type ChannelAutoReplySettings = {
     bot_id: string;

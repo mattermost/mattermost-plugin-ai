@@ -16,7 +16,7 @@ import type { Channel } from '@mattermost/types/channels';
 import RunContainer from 'helpers/plugincontainer';
 import MattermostContainer from 'helpers/mmcontainer';
 import { MattermostPage } from 'helpers/mm';
-import { mattermostAIPluginRoutes } from 'helpers/plugin-http';
+import { mattermostAIAdminConfigApiFromClient, mattermostAIPluginRoutes } from 'helpers/plugin-http';
 import {
     OpenAIMockContainer,
     RunOpenAIMocks,
@@ -33,8 +33,10 @@ let mattermost: MattermostContainer;
 let openAIMock: OpenAIMockContainer;
 
 test.beforeAll(async () => {
+    test.setTimeout(240000);
     mattermost = await RunContainer();
     openAIMock = await RunOpenAIMocks(mattermost.network);
+    await setAmbientAutoReplyEnabled(true);
 });
 
 test.beforeEach(async () => {
@@ -77,6 +79,13 @@ async function setupClientAndChannel(testTag: string): Promise<{
         type: 'O',
     } as Channel);
     return { client, botUser, channel };
+}
+
+async function setAmbientAutoReplyEnabled(enabled: boolean): Promise<void> {
+    const adminClient = await mattermost.getAdminClient();
+    const api = mattermostAIAdminConfigApiFromClient(adminClient, mattermost.url());
+    const current = await api.get();
+    await api.put({...current, enableAmbientAutoReply: enabled}, {settleMs: 2000});
 }
 
 async function putAutoReply(
@@ -387,5 +396,67 @@ test.describe('Per-channel agent auto-reply', () => {
         });
         await mmPage.expectNoBotDmReplyFromApi(client, channel.id, botUser.id, sinceMs, { observeDurationMs: 15000 });
         await expectMatchedAmbientDecision(false);
+    });
+
+    test('ambient_threads mode: replies without a mention only in threads the agent was @mentioned into', async ({ page }) => {
+        test.setTimeout(150000);
+
+        const { client, botUser, channel } = await setupClientAndChannel('ambientthreads');
+        await putAutoReply(client, channel.id, botUser.id, 'ambient_threads', {
+            instructions: 'only billing questions',
+        });
+        await mockAmbientClassifierThenReply(true);
+        const mmPage = new MattermostPage(page);
+
+        // Until the agent is brought into a thread, neither roots nor replies are classified.
+        const sinceMs = Date.now();
+        const unmentionedRoot = await client.createPost({
+            channel_id: channel.id,
+            message: 'Ambient threads ignores this root',
+        });
+        await client.createPost({
+            channel_id: channel.id,
+            root_id: unmentionedRoot.id,
+            message: 'And this reply in a thread without the agent',
+        });
+        await mmPage.expectNoBotDmReplyFromApi(client, channel.id, botUser.id, sinceMs, { observeDurationMs: 10000 });
+
+        const mentionedRoot = await client.createPost({
+            channel_id: channel.id,
+            message: `@${botUser.username} can you help with billing?`,
+        });
+        await mmPage.expectBotThreadReplyFromApi(
+            client, channel.id, botUser.id, mentionedRoot.id, responseTestText,
+        );
+
+        const followUp = await client.createPost({
+            channel_id: channel.id,
+            root_id: mentionedRoot.id,
+            message: 'And what about last month\'s invoice?',
+        });
+        await expect.poll(async () => {
+            const thread = await client.getPostThread(mentionedRoot.id);
+            return Object.values(thread.posts).some(
+                (p) => p.user_id === botUser.id && p.create_at > followUp.create_at && p.message.includes(responseTestText),
+            );
+        }, { timeout: 45000, intervals: [500, 1000, 2000] }).toBe(true);
+        await expectMatchedAmbientDecision(true);
+    });
+
+    test('ambient modes cannot be saved while the admin setting is off', async () => {
+        const { client, botUser, channel } = await setupClientAndChannel('ambientdisabled');
+        const routes = mattermostAIPluginRoutes(mattermost.url());
+
+        await setAmbientAutoReplyEnabled(false);
+        try {
+            for (const mode of ['ambient', 'ambient_threads']) {
+                await expect(
+                    routes.putJson(`channel/${channel.id}/autoreply`, client.getToken(), { bot_id: botUser.id, mode }),
+                ).rejects.toThrow(/403/);
+            }
+            await putAutoReply(client, channel.id, botUser.id, 'threads');
+        } finally {
+            await setAmbientAutoReplyEnabled(true);
+        }
     });
 });

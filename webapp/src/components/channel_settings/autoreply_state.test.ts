@@ -158,6 +158,7 @@ describe('parseChannelAutoReplyMode', () => {
         {raw: 'root_posts', want: 'root_posts'},
         {raw: 'threads', want: 'threads'},
         {raw: 'ambient', want: 'ambient'},
+        {raw: 'ambient_threads', want: 'ambient_threads'},
         {raw: 'banana', want: 'off'},
         {raw: '', want: 'off'},
         // eslint-disable-next-line no-undefined
@@ -187,6 +188,7 @@ describe('normalizeChannelAutoReply', () => {
         {mode: 'threads' as const},
         {mode: 'off' as const},
         {mode: 'ambient' as const},
+        {mode: 'ambient_threads' as const},
     ])('keeps the known mode $mode', ({mode}) => {
         const normalized = normalizeChannelAutoReply(settings({bot_id: 'other', mode}), bots, CHANNEL_ID);
         expect(normalized.mode).toBe(mode);

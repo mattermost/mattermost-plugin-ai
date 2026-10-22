@@ -97,7 +97,7 @@ function makeChannel(type: string, id = CHANNEL_ID): Channel {
     return {id, type, team_id: TEAM_ID} as Channel;
 }
 
-function makeState(opts: {bots: LLMBot[] | null; channelPermissions?: string[]; skuShortName?: string}): GlobalState {
+function makeState(opts: {bots: LLMBot[] | null; channelPermissions?: string[]; skuShortName?: string; ambientAutoReplyEnabled?: boolean}): GlobalState {
     return {
         entities: {
             general: {config: {}, license: {SkuShortName: opts.skuShortName ?? 'advanced'}},
@@ -112,7 +112,7 @@ function makeState(opts: {bots: LLMBot[] | null; channelPermissions?: string[]; 
                 },
             },
         },
-        [botsKey]: {bots: opts.bots},
+        [botsKey]: {bots: opts.bots, ambientAutoReplyEnabled: opts.ambientAutoReplyEnabled ?? true},
     } as unknown as GlobalState;
 }
 
@@ -260,7 +260,7 @@ describe('makeLoadValues', () => {
 });
 
 describe('makeOnSave', () => {
-    const onSave = makeOnSave();
+    const onSave = makeOnSave(makeTestStore(makeState({bots: []})));
 
     function seedDraft(saveError: 'forbidden' | 'no_agent' | 'generic' | null = null) {
         setChannelAutoReplyDraft({channelId: CHANNEL_ID, saved: {bot_id: 'other', mode: 'off', ...emptyExtras}, saveError});
@@ -317,6 +317,45 @@ describe('makeOnSave', () => {
             instructions: 'only if asked',
             analysis_model: 'gpt-4.1',
         });
+    });
+
+    test('PUTs ambient_threads with the shared ambient extras', async () => {
+        seedDraft();
+        mockedUpdateChannelAutoReply.mockImplementation(() => Promise.resolve());
+
+        await onSave({
+            mode: 'ambient_threads',
+            bot_id: 'other',
+            instructions: 'only if asked',
+            analysis_model: 'gpt-4.1',
+        }, makeChannel('O'));
+
+        expect(mockedUpdateChannelAutoReply).toHaveBeenCalledWith(CHANNEL_ID, {
+            bot_id: 'other',
+            mode: 'ambient_threads',
+            instructions: 'only if asked',
+            analysis_model: 'gpt-4.1',
+        });
+    });
+
+    test.each(['ambient', 'ambient_threads'])('rejects %s with ambient_disabled and performs no PUT when the admin turned it off', async (mode) => {
+        seedDraft();
+        const disabledOnSave = makeOnSave(makeTestStore(makeState({bots: [], ambientAutoReplyEnabled: false})));
+
+        await expect(disabledOnSave({mode, bot_id: 'other'}, makeChannel('O'))).rejects.toThrow();
+
+        expect(mockedUpdateChannelAutoReply).not.toHaveBeenCalled();
+        expect(getChannelAutoReplyDraft()?.saveError).toBe('ambient_disabled');
+    });
+
+    test('still saves non-ambient modes when the admin turned ambient off', async () => {
+        seedDraft();
+        mockedUpdateChannelAutoReply.mockImplementation(() => Promise.resolve());
+        const disabledOnSave = makeOnSave(makeTestStore(makeState({bots: [], ambientAutoReplyEnabled: false})));
+
+        await disabledOnSave({mode: 'threads', bot_id: 'other'}, makeChannel('O'));
+
+        expect(mockedUpdateChannelAutoReply).toHaveBeenCalledWith(CHANNEL_ID, {bot_id: 'other', mode: 'threads', ...emptyExtras});
     });
 
     test('preserves extras when saving a non-ambient enabled mode', async () => {
@@ -407,13 +446,13 @@ describe('makeChannelAutoReplySchema shape', () => {
         expect(schema.sections[0].settings.map((s) => s.name)).toEqual(['mode', 'bot_id', 'instructions', 'analysis_model']);
     });
 
-    test('radio setting has default off matching one of four non-empty options', () => {
+    test('radio setting has default off matching one of five non-empty options', () => {
         const radio = schema.sections[0].settings[0];
         if (radio.type !== 'radio') {
             throw new Error('expected the first setting to be the radio');
         }
         expect(radio.default).toBe('off');
-        expect(radio.options.map((o) => o.value)).toEqual(['off', 'root_posts', 'threads', 'ambient']);
+        expect(radio.options.map((o) => o.value)).toEqual(['off', 'root_posts', 'threads', 'ambient', 'ambient_threads']);
         expect(radio.options.map((o) => o.value)).toContain(radio.default);
         for (const option of radio.options) {
             expect(option.value.length).toBeGreaterThan(0);

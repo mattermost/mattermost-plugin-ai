@@ -114,6 +114,7 @@ const defaultConfig: Config = {
     allowUnsafeLinks: false,
     enableHTMLArtifacts: false,
     enableChannelMentionToolCalling: false,
+    enableAmbientAutoReply: false,
     allowNativeWebSearchInChannels: false,
     embeddingSearchConfig: {
         type: '',
@@ -205,6 +206,7 @@ const Config = (props: Props) => {
     const intl = useIntl();
     const tokenAccountingLicensed = useIsLicensedFor('token_accounting');
     const providerWebSearchLicensed = useIsLicensedFor('provider_web_search');
+    const channelAutoReplyLicensed = useIsLicensedFor('channel_auto_reply');
 
     // Load config from plugin API on mount
     useEffect(() => {
@@ -404,6 +406,26 @@ const Config = (props: Props) => {
                             updateConfig({enableChannelMentionToolCalling: to});
                         }}
                         helpText={intl.formatMessage({defaultMessage: 'When enabled, @mentioning a bot in public channels allows tool calling (e.g., web search, integrations). When disabled, channel mentions still work but tools are disabled—only DMs allow tool usage. This is an experimental feature for multi-player tool calling in channels.'})}
+                    />
+                    <BooleanItem
+                        label={
+                            <Horizontal>
+                                <FormattedMessage defaultMessage='Enable ambient auto-replies'/>
+                                <Tag
+                                    type='info'
+                                    label={<FormattedMessage defaultMessage='EXPERIMENTAL'/>}
+                                />
+                            </Horizontal>
+                        }
+                        value={Boolean(value.enableAmbientAutoReply)}
+                        disableTrue={!channelAutoReplyLicensed}
+                        extra={!channelAutoReplyLicensed && (
+                            <LicenseChip capability='channel_auto_reply'/>
+                        )}
+                        onChange={(to) => {
+                            updateConfig({enableAmbientAutoReply: to});
+                        }}
+                        helpText={intl.formatMessage({defaultMessage: 'When enabled, channel managers can choose the ambient auto-reply modes, where an analysis model reads each new message and decides whether the agent should reply, either anywhere in the channel or only in threads the agent was @mentioned in. Every analyzed message costs an LLM call. When disabled, ambient modes cannot be selected and channels already using them stop replying automatically; @mentions keep working.'})}
                     />
                     <BooleanItem
                         label={<FormattedMessage defaultMessage='Allow native web search in channels'/>}
