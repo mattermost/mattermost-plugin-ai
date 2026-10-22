@@ -315,6 +315,20 @@ func (c *Conversations) handleMentionViaConversation(
 	progress *responseProgressReporter,
 ) error {
 	var extraOpts []llm.ContextOption
+	// Bot activate_ai flows run unattended: nobody can answer an approval or
+	// a question.
+	unattended := channelToolsAutoRunEverywhereOnly
+	scopedTurn := allowToolsInChannel && c.contextBuilder.ScopedChannelModeActive(bot, channel)
+	if scopedTurn {
+		// A scoped catalog auto-runs every tool, so unattended flows need no
+		// auto_run_everywhere filter to avoid stranding approvals.
+		channelToolsAutoRunEverywhereOnly = false
+		extraOpts = append(extraOpts, c.contextBuilder.WithLLMContextScopedChannelTurn(llm.ScopedTurn{
+			TriggerPostID:  post.Id,
+			ThreadRootID:   responsePost.RootId,
+			ConversationID: c.existingThreadConversationID(bot, postingUser, responsePost.RootId),
+		}))
+	}
 	if channelToolsAutoRunEverywhereOnly {
 		extraOpts = append(extraOpts, c.contextBuilder.WithLLMContextMCPToolFilter(func(tool llm.Tool) bool {
 			return botChannelAutoEverywhereKeepTool(c.toolPolicyChecker, tool)
@@ -322,7 +336,7 @@ func (c *Conversations) handleMentionViaConversation(
 	}
 	// User-interaction tools need someone who can answer them: a human invoker
 	// with channel tool calling enabled. Bot activate_ai flows run unattended.
-	if allowToolsInChannel && !channelToolsAutoRunEverywhereOnly {
+	if allowToolsInChannel && !unattended {
 		extraOpts = append(extraOpts, c.contextBuilder.WithLLMContextInteractive())
 	}
 	// Unconditional: disabled-tools contexts are already gated by the
@@ -336,7 +350,20 @@ func (c *Conversations) handleMentionViaConversation(
 		"Failed to load user tool preferences",
 		extraOpts...,
 	)
+	// The run owns the scoped session until its stream finishes.
+	scopedHandedOff := false
+	defer func() {
+		if !scopedHandedOff {
+			llmContext.ReleaseScopedSession()
+		}
+	}()
 	progress.Advance(responseProgressLoadingConversation)
+
+	// A scoped turn whose session could not be minted keeps no MCP tools, but
+	// bot activate_ai flows must still drop built-ins that need approval.
+	if scopedTurn && !llmContext.ToolsScoped && unattended {
+		channelToolsAutoRunEverywhereOnly = true
+	}
 
 	toolsDisabled := applyToolAvailability(llmContext, false, allowToolsInChannel)
 	if channelToolsAutoRunEverywhereOnly {
@@ -367,6 +394,9 @@ func (c *Conversations) handleMentionViaConversation(
 	responsePost.AddProp(streaming.ConversationIDProp, convResult.Conversation.ID)
 	if updateErr := c.mmClient.UpdatePost(responsePost); updateErr != nil {
 		return fmt.Errorf("failed to attach conversation to response placeholder: %w", updateErr)
+	}
+	if turn := llmContext.ToolCatalog.ScopedTurn; turn != nil {
+		turn.ConversationID = convResult.Conversation.ID
 	}
 	if channelToolsAutoRunEverywhereOnly {
 		c.applyBotChannelAutoEverywhereToolFilter(llmContext)
@@ -432,10 +462,14 @@ func (c *Conversations) handleMentionViaConversation(
 	stream := decorateStreamWithWebSearchAnnotations(result.Stream, llmContext)
 	stream = c.decorateStreamWithCreatedFiles(ctx, bot, stream, responsePost, nil, llmContext, llmContext)
 
-	if streamErr := c.streamToExistingPost(ctx, stream, responsePost, postingUser, channel, false, func() { runSpan.End() }); streamErr != nil {
+	if streamErr := c.streamToExistingPost(ctx, stream, responsePost, postingUser, channel, false, func() {
+		llmContext.ReleaseScopedSession()
+		runSpan.End()
+	}); streamErr != nil {
 		return fmt.Errorf("unable to stream response: %w", streamErr)
 	}
 	runHandedOff = true
+	scopedHandedOff = true
 
 	if convResult.IsNew {
 		titleCtx := telemetry.DetachContext(ctx)
@@ -453,6 +487,19 @@ func (c *Conversations) handleMentionViaConversation(
 	}
 
 	return nil
+}
+
+// existingThreadConversationID returns the ID of the conversation the thread
+// rooted at rootID already has with bot, or "" when there is none yet.
+func (c *Conversations) existingThreadConversationID(bot *bots.Bot, user *model.User, rootID string) string {
+	if c.convService == nil || rootID == "" {
+		return ""
+	}
+	conv, err := c.convService.GetConversationByThread(rootID, bot.GetMMBot().UserId, user.Id)
+	if err != nil || conv == nil {
+		return ""
+	}
+	return conv.ID
 }
 
 func (c *Conversations) handleDMs(ctx context.Context, bot *bots.Bot, channel *model.Channel, postingUser *model.User, post *model.Post) (err error) {

@@ -213,7 +213,7 @@ test.describe.serial('AI Functions Panel', () => {
         await reloadedField.fill('');
 
         // Click Save button again
-        await saveButton.click();
+        await systemConsole.clickSave();
 
         // Reload the page
         await page.reload();

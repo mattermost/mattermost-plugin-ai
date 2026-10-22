@@ -1,7 +1,7 @@
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import MattermostContainer from 'helpers/mmcontainer';
 import { MattermostPage } from 'helpers/mm';
-import { expandToolActivity, expectToolActivityCurrent } from 'helpers/llmbot-post';
+import { expandToolActivity, expectToolActivityCurrent, TOOL_CARD_SELECTOR } from 'helpers/llmbot-post';
 import {
     OpenAIMockContainer,
     RunOpenAIMocks,
@@ -183,7 +183,7 @@ test.describe('Dynamic MCP Tool Approval (Mocked LLM)', () => {
 
         // The ask-policy business tool needs a decision, so its approval card
         // renders in full without expanding the activity area.
-        await expect(initialBotPost.getByText(embeddedGetChannelInfoLabel, {exact: true})).toBeVisible({
+        await expect(initialBotPost.locator(TOOL_CARD_SELECTOR).getByText(embeddedGetChannelInfoLabel, {exact: true})).toBeVisible({
             timeout: 45000,
         });
 

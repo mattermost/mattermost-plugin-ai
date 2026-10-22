@@ -26,6 +26,7 @@ var (
 	KeyMCPTool          = string(telemetry.MCPTool)
 	KeyABACResourceType = string(telemetry.ABACResourceType)
 	KeyABACResourceID   = string(telemetry.ABACResourceID)
+	KeyConversationID   = string(telemetry.ConversationID)
 )
 
 const (
@@ -38,6 +39,15 @@ const (
 	// KeyMCPPluginID identifies the target plugin of an admin operation on a
 	// plugin-backed MCP server. Distinct from KeyCallerPluginID (the actor).
 	KeyMCPPluginID = "agents.mcp_plugin.id"
+
+	// KeyScopeExtraChannelCount is how many admin-picked extra channels a
+	// scoped session covers; KeyScopeOpenTeamPublicChannels is whether it
+	// covers every public channel on open teams.
+	KeyScopeExtraChannelCount      = "agents.scope.extra_channel_count"
+	KeyScopeOpenTeamPublicChannels = "agents.scope.open_team_public_channels"
+
+	// KeyMCPServerKind is where a tool ran: builtin, embedded, plugin, or remote.
+	KeyMCPServerKind = "agents.mcp.server_kind"
 
 	// MetaTraceID is the meta key carrying the OpenTelemetry trace ID of the
 	// request, letting an auditor pivot from an audit record to the full

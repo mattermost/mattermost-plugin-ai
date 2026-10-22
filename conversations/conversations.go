@@ -395,6 +395,8 @@ func (c *Conversations) channelMentionToolCallingEnabled() bool {
 // In channels, only auto_run_everywhere bypasses approval — the legacy
 // auto_run policy is DM-only so the channel-visible follow-up cannot
 // reveal unshared tool output without an explicit Share from the requester.
+// A scoped catalog (llm.Context.ToolsScoped) auto-executes every tool except
+// user-interaction tools: everything it can read is within the scope.
 func (c *Conversations) shouldAutoExecuteTool(llmCtx *llm.Context, isDM bool) func(llm.ToolCall) bool {
 	return func(tc llm.ToolCall) bool {
 		if isMCPMetaToolCall(tc, llmCtx) {
@@ -412,6 +414,9 @@ func (c *Conversations) shouldAutoExecuteTool(llmCtx *llm.Context, isDM bool) fu
 		// would bypass the question entirely.
 		if lookup.Tool.UserInteraction != "" {
 			return false
+		}
+		if llmCtx.ToolsScoped {
+			return true
 		}
 		// Auto-execute built-ins (e.g. CreateFile) run without approval, like
 		// the MCP meta-tools: their only side effect is scoped to the
@@ -435,8 +440,9 @@ func (c *Conversations) shouldAutoExecuteTool(llmCtx *llm.Context, isDM bool) fu
 }
 
 // allToolsAutoRunEverywhere checks whether every tool call across the given
-// tool turns has an auto_run_everywhere policy.  When true, tool results can
-// be written with shared=true so the result-approval UI is skipped.
+// tool turns has an auto_run_everywhere policy, or comes from a scoped
+// catalog. When true, tool results can be written with shared=true so the
+// result-approval UI is skipped.
 func (c *Conversations) allToolsAutoRunEverywhere(turns []toolrunner.ToolTurn, llmCtx *llm.Context) bool {
 	sawToolCall := false
 	for _, turn := range turns {
@@ -452,6 +458,12 @@ func (c *Conversations) allToolsAutoRunEverywhere(turns []toolrunner.ToolTurn, l
 			}
 			if !found {
 				return false
+			}
+			if llmCtx.ToolsScoped {
+				if lookup.Tool.UserInteraction != "" {
+					return false
+				}
+				continue
 			}
 			// Auto-execute built-ins never require approval, so a round made
 			// up only of them can still be written shared=true.

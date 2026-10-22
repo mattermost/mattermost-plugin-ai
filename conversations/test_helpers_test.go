@@ -40,6 +40,7 @@ type fakeMMClient struct {
 	kv                   map[string]any
 	createdPosts         []*model.Post
 	allowCreatePost      bool
+	config               *model.Config
 	updatedPosts         []*model.Post
 	kvDeletes            []string
 	posts                map[string]*model.Post
@@ -214,6 +215,9 @@ func (c *fakeMMClient) PublishWebSocketEvent(event string, payload map[string]an
 }
 
 func (c *fakeMMClient) GetConfig() *model.Config {
+	if c.config != nil {
+		return c.config
+	}
 	return &model.Config{}
 }
 
@@ -293,6 +297,8 @@ func (c *fakeMMClient) SendEphemeralPost(userID string, post *model.Post) {
 
 type fakeStreamingService struct {
 	streamedPosts []*model.Post
+	// contextErr, when set, fails GetStreamingContext.
+	contextErr error
 	// finished, when set, receives the ID of each post whose stream ends.
 	finished chan string
 }
@@ -321,6 +327,9 @@ func (s *fakeStreamingService) StreamContinuationToPost(_ context.Context, strea
 func (s *fakeStreamingService) StopStreaming(string) {}
 
 func (s *fakeStreamingService) GetStreamingContext(inCtx context.Context, _ string) (context.Context, error) {
+	if s.contextErr != nil {
+		return nil, s.contextErr
+	}
 	return inCtx, nil
 }
 

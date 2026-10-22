@@ -227,15 +227,22 @@ func (c *Conversations) HandleToolCall(ctx context.Context, userID string, post 
 	// click is by definition an interactive user action. ResponseFiles keeps
 	// CreateFile in the catalog so approved/auto-resumed CreateFile blocks
 	// can resolve and record their created files.
+	opts := []llm.ContextOption{
+		c.contextBuilder.WithLLMContextInteractive(),
+		c.contextBuilder.WithLLMContextResponseFiles(),
+	}
+	if !isDM {
+		opts = append(opts, c.scopedTurnOptions(bot, channel, post.Id, conv)...)
+	}
 	llmContext := c.buildConversationContextWithTools(
 		ctx,
 		bot, user, channel,
 		"Failed to load user tool preferences for tool approval",
-		append([]llm.ContextOption{
-			c.contextBuilder.WithLLMContextInteractive(),
-			c.contextBuilder.WithLLMContextResponseFiles(),
-		}, c.conversationToolOptions(bot, conv)...)...,
+		append(opts, c.conversationToolOptions(bot, conv)...)...,
 	)
+	// Approved tools run below, before this returns; the follow-up builds its
+	// own context and session.
+	defer llmContext.ReleaseScopedSession()
 	// The clicked post may already carry attachments from an earlier round.
 	llmContext.SetResponseAttachmentBudget(maxResponseAttachments - len(post.FileIds))
 
@@ -706,6 +713,9 @@ func (c *Conversations) streamToolFollowUp(
 	if !channelToolsAutoRunEverywhereOnly {
 		channelToolFilterOpts = append(channelToolFilterOpts, c.contextBuilder.WithLLMContextInteractive())
 	}
+	if !isDM {
+		channelToolFilterOpts = append(channelToolFilterOpts, c.scopedTurnOptions(bot, channel, post.Id, conv)...)
+	}
 	channelToolFilterOpts = append(channelToolFilterOpts, c.contextBuilder.WithLLMContextResponseFiles())
 	channelToolFilterOpts = append(channelToolFilterOpts, c.conversationToolOptions(bot, conv)...)
 	// Build the execution context bound to this conversation.
@@ -715,6 +725,12 @@ func (c *Conversations) streamToolFollowUp(
 		"Failed to load user tool preferences for tool follow-up",
 		channelToolFilterOpts...,
 	)
+	scopedHandedOff := false
+	defer func() {
+		if !scopedHandedOff {
+			llmContext.ReleaseScopedSession()
+		}
+	}()
 	// The continuation post may already carry attachments from an earlier round.
 	llmContext.SetResponseAttachmentBudget(maxResponseAttachments - len(post.FileIds))
 
@@ -757,9 +773,10 @@ func (c *Conversations) streamToolFollowUp(
 
 	// Stream onto the same post; finalize demotes the prior anchor so
 	// resolved tool cards remain visible alongside the new round.
-	if err := c.streamToExistingPost(ctx, stream, post, user, channel, true, nil); err != nil {
+	if err := c.streamToExistingPost(ctx, stream, post, user, channel, true, llmContext.ReleaseScopedSession); err != nil {
 		return fmt.Errorf("failed to stream tool follow-up: %w", err)
 	}
+	scopedHandedOff = true
 
 	return nil
 }

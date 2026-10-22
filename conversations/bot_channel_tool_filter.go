@@ -9,6 +9,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mcp"
 	"github.com/mattermost/mattermost-plugin-agents/v2/store"
+	"github.com/mattermost/mattermost/server/public/model"
 )
 
 // applyBotChannelAutoEverywhereToolFilter keeps only MCP tools whose policy is
@@ -112,6 +113,24 @@ func botChannelAutoEverywhereKeepTool(checker mcp.ToolPolicyChecker, tool llm.To
 	}
 	policy, enabled := checker.GetToolPolicy(tool.ServerOrigin, llm.BareMCPToolName(tool.Name))
 	return mcp.IsToolPolicyAutoRunEverywhere(policy) && enabled
+}
+
+// scopedTurnOptions asks for a channel turn of conv to run its tools on a
+// scoped session when bot's scoped channel mode is active in channel and
+// channel tool calling is on. triggerPostID is the post the turn answers. The
+// caller must release the context's scoped session when the run ends.
+func (c *Conversations) scopedTurnOptions(bot *bots.Bot, channel *model.Channel, triggerPostID string, conv *store.Conversation) []llm.ContextOption {
+	if c.contextBuilder == nil || !c.contextBuilder.ScopedChannelModeActive(bot, channel) {
+		return nil
+	}
+	turn := llm.ScopedTurn{TriggerPostID: triggerPostID}
+	if conv != nil {
+		turn.ConversationID = conv.ID
+		if conv.RootPostID != nil {
+			turn.ThreadRootID = *conv.RootPostID
+		}
+	}
+	return []llm.ContextOption{c.contextBuilder.WithLLMContextScopedChannelTurn(turn)}
 }
 
 func (c *Conversations) channelFollowUpMCPToolFilterContextOptions(isDM bool, conv *store.Conversation) ([]llm.ContextOption, bool) {
