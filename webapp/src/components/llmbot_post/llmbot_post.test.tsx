@@ -72,9 +72,10 @@ jest.mock('../post_text', () => {
     };
 });
 
+const mockToolApprovalSet = jest.fn<null, [{approvalStage: string; canApprove: boolean}]>(() => null);
 jest.mock('../tool_approval_set', () => ({
     __esModule: true,
-    default: () => null,
+    default: (props: {approvalStage: string; canApprove: boolean}) => mockToolApprovalSet(props),
 }));
 
 // The preview fetches the source post and profile on mount; stub it out so the
@@ -740,6 +741,18 @@ describe('LLMBotPost streaming re-renders', () => {
 });
 
 describe('LLMBotPost rounds awaiting a decision', () => {
+    function withRequesterProfile() {
+        mockUseSelector.mockImplementation((selector) => selector({
+            entities: {
+                channels: {channels: {channel_1: {type: 'O'}}},
+                general: {config: {}, license: {}},
+                posts: {posts: {}},
+                preferences: {myPreferences: {}},
+                users: {currentUserId: 'user_1', profiles: {requester_1: {username: 'alice'}}},
+            },
+        }));
+    }
+
     // A response stopped on a tool call: the anchor round holds the text asking to run it and the call.
     function conversationAwaitingApproval(userId = 'user_1', earlierTurns: Turn[] = []) {
         return makeConversation([
@@ -772,7 +785,7 @@ describe('LLMBotPost rounds awaiting a decision', () => {
         renderPost();
 
         expect(screen.queryByText('I will post that')).toBeNull();
-        expect(screen.getByTestId('llm-bot-tool-activity-current').textContent).toBe('Create Post');
+        expect(screen.getByTestId('llm-bot-tool-activity-current').textContent).toBe('Waiting for the requester to approve tool use');
     });
 
     test('does not summarize the activity row while a decision is pending', () => {
@@ -791,6 +804,91 @@ describe('LLMBotPost rounds awaiting a decision', () => {
 
         expect(screen.getByTestId('llm-bot-tool-activity-current').textContent).toBe('Search Tools');
         expect(screen.queryByText('Used 1 tool')).toBeNull();
+    });
+
+    test.each([
+        {name: 'call stage', stage: 'call' as const, status: 'pending' as const},
+        {name: 'result stage', stage: 'result' as const, status: 'success' as const},
+    ])('tells an onlooker the requester owes a decision at the $name', ({stage, status}) => {
+        const conversation = conversationAwaitingApproval('requester_1');
+        const anchorTurn = conversation.turns[conversation.turns.length - 1];
+        anchorTurn.approval_state = stage;
+        anchorTurn.content = [{type: 'tool_use', id: 'tc_a', name: 'create_post', status}];
+        mockUseConversation.mockReturnValue({conversation, loading: false, error: null});
+        withRequesterProfile();
+
+        renderPost();
+
+        expect(screen.getByTestId('llm-bot-tool-activity-current').textContent).toBe('Waiting for @alice to approve tool use');
+        expect(screen.getByTestId('llm-bot-activity-waiting')).toBeTruthy();
+        expect(screen.queryByTestId('llm-bot-activity-spinner')).toBeNull();
+    });
+
+    test('tells an onlooker about a live pending call once the stream ends, and clears it when generation resumes', () => {
+        jest.useFakeTimers();
+        mockUseConversation.mockReturnValue({
+            conversation: makeConversation([
+                makeTurn({id: 'u1', post_id: 'user_post', role: 'user', content: [{type: 'text', text: 'post that for me'}]}),
+            ], 'requester_1'),
+            loading: false,
+            error: null,
+        });
+        withRequesterProfile();
+
+        let listener: PostUpdateHandler | undefined;
+        renderPost(makePost(), (postID, listenerID, handler) => {
+            listener = handler;
+        });
+
+        act(() => {
+            listener?.(postUpdateMessage({post_id: 'post_1', control: 'start'}));
+            listener?.(postUpdateMessage({
+                post_id: 'post_1',
+                control: 'tool_call',
+                tool_call: JSON.stringify([{id: 'tc_a', name: 'create_post', description: '', status: ToolCallStatus.Pending}]),
+            }));
+        });
+
+        // The end invalidates the conversation; the live round must carry the state until the refetch lands.
+        mockUseConversation.mockReturnValue({conversation: null, loading: true, error: null});
+        act(() => {
+            listener?.(postUpdateMessage({post_id: 'post_1', control: 'end'}));
+        });
+
+        expect(screen.getByTestId('llm-bot-tool-activity-current').textContent).toBe('Waiting for @alice to approve tool use');
+
+        // Expanded, the waiting round's cards get its call stage, still without controls.
+        mockToolApprovalSet.mockClear();
+        expandToolActivity();
+        expect(mockToolApprovalSet).toHaveBeenLastCalledWith(expect.objectContaining({approvalStage: 'call', canApprove: false}));
+
+        act(() => {
+            listener?.(postUpdateMessage({post_id: 'post_1', control: 'start'}));
+        });
+        advanceAnimation();
+
+        expect(screen.queryByText('Waiting for @alice to approve tool use')).toBeNull();
+        jest.useRealTimers();
+    });
+
+    test('tells an onlooker the requester owes an answer to a question', () => {
+        const conversation = conversationAwaitingApproval('requester_1');
+        const anchorTurn = conversation.turns[conversation.turns.length - 1];
+        anchorTurn.content = [{type: 'tool_use', id: 'tc_q', name: 'AskUserQuestion', status: 'pending', user_interaction: 'select'}];
+        mockUseConversation.mockReturnValue({conversation, loading: false, error: null});
+        withRequesterProfile();
+
+        renderPost();
+
+        expect(screen.getByTestId('llm-bot-tool-activity-current').textContent).toBe('Waiting for an answer from @alice');
+    });
+
+    test('does not show the waiting line to the requester', () => {
+        mockUseConversation.mockReturnValue({conversation: conversationAwaitingApproval(), loading: false, error: null});
+
+        renderPost();
+
+        expect(screen.queryByTestId('llm-bot-activity-waiting')).toBeNull();
     });
 
     // A pending tool_call can land over the websocket before the refetch persists the round.
@@ -1288,6 +1386,116 @@ describe('LLMBotPost conversation_id prop handling', () => {
         expect(() => renderPost(makePost('', {conversation_id: value}))).not.toThrow();
 
         expect(mockUseConversation).toHaveBeenCalledWith(void 0); // eslint-disable-line no-void
+    });
+});
+
+describe('LLMBotPost stopped generation notice', () => {
+    function inChannelWithRequester(teammateNameDisplay = 'username') {
+        mockUseSelector.mockImplementation((selector) => selector({
+            entities: {
+                channels: {channels: {channel_1: {type: 'O'}}},
+                general: {config: {TeammateNameDisplay: teammateNameDisplay}, license: {}},
+                posts: {posts: {}},
+                preferences: {myPreferences: {}},
+                users: {
+                    currentUserId: 'user_1',
+                    profiles: {requester_1: {username: 'alice', nickname: '', first_name: 'Alice', last_name: 'Smith'}},
+                },
+            },
+        }));
+    }
+
+    function stoppedNotice() {
+        return screen.queryByTestId('llm-bot-generation-stopped')?.textContent ?? null;
+    }
+
+    test.each([
+        {name: 'the requester', requester: 'user_1', nameDisplay: 'username', expected: 'You stopped generating this response.'},
+        {name: 'an onlooker', requester: 'requester_1', nameDisplay: 'username', expected: 'alice stopped generating this response.'},
+        {name: 'an onlooker who shows full names', requester: 'requester_1', nameDisplay: 'full_name', expected: 'Alice Smith stopped generating this response.'},
+        {name: 'an onlooker without the requester profile', requester: 'requester_2', nameDisplay: 'username', expected: 'The requester stopped generating this response.'},
+    ])('tells $name that the response was stopped', ({requester, nameDisplay, expected}) => {
+        inChannelWithRequester(nameDisplay);
+        mockUseConversation.mockReturnValue({conversation: makeConversation([], requester), loading: false, error: null});
+
+        renderPost(makePost('Partial answer', {generation_stopped: true}));
+
+        expect(stoppedNotice()).toBe(expected);
+        expect(screen.getByText('Partial answer')).toBeTruthy();
+    });
+
+    test('shows no notice on a response that was not stopped', () => {
+        inChannelWithRequester();
+        mockUseConversation.mockReturnValue({conversation: makeConversation([], 'requester_1'), loading: false, error: null});
+
+        renderPost(makePost('Full answer'));
+
+        expect(stoppedNotice()).toBeNull();
+    });
+
+    test('shows the stop instead of Working... when it came before any text', () => {
+        inChannelWithRequester();
+        mockUseConversation.mockReturnValue({conversation: makeConversation([], 'requester_1'), loading: false, error: null});
+
+        renderPost(makePost('', {generation_stopped: true}));
+
+        expect(stoppedNotice()).toBe('alice stopped generating this response.');
+        expect(screen.queryByText('Working...')).toBeNull();
+    });
+
+    test('hides the notice while a new run streams onto the post', () => {
+        mockUseConversation.mockReturnValue({conversation: makeConversation([]), loading: false, error: null});
+        let listener: PostUpdateHandler | undefined;
+        renderPost(makePost('Partial answer', {generation_stopped: true}), (postID, listenerID, handler) => {
+            listener = handler;
+        });
+        expect(stoppedNotice()).not.toBeNull();
+
+        act(() => {
+            listener?.(postUpdateMessage({post_id: 'post_1', control: 'start'}));
+            listener?.(postUpdateMessage({post_id: 'post_1', next: 'New answer'}));
+        });
+
+        expect(stoppedNotice()).toBeNull();
+    });
+
+    test('tells the requester right away when they press Stop Generating', () => {
+        mockUseConversation.mockReturnValue({conversation: makeConversation([]), loading: false, error: null});
+        let listener: PostUpdateHandler | undefined;
+        renderPost(makePost(), (postID, listenerID, handler) => {
+            listener = handler;
+        });
+
+        act(() => {
+            listener?.(postUpdateMessage({post_id: 'post_1', control: 'start'}));
+            listener?.(postUpdateMessage({post_id: 'post_1', next: 'Partial'}));
+        });
+        expect(stoppedNotice()).toBeNull();
+
+        fireEvent.click(screen.getByTestId('stop-generating-button'));
+
+        expect(stoppedNotice()).toBe('You stopped generating this response.');
+    });
+
+    test('tells the requester right away when they stop a regenerate', () => {
+        mockUseConversation.mockReturnValue({
+            conversation: makeConversation([makeTurn({content: [{type: 'text', text: 'Old answer'}]})]),
+            loading: false,
+            error: null,
+        });
+        let listener: PostUpdateHandler | undefined;
+        renderPost(makePost('Old answer'), (postID, listenerID, handler) => {
+            listener = handler;
+        });
+
+        fireEvent.click(screen.getByTestId('regenerate-button'));
+        act(() => {
+            listener?.(postUpdateMessage({post_id: 'post_1', control: 'start'}));
+            listener?.(postUpdateMessage({post_id: 'post_1', next: 'New partial'}));
+        });
+        fireEvent.click(screen.getByTestId('stop-generating-button'));
+
+        expect(stoppedNotice()).toBe('You stopped generating this response.');
     });
 });
 

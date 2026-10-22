@@ -715,7 +715,7 @@ func (a *API) handleGetAgents(c *gin.Context) {
 
 	allBots := a.bots.GetAllBots()
 	agents := make([]bridgeclient.BridgeAgentInfo, 0, len(allBots))
-	defaultBotName := a.config.GetDefaultBotName()
+	defaultBotID := a.defaultBotUserID()
 
 	for _, bot := range allBots {
 		// If user_id is provided, filter by permissions
@@ -732,7 +732,7 @@ func (a *API) handleGetAgents(c *gin.Context) {
 			Username:    bot.GetMMBot().Username,
 			ServiceID:   service.ID,
 			ServiceType: service.Type,
-			IsDefault:   bot.GetMMBot().Username == defaultBotName,
+			IsDefault:   defaultBotID != "" && bot.BotUserID() == defaultBotID,
 		})
 	}
 
