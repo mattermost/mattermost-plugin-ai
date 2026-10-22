@@ -15,6 +15,9 @@ FIPS_IMAGE ?= cgr.dev/mattermost.com/go-openssl-fips:1.27.3@sha256:849f5a4f2301f
 BUNDLE_NAME_FIPS ?= $(PLUGIN_ID)-$(PLUGIN_VERSION)-fips.tar.gz
 FIPS_BIN := server/dist-fips/plugin-linux-amd64-fips
 
+# Empty by default. Inheriting the plugin's release LDFLAGS (`-ldflags="-s -w"`)
+# would strip the symbol table, and verify-fips below needs symbols intact
+# for `go tool nm` to find the OpenSSL integration.
 FIPS_GO_BUILD_LDFLAGS ?=
 
 # GO_BUILD_* are Make-substituted into the single-quoted inner script.
@@ -43,6 +46,8 @@ verify-fips:
 	@test -f $(FIPS_BIN) || (echo "verify-fips: $(FIPS_BIN) not built" && exit 1)
 	$(GO) version -m $(FIPS_BIN) | grep -qxE "[[:space:]]*build[[:space:]]+GOFIPS140=$$(cat "$$($(GO) env GOROOT)/lib/fips140/certified.txt")" || (echo "ERROR: not built against the certified GOFIPS140 module" && exit 1)
 	$(GO) version -m $(FIPS_BIN) | grep -E "build[[:space:]]+DefaultGODEBUG=" | grep -qE "(^|[=,])fips140=on(,|$$)" || (echo "ERROR: missing DefaultGODEBUG fips140=on" && exit 1)
+	$(GO) version -m $(FIPS_BIN) | grep -qE "build[[:space:]]+microsoft_systemcrypto=1" || (echo "ERROR: missing microsoft_systemcrypto=1" && exit 1)
+	$(GO) tool nm $(FIPS_BIN) | grep -qE "func_go_openssl_OpenSSL_version|_mkcgo_OpenSSL_version" || (echo "ERROR: missing OpenSSL integration" && exit 1)
 	@echo "verify-fips: OK"
 
 # Depends on verify-fips so a direct `make bundle-fips` can't package an
