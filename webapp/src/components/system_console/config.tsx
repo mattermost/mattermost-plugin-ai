@@ -339,13 +339,13 @@ const Config = (props: Props) => {
                 title={intl.formatMessage({defaultMessage: 'AI Bots'})}
                 subtitle={intl.formatMessage({defaultMessage: 'AI agents are managed from the Agents product page.'})}
             >
-                <BotsMovedNotice/>
                 <ItemList>
+                    <BotsMovedNotice/>
                     <BooleanItem
                         label={<FormattedMessage defaultMessage='Limit agent version history'/>}
                         value={(value.agentVersionsToKeep ?? 0) > 0}
                         onChange={(to) => updateConfig({agentVersionsToKeep: to ? DEFAULT_AGENT_VERSIONS_TO_KEEP : 0})}
-                        helpText={intl.formatMessage({defaultMessage: 'When off, every saved version of each agent is kept. When on, each agent keeps only its most recent versions and older ones are permanently deleted.'})}
+                        helpText={intl.formatMessage({defaultMessage: 'When false, every saved version of each agent is kept. When true, each agent keeps only its most recent versions and older ones are permanently deleted.'})}
                     />
                     {(value.agentVersionsToKeep ?? 0) > 0 && (
                         <TextItem

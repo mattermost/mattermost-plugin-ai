@@ -14,19 +14,16 @@ import AgentConfigView, {AgentDraft} from './agent_config_view';
 
 jest.mock('react-intl', () => {
     const actual = jest.requireActual('react-intl');
+
+    // Message ids are derived from defaultMessage at build time; mirror that here.
+    const real = actual.createIntl({locale: 'en', defaultLocale: 'en', onError: () => null});
     return {
         ...actual,
         useIntl: () => ({
-            formatMessage: ({defaultMessage}: {defaultMessage: string}, values?: Record<string, string | number>) => {
-                if (!values) {
-                    return defaultMessage;
-                }
-                return Object.entries(values).reduce(
-                    (message, [key, value]) => message.replace(`{${key}}`, String(value)),
-                    defaultMessage,
-                );
-            },
+            formatMessage: (descriptor: {id?: string; defaultMessage: string}, values?: Record<string, string | number>) =>
+                real.formatMessage({id: descriptor.id ?? descriptor.defaultMessage, ...descriptor}, values),
             formatNumber: (value: number) => new Intl.NumberFormat('en').format(value),
+            formatList: (items: string[]) => new Intl.ListFormat('en', {type: 'conjunction'}).format(items),
             formatDate: (value: number) => new Date(value).toISOString().slice(0, 10),
         }),
         FormattedMessage: ({defaultMessage}: {defaultMessage: string}) => defaultMessage,
@@ -1517,7 +1514,8 @@ describe('AgentConfigView import from file', () => {
     test('a file that enables every MCP tool does not look up MCP servers', async () => {
         renderWith({importedDocument: {...exported, agent: {...exported.agent, autoEnableNewMCPTools: true}}});
 
-        expect(await screen.findByText('Settings from the agent file are loaded. Review them, then save to apply them.')).not.toBeNull();
+        expect(await screen.findByText('Settings loaded from the agent file')).not.toBeNull();
+        expect(screen.getByText('Review the settings, then save to apply them.')).not.toBeNull();
         expect(mockGetUserMCPTools).not.toHaveBeenCalled();
     });
 
@@ -1584,18 +1582,25 @@ describe('AgentConfigView history deletion', () => {
         renderHistory();
 
         await screen.findByTestId('version-list');
-        expect((screen.getByRole('checkbox', {name: 'The current version cannot be deleted'}) as HTMLInputElement).disabled).toBe(true);
-        expect((screen.getByRole('button', {name: 'Delete selected (0)'}) as HTMLButtonElement).disabled).toBe(true);
+        expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
+        fireEvent.click(screen.getByRole('button', {name: 'Select'}));
+        expect(screen.getAllByRole('checkbox')).toHaveLength(2);
+        expect(screen.queryByRole('checkbox', {name: 'Select version 3'})).toBeNull();
+        expect((screen.getByRole('button', {name: 'Delete selected'}) as HTMLButtonElement).disabled).toBe(true);
 
         fireEvent.click(screen.getByRole('checkbox', {name: 'Select version 2'}));
         fireEvent.click(screen.getByRole('checkbox', {name: 'Select version 1'}));
-        fireEvent.click(screen.getByRole('button', {name: 'Delete selected (2)'}));
+        expect(screen.getByText('2 selected')).not.toBeNull();
+        fireEvent.click(screen.getByRole('button', {name: 'Delete selected'}));
+        expect(within(await screen.findByRole('dialog')).getByText(/Versions 1 and 2 are permanently deleted/)).not.toBeNull();
         await confirmDelete();
 
         await waitFor(() => expect(mockDeleteAgentVersions).toHaveBeenCalledWith('agent_1', [1, 2]));
         await waitFor(() => expect(within(screen.getByTestId('version-list')).getAllByRole('listitem')).toHaveLength(1));
         expect(mockGetAgentVersions).toHaveBeenCalledTimes(2);
+        expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
         expect((screen.getByRole('button', {name: 'Delete all previous'}) as HTMLButtonElement).disabled).toBe(true);
+        expect((screen.getByRole('button', {name: 'Select'}) as HTMLButtonElement).disabled).toBe(true);
     });
 
     test('deletes every previous version', async () => {
@@ -1621,6 +1626,7 @@ describe('AgentConfigView history deletion', () => {
         fireEvent.click(within(list).getByText('Version 1'));
         await waitFor(() => expect(mockGetAgentVersion).toHaveBeenCalledWith('agent_1', 1));
         fireEvent.click(screen.getByRole('button', {name: 'Delete'}));
+        expect(within(await screen.findByRole('dialog')).getByText('Delete version 1?')).not.toBeNull();
         await confirmDelete();
 
         await waitFor(() => expect(mockDeleteAgentVersions).toHaveBeenCalledWith('agent_1', [1]));
@@ -1633,8 +1639,9 @@ describe('AgentConfigView history deletion', () => {
         renderHistory();
 
         await screen.findByTestId('version-list');
+        fireEvent.click(screen.getByRole('button', {name: 'Select'}));
         fireEvent.click(screen.getByRole('checkbox', {name: 'Select version 1'}));
-        fireEvent.click(screen.getByRole('button', {name: 'Delete selected (1)'}));
+        fireEvent.click(screen.getByRole('button', {name: 'Delete selected'}));
         await confirmDelete();
 
         expect(await screen.findByText('the current version of an agent cannot be deleted')).not.toBeNull();

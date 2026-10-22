@@ -83,6 +83,7 @@ const HistoryTab = ({agentId, services, isDirty, currentUserAccessLevel, onResto
     const [restoredNotice, setRestoredNotice] = useState('');
     const [loadingOlder, setLoadingOlder] = useState(false);
     const [olderError, setOlderError] = useState('');
+    const [selecting, setSelecting] = useState(false);
     const [checkedVersions, setCheckedVersions] = useState<number[]>([]);
     const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
     const [deleting, setDeleting] = useState(false);
@@ -256,6 +257,7 @@ const HistoryTab = ({agentId, services, isDirty, currentUserAccessLevel, onResto
         try {
             const deleted = await deleteAgentVersions(agentId, pendingDelete);
             setPendingDelete(null);
+            setSelecting(false);
             setCheckedVersions([]);
             setRestoredNotice('');
             setDeletedNotice(intl.formatMessage(
@@ -328,30 +330,62 @@ const HistoryTab = ({agentId, services, isDirty, currentUserAccessLevel, onResto
         currentUserAccessLevel !== UserAccessLevel.AttributeBased;
     const hasPreviousVersions = list.hasMore || list.versions.some((v) => v.version !== list.currentVersion);
     const deleteCount = pendingDelete === 'all' ? 0 : pendingDelete?.length ?? 0;
+    const deleteVersions = pendingDelete === 'all' ? '' : intl.formatList((pendingDelete ?? []).map(String), {type: 'conjunction'});
+    const stopSelecting = () => {
+        setSelecting(false);
+        setCheckedVersions([]);
+    };
 
     return (
         <Layout>
             <ListColumn>
-                <ListActions>
-                    <Button
-                        emphasis='tertiary'
-                        size='small'
-                        destructive={true}
-                        disabled={checkedVersions.length === 0 || deleting}
-                        onClick={() => setPendingDelete([...checkedVersions].sort((a, b) => a - b))}
-                    >
-                        {intl.formatMessage({defaultMessage: 'Delete selected ({count})'}, {count: checkedVersions.length})}
-                    </Button>
-                    <Button
-                        emphasis='tertiary'
-                        size='small'
-                        destructive={true}
-                        disabled={!hasPreviousVersions || deleting}
-                        onClick={() => setPendingDelete('all')}
-                    >
-                        <FormattedMessage defaultMessage='Delete all previous'/>
-                    </Button>
-                </ListActions>
+                <ListToolbar>
+                    {selecting ? (
+                        <>
+                            <SelectionCount role='status'>
+                                {intl.formatMessage({defaultMessage: '{count} selected'}, {count: checkedVersions.length})}
+                            </SelectionCount>
+                            <ToolbarButtons>
+                                <Button
+                                    emphasis='tertiary'
+                                    size='small'
+                                    onClick={stopSelecting}
+                                >
+                                    <FormattedMessage defaultMessage='Cancel'/>
+                                </Button>
+                                <Button
+                                    emphasis='primary'
+                                    size='small'
+                                    destructive={true}
+                                    disabled={checkedVersions.length === 0 || deleting}
+                                    onClick={() => setPendingDelete([...checkedVersions].sort((a, b) => a - b))}
+                                >
+                                    <FormattedMessage defaultMessage='Delete selected'/>
+                                </Button>
+                            </ToolbarButtons>
+                        </>
+                    ) : (
+                        <>
+                            <Button
+                                emphasis='tertiary'
+                                size='small'
+                                disabled={!hasPreviousVersions}
+                                onClick={() => setSelecting(true)}
+                            >
+                                <FormattedMessage defaultMessage='Select'/>
+                            </Button>
+                            <Button
+                                emphasis='tertiary'
+                                size='small'
+                                destructive={true}
+                                disabled={!hasPreviousVersions || deleting}
+                                onClick={() => setPendingDelete('all')}
+                            >
+                                <FormattedMessage defaultMessage='Delete all previous'/>
+                            </Button>
+                        </>
+                    )}
+                </ListToolbar>
                 <VersionList
                     aria-label={intl.formatMessage({defaultMessage: 'Version history'})}
                     data-testid='version-list'
@@ -360,16 +394,23 @@ const HistoryTab = ({agentId, services, isDirty, currentUserAccessLevel, onResto
                         const changed = changedFieldLabels(intl, v.changedFields);
                         const isCurrent = v.version === list.currentVersion;
                         return (
-                            <VersionRow key={v.version}>
-                                <VersionCheckbox
-                                    checked={checkedVersions.includes(v.version)}
-                                    disabled={isCurrent}
-                                    onChange={() => toggleChecked(v.version)}
-                                    aria-label={isCurrent ? intl.formatMessage({defaultMessage: 'The current version cannot be deleted'}) : intl.formatMessage({defaultMessage: 'Select version {version}'}, {version: v.version})}
-                                />
+                            <VersionCard
+                                key={v.version}
+                                $selected={v.version === selected}
+                            >
+                                {selecting && (
+                                    <CheckboxSlot>
+                                        {!isCurrent && (
+                                            <Checkbox
+                                                checked={checkedVersions.includes(v.version)}
+                                                onChange={() => toggleChecked(v.version)}
+                                                aria-label={intl.formatMessage({defaultMessage: 'Select version {version}'}, {version: v.version})}
+                                            />
+                                        )}
+                                    </CheckboxSlot>
+                                )}
                                 <VersionItem
                                     type='button'
-                                    $selected={v.version === selected}
                                     {...(v.version === selected ? {'aria-current': 'true' as const} : {})}
                                     onClick={() => handleSelect(v.version)}
                                 >
@@ -395,7 +436,7 @@ const HistoryTab = ({agentId, services, isDirty, currentUserAccessLevel, onResto
                                         </VersionMeta>
                                     )}
                                 </VersionItem>
-                            </VersionRow>
+                            </VersionCard>
                         );
                     })}
                 </VersionList>
@@ -525,14 +566,14 @@ const HistoryTab = ({agentId, services, isDirty, currentUserAccessLevel, onResto
                 title={pendingDelete === 'all' ? (
                     <FormattedMessage defaultMessage='Delete all previous versions?'/>
                 ) : intl.formatMessage(
-                    {defaultMessage: 'Delete {count, plural, one {# version} other {# versions}}?'},
-                    {count: deleteCount},
+                    {defaultMessage: '{count, plural, one {Delete version {versions}?} other {Delete # versions?}}'},
+                    {count: deleteCount, versions: deleteVersions},
                 )}
                 message={pendingDelete === 'all' ? (
                     <FormattedMessage defaultMessage='Every version except the current one is permanently deleted. The agent keeps its current configuration. This cannot be undone.'/>
                 ) : intl.formatMessage(
                     {defaultMessage: '{count, plural, one {Version {versions} is} other {Versions {versions} are}} permanently deleted from the history. The agent keeps its current configuration. This cannot be undone.'},
-                    {count: deleteCount, versions: (pendingDelete ?? []).join(', ')},
+                    {count: deleteCount, versions: deleteVersions},
                 )}
                 confirmButtonText={deleting ? <FormattedMessage defaultMessage='Deleting...'/> : <FormattedMessage defaultMessage='Delete'/>}
                 onConfirm={handleDeleteConfirm}
@@ -568,20 +609,44 @@ const VersionList = styled.ol`
     gap: 8px;
 `;
 
-const ListActions = styled.div`
+const ListToolbar = styled.div`
     display: flex;
-    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 32px;
+`;
+
+const ToolbarButtons = styled.div`
+    display: flex;
     gap: 8px;
 `;
 
-const VersionRow = styled.li`
+const SelectionCount = styled.span`
+    font-size: 12px;
+    font-weight: 600;
+    color: rgba(var(--center-channel-color-rgb), 0.72);
+`;
+
+const VersionCard = styled.li<{$selected: boolean}>`
     display: flex;
     align-items: flex-start;
-    gap: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid ${(p) => (p.$selected ? 'var(--button-bg)' : 'rgba(var(--center-channel-color-rgb), 0.12)')};
+    background: ${(p) => (p.$selected ? 'rgba(var(--button-bg-rgb, 28, 88, 217), 0.08)' : 'var(--center-channel-bg)')};
+
+    &:hover {
+        background: ${(p) => (p.$selected ? 'rgba(var(--button-bg-rgb, 28, 88, 217), 0.08)' : 'rgba(var(--center-channel-color-rgb), 0.04)')};
+    }
 `;
 
-const VersionCheckbox = styled(Checkbox)`
-    margin-top: 12px;
+// Fixed width so cards line up whether or not they have a checkbox.
+const CheckboxSlot = styled.div`
+    flex: 0 0 28px;
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 12px;
 `;
 
 const DetailActions = styled.div`
@@ -590,22 +655,18 @@ const DetailActions = styled.div`
     flex-shrink: 0;
 `;
 
-const VersionItem = styled.button<{$selected: boolean}>`
+const VersionItem = styled.button`
     display: flex;
     flex-direction: column;
     gap: 2px;
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     padding: 10px 12px;
     text-align: left;
     cursor: pointer;
-    border-radius: 4px;
     color: var(--center-channel-color);
-    border: 1px solid ${(p) => (p.$selected ? 'var(--button-bg)' : 'rgba(var(--center-channel-color-rgb), 0.12)')};
-    background: ${(p) => (p.$selected ? 'rgba(var(--button-bg-rgb, 28, 88, 217), 0.08)' : 'var(--center-channel-bg)')};
-
-    &:hover {
-        background: ${(p) => (p.$selected ? 'rgba(var(--button-bg-rgb, 28, 88, 217), 0.08)' : 'rgba(var(--center-channel-color-rgb), 0.04)')};
-    }
+    border: none;
+    background: transparent;
 `;
 
 const VersionTitleRow = styled.div`

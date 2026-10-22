@@ -584,7 +584,11 @@ test.describe('Agent versioning, export and import', () => {
         await agentPage.openAgentEditor('Prune Agent');
         await agentPage.getModalTab('History').click();
         await expect(agentPage.getVersionItems()).toHaveCount(4, { timeout: 10000 });
-        await expect(agentPage.getVersionList().getByRole('checkbox', { name: 'The current version cannot be deleted' })).toBeDisabled();
+        await expect(agentPage.getVersionList().getByRole('checkbox')).toHaveCount(0);
+        await agentPage.getSelectVersionsButton().click();
+        // The current version is the live configuration, so it has no checkbox.
+        await expect(agentPage.getVersionList().getByRole('checkbox')).toHaveCount(3);
+        await expect(agentPage.getVersionCheckbox(4)).toHaveCount(0);
 
         await agentPage.getVersionCheckbox(1).check();
         await agentPage.getVersionCheckbox(2).check();

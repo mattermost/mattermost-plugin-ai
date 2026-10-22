@@ -4,7 +4,7 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import styled from 'styled-components';
 import {FormattedMessage, useIntl} from 'react-intl';
-import {ArrowLeftIcon} from '@mattermost/compass-icons/components';
+import {ArrowLeftIcon, ExportVariantIcon, ImportIcon} from '@mattermost/compass-icons/components';
 
 import {Button} from '@mattermost/compass-ui/components/button';
 import {Icon} from '@mattermost/compass-ui/components/icon';
@@ -556,6 +556,7 @@ const AgentConfigView = (props: Props) => {
                     <HeaderActions>
                         <Button
                             emphasis='tertiary'
+                            leadingIcon={<Icon glyph={<ImportIcon/>}/>}
                             onClick={filePicker.open}
                             loading={importing}
                             disabled={saving}
@@ -566,6 +567,7 @@ const AgentConfigView = (props: Props) => {
                         {mode === 'edit' && agent && (
                             <Button
                                 emphasis='tertiary'
+                                leadingIcon={<Icon glyph={<ExportVariantIcon/>}/>}
                                 onClick={handleExport}
                                 loading={exporting}
                                 disabled={saving}
@@ -641,10 +643,11 @@ const AgentConfigView = (props: Props) => {
                     {importMissingServers !== null && (
                         <Notice
                             type={importMissingServers.length > 0 ? 'warning' : 'info'}
-                            title={importMissingServers.length > 0 ? intl.formatMessage(
-                                {defaultMessage: 'Settings from the agent file are loaded. Tools from MCP servers that are not available here were left out: {servers}. Review the settings, then save to apply them.'},
+                            title={intl.formatMessage({defaultMessage: 'Settings loaded from the agent file'})}
+                            description={importMissingServers.length > 0 ? intl.formatMessage(
+                                {defaultMessage: 'Tools from MCP servers that are not available here were left out: {servers}. Review the settings, then save to apply them.'},
                                 {servers: importMissingServers.join(', ')},
-                            ) : intl.formatMessage({defaultMessage: 'Settings from the agent file are loaded. Review them, then save to apply them.'})}
+                            ) : intl.formatMessage({defaultMessage: 'Review the settings, then save to apply them.'})}
                             role='status'
                             onDismiss={() => setImportMissingServers(null)}
                             dismissLabel={intl.formatMessage({defaultMessage: 'Dismiss'})}

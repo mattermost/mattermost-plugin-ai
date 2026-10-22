@@ -60,6 +60,9 @@ export function useAgentFilePicker(onDocument: (doc: AgentExportDocument) => voi
     return {open, input};
 }
 
+// Mattermost's global input styles outrank a single class, so raise specificity.
 const HiddenFileInput = styled.input`
-    display: none;
+    &&& {
+        display: none;
+    }
 `;

@@ -304,8 +304,13 @@ export class AgentPageHelper {
         return this.getVersionList().getByRole('checkbox', { name: `Select version ${version}`, exact: true });
     }
 
+    /** Turns on version selection, which shows a checkbox on every previous version. */
+    getSelectVersionsButton(): Locator {
+        return this.page.getByRole('button', { name: 'Select', exact: true });
+    }
+
     getDeleteSelectedVersionsButton(): Locator {
-        return this.page.getByRole('button', { name: /^Delete selected \(\d+\)$/ });
+        return this.page.getByRole('button', { name: 'Delete selected', exact: true });
     }
 
     getDeleteAllPreviousVersionsButton(): Locator {
@@ -342,7 +347,7 @@ export class AgentPageHelper {
 
     /** The notice the editor shows once an agent file is loaded into the form. */
     getImportedNotice(): Locator {
-        return this.page.getByRole('status').filter({ hasText: 'Settings from the agent file are loaded' });
+        return this.page.getByRole('status').filter({ hasText: 'Settings loaded from the agent file' });
     }
 
     // --- Convenience Methods ---
