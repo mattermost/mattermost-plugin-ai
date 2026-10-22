@@ -66,11 +66,11 @@ func GetMetadataForPosts(client Client, posts *model.PostList) (*ThreadData, err
 	}, nil
 }
 
-func (c *DBClient) GetFirstPostBeforeTimeRangeID(channelID string, startTime, endTime int64) (string, error) {
+func (db *DBClient) GetFirstPostBeforeTimeRangeID(channelID string, startTime, endTime int64) (string, error) {
 	var result struct {
 		ID string `db:"id"`
 	}
-	err := c.DoQuery(&result, c.Builder().
+	err := db.DoQuery(&result, db.Builder().
 		Select("id").
 		From("Posts").
 		Where(sq.Eq{"ChannelId": channelID}).
