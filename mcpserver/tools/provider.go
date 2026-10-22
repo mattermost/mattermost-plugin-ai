@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -469,8 +470,7 @@ func excludedFieldsForAccessMode(t reflect.Type, accessMode string) map[string]b
 	}
 
 	var excluded map[string]bool
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
+	for field := range t.Fields() {
 		name := jsonFieldName(field)
 		if name == "" {
 			continue
@@ -503,18 +503,7 @@ func isAccessAllowed(restrictionTag, currentAccessMode string) bool {
 		return true // No restrictions
 	}
 
-	// Normalize and split by comma
-	allowedValues := strings.Split(strings.ReplaceAll(restrictionTag, " ", ""), ",")
-
-	// Check each allowed value
-	for _, allowed := range allowedValues {
-		// Direct access mode matching
-		if allowed == currentAccessMode {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(strings.Split(strings.ReplaceAll(restrictionTag, " ", ""), ","), currentAccessMode)
 }
 
 // validateAccessRestrictions validates that no access-restricted fields are present in the JSON data
@@ -544,9 +533,7 @@ func validateAccessRestrictions(jsonData []byte, target any, currentAccessMode s
 	}
 
 	// Check each field in the struct
-	for i := 0; i < targetType.NumField(); i++ {
-		field := targetType.Field(i)
-
+	for field := range targetType.Fields() {
 		name := jsonFieldName(field)
 		if name == "" {
 			continue

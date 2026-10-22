@@ -214,18 +214,14 @@ func (p *MattermostToolProvider) toolCombinedSearch(mcpContext *MCPToolContext, 
 	var wg sync.WaitGroup
 
 	if semanticEnabled {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			semanticResults, semanticErr = p.executeSemanticSearch(ctx, client, args, userID)
-		}()
+		})
 	}
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		keywordResults, keywordErr = p.executeKeywordSearch(ctx, client, args)
-	}()
+	})
 
 	wg.Wait()
 

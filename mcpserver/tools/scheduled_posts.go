@@ -117,11 +117,9 @@ func (p *MattermostToolProvider) toolCreateScheduledPost(mcpContext *MCPToolCont
 	}
 
 	scheduledPost := &model.ScheduledPost{
-		Draft: model.Draft{
-			ChannelId: args.ChannelID,
-			Message:   args.Message,
-			RootId:    args.RootID,
-		},
+		ChannelId:   args.ChannelID,
+		Message:     args.Message,
+		RootId:      args.RootID,
 		ScheduledAt: scheduledAt,
 	}
 	p.stampAIGeneratedDraft(&scheduledPost.Draft, mcpContext)

@@ -35,34 +35,6 @@ linters:
       enable-all: true
     misspell:
       locale: US
-    modernize:
-      # Only the `any` analyzer is adopted; list new suite members here on upgrade.
-      disable:
-        - atomictypes
-        - embedlit
-        - errorsastype
-        - forvar
-        - importcomment
-        - mapsloop
-        - minmax
-        - newexpr
-        - omitzero
-        - plusbuild
-        - rangeint
-        - reflecttypeassert
-        - reflecttypefor
-        - slicesbackward
-        - slicesclip
-        - slicescontains
-        - slicessort
-        - stditerators
-        - stringsbuilder
-        - stringscut
-        - stringscutprefix
-        - stringsseq
-        - testingcontext
-        - unsafefuncs
-        - waitgroupgo
     staticcheck:
       checks:
         - all
@@ -99,6 +71,7 @@ linters:
           - errcheck
         text: c.Abort
     paths:
+      - node_modules
       - third_party$
       - builtin$
       - examples$
