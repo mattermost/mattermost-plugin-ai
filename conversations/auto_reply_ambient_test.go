@@ -327,6 +327,7 @@ func TestAmbientAutoReply(t *testing.T) {
 				require.Equal(t, 1, env.llm.classifierCalls)
 				require.Equal(t, llm.OperationAmbientClassification, env.llm.lastNoStreamReq.Operation)
 				require.True(t, env.llm.lastNoStreamCfg.ToolsDisabled)
+				require.True(t, env.llm.lastNoStreamCfg.SkipNativeWebSearch, "the classifier must never send thread text to native web search")
 				require.True(t, env.llm.lastNoStreamCfg.ReasoningDisabled)
 				require.Equal(t, 128, env.llm.lastNoStreamCfg.MaxGeneratedTokens)
 				require.NotNil(t, env.llm.lastNoStreamCfg.JSONOutputFormat)

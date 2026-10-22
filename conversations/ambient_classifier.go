@@ -76,11 +76,10 @@ func threadHasReplyFrom(thread []*model.Post, userID string) bool {
 // classifyAmbientReply returns nil only when the classifier says the agent
 // should reply. Every other outcome wraps ErrNoResponse (fail-closed).
 //
-// TODO(ambient-poc): WithToolsDisabled does not fully disable native provider
-// tools; this POC assumes none are enabled. Structured-output capability
-// detection, analysis_model validation,
-// dedupe, concurrency control, rate/cost caps, and deleted-post recheck are
-// deferred.
+// TODO(ambient-poc): other native provider tools (web fetch, code interpreter)
+// stay attached and rely on tool_choice "none". Structured-output capability
+// detection, analysis_model validation, dedupe, concurrency control, rate/cost
+// caps, and deleted-post recheck are deferred.
 func (c *Conversations) classifyAmbientReply(ctx context.Context, bot *bots.Bot, setting *autoreply.Setting, trigger *model.Post, postingUserID string, thread []*model.Post) error {
 	ctx, span := telemetry.Tracer().Start(ctx, "ambient classifier")
 	defer span.End()
@@ -124,6 +123,9 @@ func (c *Conversations) classifyAmbientReply(ctx context.Context, bot *bots.Bot,
 	opts := []llm.LanguageModelOption{
 		llm.WithJSONOutput[ambientClassifierJSON](),
 		llm.WithToolsDisabled(),
+		// tool_choice "none" does not reach Gemini when no function tools are
+		// declared, so native web search must be omitted outright.
+		llm.WithSkipNativeWebSearch(),
 		llm.WithReasoningDisabled(),
 		llm.WithMaxGeneratedTokens(ambientClassifierMaxTokens),
 	}
