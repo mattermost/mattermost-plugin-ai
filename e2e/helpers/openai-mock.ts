@@ -1,4 +1,5 @@
 import {StartedTestContainer, GenericContainer, StartedNetwork, Network, Wait} from "testcontainers";
+import { test } from "@playwright/test";
 
 export type SmockerMatcher = {
 	matcher: string;
@@ -93,6 +94,7 @@ export class OpenAIMockContainer {
 	container: StartedTestContainer;
 
 	start = async (network: StartedNetwork) => {
+		test.slow(); // triples a beforeAll's 60 s timeout, which container startup can exceed
 		this.container = await new GenericContainer(SMOCKER_IMAGE)
 			.withExposedPorts(8081)
 			.withNetwork(network)

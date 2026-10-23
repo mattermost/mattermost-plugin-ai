@@ -22,6 +22,7 @@ import (
 	plugintest "github.com/mattermost/mattermost/server/public/plugin/plugintest"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -185,7 +186,7 @@ func connectToolListRewritingSession(t *testing.T, rawResult string) *mcp.Client
 
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reqBody, err := io.ReadAll(r.Body)
-		require.NoError(t, err)
+		assert.NoError(t, err)
 		r.Body = io.NopCloser(bytes.NewReader(reqBody))
 
 		var jsonReq struct {

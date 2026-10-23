@@ -1,4 +1,4 @@
-# Schema Migration Review: 000012 — Add ambient fields to Agents_ChannelAutoReply
+# Schema Migration Review: 000013 — Add ambient fields to Agents_ChannelAutoReply
 
 > **Context:** Adds the per-channel ambient auto-reply instructions and optional analysis
 > model override. The table holds one row per channel with auto-reply enabled, so it is

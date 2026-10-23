@@ -1,0 +1,29 @@
+// Copyright (c) 2023-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
+
+// agents-govet is the repo's go vet tool: go vet -vettool=bin/agents-govet ./...
+package main
+
+import (
+	"log"
+
+	"github.com/mattermost/mattermost/tools/mattermost-govet/license"
+	"github.com/mattermost/mattermost/tools/mattermost-govet/mutexLock"
+	"github.com/mattermost/mattermost/tools/mattermost-govet/noSelectStar"
+	"golang.org/x/tools/go/analysis/unitchecker"
+
+	"github.com/mattermost/mattermost-plugin-agents/v2/build/govet/httpclienttimeout"
+)
+
+func main() {
+	if err := license.Analyzer.Flags.Set("year", "2023"); err != nil {
+		log.Fatal(err)
+	}
+
+	unitchecker.Main(
+		license.Analyzer,
+		mutexLock.Analyzer,
+		noSelectStar.Analyzer,
+		httpclienttimeout.Analyzer,
+	)
+}

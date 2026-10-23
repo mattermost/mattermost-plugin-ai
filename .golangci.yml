@@ -14,10 +14,15 @@ linters:
     - nakedret
     - revive
     - staticcheck
+    - testifylint
     - unconvert
     - unused
     - whitespace
   settings:
+    testifylint:
+      disable-all: true
+      enable:
+        - go-require
     govet:
       disable:
         - fieldalignment
