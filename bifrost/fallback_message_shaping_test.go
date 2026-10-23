@@ -4,6 +4,8 @@
 package bifrost
 
 import (
+	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -78,11 +80,13 @@ func nativeToolsOnWire(body map[string]any) []string {
 	return native
 }
 
-// TestMessageShapingCoversEveryFallbackHop drives real failovers through
+// TestMessageShapingIsBuiltPerFallbackHop drives real failovers through
 // Bifrost and checks the message body every tried hop receives. Bifrost
-// replays one built body to each fallback, so the body must satisfy the
-// strictest provider that the request may reach, not just the primary.
-func TestMessageShapingCoversEveryFallbackHop(t *testing.T) {
+// replays the primary's built body to each fallback, so each fallback's body
+// is rebuilt for its own provider: a hop gets the strict message rules, image
+// limit and prompt caching of its own provider, never those of another hop in
+// the chain.
+func TestMessageShapingIsBuiltPerFallbackHop(t *testing.T) {
 	failingHop := func(serviceType, model string) captureHop {
 		return captureHop{svc: llm.ServiceConfig{Type: serviceType, DefaultModel: model}}
 	}
@@ -132,15 +136,8 @@ func TestMessageShapingCoversEveryFallbackHop(t *testing.T) {
 		// chain unrestricted.
 		allowed []int
 		// wantReached is how many hops, in order, receive the request.
-		wantReached      int
-		wantImageOmitted bool
-		// wantStrict is whether the chain has a hop with strict message
-		// rules: no hop receives unsigned reasoning and, on the chat path, no
-		// role repeats. Bifrost strips unsigned thinking for Anthropic itself,
-		// so the reasoning check does not depend on our normalization;
-		// TestBedrockChatRequestsAreValidConverse covers the hop that does.
-		wantStrict bool
-		chatPath   bool
+		wantReached int
+		chatPath    bool
 		// wantNativeTools is, per reached hop, the native tools its body
 		// carries; nil skips the check.
 		wantNativeTools [][]string
@@ -148,42 +145,42 @@ func TestMessageShapingCoversEveryFallbackHop(t *testing.T) {
 		{
 			name:        "OpenAI Responses primary with an Anthropic fallback (#1042)",
 			hops:        []captureHop{openAI, anthropicHop, local},
-			wantReached: 3, wantImageOmitted: true, wantStrict: true,
+			wantReached: 3,
 		},
 		{
 			name:        "OpenAI-compatible chat primary with an Anthropic fallback",
 			hops:        []captureHop{openAICompatible, anthropicHop, local},
-			wantReached: 3, wantImageOmitted: true, wantStrict: true, chatPath: true,
+			wantReached: 3, chatPath: true,
 		},
 		{
 			name:        "Gemini chat primary with an Anthropic fallback",
 			hops:        []captureHop{gemini, anthropicHop, local},
-			wantReached: 3, wantImageOmitted: true, wantStrict: true, chatPath: true,
+			wantReached: 3, chatPath: true,
 		},
 		{
 			name:        "Gemini Responses primary with an Anthropic fallback",
 			hops:        []captureHop{gemini, anthropicHop, local},
-			wantReached: 3, wantImageOmitted: true, wantStrict: true, nativeTools: webSearch,
+			wantReached: 3, nativeTools: webSearch,
 		},
 		{
 			name:        "Anthropic chat primary with an OpenAI fallback",
 			hops:        []captureHop{anthropicHop, openAI, local},
-			wantReached: 3, wantImageOmitted: true, wantStrict: true, chatPath: true,
+			wantReached: 3, chatPath: true,
 		},
 		{
 			name:        "Anthropic Responses primary with an OpenAI fallback",
 			hops:        []captureHop{anthropicHop, openAI, local},
-			wantReached: 3, wantImageOmitted: true, wantStrict: true, nativeTools: webSearch,
+			wantReached: 3, nativeTools: webSearch,
 		},
 		{
 			name:        "OpenAI-compatible chat primary with a Claude-on-Azure fallback",
 			hops:        []captureHop{openAICompatible, azureClaude, local},
-			wantReached: 3, wantImageOmitted: true, wantStrict: true, chatPath: true,
+			wantReached: 3, chatPath: true,
 		},
 		{
 			name:        "OpenAI Responses primary with a Claude-on-Azure fallback",
 			hops:        []captureHop{openAI, azureClaude, local},
-			wantReached: 3, wantImageOmitted: true, wantStrict: true,
+			wantReached: 3,
 		},
 		{
 			// Anthropic adds code_execution itself when web search or fetch
@@ -191,7 +188,7 @@ func TestMessageShapingCoversEveryFallbackHop(t *testing.T) {
 			name:        "Anthropic primary's native tools reach each fallback only as that hop supports them",
 			hops:        []captureHop{anthropicHop, openAI, gemini, openAICompatible, mistral, local},
 			nativeTools: allNativeTools,
-			wantReached: 6, wantImageOmitted: true, wantStrict: true,
+			wantReached: 6,
 			wantNativeTools: [][]string{
 				{"web_search", "web_fetch"},
 				{"web_search", "code_interpreter"},
@@ -203,7 +200,7 @@ func TestMessageShapingCoversEveryFallbackHop(t *testing.T) {
 			name:        "OpenAI primary's native tools reach each fallback only as that hop supports them",
 			hops:        []captureHop{openAI, anthropicHop, gemini, azureClaude, local},
 			nativeTools: allNativeTools,
-			wantReached: 5, wantImageOmitted: true, wantStrict: true,
+			wantReached: 5,
 			wantNativeTools: [][]string{
 				{"web_search", "code_interpreter"},
 				{"web_search"},
@@ -213,18 +210,18 @@ func TestMessageShapingCoversEveryFallbackHop(t *testing.T) {
 			},
 		},
 		{
-			name:        "Anthropic hop behind the serving hop still shapes the body",
+			name:        "hops behind the serving hop are not tried",
 			hops:        []captureHop{openAICompatible, local, anthropicHop},
-			wantReached: 2, wantImageOmitted: true, wantStrict: true, chatPath: true,
+			wantReached: 2, chatPath: true,
 		},
 		{
-			name:        "Anthropic hop trimmed by access does not shape the chat body",
+			name:        "Anthropic hop trimmed by access is not tried on the chat path",
 			hops:        []captureHop{openAICompatible, local, anthropicHop},
 			allowed:     []int{1},
 			wantReached: 2, chatPath: true,
 		},
 		{
-			name:        "Anthropic hop trimmed by access does not shape the Responses body",
+			name:        "Anthropic hop trimmed by access is not tried on the Responses path",
 			hops:        []captureHop{openAI, local, anthropicHop},
 			allowed:     []int{1},
 			wantReached: 2,
@@ -258,27 +255,113 @@ func TestMessageShapingCoversEveryFallbackHop(t *testing.T) {
 				require.NoError(t, err)
 				body := string(raw)
 
-				assert.Equal(t, tt.wantImageOmitted, strings.Contains(body, "Image omitted"), "%s oversized image placeholder", label)
-				assert.Equal(t, !tt.wantImageOmitted, strings.Contains(body, oversizedBase64), "%s oversized image bytes", label)
+				// An Anthropic hop, including Claude on Azure, follows
+				// Anthropic's message rules; no other hop in these chains does.
+				messagesAPI := h.svc.Type == llm.ServiceTypeAnthropic || strings.HasPrefix(h.svc.DefaultModel, "claude")
+				assert.Equal(t, messagesAPI, strings.Contains(body, "Image omitted"), "%s oversized image placeholder", label)
+				assert.Equal(t, !messagesAPI, strings.Contains(body, oversizedBase64), "%s oversized image bytes", label)
 				assert.NotContains(t, body, "image/jpeg", "%s must label the PNG with its sniffed type (#1100)", label)
 				assert.Contains(t, body, base64.StdEncoding.EncodeToString(mislabeled), "%s must still send the mislabeled image", label)
 				assert.Contains(t, body, emptyToolResultPlaceholder, "%s blank tool results get the placeholder (#995)", label)
 				assert.NotContains(t, body, "stray result", "%s nameless orphan results are dropped", label)
-				if tt.wantStrict {
+				if messagesAPI {
 					assert.NotContains(t, body, unsignedReasoning, "%s must not receive unsigned reasoning", label)
-				}
-				if tt.wantStrict && tt.chatPath {
-					if _, isChat := parsed["messages"]; isChat {
+					if _, isChat := parsed["messages"]; isChat && tt.chatPath {
 						assert.Empty(t, adjacentSameRoleMessages(parsed), "%s must not repeat a role: %s", label, body)
 					}
+					assert.Empty(t, llmtest.AnthropicRequestViolations(raw), "%s would be rejected by Anthropic: %s", label, body)
 				}
+				assert.Equal(t, h.svc.Type == llm.ServiceTypeAnthropic, strings.Contains(body, "cache_control"), "%s prompt caching marker", label)
 				if tt.wantNativeTools != nil {
 					assert.ElementsMatch(t, tt.wantNativeTools[i], nativeToolsOnWire(parsed), "%s native tools", label)
-				}
-				if h.svc.Type == llm.ServiceTypeAnthropic || strings.HasPrefix(h.svc.DefaultModel, "claude") {
-					assert.Empty(t, llmtest.AnthropicRequestViolations(raw), "%s would be rejected by Anthropic: %s", label, body)
 				}
 			}
 		})
 	}
+}
+
+// TestFileReadersAreSentToEveryFallbackHop checks that an image delivered
+// through a one-shot Reader reaches every hop. Each fallback rebuilds its own
+// messages, so the file must be read once, before the first hop is built.
+func TestFileReadersAreSentToEveryFallbackHop(t *testing.T) {
+	tests := []struct {
+		name string
+		hops []captureHop
+	}{
+		{
+			name: "chat path",
+			hops: []captureHop{
+				{svc: llm.ServiceConfig{Type: llm.ServiceTypeOpenAICompatible, DefaultModel: "gpt-4o"}},
+				{svc: llm.ServiceConfig{Type: llm.ServiceTypeAnthropic, DefaultModel: "claude-sonnet-4-6"}},
+				localHop,
+			},
+		},
+		{
+			name: "Responses path",
+			hops: []captureHop{
+				{svc: llm.ServiceConfig{Type: llm.ServiceTypeOpenAI, DefaultModel: "gpt-4o"}},
+				{svc: llm.ServiceConfig{Type: llm.ServiceTypeAnthropic, DefaultModel: "claude-sonnet-4-6"}},
+				localHop,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			imageData := encodeTestImage(t, "image/png", 4, 4)
+			posts := []llm.Post{{
+				Role:    llm.PostRoleUser,
+				Message: "what is this",
+				Files:   []llm.File{{MimeType: "image/png", Reader: bytes.NewReader(imageData)}},
+			}}
+
+			_, bodies := captureFailover(t, tt.hops, llm.BotConfig{}, llm.CompletionRequest{Posts: posts})
+
+			for i, parsed := range bodies {
+				require.NotNil(t, parsed, "hop %d must be tried", i)
+				raw, err := json.Marshal(parsed)
+				require.NoError(t, err)
+				assert.Contains(t, string(raw), base64.StdEncoding.EncodeToString(imageData), "hop %d must receive the image", i)
+				assert.NotContains(t, string(raw), "Error reading image data", "hop %d", i)
+			}
+			assert.Nil(t, posts[0].Files[0].Data, "the caller's request must not be modified")
+		})
+	}
+}
+
+// TestCountTokensFallbackIsBuiltForItsOwnHop drives a real count-tokens
+// failover through Bifrost. The fallback must get messages shaped for its own
+// provider, not the primary's, and the image must survive being read once from
+// a one-shot Reader.
+func TestCountTokensFallbackIsBuiltForItsOwnHop(t *testing.T) {
+	oversized := encodeTestImage(t, "image/png", anthropicMaxImageDimension+1000, 1)
+	oversizedBase64 := base64.StdEncoding.EncodeToString(oversized)
+	request := llm.CompletionRequest{Posts: []llm.Post{
+		{Role: llm.PostRoleUser, Message: "look at this", Files: []llm.File{
+			{MimeType: "image/png", Reader: bytes.NewReader(oversized)},
+		}},
+	}}
+
+	hops := []captureHop{
+		{svc: llm.ServiceConfig{Type: llm.ServiceTypeOpenAI, DefaultModel: "gpt-4o"}},
+		{svc: llm.ServiceConfig{Type: llm.ServiceTypeAnthropic, DefaultModel: "claude-sonnet-4-6"}},
+	}
+	llmInstance, captures := newCaptureChain(t, hops, llm.BotConfig{})
+
+	_, err := llmInstance.CountTokens(context.Background(), request)
+	require.Error(t, err, "both capture servers reject the request")
+
+	bodies := loadCaptures(captures)
+	require.NotNil(t, bodies[0], "primary must have been called")
+	require.NotNil(t, bodies[1], "fallback must have been called")
+	primary, err := json.Marshal(bodies[0])
+	require.NoError(t, err)
+	fallback, err := json.Marshal(bodies[1])
+	require.NoError(t, err)
+
+	assert.Equal(t, "claude-sonnet-4-6", bodies[1]["model"])
+	assert.Contains(t, bodies[1], "messages", "the fallback must be sent an Anthropic count_tokens body")
+	assert.Contains(t, string(primary), oversizedBase64, "the OpenAI hop accepts the image")
+	assert.Contains(t, string(fallback), "Image omitted", "the Anthropic hop gets its own image limit")
+	assert.NotContains(t, string(fallback), oversizedBase64)
 }

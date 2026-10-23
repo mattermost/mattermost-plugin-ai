@@ -69,6 +69,18 @@ func hopServiceID(i int) string {
 // keys, and the bot's identity and service are filled in here.
 func captureFailover(t *testing.T, hops []captureHop, bot llm.BotConfig, request llm.CompletionRequest) (*LLM, []map[string]any) {
 	t.Helper()
+	llmInstance, captures := newCaptureChain(t, hops, bot)
+
+	_, err := llmInstance.ChatCompletionNoStream(context.Background(), request, llm.WithToolsDisabled())
+	require.NoError(t, err)
+
+	return llmInstance, loadCaptures(captures)
+}
+
+// newCaptureChain builds the production client for a chain of hops, each
+// served by a captureServer, and returns it with the capture of each hop.
+func newCaptureChain(t *testing.T, hops []captureHop, bot llm.BotConfig) (*LLM, []atomic.Value) {
+	t.Helper()
 	captures := make([]atomic.Value, len(hops))
 	services := make([]llm.ServiceConfig, len(hops))
 	for i, hop := range hops {
@@ -82,15 +94,17 @@ func captureFailover(t *testing.T, hops []captureHop, bot llm.BotConfig, request
 	llmInstance, err := NewFromServiceConfig(services[0], bot, services[1:])
 	require.NoError(t, err)
 	t.Cleanup(llmInstance.Shutdown)
+	return llmInstance, captures
+}
 
-	_, err = llmInstance.ChatCompletionNoStream(context.Background(), request, llm.WithToolsDisabled())
-	require.NoError(t, err)
-
-	bodies := make([]map[string]any, len(hops))
+// loadCaptures returns the body each hop received, nil for a hop that was not
+// tried.
+func loadCaptures(captures []atomic.Value) []map[string]any {
+	bodies := make([]map[string]any, len(captures))
 	for i := range captures {
 		bodies[i], _ = captures[i].Load().(map[string]any)
 	}
-	return llmInstance, bodies
+	return bodies
 }
 
 // captureTwoHopFailover drives a primary -> fallback -> localHop chain whose
@@ -413,10 +427,12 @@ func TestChatOnlyFallbackGetsChatPathReasoning(t *testing.T) {
 }
 
 // TestHopReasoningFollowsTheModelsMessagesAPI checks that a Claude model on
-// Vertex or Azure, which Bifrost sends to Anthropic's Messages API, gets the
-// reasoning an Anthropic hop with the same model gets, on both API paths.
-// Vertex cannot be pointed at a test server, so it is checked here rather
-// than through a captured failover.
+// Vertex, which Bifrost sends to Anthropic's Messages API, gets the reasoning
+// an Anthropic hop with the same model gets, on both API paths, and that
+// non-Claude models on Vertex and Azure keep their own provider's. Vertex
+// cannot be pointed at a test server, so it is checked here rather than
+// through a captured failover; Claude on Azure is covered by
+// TestReasoningIsResolvedPerFallbackHop.
 func TestHopReasoningFollowsTheModelsMessagesAPI(t *testing.T) {
 	tests := []struct {
 		name             string
@@ -429,8 +445,6 @@ func TestHopReasoningFollowsTheModelsMessagesAPI(t *testing.T) {
 		{name: "Sonnet 5 off on Vertex", provider: schemas.Vertex, model: "claude-sonnet-5@20260101", wantAnthropic: true},
 		{name: "Opus 5.5 off on Vertex", provider: schemas.Vertex, model: "claude-opus-5-5", wantAnthropic: true},
 		{name: "Opus 4.6 high on Vertex", provider: schemas.Vertex, model: "claude-opus-4-6", reasoningEnabled: true, effort: "high", wantAnthropic: true},
-		{name: "Sonnet 5 off on Azure", provider: schemas.Azure, model: "claude-sonnet-5", wantAnthropic: true},
-		{name: "Opus 4.6 high on Azure", provider: schemas.Azure, model: "claude-opus-4-6", reasoningEnabled: true, effort: "high", wantAnthropic: true},
 		{name: "Gemini on Vertex keeps Gemini reasoning", provider: schemas.Vertex, model: "gemini-2.5-pro", reasoningEnabled: true, effort: "high"},
 		{name: "GPT on Azure keeps OpenAI reasoning", provider: schemas.Azure, model: "gpt-5", reasoningEnabled: true, effort: "high"},
 	}
@@ -441,10 +455,10 @@ func TestHopReasoningFollowsTheModelsMessagesAPI(t *testing.T) {
 				provider:         schemas.Anthropic,
 				reasoningEnabled: tt.reasoningEnabled,
 				reasoningEffort:  tt.effort,
-				registrations: map[schemas.ModelProvider]registration{
-					schemas.Anthropic: {base: schemas.Anthropic},
-					tt.provider:       {base: tt.provider},
-				},
+				account: testAccount(
+					&providerAccount{ProviderSettings: ProviderSettings{Provider: schemas.Anthropic}},
+					&providerAccount{ProviderSettings: ProviderSettings{Provider: tt.provider}},
+				),
 			}
 			cfg := llm.LanguageModelConfig{Model: tt.model, MaxGeneratedTokens: 16000}
 
@@ -460,35 +474,41 @@ func TestHopReasoningFollowsTheModelsMessagesAPI(t *testing.T) {
 	}
 }
 
-// TestApplyHopParamsLeavesSharedParamsIntact guards the shallow-copy
-// hazard: Bifrost's fallback request shares Params with the primary, so the
-// hook must replace Params instead of writing through the shared pointer.
-func TestApplyHopParamsLeavesSharedParamsIntact(t *testing.T) {
+// TestApplyHopRequestLeavesSharedRequestIntact guards the shallow-copy
+// hazard: Bifrost's fallback request shares Input and Params with the primary,
+// so the hook must replace them instead of writing through the shared values.
+func TestApplyHopRequestLeavesSharedRequestIntact(t *testing.T) {
 	b := &LLM{
 		provider:         schemas.Anthropic,
 		reasoningEffort:  "xhigh",
 		reasoningEnabled: true,
-		registrations: map[schemas.ModelProvider]registration{
-			schemas.Anthropic: {base: schemas.Anthropic},
-			customProviderName(schemas.Anthropic, "svc2"): {base: schemas.Anthropic},
-		},
+		account: testAccount(
+			&providerAccount{ProviderSettings: ProviderSettings{Provider: schemas.Anthropic}},
+			customAccount(schemas.Anthropic, "svc2"),
+		),
 	}
 	cfg := llm.LanguageModelConfig{Model: "claude-opus-4-7", MaxGeneratedTokens: 200000}
-	primary := &schemas.BifrostRequest{ChatRequest: b.convertToBifrostRequest(llm.CompletionRequest{
-		Posts: []llm.Post{{Role: llm.PostRoleUser, Message: "hi"}},
-	}, cfg)}
-	sharedParams := primary.ChatRequest.Params
+	request := llm.CompletionRequest{Posts: []llm.Post{{Role: llm.PostRoleUser, Message: "hi"}}}
+	primary := &schemas.BifrostRequest{ChatRequest: b.convertToBifrostRequest(request, cfg)}
+	sharedParams, sharedInput := primary.ChatRequest.Params, primary.ChatRequest.Input
 
 	hop := *primary.ChatRequest
 	hop.Provider = customProviderName(schemas.Anthropic, "svc2")
 	hop.Model = "claude-opus-4-6"
-	b.applyHopParams(&schemas.BifrostRequest{ChatRequest: &hop}, cfg)
+	hopReq := &schemas.BifrostRequest{ChatRequest: &hop}
+	require.NoError(t, b.applyHopRequest(hopReq, request, cfg))
 
-	require.NotNil(t, hop.Params.Reasoning)
-	assert.Equal(t, "high", *hop.Params.Reasoning.Effort, "the Opus 4.6 hop must get an effort it accepts")
-	require.NotNil(t, hop.Params.MaxCompletionTokens)
-	assert.Equal(t, 128000, *hop.Params.MaxCompletionTokens, "the Opus 4.6 hop must get its own output limit")
+	rebuilt := hopReq.ChatRequest
+	assert.Equal(t, hop.Provider, rebuilt.Provider)
+	assert.Equal(t, hop.Model, rebuilt.Model)
+	assert.Equal(t, primary.ChatRequest.Fallbacks, rebuilt.Fallbacks)
+	require.NotNil(t, rebuilt.Params.Reasoning)
+	assert.Equal(t, "high", *rebuilt.Params.Reasoning.Effort, "the Opus 4.6 hop must get an effort it accepts")
+	require.NotNil(t, rebuilt.Params.MaxCompletionTokens)
+	assert.Equal(t, 128000, *rebuilt.Params.MaxCompletionTokens, "the Opus 4.6 hop must get its own output limit")
 	assert.Same(t, sharedParams, primary.ChatRequest.Params)
+	assert.NotSame(t, sharedParams, rebuilt.Params)
 	assert.Equal(t, "xhigh", *sharedParams.Reasoning.Effort, "the primary's shared params must be untouched")
 	assert.Equal(t, 200000, *sharedParams.MaxCompletionTokens, "the primary's shared params must be untouched")
+	assert.Equal(t, sharedInput, primary.ChatRequest.Input, "the primary's shared input must be untouched")
 }

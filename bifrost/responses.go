@@ -14,8 +14,8 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/telemetry"
 )
 
-// convertToResponsesMessages converts posts normalized for chain to Bifrost ResponsesMessage format.
-func convertToResponsesMessages(posts []llm.Post, chain requestChain) []schemas.ResponsesMessage {
+// convertToResponsesMessages converts posts normalized for rules to Bifrost ResponsesMessage format.
+func convertToResponsesMessages(posts []llm.Post, rules messageRules) []schemas.ResponsesMessage {
 	messages := make([]schemas.ResponsesMessage, 0, len(posts))
 
 	for _, post := range posts {
@@ -35,7 +35,7 @@ func convertToResponsesMessages(posts []llm.Post, chain requestChain) []schemas.
 				msg := schemas.ResponsesMessage{
 					Role: new(schemas.ResponsesInputMessageRoleUser),
 					Content: &schemas.ResponsesMessageContent{
-						ContentBlocks: createResponsesMultimodalContent(post, chain.imageDimensionLimit),
+						ContentBlocks: createResponsesMultimodalContent(post, rules.imageDimensionLimit),
 					},
 				}
 				messages = append(messages, msg)
@@ -239,9 +239,10 @@ func convertToResponsesTools(request llm.CompletionRequest, cfg llm.LanguageMode
 // block should be sent.
 func (b *LLM) responsesReasoningFor(name schemas.ModelProvider, cfg llm.LanguageModelConfig) *schemas.ResponsesParametersReasoning {
 	provider := messagesAPIProvider(b.baseProvider(name), cfg.Model)
+	entry := b.registration(name)
 	// Bifrost sends a chat-only hop's Responses request as a chat completion
 	// and keeps reasoning_effort, so it gets the chat path's reasoning below.
-	if (provider == schemas.OpenAI || provider == schemas.Azure) && !b.registrations[name].chatOnly {
+	if (provider == schemas.OpenAI || provider == schemas.Azure) && (entry == nil || !entry.chatOnly) {
 		if b.thinkingOff(cfg) {
 			return nil
 		}
@@ -273,19 +274,32 @@ func (b *LLM) responsesReasoningFor(name schemas.ModelProvider, cfg llm.Language
 	return reasoning
 }
 
-// convertToBifrostResponsesRequest converts our CompletionRequest to Bifrost's Responses API format.
+// convertToBifrostResponsesRequest converts our CompletionRequest to Bifrost's
+// Responses API format, built for the primary. Bifrost replays it to each
+// fallback, whose body the hopRequestPlugin rebuilds with
+// responsesRequestForHop.
 func (b *LLM) convertToBifrostResponsesRequest(request llm.CompletionRequest, cfg llm.LanguageModelConfig) (*schemas.BifrostResponsesRequest, error) {
-	request, chain := b.prepareRequest(request, cfg.Model)
-	messages := convertToResponsesMessages(request.Posts, chain)
-	tools := convertToResponsesTools(request, cfg, b.enabledNativeTools)
-
-	req := &schemas.BifrostResponsesRequest{
+	messages, params, err := b.responsesRequestForHop(request, cfg, b.provider, cfg.Model)
+	if err != nil {
+		return nil, err
+	}
+	return &schemas.BifrostResponsesRequest{
 		Provider: b.provider,
 		Model:    cfg.Model,
 		Input:    messages,
-	}
+		Params:   params,
+		// Attach fallback chain so Bifrost retries with alternative providers on failure.
+		Fallbacks: b.requestFallbacks(request),
+	}, nil
+}
 
-	// Set parameters
+// responsesRequestForHop returns the messages and parameters for model on the
+// provider registered as name, shaped for that hop's own rules.
+func (b *LLM) responsesRequestForHop(request llm.CompletionRequest, cfg llm.LanguageModelConfig, name schemas.ModelProvider, model string) ([]schemas.ResponsesMessage, *schemas.ResponsesParameters, error) {
+	rules := b.messageRulesFor(name, model, countRequestImages(request.Posts))
+	messages := convertToResponsesMessages(normalizePosts(request.Posts, rules), rules)
+	tools := convertToResponsesTools(request, cfg, b.enabledNativeTools)
+
 	var params schemas.ResponsesParameters
 	if len(tools) > 0 {
 		params.Tools = tools
@@ -298,23 +312,18 @@ func (b *LLM) convertToBifrostResponsesRequest(request llm.CompletionRequest, cf
 	if cfg.JSONOutputFormat != nil {
 		textConfig, err := buildResponsesTextConfig(cfg.JSONOutputFormat)
 		if err != nil {
-			return nil, fmt.Errorf("failed to build responses text config: %w", err)
+			return nil, nil, fmt.Errorf("failed to build responses text config: %w", err)
 		}
 		params.Text = textConfig
 	}
 	// The Anthropic provider reads cache_control from ExtraParams on the
 	// Responses path (there is no typed field on ResponsesParameters).
-	if chain.promptCaching {
+	if rules.promptCaching {
 		params.ExtraParams = map[string]any{
 			"cache_control": &schemas.CacheControl{Type: schemas.CacheControlTypeEphemeral},
 		}
 	}
-	req.Params = b.responsesHopParams(params, req.Provider, req.Model, cfg)
-
-	// Attach fallback chain so Bifrost retries with alternative providers on failure.
-	req.Fallbacks = chain.fallbacks
-
-	return req, nil
+	return messages, b.responsesHopParams(params, name, model, cfg), nil
 }
 
 // streamResponses handles the streaming Responses API completion.
@@ -327,7 +336,8 @@ func (b *LLM) streamResponses(ctx context.Context, request llm.CompletionRequest
 	bifrostCtx, cancel := schemas.NewBifrostContextWithTimeout(ctx, b.streamingTimeout*10)
 	defer cancel()
 	b.applyCompletionBetaHeaders(bifrostCtx)
-	b.withHopParams(bifrostCtx, cfg)
+	request = bufferFiles(request)
+	b.withHopRequest(bifrostCtx, request, cfg)
 
 	// Convert to Bifrost Responses API request
 	bifrostReq, err := b.convertToBifrostResponsesRequest(request, cfg)
