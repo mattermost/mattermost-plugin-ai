@@ -799,6 +799,11 @@ func TestDMMaxToolTurnsOne_PersistsToolTurnAndAnswers(t *testing.T) {
 	assert.True(t, sawEnd, "the run must end with an End event")
 	assert.Equal(t, "It's 72F and sunny", text)
 
+	require.Len(t, env.fakeLLM.requests, 2)
+	finalPosts := env.fakeLLM.requests[1].Posts
+	assert.Contains(t, finalPosts[len(finalPosts)-1].Message, llm.ToolIterationLimitUserMessage,
+		"the call after the only allowed tool round must carry the iteration-limit message")
+
 	var foundToolResult bool
 	for _, turn := range env.convStore.turnsFor(convResult.ConversationID) {
 		var blocks []conversation.ContentBlock
