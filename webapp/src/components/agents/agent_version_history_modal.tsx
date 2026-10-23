@@ -208,6 +208,7 @@ const AgentVersionHistoryModal = ({show, onClose, agentId, agentName, services, 
 
     const handleSelect = (version: number) => {
         setSelected(version);
+        setRestoreRequested(null);
         clearNotices();
     };
 

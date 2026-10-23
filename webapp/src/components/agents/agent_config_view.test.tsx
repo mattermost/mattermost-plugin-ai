@@ -1163,6 +1163,45 @@ describe('AgentConfigView history and export', () => {
             expect(screen.queryByRole('button', {name: /^Version history/})).toBeNull();
             expect(mockGetAgentVersion).not.toHaveBeenCalled();
         });
+
+        test('shows a failed history load with a retry that restores the version line', async () => {
+            mockGetAgentVersions.mockRejectedValueOnce(new Error('boom'));
+            renderEdit();
+
+            const alert = await screen.findByRole('alert');
+            expect(alert.textContent).toContain('boom');
+            expect(screen.queryByRole('button', {name: /^Version history/})).toBeNull();
+
+            fireEvent.click(within(alert).getByRole('button', {name: 'Retry'}));
+
+            expect(await screen.findByRole('button', {name: /^Version history, v2/})).not.toBeNull();
+            expect(screen.queryByRole('alert')).toBeNull();
+        });
+    });
+
+    test('selecting another version cancels a pending row-menu restore', async () => {
+        renderEdit();
+        const list = await openHistory();
+        await screen.findByTestId('version-snapshot');
+
+        let resolveVersion1: (d: AgentVersionDetail) => void = jest.fn();
+        mockGetAgentVersion.mockImplementation((_id, version) => (
+            version === 1 ? new Promise((resolve) => {
+                resolveVersion1 = resolve;
+            }) : Promise.resolve(versionDetail(2, 'current instructions'))
+        ));
+
+        await openVersionMenu(1);
+        fireEvent.click(await screen.findByText('Restore this version'));
+        fireEvent.click(within(list).getByText('Version 2'));
+        resolveVersion1(versionDetail(1, 'original instructions'));
+
+        mockGetAgentVersion.mockImplementation(async (_id, version) => (
+            version === 2 ? versionDetail(2, 'current instructions') : versionDetail(1, 'original instructions')
+        ));
+        fireEvent.click(within(list).getByText('Version 1'));
+        await waitFor(() => expect(screen.getByText('original instructions')).not.toBeNull());
+        await expect(screen.findByRole('dialog', {name: 'Restore this version?'}, {timeout: 500})).rejects.toThrow();
     });
 
     test('lists versions newest first with only the author and time on each row', async () => {

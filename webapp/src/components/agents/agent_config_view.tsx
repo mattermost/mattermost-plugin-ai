@@ -576,6 +576,20 @@ const AgentConfigView = (props: Props) => {
                 {isDirty ? `${summary} · ${unsaved}` : summary}
             </VersionLineButton>
         );
+    } else if (mode === 'edit' && agent && history.listError) {
+        versionLine = (
+            <VersionLineError role='alert'>
+                {history.listError}
+                {' '}
+                <Button
+                    emphasis='link'
+                    size='small'
+                    onClick={() => history.refresh()}
+                >
+                    <FormattedMessage defaultMessage='Retry'/>
+                </Button>
+            </VersionLineError>
+        );
     }
 
     return (
@@ -913,6 +927,12 @@ const VersionLineButton = styled.button`
     &:hover {
         text-decoration: underline;
     }
+`;
+
+const VersionLineError = styled.div`
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--error-text);
 `;
 
 const ViewTitle = styled.h1`
