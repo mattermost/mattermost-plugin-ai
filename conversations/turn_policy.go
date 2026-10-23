@@ -295,23 +295,17 @@ func (p *turnPolicy) buildContext(ctx context.Context, prefsLogMessage string, e
 
 	llmContext := p.c.buildConversationContextWithTools(ctx, p.bot, p.user, p.channel, prefsLogMessage, opts...)
 	switch {
+	case !p.toolsEnabled && !p.isDM && p.c.channelMentionToolCallingEnabled():
+		// Tools are off only because nobody is present to approve them;
+		// moving to a DM would not help, so the model is not told about them.
+		llmContext.Tools.KeepToolsIf(func(llm.Tool) bool { return false })
 	case !p.toolsEnabled:
-		// Disabled tools stay listed so the model can still describe them.
-		llmContext.DisableTools(p.toolsDisabledReason(), llmContext.Tools.GetToolsInfo()...)
+		// Disabled tools stay listed so the model can point the user to a DM.
+		llmContext.DisableTools(llmContext.Tools.GetToolsInfo()...)
 	case p.autoEverywhereOnly:
 		p.c.applyBotChannelAutoEverywhereToolFilter(llmContext)
 	}
 	return llmContext
-}
-
-// toolsDisabledReason says why a run with tools disabled cannot call them.
-// With channel tool calling enabled, a channel run's tools are off only
-// because nobody is present to approve them.
-func (p *turnPolicy) toolsDisabledReason() llm.ToolDisabledReason {
-	if !p.isDM && p.c.channelMentionToolCallingEnabled() {
-		return llm.ToolDisabledUnattended
-	}
-	return llm.ToolDisabledOutsideDM
 }
 
 // autoExecute decides, per tool call, whether the call runs without the

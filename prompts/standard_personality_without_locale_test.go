@@ -72,10 +72,7 @@ func TestStandardPersonalityWithoutLocaleWhitespaceGating(t *testing.T) {
 	mutators := []func(*llm.Context){
 		func(c *llm.Context) { c.CompanyName = "Mattermost" },
 		func(c *llm.Context) {
-			c.DisableTools(llm.ToolDisabledOutsideDM, llm.ToolInfo{Name: "Jira", Description: "Read tickets"})
-		},
-		func(c *llm.Context) {
-			c.DisableTools(llm.ToolDisabledUnattended, llm.ToolInfo{Name: "GitHub", Description: "Read issues"})
+			c.DisableTools(llm.ToolInfo{Name: "Jira", Description: "Read tickets"})
 		},
 		func(c *llm.Context) { c.CustomInstructions = "Be concise." },
 		func(c *llm.Context) {
@@ -195,7 +192,6 @@ func TestStandardPersonalityToolGuidanceFollowsCallability(t *testing.T) {
 		webSearchGuidance  = "When using the WebSearch tool"
 		toolUseGuidance    = "by leveraging their tools"
 		outsideDMSection   = "can only be used in a Direct Message (DM) or via the Agents tab"
-		unattendedSection  = "This request was started by a bot or integration"
 		geminiListHeader   = "The tools currently available to agent in this conversation are:"
 	)
 	allGuidance := []string{createFileGuidance, lookupGuidance, readChannelHint, webSearchGuidance, toolUseGuidance}
@@ -234,42 +230,23 @@ func TestStandardPersonalityToolGuidanceFollowsCallability(t *testing.T) {
 			name:        "callable tools get their guidance",
 			tools:       toolStore(guidedTools...),
 			contains:    allGuidance,
-			notContains: []string{outsideDMSection, unattendedSection},
+			notContains: []string{outsideDMSection},
 		},
 		{
 			name:  "tools disabled outside a DM get no guidance and the DM section",
 			tools: toolStore(guidedTools...),
 			disable: func(c *llm.Context) {
-				c.DisableTools(llm.ToolDisabledOutsideDM, c.Tools.GetToolsInfo()...)
+				c.DisableTools(c.Tools.GetToolsInfo()...)
 			},
 			contains:    []string{outsideDMSection, "- CreateFile: CreateFile description"},
-			notContains: append([]string{unattendedSection}, allGuidance...),
-		},
-		{
-			name:  "tools removed for an unattended request keep guidance for the rest",
-			tools: toolStore("CreateFile"),
-			disable: func(c *llm.Context) {
-				c.DisableTools(llm.ToolDisabledUnattended, infos("search_users", "jira_create")...)
-			},
-			contains:    []string{createFileGuidance, toolUseGuidance, unattendedSection, "- jira_create: jira_create description"},
-			notContains: []string{outsideDMSection, lookupGuidance, "DM you directly"},
-		},
-		{
-			name:  "both reasons render separate sections",
-			tools: toolStore("CreateFile"),
-			disable: func(c *llm.Context) {
-				c.DisableTools(llm.ToolDisabledOutsideDM, infos("CreateFile")...)
-				c.DisableTools(llm.ToolDisabledUnattended, infos("jira_create")...)
-			},
-			contains:    []string{outsideDMSection, unattendedSection},
-			notContains: []string{createFileGuidance, toolUseGuidance},
+			notContains: allGuidance,
 		},
 		{
 			name:        "gemini lists only callable tools",
 			serviceType: "gemini",
 			tools:       toolStore("search_users", "read_channel"),
 			disable: func(c *llm.Context) {
-				c.DisableTools(llm.ToolDisabledUnattended, infos("read_channel")...)
+				c.DisableTools(infos("read_channel")...)
 			},
 			contains:    []string{geminiListHeader + "\n- search_users: search_users description\n\nWhen asked"},
 			notContains: []string{"- read_channel: read_channel description\n\nWhen asked"},
@@ -279,7 +256,7 @@ func TestStandardPersonalityToolGuidanceFollowsCallability(t *testing.T) {
 			serviceType: "gemini",
 			tools:       toolStore("search_users"),
 			disable: func(c *llm.Context) {
-				c.DisableTools(llm.ToolDisabledOutsideDM, c.Tools.GetToolsInfo()...)
+				c.DisableTools(c.Tools.GetToolsInfo()...)
 			},
 			notContains: []string{geminiListHeader},
 		},
@@ -383,7 +360,7 @@ func TestStandardPersonalityDynamicToolWorkflow(t *testing.T) {
 				BotUsername:   "agent",
 				BotModel:      "model-x",
 				Tools:         dynamicMetaToolStore(),
-				DisabledTools: []llm.DisabledTool{{ToolInfo: llm.ToolInfo{Name: "Jira", Description: "Read tickets"}, Reason: llm.ToolDisabledOutsideDM}},
+				DisabledTools: []llm.ToolInfo{{Name: "Jira", Description: "Read tickets"}},
 				ToolCatalog:   llm.ToolCatalogContext{MCPDynamicToolLoading: true},
 			},
 			contains: append(dynamicWorkflowText,
@@ -403,9 +380,9 @@ func TestStandardPersonalityDynamicToolWorkflow(t *testing.T) {
 				BotUsername: "agent",
 				BotModel:    "model-x",
 				Tools:       dynamicMetaToolStore(),
-				DisabledTools: []llm.DisabledTool{
-					{ToolInfo: llm.ToolInfo{Name: "search_tools", Description: "Search tools"}, Reason: llm.ToolDisabledOutsideDM},
-					{ToolInfo: llm.ToolInfo{Name: "load_tool", Description: "Load tool"}, Reason: llm.ToolDisabledOutsideDM},
+				DisabledTools: []llm.ToolInfo{
+					{Name: "search_tools", Description: "Search tools"},
+					{Name: "load_tool", Description: "Load tool"},
 				},
 				ToolCatalog: llm.ToolCatalogContext{MCPDynamicToolLoading: true},
 			},
@@ -539,7 +516,7 @@ func TestStandardPersonalityUnconnectedMCPServers(t *testing.T) {
 			context: &llm.Context{
 				BotName:               "agent",
 				Tools:                 connectStore(),
-				DisabledTools:         []llm.DisabledTool{{ToolInfo: llm.ToolInfo{Name: "RequestMCPConnection"}, Reason: llm.ToolDisabledOutsideDM}},
+				DisabledTools:         []llm.ToolInfo{{Name: "RequestMCPConnection"}},
 				UnconnectedMCPServers: jira,
 			},
 		},

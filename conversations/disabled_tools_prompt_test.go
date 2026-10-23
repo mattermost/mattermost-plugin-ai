@@ -16,8 +16,8 @@ import (
 
 // TestChannelMentionSystemPromptExplainsDisabledTools drives channel mentions
 // through MessageHasBeenPosted and checks that the system prompt sent to the
-// model gives guidance only for tools it can call and explains each disabled
-// tool with the reason that applies.
+// model gives guidance only for tools it can call, and lists unavailable tools
+// only when moving to a DM would make them available.
 func TestChannelMentionSystemPromptExplainsDisabledTools(t *testing.T) {
 	const (
 		createFileGuidance = "should use the CreateFile tool"
@@ -49,18 +49,18 @@ func TestChannelMentionSystemPromptExplainsDisabledTools(t *testing.T) {
 			notContains: []string{unattendedSection, createFileGuidance},
 		},
 		{
-			name:               "bot activate_ai mention keeps guidance for unattended-safe tools",
+			name:               "bot activate_ai mention keeps guidance for unattended-safe tools and lists none",
 			channelToolCalling: true,
 			post: func(env *autoReplyTestEnv) *model.Post {
 				post := env.rootPost(autoReplyForeignBotID, mention)
 				post.AddProp(conversations.ActivateAIProp, true)
 				return post
 			},
-			contains:    []string{createFileGuidance, unattendedSection, lookupToolLine},
-			notContains: []string{outsideDMSection, createFileToolLine},
+			contains:    []string{createFileGuidance},
+			notContains: []string{outsideDMSection, unattendedSection, lookupToolLine, createFileToolLine},
 		},
 		{
-			name:               "integration mention with channel tool calling on is unattended",
+			name:               "integration mention with channel tool calling on lists no tools",
 			channelToolCalling: true,
 			post: func(env *autoReplyTestEnv) *model.Post {
 				post := env.rootPost(autoReplyUserID, mention)
@@ -68,8 +68,7 @@ func TestChannelMentionSystemPromptExplainsDisabledTools(t *testing.T) {
 				post.AddProp(conversations.ActivateAIProp, true)
 				return post
 			},
-			contains:    []string{unattendedSection, lookupToolLine, createFileToolLine},
-			notContains: []string{outsideDMSection, createFileGuidance},
+			notContains: []string{outsideDMSection, unattendedSection, lookupToolLine, createFileToolLine, createFileGuidance},
 		},
 	}
 

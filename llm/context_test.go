@@ -40,10 +40,9 @@ func TestContextToolCallability(t *testing.T) {
 	tests := []struct {
 		name                string
 		tools               []string
-		disabled            []DisabledTool
+		disabled            []string
 		wantCallable        []string
-		wantOutsideDM       []string
-		wantUnattended      []string
+		wantDisabled        []string
 		wantNotCallableTool string
 	}{
 		{
@@ -53,26 +52,18 @@ func TestContextToolCallability(t *testing.T) {
 			wantNotCallableTool: "missing_tool",
 		},
 		{
-			name:  "disabled tools are not callable and keep their reason",
-			tools: []string{"a_tool", "b_tool", "c_tool"},
-			disabled: []DisabledTool{
-				{ToolInfo: ToolInfo{Name: "a_tool"}, Reason: ToolDisabledOutsideDM},
-				{ToolInfo: ToolInfo{Name: "uncataloged"}, Reason: ToolDisabledUnattended},
-				{ToolInfo: ToolInfo{Name: "c_tool"}, Reason: ToolDisabledUnattended},
-			},
+			name:                "disabled tools are not callable",
+			tools:               []string{"a_tool", "b_tool", "c_tool"},
+			disabled:            []string{"a_tool", "uncataloged", "c_tool"},
 			wantCallable:        []string{"b_tool"},
-			wantOutsideDM:       []string{"a_tool"},
-			wantUnattended:      []string{"uncataloged", "c_tool"},
+			wantDisabled:        []string{"a_tool", "uncataloged", "c_tool"},
 			wantNotCallableTool: "c_tool",
 		},
 		{
-			name:  "a tool disabled twice keeps its first reason",
-			tools: []string{"a_tool"},
-			disabled: []DisabledTool{
-				{ToolInfo: ToolInfo{Name: "a_tool"}, Reason: ToolDisabledOutsideDM},
-				{ToolInfo: ToolInfo{Name: "a_tool"}, Reason: ToolDisabledUnattended},
-			},
-			wantOutsideDM:       []string{"a_tool"},
+			name:                "a tool disabled twice is listed once",
+			tools:               []string{"a_tool"},
+			disabled:            []string{"a_tool", "a_tool"},
+			wantDisabled:        []string{"a_tool"},
 			wantNotCallableTool: "a_tool",
 		},
 	}
@@ -91,13 +82,12 @@ func TestContextToolCallability(t *testing.T) {
 			for _, name := range tt.tools {
 				c.Tools.AddTools([]Tool{{Name: name}})
 			}
-			for _, tool := range tt.disabled {
-				c.DisableTools(tool.Reason, tool.ToolInfo)
+			for _, name := range tt.disabled {
+				c.DisableTools(ToolInfo{Name: name})
 			}
 
 			assert.Equal(t, tt.wantCallable, names(c.CallableToolsInfo()))
-			assert.Equal(t, tt.wantOutsideDM, names(c.ToolsDisabledOutsideDM()))
-			assert.Equal(t, tt.wantUnattended, names(c.ToolsDisabledUnattended()))
+			assert.Equal(t, tt.wantDisabled, names(c.DisabledTools))
 			for _, name := range tt.wantCallable {
 				assert.True(t, c.IsToolCallable(name), name)
 			}

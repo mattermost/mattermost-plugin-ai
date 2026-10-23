@@ -20,24 +20,6 @@ type ToolInfo struct {
 	ServerOrigin string
 }
 
-// ToolDisabledReason says why a cataloged tool cannot be called in the current
-// context. The prompt explains each reason differently.
-type ToolDisabledReason int
-
-const (
-	// ToolDisabledOutsideDM marks tools that run only in a DM or the Agents tab.
-	ToolDisabledOutsideDM ToolDisabledReason = iota + 1
-	// ToolDisabledUnattended marks tools that may not run because no user is
-	// present to approve them, such as in a request started by a bot or integration.
-	ToolDisabledUnattended
-)
-
-// DisabledTool is a tool the model may be told about but cannot call.
-type DisabledTool struct {
-	ToolInfo
-	Reason ToolDisabledReason
-}
-
 // UnconnectedMCPServer describes an MCP server the requesting user could use
 // after connecting their own account to it. Every field comes from admin
 // configuration.
@@ -80,9 +62,10 @@ type Context struct {
 	ToolAuthMode string
 
 	Tools *ToolStore
-	// DisabledTools lists tools that are unavailable in the current context
-	// and why. Set it through DisableTools so each tool appears once.
-	DisabledTools []DisabledTool
+	// DisabledTools lists tools that run only in a DM or the Agents tab and so
+	// cannot be called here. Set it through DisableTools so each tool appears
+	// once.
+	DisabledTools []ToolInfo
 	// UnconnectedMCPServers lists servers the requester can connect from the
 	// conversation; set only when the connection request tool is cataloged.
 	UnconnectedMCPServers []UnconnectedMCPServer
@@ -220,43 +203,17 @@ func (c *Context) CallableToolsInfo() []ToolInfo {
 	return infos
 }
 
-// DisableTools records tools as unavailable for reason. A tool that is
-// already disabled keeps its first reason.
-func (c *Context) DisableTools(reason ToolDisabledReason, infos ...ToolInfo) {
+// DisableTools records tools as unavailable in the current context.
+func (c *Context) DisableTools(infos ...ToolInfo) {
 	for _, info := range infos {
-		if c.isToolDisabled(info.Name) {
-			continue
-		}
-		c.DisabledTools = append(c.DisabledTools, DisabledTool{ToolInfo: info, Reason: reason})
-	}
-}
-
-// ToolsDisabledOutsideDM lists tools that run only in a DM or the Agents tab.
-func (c *Context) ToolsDisabledOutsideDM() []ToolInfo {
-	return c.disabledToolsFor(ToolDisabledOutsideDM)
-}
-
-// ToolsDisabledUnattended lists tools that may not run without a user present
-// to approve them.
-func (c *Context) ToolsDisabledUnattended() []ToolInfo {
-	return c.disabledToolsFor(ToolDisabledUnattended)
-}
-
-func (c *Context) disabledToolsFor(reason ToolDisabledReason) []ToolInfo {
-	if c == nil {
-		return nil
-	}
-	var infos []ToolInfo
-	for _, tool := range c.DisabledTools {
-		if tool.Reason == reason {
-			infos = append(infos, tool.ToolInfo)
+		if !c.isToolDisabled(info.Name) {
+			c.DisabledTools = append(c.DisabledTools, info)
 		}
 	}
-	return infos
 }
 
 func (c *Context) isToolDisabled(name string) bool {
-	return slices.ContainsFunc(c.DisabledTools, func(tool DisabledTool) bool {
+	return slices.ContainsFunc(c.DisabledTools, func(tool ToolInfo) bool {
 		return tool.Name == name
 	})
 }
