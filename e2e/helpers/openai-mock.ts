@@ -361,7 +361,7 @@ export function buildTextResponse(text: string): string {
 	];
 	for (const word of words) {
 		chunks.push(
-			`data: {"id":"chatcmpl-tr1","object":"chat.completion.chunk","created":1708124577,"model":"gpt-mock","choices":[{"index":0,"delta":{"content":"${word} "},"finish_reason":null}]}`,
+			`data: {"id":"chatcmpl-tr1","object":"chat.completion.chunk","created":1708124577,"model":"gpt-mock","choices":[{"index":0,"delta":{"content":${JSON.stringify(`${word} `)}},"finish_reason":null}]}`,
 		);
 	}
 	chunks.push(
