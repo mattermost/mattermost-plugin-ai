@@ -297,8 +297,8 @@ func TestBotRunWithToolCallingOffListsEachDisabledToolOnce(t *testing.T) {
 
 	requests := env.llmRequests()
 	require.Len(t, requests, 1)
-	names := make([]string, 0, len(requests[0].Context.DisabledToolsInfo))
-	for _, info := range requests[0].Context.DisabledToolsInfo {
+	names := make([]string, 0, len(requests[0].Context.DisabledTools))
+	for _, info := range requests[0].Context.DisabledTools {
 		names = append(names, info.Name)
 	}
 	assert.Contains(t, names, "lookup_user")

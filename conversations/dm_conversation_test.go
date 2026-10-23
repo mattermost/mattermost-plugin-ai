@@ -744,6 +744,80 @@ func TestDMAutoRunTools_ToolRunnerExecutesAndWritesTurns(t *testing.T) {
 	assert.True(t, foundToolResult, "should have tool_result content block")
 }
 
+// An agent with MaxToolTurns 1 still runs its one tool round, persists it, and
+// answers with tools off afterwards.
+func TestDMMaxToolTurnsOne_PersistsToolTurnAndAnswers(t *testing.T) {
+	toolCall := llm.ToolCall{
+		ID:           "tc_01",
+		Name:         "get_weather",
+		Arguments:    json.RawMessage(`{"city":"NYC"}`),
+		ServerOrigin: "https://mcp.example.com",
+	}
+	env := setupDMTestEnv(t,
+		dmMakeToolCallStream([]llm.ToolCall{toolCall}),
+		dmMakeTextStream("It's 72F and sunny"),
+	)
+	env.policyChecker.setAutoRun("https://mcp.example.com", "get_weather")
+
+	toolStore := llm.NewToolStore()
+	toolStore.AddTools([]llm.Tool{{
+		Name:         "get_weather",
+		Description:  "Gets the weather",
+		ServerOrigin: "https://mcp.example.com",
+		Resolver: func(_ context.Context, _ *llm.Context, _ llm.ToolArgumentGetter) (string, error) {
+			return "72F and sunny", nil
+		},
+	}})
+	llmCtx := &llm.Context{Tools: toolStore}
+
+	post := &model.Post{Id: "post1", UserId: env.userID, ChannelId: env.channelID, Message: "What is the weather?"}
+	convResult, err := env.conversations.CreateOrGetDMConversation(env.botID, env.user, env.channel, post, llmCtx)
+	require.NoError(t, err)
+
+	bot := env.botService.GetBotByID(env.botID)
+	cfg := bot.GetConfig()
+	cfg.MaxToolTurns = 1
+	bot = bots.NewBot(cfg, bot.GetService(), bot.GetMMBot(), env.fakeLLM)
+	env.botService.SetBotsForTesting([]*bots.Bot{bot})
+
+	streamResult, err := env.conversations.ProcessDMRequest(context.Background(), convResult.ConversationID, bot, llmCtx)
+	require.NoError(t, err)
+
+	var sawEnd bool
+	var text string
+	for event := range streamResult.Stream.Stream {
+		switch event.Type {
+		case llm.EventTypeEnd:
+			sawEnd = true
+		case llm.EventTypeText:
+			text += event.Value.(string)
+		case llm.EventTypeError:
+			t.Fatalf("unexpected error event: %v", event.Value)
+		}
+	}
+	assert.True(t, sawEnd, "the run must end with an End event")
+	assert.Equal(t, "It's 72F and sunny", text)
+
+	require.Len(t, env.fakeLLM.requests, 2)
+	finalPosts := env.fakeLLM.requests[1].Posts
+	assert.Contains(t, finalPosts[len(finalPosts)-1].Message, llm.ToolIterationLimitUserMessage,
+		"the call after the only allowed tool round must carry the iteration-limit message")
+
+	var foundToolResult bool
+	for _, turn := range env.convStore.turnsFor(convResult.ConversationID) {
+		var blocks []conversation.ContentBlock
+		if json.Unmarshal(turn.Content, &blocks) != nil {
+			continue
+		}
+		for _, b := range blocks {
+			if b.Type == conversation.BlockTypeToolResult && b.ToolUseID == "tc_01" {
+				foundToolResult = true
+			}
+		}
+	}
+	assert.True(t, foundToolResult, "the executed tool round must be persisted")
+}
+
 // --- Test: manual approval returns stream with unresolved tool calls ------
 
 func TestDMManualApprovalTools_ToolRunnerReturnsUnresolved(t *testing.T) {

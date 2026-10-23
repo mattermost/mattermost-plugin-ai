@@ -288,7 +288,7 @@ func (c *Conversations) handleMentionViaConversation(
 ) error {
 	bot, postingUser, channel := policy.bot, policy.user, policy.channel
 	// Build the context once WITH tools so the system prompt can reference
-	// .Tools and .DisabledToolsInfo.
+	// .Tools and .DisabledTools.
 	llmContext := policy.buildContext(ctx, "Failed to load user tool preferences")
 	progress.Advance(responseProgressLoadingConversation)
 
