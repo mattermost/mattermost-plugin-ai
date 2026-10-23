@@ -36,7 +36,6 @@ func TestChannelMentionSystemPromptExplainsDisabledTools(t *testing.T) {
 	tests := []struct {
 		name               string
 		channelToolCalling bool
-		policyChecker      bool
 		post               func(*autoReplyTestEnv) *model.Post
 		contains           []string
 		notContains        []string
@@ -52,7 +51,6 @@ func TestChannelMentionSystemPromptExplainsDisabledTools(t *testing.T) {
 		{
 			name:               "bot activate_ai mention keeps guidance for unattended-safe tools",
 			channelToolCalling: true,
-			policyChecker:      true,
 			post: func(env *autoReplyTestEnv) *model.Post {
 				post := env.rootPost(autoReplyForeignBotID, mention)
 				post.AddProp(conversations.ActivateAIProp, true)
@@ -83,10 +81,6 @@ func TestChannelMentionSystemPromptExplainsDisabledTools(t *testing.T) {
 				&testToolCallingConfig{enableChannelMentionToolCalling: tt.channelToolCalling},
 				dmMakeTextStream("done"),
 			)
-			if tt.policyChecker {
-				env.conversations.SetToolPolicyChecker(newDMPolicyChecker())
-			}
-
 			env.conversations.MessageHasBeenPosted(nil, tt.post(env))
 
 			require.NotEmpty(t, env.fakeLLM.requests, "the mention must reach the model")

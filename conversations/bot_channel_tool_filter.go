@@ -8,15 +8,11 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mcp"
-	"github.com/mattermost/mattermost-plugin-agents/v2/store"
 )
 
-// applyBotChannelAutoEverywhereToolFilter keeps only MCP tools whose policy is
-// auto_run_everywhere and enabled. Built-in tools (empty ServerOrigin) are removed
-// except for internal MCP meta-tools and auto-execute built-ins.
-// Removed tools are recorded in DisabledTools as unattended for the model.
-// When no policy checker is configured, fail closed for business tools so replayed
-// posts cannot expose MCP tools without policy validation.
+// applyBotChannelAutoEverywhereToolFilter keeps only the tools
+// botChannelAutoEverywhereKeepTool allows, recording the removed tools in
+// DisabledTools as unattended for the model.
 func (c *Conversations) applyBotChannelAutoEverywhereToolFilter(llmContext *llm.Context) {
 	if llmContext == nil || llmContext.Tools == nil {
 		return
@@ -24,35 +20,12 @@ func (c *Conversations) applyBotChannelAutoEverywhereToolFilter(llmContext *llm.
 	keep := func(tool llm.Tool) bool {
 		return botChannelAutoEverywhereKeepTool(c.toolPolicyChecker, tool)
 	}
-
-	removed := make([]llm.ToolInfo, 0)
-	for _, t := range llmContext.Tools.GetTools() {
-		if keep(t) {
-			continue
+	for _, tool := range llmContext.Tools.GetTools() {
+		if !keep(tool) {
+			llmContext.DisableTools(llm.ToolDisabledUnattended, llm.ToolInfo{Name: tool.Name, Description: tool.Description})
 		}
-		removed = append(removed, llm.ToolInfo{
-			Name:        t.Name,
-			Description: t.Description,
-		})
 	}
-
 	llmContext.Tools.KeepToolsIf(keep)
-	llmContext.DisableTools(llm.ToolDisabledUnattended, removed...)
-}
-
-// applyToolAvailability decides whether tools should be disabled for a context based on
-// whether the conversation is a DM or a channel mention with tools allowed. It returns
-// true when tools are disabled. When disabled, it records every tool in DisabledTools
-// with disabledReason so the model can still reference the tool descriptions.
-func applyToolAvailability(context *llm.Context, isDM bool, allowToolsInChannel bool, disabledReason llm.ToolDisabledReason) bool {
-	toolsDisabled := !isDM && !allowToolsInChannel
-	if context != nil {
-		context.DisabledTools = nil
-		if toolsDisabled && context.Tools != nil {
-			context.DisableTools(disabledReason, context.Tools.GetToolsInfo()...)
-		}
-	}
-	return toolsDisabled
 }
 
 // toolsDisabledLLMOptions returns the language-model options for a run whose
@@ -69,57 +42,17 @@ func (c *Conversations) toolsDisabledLLMOptions(bot *bots.Bot, toolsDisabled boo
 	return opts
 }
 
+// botChannelAutoEverywhereKeepTool reports whether a run nobody is present
+// to approve may use tool: MCP meta-tools and auto-execute built-ins, which
+// never need approval, and MCP tools whose enabled policy is
+// auto_run_everywhere.
 func botChannelAutoEverywhereKeepTool(checker mcp.ToolPolicyChecker, tool llm.Tool) bool {
-	if mcp.IsMCPMetaTool(tool.Name) {
+	if mcp.IsMCPMetaTool(tool.Name) || isAutoExecuteBuiltIn(tool) {
 		return true
-	}
-	// Auto-execute built-ins (e.g. CreateFile) run without approval like the
-	// meta-tools, so they stay available in bot-channel follow-ups.
-	if isAutoExecuteBuiltIn(tool) {
-		return true
-	}
-	if checker == nil {
-		return false
 	}
 	if tool.ServerOrigin == "" {
 		return false
 	}
 	policy, enabled := checker.GetToolPolicy(tool.ServerOrigin, llm.BareMCPToolName(tool.Name))
 	return mcp.IsToolPolicyAutoRunEverywhere(policy) && enabled
-}
-
-func (c *Conversations) channelFollowUpMCPToolFilterContextOptions(isDM bool, conv *store.Conversation) ([]llm.ContextOption, bool) {
-	if c.contextBuilder == nil || !c.shouldConstrainChannelFollowUpToAutoEverywhere(isDM, conv) {
-		return nil, false
-	}
-
-	return []llm.ContextOption{
-		c.contextBuilder.WithLLMContextMCPToolFilter(func(tool llm.Tool) bool {
-			return botChannelAutoEverywhereKeepTool(c.toolPolicyChecker, tool)
-		}),
-	}, true
-}
-
-func (c *Conversations) shouldConstrainChannelFollowUpToAutoEverywhere(isDM bool, conv *store.Conversation) bool {
-	if isDM || !c.channelMentionToolCallingEnabled() {
-		return false
-	}
-
-	// Channel follow-ups rebuild strict MCP registries before the follow-up
-	// request is sent. If the root post cannot prove this was a normal
-	// interactive channel flow, keep only auto-run-everywhere MCP tools.
-	if conv == nil || conv.RootPostID == nil || c.mmClient == nil {
-		return true
-	}
-
-	rootPost, rootErr := c.mmClient.GetPost(*conv.RootPostID)
-	if rootErr != nil || rootPost == nil {
-		return true
-	}
-	rootUser, userErr := c.mmClient.GetUser(rootPost.UserId)
-	if userErr != nil {
-		return true
-	}
-
-	return isBotActivateAI(rootPost, rootUser)
 }

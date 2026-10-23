@@ -265,6 +265,21 @@ func (s *fakeConvStore) getConv(id string) *store.Conversation {
 	return &cp
 }
 
+// snapshot copies every conversation and turn the store holds.
+func (s *fakeConvStore) snapshot() (map[string]store.Conversation, map[string][]store.Turn) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	convs := make(map[string]store.Conversation, len(s.conversations))
+	for id, conv := range s.conversations {
+		convs[id] = *conv
+	}
+	turns := make(map[string][]store.Turn, len(s.turns))
+	for id, convTurns := range s.turns {
+		turns[id] = slices.Clone(convTurns)
+	}
+	return convs, turns
+}
+
 // turnsFor is a test helper to retrieve turns for a conversation.
 func (s *fakeConvStore) turnsFor(convID string) []store.Turn {
 	s.mu.Lock()
@@ -359,7 +374,11 @@ func newDMPolicyChecker() *dmPolicyChecker {
 }
 
 func (f *dmPolicyChecker) setAutoRun(origin, name string) {
-	f.policies[origin+":"+name] = mcp.ToolPolicyAutoRunInDM
+	f.setPolicy(origin, name, mcp.ToolPolicyAutoRunInDM)
+}
+
+func (f *dmPolicyChecker) setPolicy(origin, name, policy string) {
+	f.policies[origin+":"+name] = policy
 }
 
 func (f *dmPolicyChecker) GetToolPolicy(serverBaseURL, toolName string) (string, bool) {
@@ -488,8 +507,8 @@ func setupDMTestEnv(t *testing.T, llmResponses ...*llm.TextStreamResult) *dmTest
 		i18nBundle,
 		nil, // meetings
 		&testToolCallingConfig{},
+		policyChecker,
 	)
-	convs.SetToolPolicyChecker(policyChecker)
 	convs.SetConversationService(convSvc)
 
 	return &dmTestEnv{
@@ -556,13 +575,7 @@ func TestDMNewConversation_CreatesConversationAndTurns(t *testing.T) {
 	require.NotEmpty(t, convResult.ConversationID)
 	require.True(t, convResult.IsNew)
 
-	streamResult, err := env.conversations.ProcessDMRequest(
-		context.Background(),
-		convResult.ConversationID,
-		env.fakeLLM,
-		nil, // llmContext
-		0,
-	)
+	streamResult, err := env.conversations.ProcessDMRequest(context.Background(), convResult.ConversationID, env.botService.GetBotByID(env.botID), nil)
 	require.NoError(t, err)
 	require.NotNil(t, streamResult)
 	require.NotNil(t, streamResult.Stream)
@@ -618,13 +631,7 @@ func TestDMContinueConversation_ReadsTurnsNotPosts(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, convResult)
 
-	streamResult, err := env.conversations.ProcessDMRequest(
-		context.Background(),
-		convResult.ConversationID,
-		env.fakeLLM,
-		nil,
-		0,
-	)
+	streamResult, err := env.conversations.ProcessDMRequest(context.Background(), convResult.ConversationID, env.botService.GetBotByID(env.botID), nil)
 	require.NoError(t, err)
 	require.NotNil(t, streamResult)
 
@@ -700,13 +707,7 @@ func TestDMAutoRunTools_ToolRunnerExecutesAndWritesTurns(t *testing.T) {
 	require.NotNil(t, convResult)
 	require.NotEmpty(t, convResult.ConversationID)
 
-	streamResult, err := env.conversations.ProcessDMRequest(
-		context.Background(),
-		convResult.ConversationID,
-		env.fakeLLM,
-		llmCtx,
-		0,
-	)
+	streamResult, err := env.conversations.ProcessDMRequest(context.Background(), convResult.ConversationID, env.botService.GetBotByID(env.botID), llmCtx)
 	require.NoError(t, err)
 	require.NotNil(t, streamResult)
 
@@ -774,7 +775,13 @@ func TestDMMaxToolTurnsOne_PersistsToolTurnAndAnswers(t *testing.T) {
 	convResult, err := env.conversations.CreateOrGetDMConversation(env.botID, env.user, env.channel, post, llmCtx)
 	require.NoError(t, err)
 
-	streamResult, err := env.conversations.ProcessDMRequest(context.Background(), convResult.ConversationID, env.fakeLLM, llmCtx, 1)
+	bot := env.botService.GetBotByID(env.botID)
+	cfg := bot.GetConfig()
+	cfg.MaxToolTurns = 1
+	bot = bots.NewBot(cfg, bot.GetService(), bot.GetMMBot(), env.fakeLLM)
+	env.botService.SetBotsForTesting([]*bots.Bot{bot})
+
+	streamResult, err := env.conversations.ProcessDMRequest(context.Background(), convResult.ConversationID, bot, llmCtx)
 	require.NoError(t, err)
 
 	var sawEnd bool
@@ -853,13 +860,7 @@ func TestDMManualApprovalTools_ToolRunnerReturnsUnresolved(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, convResult)
 
-	streamResult, err := env.conversations.ProcessDMRequest(
-		context.Background(),
-		convResult.ConversationID,
-		env.fakeLLM,
-		llmCtx,
-		0,
-	)
+	streamResult, err := env.conversations.ProcessDMRequest(context.Background(), convResult.ConversationID, env.botService.GetBotByID(env.botID), llmCtx)
 	require.NoError(t, err)
 	require.NotNil(t, streamResult)
 	require.NotNil(t, streamResult.Stream)
@@ -912,13 +913,7 @@ func TestDMUnknownToolReturnsErrorInsteadOfApproval(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, convResult)
 
-	streamResult, err := env.conversations.ProcessDMRequest(
-		context.Background(),
-		convResult.ConversationID,
-		env.fakeLLM,
-		llmCtx,
-		0,
-	)
+	streamResult, err := env.conversations.ProcessDMRequest(context.Background(), convResult.ConversationID, env.botService.GetBotByID(env.botID), llmCtx)
 	require.NoError(t, err)
 	require.NotNil(t, streamResult)
 
@@ -1148,13 +1143,7 @@ func TestDMToolSharedFlag_AlwaysTrue(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	streamResult, err := env.conversations.ProcessDMRequest(
-		context.Background(),
-		convResult.ConversationID,
-		env.fakeLLM,
-		&llm.Context{Tools: toolStore},
-		0,
-	)
+	streamResult, err := env.conversations.ProcessDMRequest(context.Background(), convResult.ConversationID, env.botService.GetBotByID(env.botID), &llm.Context{Tools: toolStore})
 	require.NoError(t, err)
 	require.NotNil(t, streamResult)
 
@@ -1215,13 +1204,7 @@ func TestDMCompletionRequest_BuiltFromTurns(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, createResult.ConversationID, convResult.ConversationID)
 
-	_, err = env.conversations.ProcessDMRequest(
-		context.Background(),
-		convResult.ConversationID,
-		env.fakeLLM,
-		nil,
-		0,
-	)
+	_, err = env.conversations.ProcessDMRequest(context.Background(), convResult.ConversationID, env.botService.GetBotByID(env.botID), nil)
 	require.NoError(t, err)
 
 	// Verify the CompletionRequest sent to the LLM

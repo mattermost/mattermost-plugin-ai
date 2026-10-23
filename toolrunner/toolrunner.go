@@ -297,11 +297,12 @@ func (r *ToolRunner) runLoop(
 
 		toolCalls = enrichToolCallsForApproval(toolCalls, store)
 
-		// Check shouldExecute for ALL tool calls.
+		// Check shouldExecute for ALL tool calls. A user-interaction call is
+		// answered by the user, so no policy can auto-execute it.
 		allApproved := true
 		approved := make([]bool, len(toolCalls))
 		for i, tc := range toolCalls {
-			approved[i] = shouldExecute(tc)
+			approved[i] = shouldExecute(tc) && tc.UserInteraction == ""
 			if !approved[i] {
 				allApproved = false
 			}

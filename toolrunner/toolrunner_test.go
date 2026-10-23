@@ -1357,6 +1357,88 @@ func TestToolRunner_MultipleToolCallsInOneBatch(t *testing.T) {
 	assert.Equal(t, "result_b", result.ToolTurns[0].ToolResults[1].Result)
 }
 
+// TestToolRunner_UserInteractionToolsNeverAutoExecute pins that a call the
+// user must answer stays pending even when shouldExecute approves it, and
+// holds the rest of its batch pending with it.
+func TestToolRunner_UserInteractionToolsNeverAutoExecute(t *testing.T) {
+	tests := []struct {
+		name            string
+		toolCalls       []llm.ToolCall
+		wantAutoExecute map[string]bool
+	}{
+		{
+			name: "interaction tool alone",
+			toolCalls: []llm.ToolCall{
+				{ID: "q1", Name: "ask_user", Arguments: json.RawMessage(`{}`)},
+			},
+			wantAutoExecute: map[string]bool{"q1": false},
+		},
+		{
+			name: "interaction tool holds an approved call pending",
+			toolCalls: []llm.ToolCall{
+				{ID: "tc1", Name: "read_tool", Arguments: json.RawMessage(`{}`)},
+				{ID: "q1", Name: "ask_user", Arguments: json.RawMessage(`{}`)},
+			},
+			wantAutoExecute: map[string]bool{"tc1": true, "q1": false},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			inner := &testLLM{
+				responses: []testResponse{{
+					events: []llm.TextStreamEvent{
+						{Type: llm.EventTypeToolCalls, Value: tc.toolCalls},
+						{Type: llm.EventTypeEnd},
+					},
+				}},
+			}
+
+			executed := map[string]bool{}
+			store := llm.NewToolStore()
+			store.AddTools([]llm.Tool{
+				{
+					Name: "read_tool",
+					Resolver: func(context.Context, *llm.Context, llm.ToolArgumentGetter) (string, error) {
+						executed["read_tool"] = true
+						return "read", nil
+					},
+				},
+				{
+					Name:            "ask_user",
+					UserInteraction: llm.UserInteractionSelect,
+					Resolver: func(context.Context, *llm.Context, llm.ToolArgumentGetter) (string, error) {
+						executed["ask_user"] = true
+						return "answered", nil
+					},
+				},
+			})
+			request := llm.CompletionRequest{
+				Posts:   []llm.Post{{Role: llm.PostRoleUser, Message: "go"}},
+				Context: &llm.Context{Tools: store},
+			}
+
+			result, err := New(inner).Run(context.Background(), request, alwaysExecute, nil)
+			require.NoError(t, err)
+
+			var pending []llm.ToolCall
+			for event := range result.Stream.Stream {
+				if event.Type == llm.EventTypeToolCalls {
+					pending = append(pending, event.Value.([]llm.ToolCall)...)
+				}
+			}
+
+			assert.Empty(t, executed, "no call in a batch holding a user-interaction call may run")
+			assert.Empty(t, result.ToolTurns)
+			assert.Equal(t, 1, inner.callCount)
+			require.Len(t, pending, len(tc.toolCalls))
+			for _, call := range pending {
+				assert.Equal(t, tc.wantAutoExecute[call.ID], call.WouldAutoExecute, call.ID)
+			}
+		})
+	}
+}
+
 func TestToolRunner_NilContext(t *testing.T) {
 	// Run should work gracefully with nil Context (no tools available).
 	inner := &testLLM{
