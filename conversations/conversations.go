@@ -7,6 +7,8 @@ import (
 	stdcontext "context"
 	"fmt"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/bots"
 	"github.com/mattermost/mattermost-plugin-agents/v2/conversation"
@@ -54,6 +56,11 @@ type Conversations struct {
 	convService       *conversation.Service
 	autoReplySettings AutoReplySettings
 	meetingSummaries  MeetingSummaryRegenerator
+
+	// rootCtx overrides lifecycle.Context() for approved tool runs. Tests only.
+	rootCtx                  stdcontext.Context
+	toolRunHeartbeatInterval time.Duration
+	activeToolRuns           atomic.Int64
 }
 
 // New creates the conversations service. toolPolicyChecker is required: tool

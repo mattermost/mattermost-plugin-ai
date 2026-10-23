@@ -150,6 +150,18 @@ func (m *mockConvServiceStore) CompareAndSwapTurnContent(_ string, _, _ json.Raw
 	return true, nil
 }
 
+func (m *mockConvServiceStore) CompareAndSwapTurnContentAndStatus(_ string, _ json.RawMessage, _ string, _ json.RawMessage, _ string) (bool, error) {
+	return true, nil
+}
+
+func (m *mockConvServiceStore) TouchStreamingTurn(_ string) (bool, error) {
+	return true, nil
+}
+
+func (m *mockConvServiceStore) TransitionTurnStatus(_, _, _ string) (bool, error) {
+	return true, nil
+}
+
 func (m *mockConvServiceStore) UpdateTurnTokens(_ string, _, _ int64) error {
 	return nil
 }
