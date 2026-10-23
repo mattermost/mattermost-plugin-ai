@@ -37,6 +37,7 @@ import {
     buildRoundsFromTurns,
     computeRenderedRounds,
     deriveApprovalStageForPost,
+    markUnfinishedToolsInterrupted,
 } from './turn_content_utils';
 import {deriveActivity} from './activity_items';
 import {ControlsBarComponent} from './controls_bar';
@@ -178,6 +179,13 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
     // persisted turn is then authoritative.
     const postTurnSettled = Boolean(conversation?.turns.some((turn) => turn.post_id === props.post.id && turn.status !== 'streaming'));
     const liveStreamOpen = generating || (awaitingEnd && !postTurnSettled);
+
+    // A persisted turn still marked streaming means generation is unfinished
+    // even though heartbeats already flushed partial text onto the post, or
+    // that approved tool calls are running. Read the fresh conversation (not
+    // the last-known copy) so a refetch that lands with the turn complete
+    // clears this.
+    const turnStillStreaming = Boolean(conversation?.turns.some((turn) => turn.post_id === props.post.id && turn.status === 'streaming'));
 
     // Lets the WebSocket handler snapshot the live round without re-subscribing.
     const liveRef = useRef({message, toolCalls, reasoningSummary, annotations, serverTools});
@@ -561,15 +569,18 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
         };
     }, [message, toolCalls, reasoningSummary, annotations, serverTools]);
 
-    const renderedRounds = useMemo(() => computeRenderedRounds({
-        regenerating,
-        hasConversation: Boolean(conversationId),
-        persistedRounds: stablePersisted,
-        liveRounds,
-        generating: liveStreamOpen,
-        pendingRefetch,
-        currentRound,
-    }), [regenerating, conversationId, stablePersisted, liveRounds, liveStreamOpen, pendingRefetch, currentRound]);
+    const renderedRounds = useMemo(() => {
+        const rounds = computeRenderedRounds({
+            regenerating,
+            hasConversation: Boolean(conversationId),
+            persistedRounds: stablePersisted,
+            liveRounds,
+            generating: liveStreamOpen,
+            pendingRefetch,
+            currentRound,
+        });
+        return interrupted ? markUnfinishedToolsInterrupted(rounds) : rounds;
+    }, [regenerating, conversationId, stablePersisted, liveRounds, liveStreamOpen, pendingRefetch, currentRound, interrupted]);
 
     const regnerate = () => {
         setStreamEventCount((count) => count + 1);
@@ -657,8 +668,9 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
         break;
     }
 
-    // The interrupted notice carries its own Regenerate action.
-    const showRegenerate = isDM && !isGenerationInProgress && !interrupted && requesterIsCurrentUser && !isNoShowRegen;
+    // The interrupted notice carries its own Regenerate action, and so does the
+    // stale notice for a streaming turn that stops heartbeating.
+    const showRegenerate = isDM && !isGenerationInProgress && !interrupted && !turnStillStreaming && requesterIsCurrentUser && !isNoShowRegen;
     const meetingsLicensed = useIsLicensedFor('meetings');
 
     // The server authorizes postback by DM membership, not conversation ownership.
@@ -821,11 +833,6 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
     // generation) restarts or cancels the timer.
     // An empty message with persisted rounds is a tool-only post (finished, or
     // waiting on the requester's approval), not a stalled generation.
-    // A persisted turn still marked streaming means generation is unfinished
-    // even though heartbeats already flushed partial text onto the post.
-    // Read the fresh conversation (not the last-known copy) so a refetch that
-    // lands with the turn complete clears this.
-    const turnStillStreaming = Boolean(conversation?.turns.some((turn) => turn.post_id === props.post.id && turn.status === 'streaming'));
     const staleRefetchedRef = useRef(false);
     useEffect(() => {
         staleRefetchedRef.current = false;
