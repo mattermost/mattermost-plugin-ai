@@ -434,7 +434,12 @@ func TestMCPToolsIntegration(t *testing.T) {
 				t.Run(tt.name, func(t *testing.T) {
 					result, err := executeToolWithMCP(t, suite, "search_posts", tt.args)
 					require.NoError(t, err)
-					text := extractMCPText(result)
+					var text string
+					for _, c := range result.Content {
+						if tc, ok := c.(*mcp.TextContent); ok {
+							text += tc.Text
+						}
+					}
 
 					for _, id := range tt.want {
 						assert.Equal(t, 1, strings.Count(text, "Post ID: "+id), "post %s should appear exactly once in:\n%s", id, text)

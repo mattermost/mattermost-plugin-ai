@@ -163,14 +163,12 @@ const (
 	keywordSearchConcurrency = 4
 )
 
-// hasUserOrChannelFilter reports whether term contains from:, in:, or their
-// exclusions. Mattermost's cross-team search (POST /posts/search) mishandles
-// these: in:/-in: by channel name never match outside a team, and before
-// server v10.10 (MM-64488) from:/-from: matched nothing.
-func hasUserOrChannelFilter(term string) bool {
+// hasChannelFilter reports whether term contains in: or -in:. Channel names
+// only match within a team, so Mattermost's cross-team search
+// (POST /posts/search) never matches them.
+func hasChannelFilter(term string) bool {
 	for _, params := range model.ParseSearchParams(term, 0) {
-		if len(params.FromUsers) > 0 || len(params.ExcludedUsers) > 0 ||
-			len(params.InChannels) > 0 || len(params.ExcludedChannels) > 0 {
+		if len(params.InChannels) > 0 || len(params.ExcludedChannels) > 0 {
 			return true
 		}
 	}
@@ -178,11 +176,11 @@ func hasUserOrChannelFilter(term string) bool {
 }
 
 // searchKeywordPosts runs the keyword search for term. Without a team, a term
-// with user or channel filters is searched in each of the requesting user's
-// teams (see hasUserOrChannelFilter) and the results are merged. The returned
-// note is non-empty when not every team could be searched.
+// with channel filters is searched in each of the requesting user's teams
+// (see hasChannelFilter) and the results are merged. The returned note is
+// non-empty when not every team could be searched.
 func (p *MattermostToolProvider) searchKeywordPosts(ctx context.Context, client *model.Client4, teamID, term string) ([]*model.Post, string, error) {
-	if teamID != "" || !hasUserOrChannelFilter(term) {
+	if teamID != "" || !hasChannelFilter(term) {
 		list, _, err := client.SearchPosts(ctx, teamID, term, false)
 		if err != nil {
 			return nil, "", err
@@ -204,7 +202,7 @@ func (p *MattermostToolProvider) searchKeywordPosts(ctx context.Context, client 
 
 	note := ""
 	if len(teams) > maxKeywordSearchTeams {
-		note = fmt.Sprintf("Note: keyword search with from/in filters covered only %d of your %d teams. Pass team_id to search a specific team.", maxKeywordSearchTeams, len(teams))
+		note = fmt.Sprintf("Note: keyword search with in filters covered only %d of your %d teams. Pass team_id to search a specific team.", maxKeywordSearchTeams, len(teams))
 		teams = teams[:maxKeywordSearchTeams]
 	}
 

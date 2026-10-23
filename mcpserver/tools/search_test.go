@@ -463,25 +463,24 @@ func TestBuildSearchTermWithChannel(t *testing.T) {
 	}
 }
 
-func TestHasUserOrChannelFilter(t *testing.T) {
+func TestHasChannelFilter(t *testing.T) {
 	tests := []struct {
 		term string
 		want bool
 	}{
 		{term: "migration", want: false},
-		{term: "from:alice migration", want: true},
-		{term: "-from:alice migration", want: true},
+		{term: "from:alice migration", want: false},
 		{term: "in:town-square migration", want: true},
 		{term: "-in:town-square migration", want: true},
 		{term: "channel:town-square migration", want: true},
-		{term: "FROM:alice", want: true},
+		{term: "IN:town-square", want: true},
 		{term: "before:2024-01-31 after:2024-01-01 on:2024-01-15 migration", want: false},
-		{term: "\"from:alice\"", want: false},
+		{term: "\"in:town-square\"", want: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.term, func(t *testing.T) {
-			assert.Equal(t, tt.want, hasUserOrChannelFilter(tt.term))
+			assert.Equal(t, tt.want, hasChannelFilter(tt.term))
 		})
 	}
 }
@@ -580,21 +579,21 @@ func TestSearchKeywordPosts(t *testing.T) {
 		{
 			name:         "team given uses only that team",
 			teamID:       twoTeams[0],
-			term:         "from:alice migration",
+			term:         "in:town-square migration",
 			userTeams:    twoTeams,
 			wantTeamHits: 1,
 			wantPostIDs:  []string{"dm", "post-" + twoTeams[0]},
 		},
 		{
-			name:        "no team and no user or channel filter uses cross-team search",
-			term:        "after:2024-01-01 migration",
+			name:        "no team and no channel filter uses cross-team search",
+			term:        "from:alice after:2024-01-01 migration",
 			userTeams:   twoTeams,
 			wantCross:   true,
 			wantPostIDs: []string{"cross"},
 		},
 		{
-			name:         "no team with from searches every team and dedupes",
-			term:         "from:alice migration",
+			name:         "no team with in searches every team and dedupes",
+			term:         "in:town-square migration",
 			userTeams:    twoTeams,
 			wantTeamHits: 2,
 			wantPostIDs:  []string{"dm", "post-" + twoTeams[0], "post-" + twoTeams[1]},
@@ -608,14 +607,14 @@ func TestSearchKeywordPosts(t *testing.T) {
 		},
 		{
 			name:         "too many teams searches the first teams and adds a note",
-			term:         "from:alice migration",
+			term:         "in:town-square migration",
 			userTeams:    manyTeams,
 			wantTeamHits: maxKeywordSearchTeams,
 			wantNote:     true,
 		},
 		{
 			name:      "failed team search is an error",
-			term:      "from:alice migration",
+			term:      "in:town-square migration",
 			userTeams: twoTeams,
 			failTeam:  true,
 			wantErr:   true,
