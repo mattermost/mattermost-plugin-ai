@@ -5,7 +5,6 @@ package tools
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -156,112 +155,37 @@ func (p *MattermostToolProvider) applySearchModifiers(ctx context.Context, clien
 	return strings.Join(modifiers, " ") + " " + term, inChannelTeamID
 }
 
-const (
-	// maxKeywordSearchTeams bounds the per-team fan-out for users in many teams.
-	maxKeywordSearchTeams = 20
-	// keywordSearchConcurrency bounds the parallel per-team search requests.
-	keywordSearchConcurrency = 4
-)
-
-// hasChannelFilter reports whether term contains in: or -in:. Channel names
-// only match within a team, so Mattermost's cross-team search
-// (POST /posts/search) never matches them.
-func hasChannelFilter(term string) bool {
-	for _, params := range model.ParseSearchParams(term, 0) {
-		if len(params.InChannels) > 0 || len(params.ExcludedChannels) > 0 {
-			return true
-		}
-	}
-	return false
-}
-
-// searchKeywordPosts runs the keyword search for term. Without a team, a term
-// with channel filters is searched in each of the requesting user's teams
-// (see hasChannelFilter) and the results are merged. The returned note is
-// non-empty when not every team could be searched.
-func (p *MattermostToolProvider) searchKeywordPosts(ctx context.Context, client *model.Client4, teamID, term string) ([]*model.Post, string, error) {
-	if teamID != "" || !hasChannelFilter(term) {
-		list, _, err := client.SearchPosts(ctx, teamID, term, false)
-		if err != nil {
-			return nil, "", err
-		}
-		return mergePostLists(list), "", nil
-	}
-
-	teams, _, err := client.GetTeamsForUser(ctx, "me", "")
+// resolveInChannelName finds the requesting user's channel named name.
+// Without a team, Mattermost resolves in: names only against DMs and group
+// messages, so a team channel name must be turned into an ID first. When
+// several teams have a channel with that name, the returned guidance lists them
+// for the model to pick one.
+func resolveInChannelName(ctx context.Context, client *model.Client4, name string) (*model.Channel, string, error) {
+	channels, _, err := client.GetChannelsForUserWithLastDeleteAt(ctx, "me", 0)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to get teams for keyword search: %w", err)
-	}
-	if len(teams) == 0 {
-		list, _, searchErr := client.SearchPosts(ctx, "", term, false)
-		if searchErr != nil {
-			return nil, "", searchErr
-		}
-		return mergePostLists(list), "", nil
+		return nil, "", fmt.Errorf("failed to resolve channel %q: %w", name, err)
 	}
 
-	note := ""
-	if len(teams) > maxKeywordSearchTeams {
-		note = fmt.Sprintf("Note: keyword search with in filters covered only %d of your %d teams. Pass team_id to search a specific team.", maxKeywordSearchTeams, len(teams))
-		teams = teams[:maxKeywordSearchTeams]
-	}
-
-	lists := make([]*model.PostList, len(teams))
-	errs := make([]error, len(teams))
-	sem := make(chan struct{}, keywordSearchConcurrency)
-	var wg sync.WaitGroup
-	for i, team := range teams {
-		wg.Go(func() {
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			lists[i], _, errs[i] = client.SearchPosts(ctx, team.Id, term, false)
-		})
-	}
-	wg.Wait()
-
-	if err := errors.Join(errs...); err != nil {
-		return nil, "", err
-	}
-	return mergePostLists(lists...), note, nil
-}
-
-// mergePostLists flattens post lists into a slice with duplicate post IDs removed.
-func mergePostLists(lists ...*model.PostList) []*model.Post {
-	seen := make(map[string]bool)
-	var posts []*model.Post
-	for _, list := range lists {
-		if list == nil {
-			continue
-		}
-		for _, post := range list.Posts {
-			if post == nil || seen[post.Id] {
-				continue
-			}
-			seen[post.Id] = true
-			posts = append(posts, post)
+	var matches []*model.Channel
+	for _, channel := range channels {
+		if channel.DeleteAt == 0 && channel.Name == name {
+			matches = append(matches, channel)
 		}
 	}
-	return posts
-}
 
-// pagePostsNewestFirst sorts posts by CreateAt descending (post ID breaks
-// ties) and returns the page selected by offset and limit.
-func pagePostsNewestFirst(posts []*model.Post, offset, limit int) []*model.Post {
-	sort.Slice(posts, func(i, j int) bool {
-		if posts[i].CreateAt != posts[j].CreateAt {
-			return posts[i].CreateAt > posts[j].CreateAt
-		}
-		return posts[i].Id > posts[j].Id
-	})
+	switch len(matches) {
+	case 0:
+		return nil, "", fmt.Errorf("no channel named %q found among your channels; pass channel_id or team_id", name)
+	case 1:
+		return matches[0], "", nil
+	}
 
-	if offset >= len(posts) {
-		return nil
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Channel name %q matches %d channels in different teams. Retry search_posts with channel_id set to one of these:\n\n", name, len(matches))
+	for _, channel := range matches {
+		format.WriteChannel(&sb, format.ChannelEntry{Channel: channel, TeamID: channel.TeamId, MemberCount: -1})
 	}
-	posts = posts[offset:]
-	if len(posts) > limit {
-		posts = posts[:limit]
-	}
-	return posts
+	return nil, sb.String(), nil
 }
 
 // searchPostResult holds a post result with metadata for deduplication and formatting.
@@ -309,6 +233,18 @@ func (p *MattermostToolProvider) toolCombinedSearch(mcpContext *MCPToolContext, 
 	client := mcpContext.Client
 	ctx := mcpContext.Ctx
 
+	if in := strings.TrimPrefix(strings.TrimSpace(args.In), "~"); in != "" && args.TeamID == "" && args.ChannelID == "" &&
+		!model.IsValidId(in) && !strings.HasPrefix(in, "@") {
+		channel, guidance, err := resolveInChannelName(ctx, client, in)
+		if err != nil {
+			return "", err
+		}
+		if guidance != "" {
+			return guidance, nil
+		}
+		args.In = channel.Id
+	}
+
 	semanticEnabled := p.searchService != nil && p.searchService.Enabled()
 	userID := ""
 	if semanticEnabled {
@@ -321,7 +257,6 @@ func (p *MattermostToolProvider) toolCombinedSearch(mcpContext *MCPToolContext, 
 
 	var semanticResults []searchPostResult
 	var keywordResults []searchPostResult
-	var keywordNote string
 	var semanticErr, keywordErr error
 	var wg sync.WaitGroup
 
@@ -336,7 +271,7 @@ func (p *MattermostToolProvider) toolCombinedSearch(mcpContext *MCPToolContext, 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		keywordResults, keywordNote, keywordErr = p.executeKeywordSearch(ctx, client, args)
+		keywordResults, keywordErr = p.executeKeywordSearch(ctx, client, args)
 	}()
 
 	wg.Wait()
@@ -355,11 +290,7 @@ func (p *MattermostToolProvider) toolCombinedSearch(mcpContext *MCPToolContext, 
 		return "", fmt.Errorf("keyword search failed: %v", keywordErr)
 	}
 
-	result, err := p.formatCombinedResults(args.Query, semanticResults, keywordResults, semanticEnabled, args.ChannelID)
-	if err != nil || keywordNote == "" {
-		return result, err
-	}
-	return result + "\n" + keywordNote + "\n", nil
+	return p.formatCombinedResults(args.Query, semanticResults, keywordResults, semanticEnabled, args.ChannelID)
 }
 
 // executeSemanticSearch runs the semantic search and returns enriched results.
@@ -416,9 +347,8 @@ func (p *MattermostToolProvider) executeSemanticSearch(ctx context.Context, clie
 	return postResults, nil
 }
 
-// executeKeywordSearch runs the Mattermost keyword search and returns enriched
-// results, plus a note for the model when the search was incomplete.
-func (p *MattermostToolProvider) executeKeywordSearch(ctx context.Context, client *model.Client4, args CombinedSearchArgs) ([]searchPostResult, string, error) {
+// executeKeywordSearch runs the Mattermost keyword search and returns enriched results.
+func (p *MattermostToolProvider) executeKeywordSearch(ctx context.Context, client *model.Client4, args CombinedSearchArgs) ([]searchPostResult, error) {
 	searchTerm := args.Query
 	teamID := args.TeamID
 
@@ -429,13 +359,13 @@ func (p *MattermostToolProvider) executeKeywordSearch(ctx context.Context, clien
 	if args.ChannelID != "" {
 		channel, _, chErr := client.GetChannel(ctx, args.ChannelID)
 		if chErr != nil {
-			return nil, "", fmt.Errorf("error fetching channel %s: %w", args.ChannelID, chErr)
+			return nil, fmt.Errorf("error fetching channel %s: %w", args.ChannelID, chErr)
 		}
 
 		searchTerm = buildSearchTermWithChannel(searchTerm, channel.Name)
 		channelCache[args.ChannelID] = channel
 		if teamID != "" && teamID != channel.TeamId {
-			return nil, "", fmt.Errorf("channel %s belongs to team %s, not %s", args.ChannelID, channel.TeamId, teamID)
+			return nil, fmt.Errorf("channel %s belongs to team %s, not %s", args.ChannelID, channel.TeamId, teamID)
 		}
 		teamID = channel.TeamId
 	}
@@ -447,22 +377,38 @@ func (p *MattermostToolProvider) executeKeywordSearch(ctx context.Context, clien
 		teamID = inChannelTeamID
 	}
 
-	found, note, err := p.searchKeywordPosts(ctx, client, teamID, searchTerm)
+	searchResults, _, err := client.SearchPosts(ctx, teamID, searchTerm, false)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
-	posts := make([]*model.Post, 0, len(found))
-	for _, post := range found {
+	posts := make([]*model.Post, 0, len(searchResults.Posts))
+	for _, post := range searchResults.Posts {
 		if args.ChannelID != "" && post.ChannelId != args.ChannelID {
 			continue
 		}
 		posts = append(posts, post)
 	}
 
-	posts = pagePostsNewestFirst(posts, args.KeywordOffset, args.KeywordLimit)
 	if len(posts) == 0 {
-		return nil, note, nil
+		return nil, nil
+	}
+
+	sort.Slice(posts, func(i, j int) bool {
+		if posts[i].CreateAt != posts[j].CreateAt {
+			return posts[i].CreateAt > posts[j].CreateAt
+		}
+		return posts[i].Id > posts[j].Id
+	})
+
+	if args.KeywordOffset > 0 && args.KeywordOffset < len(posts) {
+		posts = posts[args.KeywordOffset:]
+	} else if args.KeywordOffset >= len(posts) {
+		return nil, nil
+	}
+
+	if len(posts) > args.KeywordLimit {
+		posts = posts[:args.KeywordLimit]
 	}
 
 	for _, post := range posts {
@@ -526,7 +472,7 @@ func (p *MattermostToolProvider) executeKeywordSearch(ctx context.Context, clien
 		postResults = append(postResults, result)
 	}
 
-	return postResults, note, nil
+	return postResults, nil
 }
 
 // formatCombinedResults formats the combined search results into a readable string.

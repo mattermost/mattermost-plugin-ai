@@ -366,7 +366,14 @@ func TestMCPToolsIntegration(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			// A DM matches every team-scoped search, so it exercises deduplication.
+			uniqueChannel := testhelpers.CreateTestChannel(t, client, otherTeam.Id, "mysql-ops", "MySQL Ops")
+			testhelpers.AddUserToChannel(t, client, uniqueChannel.Id, data.alice.Id)
+			uniquePost, _, err := aliceClient.CreatePost(ctx, &model.Post{
+				ChannelId: uniqueChannel.Id,
+				Message:   "MySQL backups now run hourly.",
+			})
+			require.NoError(t, err)
+
 			admin, _, err := client.GetMe(ctx, "")
 			require.NoError(t, err)
 			dm, _, err := client.CreateDirectChannel(ctx, admin.Id, data.alice.Id)
@@ -385,54 +392,71 @@ func TestMCPToolsIntegration(t *testing.T) {
 				args    map[string]any
 				want    []string
 				notWant []string
+				wantErr string
 			}{
 				{
 					name:    "from without team_id covers every team",
 					args:    map[string]any{"query": "MySQL", "from": data.alice.Username},
-					want:    []string{data.aliceRollbackPost.Id, otherTeamPost.Id, dmPost.Id},
-					notWant: []string{charlieMarker},
-				},
-				{
-					name:    "from typed into the query without team_id",
-					args:    map[string]any{"query": "from:" + data.alice.Username + " MySQL"},
-					want:    []string{data.aliceRollbackPost.Id, otherTeamPost.Id, dmPost.Id},
+					want:    []string{"Post ID: " + data.aliceRollbackPost.Id, "Post ID: " + otherTeamPost.Id, "Post ID: " + dmPost.Id},
 					notWant: []string{charlieMarker},
 				},
 				{
 					name:    "from with team_id stays in that team",
 					args:    map[string]any{"query": "MySQL", "from": data.alice.Username, "team_id": data.team.Id},
-					want:    []string{data.aliceRollbackPost.Id, dmPost.Id},
+					want:    []string{"Post ID: " + data.aliceRollbackPost.Id, "Post ID: " + dmPost.Id},
 					notWant: []string{otherTeamPost.Id, charlieMarker},
 				},
 				{
 					name:    "from with channel_id stays in that channel",
 					args:    map[string]any{"query": "MySQL", "from": data.alice.Username, "channel_id": data.channel.Id},
-					want:    []string{data.aliceRollbackPost.Id},
+					want:    []string{"Post ID: " + data.aliceRollbackPost.Id},
 					notWant: []string{otherTeamPost.Id, dmPost.Id, charlieMarker},
 				},
 				{
-					name:    "in by channel name without team_id matches the channel in every team",
+					name:    "in by unique channel name without team_id searches that channel",
+					args:    map[string]any{"query": "MySQL", "in": uniqueChannel.Name},
+					want:    []string{"Post ID: " + uniquePost.Id},
+					notWant: []string{data.aliceRollbackPost.Id, otherTeamPost.Id, dmPost.Id},
+				},
+				{
+					name:    "in by channel name shared across teams lists the candidates",
 					args:    map[string]any{"query": "MySQL", "in": data.channel.Name},
-					want:    []string{data.aliceRollbackPost.Id, otherTeamPost.Id},
-					notWant: []string{dmPost.Id},
+					want:    []string{"ID: " + data.channel.Id, "ID: " + otherChannel.Id},
+					notWant: []string{data.aliceRollbackPost.Id, otherTeamPost.Id},
+				},
+				{
+					name:    "in by shared channel name with team_id searches that team",
+					args:    map[string]any{"query": "MySQL", "in": data.channel.Name, "team_id": otherTeam.Id},
+					want:    []string{"Post ID: " + otherTeamPost.Id},
+					notWant: []string{data.aliceRollbackPost.Id, dmPost.Id},
 				},
 				{
 					name:    "in by channel ID without team_id matches only that channel",
 					args:    map[string]any{"query": "MySQL", "in": data.channel.Id},
-					want:    []string{data.aliceRollbackPost.Id},
+					want:    []string{"Post ID: " + data.aliceRollbackPost.Id},
 					notWant: []string{otherTeamPost.Id, dmPost.Id},
 				},
 				{
-					name:    "excluded channel without team_id",
-					args:    map[string]any{"query": "-in:" + data.channel.Name + " MySQL", "from": data.alice.Username},
-					want:    []string{dmPost.Id},
+					name:    "in by DM channel ID",
+					args:    map[string]any{"query": "MySQL", "in": dm.Id},
+					want:    []string{"Post ID: " + dmPost.Id},
 					notWant: []string{data.aliceRollbackPost.Id, otherTeamPost.Id},
+				},
+				{
+					name:    "in by unknown channel name",
+					args:    map[string]any{"query": "MySQL", "in": "no-such-channel"},
+					wantErr: "no channel named",
 				},
 			}
 
 			for _, tt := range tests {
 				t.Run(tt.name, func(t *testing.T) {
 					result, err := executeToolWithMCP(t, suite, "search_posts", tt.args)
+					if tt.wantErr != "" {
+						require.Error(t, err)
+						assert.Contains(t, err.Error(), tt.wantErr)
+						return
+					}
 					require.NoError(t, err)
 					var text string
 					for _, c := range result.Content {
@@ -441,11 +465,11 @@ func TestMCPToolsIntegration(t *testing.T) {
 						}
 					}
 
-					for _, id := range tt.want {
-						assert.Equal(t, 1, strings.Count(text, "Post ID: "+id), "post %s should appear exactly once in:\n%s", id, text)
+					for _, want := range tt.want {
+						assert.Equal(t, 1, strings.Count(text, want), "%q should appear exactly once in:\n%s", want, text)
 					}
-					for _, id := range tt.notWant {
-						assert.NotContains(t, text, id)
+					for _, notWant := range tt.notWant {
+						assert.NotContains(t, text, notWant)
 					}
 				})
 			}
