@@ -19,6 +19,9 @@ import {
 } from '@floating-ui/react-dom-interactions';
 import {WithTooltip} from '@mattermost/shared/components/tooltip';
 
+/** Marks a rendered popup menu so a modal can let Escape close the menu first. */
+export const OPEN_POPUP_ATTRIBUTE = 'data-open-popup';
+
 // The compass PopoverMenu grows from its top left corner; this points that at
 // the corner or edge touching the trigger instead. && outranks compass's rule.
 const FloatingContainer = styled.div`
@@ -110,6 +113,7 @@ const Dropdown = (props: DropdownProps) => {
     let content = (
         <FloatingContainer
             className={props.floatingClassName}
+            {...{[OPEN_POPUP_ATTRIBUTE]: ''}}
             {...getFloatingProps({
                 ref: floating,
                 style: {

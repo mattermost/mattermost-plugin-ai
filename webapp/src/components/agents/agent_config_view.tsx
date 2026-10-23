@@ -549,10 +549,11 @@ const AgentConfigView = (props: Props) => {
 
     const title = mode === 'create' ? intl.formatMessage({defaultMessage: 'New Agent'}) : draft.displayName || intl.formatMessage({defaultMessage: 'Edit Agent'});
 
-    const canViewHistory = mode === 'edit' && Boolean(agent) && hasVersions(history.list);
+    const versionHistory = mode === 'edit' && agent && hasVersions(history.list) ? history.list : null;
+    const canViewHistory = versionHistory !== null;
     let versionLine: React.ReactNode = null;
-    if (canViewHistory && hasVersions(history.list)) {
-        const current = history.list.versions.find((v) => v.version === history.list?.currentVersion) ?? history.list.versions[0];
+    if (versionHistory) {
+        const current = versionHistory.versions.find((v) => v.version === versionHistory.currentVersion) ?? versionHistory.versions[0];
         const summary = intl.formatMessage(
             {defaultMessage: 'v{version} · by {author}, {time}'},
             {

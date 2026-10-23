@@ -1361,6 +1361,21 @@ describe('AgentConfigView history and export', () => {
         expect(within(dialog).queryByText(/unsaved changes/)).toBeNull();
     });
 
+    test('Escape closes an open row menu first and the modal only on the next press', async () => {
+        renderEdit();
+        await openHistory();
+
+        await openVersionMenu(1);
+        const menu = await screen.findByTestId('dropdownmenu');
+        fireEvent.keyDown(menu, {key: 'Escape'});
+
+        await waitFor(() => expect(document.querySelector('[data-open-popup]')).toBeNull());
+        expect(screen.queryByTestId('version-list')).not.toBeNull();
+
+        fireEvent.keyDown(screen.getByTestId('version-list'), {key: 'Escape'});
+        await waitFor(() => expect(screen.queryByTestId('version-list')).toBeNull());
+    });
+
     test('restore confirmation lists the settings it will change', async () => {
         renderEdit();
         const list = await openHistory();
@@ -1387,6 +1402,23 @@ describe('AgentConfigView history and export', () => {
 
         expect(await within(dialog).findByText('Its settings are the same as the current version.')).not.toBeNull();
         expect(within(dialog).queryByTestId('restore-changes')).toBeNull();
+    });
+
+    test('restore confirmation does not list the username, which a restore never changes', async () => {
+        mockGetAgentVersion.mockImplementation(async (_id, version) => {
+            const detail = versionDetail(version, 'current instructions');
+            return {...detail, config: {...detail.config, name: version === 1 ? 'oldusername' : 'newusername'}};
+        });
+        renderEdit();
+        const list = await openHistory();
+        fireEvent.click(within(list).getByText('Version 1'));
+        await waitFor(() => expect((screen.getByRole('button', {name: 'Restore this version'}) as HTMLButtonElement).disabled).toBe(false));
+
+        fireEvent.click(screen.getByRole('button', {name: 'Restore this version'}));
+        const dialog = screen.getByRole('dialog', {name: 'Restore this version?'});
+
+        expect(await within(dialog).findByText('Its settings are the same as the current version.')).not.toBeNull();
+        expect(within(dialog).queryByText('Username')).toBeNull();
     });
 
     test('restores a version from its row menu after confirming', async () => {
@@ -1751,7 +1783,7 @@ describe('AgentConfigView history deletion', () => {
 
         await openVersionMenu(1);
         fireEvent.click(await screen.findByText('Delete this version'));
-        expect(within(await screen.findByRole('dialog', {name: 'Delete version 1?'})).getByText(/Version 1 is permanently deleted/)).not.toBeNull();
+        expect(within(await screen.findByRole('dialog', {name: 'Delete version 1?'})).getByText(/Version 1 will be permanently deleted/)).not.toBeNull();
         expect(mockDeleteAgentVersions).not.toHaveBeenCalled();
         await confirmDelete();
 
@@ -1780,7 +1812,7 @@ describe('AgentConfigView history deletion', () => {
         fireEvent.click(within(list).getByRole('checkbox', {name: 'Select version 1'}));
         expect(screen.getByText('2 selected')).not.toBeNull();
         fireEvent.click(screen.getByRole('button', {name: 'Delete selected'}));
-        expect(within(await screen.findByRole('dialog', {name: /^Delete /})).getByText(/Versions 1 and 2 are permanently deleted/)).not.toBeNull();
+        expect(within(await screen.findByRole('dialog', {name: /^Delete /})).getByText(/Versions 1 and 2 will be permanently deleted/)).not.toBeNull();
         expect(mockDeleteAgentVersions).not.toHaveBeenCalled();
         await confirmDelete();
 
@@ -1788,6 +1820,23 @@ describe('AgentConfigView history deletion', () => {
         await waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(1));
         expect(within(list).queryAllByRole('checkbox')).toHaveLength(0);
         expect(screen.queryByRole('button', {name: 'More version history actions'})).toBeNull();
+    });
+
+    test('Escape leaves select-multiple mode first and closes the modal on the next press', async () => {
+        const list = await renderHistory();
+
+        fireEvent.click(screen.getByRole('button', {name: 'More version history actions'}));
+        fireEvent.click(await screen.findByText('Select multiple versions'));
+        await waitFor(() => expect(document.querySelector('[data-open-popup]')).toBeNull());
+        fireEvent.click(within(list).getByRole('checkbox', {name: 'Select version 1'}));
+
+        fireEvent.keyDown(list, {key: 'Escape'});
+        expect(within(list).queryAllByRole('checkbox')).toHaveLength(0);
+        expect(screen.queryByTestId('version-list')).not.toBeNull();
+        expect(mockDeleteAgentVersions).not.toHaveBeenCalled();
+
+        fireEvent.keyDown(list, {key: 'Escape'});
+        await waitFor(() => expect(screen.queryByTestId('version-list')).toBeNull());
     });
 
     test('cancelling selection leaves the versions alone', async () => {

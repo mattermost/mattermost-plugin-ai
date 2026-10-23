@@ -36,36 +36,37 @@ const MONTH = 30 * DAY;
 const YEAR = 365 * DAY;
 
 // formatRelativeTime renders compact "2d ago" style text, rounding down so a
-// version never reads as older than it is.
+// version never reads as older than it is. A timestamp ahead of the clock
+// (client and server clocks disagree) reads as "now", never "in 2m".
 export function formatRelativeTime(intl: IntlShape, timestamp: number, now: number = Date.now()): string {
-    const seconds = Math.trunc((timestamp - now) / 1000);
-    const abs = Math.abs(seconds);
-    const sign = seconds < 0 ? -1 : 1;
+    const abs = Math.trunc((now - timestamp) / 1000);
     const options = {style: 'narrow', numeric: 'always'} as const;
 
     if (abs < MINUTE) {
         return intl.formatRelativeTime(0, 'second', {numeric: 'auto'});
     }
     if (abs < HOUR) {
-        return intl.formatRelativeTime(sign * Math.floor(abs / MINUTE), 'minute', options);
+        return intl.formatRelativeTime(-Math.floor(abs / MINUTE), 'minute', options);
     }
     if (abs < DAY) {
-        return intl.formatRelativeTime(sign * Math.floor(abs / HOUR), 'hour', options);
+        return intl.formatRelativeTime(-Math.floor(abs / HOUR), 'hour', options);
     }
     if (abs < WEEK) {
-        return intl.formatRelativeTime(sign * Math.floor(abs / DAY), 'day', options);
+        return intl.formatRelativeTime(-Math.floor(abs / DAY), 'day', options);
     }
     if (abs < MONTH) {
-        return intl.formatRelativeTime(sign * Math.floor(abs / WEEK), 'week', options);
+        return intl.formatRelativeTime(-Math.floor(abs / WEEK), 'week', options);
     }
     if (abs < YEAR) {
-        return intl.formatRelativeTime(sign * Math.floor(abs / MONTH), 'month', options);
+        // Months are 30 days, so the last days of the year would round up to 12.
+        return intl.formatRelativeTime(-Math.min(11, Math.floor(abs / MONTH)), 'month', options);
     }
-    return intl.formatRelativeTime(sign * Math.floor(abs / YEAR), 'year', options);
+    return intl.formatRelativeTime(-Math.floor(abs / YEAR), 'year', options);
 }
 
-// Not reported as changes: lifecycle ids and deprecated or non-snapshot keys.
-const IGNORED_CONFIG_FIELDS = new Set(['id', 'service', 'structuredOutputEnabled']);
+// Not reported as changes: lifecycle ids, deprecated or non-snapshot keys, and
+// the username, which a restore never changes.
+const IGNORED_CONFIG_FIELDS = new Set(['id', 'name', 'service', 'structuredOutputEnabled']);
 
 // differingConfigFields returns the keys whose values differ between two
 // version snapshots, e.g. what restoring one over the other would change.

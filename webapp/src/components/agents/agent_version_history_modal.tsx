@@ -197,6 +197,15 @@ const AgentVersionHistoryModal = ({show, onClose, agentId, agentName, services, 
         setCheckedVersions([]);
     };
 
+    // Escape backs out of select-multiple mode first and closes the modal on the next press.
+    const handleEscape = () => {
+        if (selecting) {
+            stopSelecting();
+            return;
+        }
+        onClose();
+    };
+
     const handleSelect = (version: number) => {
         setSelected(version);
         clearNotices();
@@ -539,10 +548,12 @@ const AgentVersionHistoryModal = ({show, onClose, agentId, agentName, services, 
             <AnimatedModalShell
                 show={show}
                 onBackdropClick={onClose}
+                onEscape={handleEscape}
                 zIndex={2000}
             >
                 <Sheet className={MODAL_SHEET_CLASS}>
                     <HistoryModal
+                        closeOnEscape={false}
                         size='medium'
                         title={<FormattedMessage defaultMessage='Version history'/>}
                         subtitle={agentName}
@@ -618,9 +629,9 @@ const AgentVersionHistoryModal = ({show, onClose, agentId, agentName, services, 
                     {count: deleteCount, versions: deleteVersions},
                 )}
                 message={pendingDelete === 'all' ? (
-                    <FormattedMessage defaultMessage='Every version except the current one is permanently deleted. The agent keeps its current configuration. This cannot be undone.'/>
+                    <FormattedMessage defaultMessage='Every version except the current one will be permanently deleted. The agent keeps its current configuration. This cannot be undone.'/>
                 ) : intl.formatMessage(
-                    {defaultMessage: '{count, plural, one {Version {versions} is} other {Versions {versions} are}} permanently deleted from the history. The agent keeps its current configuration. This cannot be undone.'},
+                    {defaultMessage: '{count, plural, one {Version {versions}} other {Versions {versions}}} will be permanently deleted from the history. The agent keeps its current configuration. This cannot be undone.'},
                     {count: deleteCount, versions: deleteVersions},
                 )}
                 confirmButtonText={deleting ? <FormattedMessage defaultMessage='Deleting...'/> : <FormattedMessage defaultMessage='Delete'/>}
@@ -717,7 +728,7 @@ const VersionMenuItem = styled(MenuItem)<{$reserveMenu: boolean; $reserveCheckbo
         padding-top: var(--spacing-xs);
         padding-bottom: var(--spacing-xs);
         padding-left: ${(p) => (p.$reserveCheckbox ? 'var(--spacing-xxxxl)' : 'var(--spacing-l)')};
-        padding-right: ${(p) => (p.$reserveMenu ? '52px' : 'var(--spacing-l)')};
+        padding-right: ${(p) => (p.$reserveMenu ? 'calc(var(--spacing-xxxxl) + var(--spacing-m))' : 'var(--spacing-l)')};
         border-radius: 4px;
     }
 `;
