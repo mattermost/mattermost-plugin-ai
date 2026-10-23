@@ -253,20 +253,32 @@ func TestHandleToolCallInterruptedByShutdown(t *testing.T) {
 	tests := []struct {
 		name        string
 		honorCancel bool
+		// pluginLifecycle runs against the plugin's own root context,
+		// canceled by lifecycle.Shutdown as OnDeactivate does.
+		pluginLifecycle bool
 	}{
 		{name: "running tool stops on cancellation", honorCancel: true},
 		{name: "running tool ignores cancellation and finishes", honorCancel: false},
+		{name: "plugin lifecycle shutdown", honorCancel: true, pluginLifecycle: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := newToolRunFixture(t, true, tt.honorCancel, "tool-use-1", "tool-use-2")
+			shutdown := func() { f.cancelRoot(lifecycle.ErrShutdown) }
+			if tt.pluginLifecycle {
+				lifecycle.Start()
+				// Later tests run on the default root; leave it live.
+				t.Cleanup(lifecycle.Start)
+				f.c.SetRootContext(nil)
+				shutdown = lifecycle.Shutdown
+			}
 
 			errCh := f.click("tool-use-1", "tool-use-2")
 			f.waitRunning(t)
 
 			// What OnDeactivate does: cancel the root, then wait (bounded)
 			// for runs to finish.
-			f.cancelRoot(lifecycle.ErrShutdown)
+			shutdown()
 			if !tt.honorCancel {
 				close(f.release)
 			}
