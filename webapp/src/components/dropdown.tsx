@@ -19,10 +19,37 @@ import {
 } from '@floating-ui/react-dom-interactions';
 import {WithTooltip} from '@mattermost/shared/components/tooltip';
 
+// The compass PopoverMenu grows from its top left corner; this points that at
+// the corner or edge touching the trigger instead. && outranks compass's rule.
 const FloatingContainer = styled.div`
     min-width: 16rem;
-	z-index: 2100;
+    z-index: 2100;
+
+    && > * {
+        transform-origin: var(--popover-transform-origin, top left);
+    }
 `;
+
+/**
+ * Where a popup placed at `placement` should scale from: the side facing its
+ * trigger, aligned like the popup. A menu below a left-aligned button opens
+ * from "top left"; `bottom-end` opens from "top right".
+ */
+export function popoverTransformOrigin(placement: Placement): string {
+    const [side, alignment = 'center'] = placement.split('-');
+    const horizontal = {start: 'left', end: 'right', center: 'center'}[alignment as 'start' | 'end' | 'center'];
+    const vertical = {start: 'top', end: 'bottom', center: 'center'}[alignment as 'start' | 'end' | 'center'];
+    switch (side) {
+    case 'top':
+        return `bottom ${horizontal}`;
+    case 'left':
+        return `${vertical} right`;
+    case 'right':
+        return `${vertical} left`;
+    default:
+        return `top ${horizontal}`;
+    }
+}
 
 // The host tooltip layer (--z-index-tooltip, 1350) sits below this plugin's
 // modals (2000) and their menus (2100), so a trigger inside a modal would show
@@ -64,7 +91,7 @@ const Dropdown = (props: DropdownProps) => {
         setIsOpen(updatedOpen);
     };
 
-    const {strategy, x, y, reference, floating, context} = useFloating<HTMLElement>({
+    const {strategy, x, y, reference, floating, context, placement} = useFloating<HTMLElement>({
         open,
         onOpenChange: setOpen,
         placement: props.placement ?? 'bottom-start',
@@ -89,6 +116,9 @@ const Dropdown = (props: DropdownProps) => {
                     position: strategy,
                     top: y ?? 0,
                     left: x ?? 0,
+
+                    // Follows the placement floating-ui settled on, flips included.
+                    ['--popover-transform-origin' as string]: popoverTransformOrigin(placement),
                 },
             })}
         >
