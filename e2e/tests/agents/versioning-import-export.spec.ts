@@ -140,7 +140,7 @@ test.describe('Agent versioning, export and import', () => {
         await mattermost?.stop();
     });
 
-    test('History tab lists every save and shows an old version read-only', async ({ page }) => {
+    test('the version history modal lists every save and shows an old version read-only', async ({ page }) => {
         test.setTimeout(90000);
         const agentApi = new AgentAPIHelper(mattermost.url());
         const token = await adminToken();
@@ -164,16 +164,33 @@ test.describe('Agent versioning, export and import', () => {
         }
 
         await agentPage.openAgentEditor('History Agent');
-        await agentPage.getModalTab('History').click();
+
+        // History is a version line by the title, not a tab.
+        await expect(agentPage.getModalTab('Configuration')).toBeVisible();
+        await expect(page.getByRole('tab', { name: 'History', exact: true })).toHaveCount(0);
+        await expect(agentPage.getVersionLine()).toContainText('v3');
+        await expect(agentPage.getVersionLine()).toContainText(agentAdminUsername);
+        await expect(agentPage.getVersionHistoryButton()).toBeVisible();
+        await agentPage.openVersionHistory();
 
         await expect(agentPage.getVersionItems()).toHaveCount(3, { timeout: 10000 });
         await expect(agentPage.getVersionItems().first()).toContainText('Version 3');
         await expect(agentPage.getVersionItem(3)).toContainText('Current');
-        await expect(agentPage.getVersionItem(3)).toContainText('Edited');
-        await expect(agentPage.getVersionItem(3)).toContainText('Changed: Custom instructions');
         await expect(agentPage.getVersionItem(2)).not.toContainText('Current');
         await expect(agentPage.getVersionItem(1)).not.toContainText('Current');
-        await expect(agentPage.getVersionItem(1)).toContainText('Created');
+
+        // Rows stay simple; the selected version marks the fields it changed.
+        for (const version of [1, 2, 3]) {
+            await expect(agentPage.getVersionItem(version)).not.toContainText('Changed');
+            await expect(agentPage.getVersionItem(version)).not.toContainText('Edited');
+        }
+        await expect(agentPage.getVersionFieldLabel('Custom instructions')).toContainText('Changed');
+        await expect(agentPage.getVersionFieldLabel('Model')).not.toContainText('Changed');
+        await expect(agentPage.getVersionHistoryDialog()).toContainText('Edited');
+        await expect(agentPage.getVersionHistoryDialog()).toContainText(`Created by ${agentAdminUsername}`);
+        // The current version has no row menu.
+        await expect(agentPage.getVersionActionsButton(3)).toHaveCount(0);
+        await expect(agentPage.getVersionActionsButton(2)).toHaveCount(1);
         for (const version of [1, 2, 3]) {
             await expect(agentPage.getVersionItem(version)).toContainText(agentAdminUsername);
             await expect(agentPage.getVersionItem(version)).not.toContainText('Unknown user');
@@ -184,16 +201,17 @@ test.describe('Agent versioning, export and import', () => {
         await expect(agentPage.getVersionSnapshotInstructions()).toHaveText(v3);
         await expect(agentPage.getRestoreVersionButton()).toHaveCount(0);
 
-        // Nothing on the History tab is saved by the editor footer.
-        await expect(agentPage.getModalSaveButton()).toBeHidden();
-
         await agentPage.openHistoryVersion(1);
+        await expect(agentPage.getVersionHistoryDialog()).toContainText('Created');
         await expect(agentPage.getVersionSnapshotInstructions()).toHaveText(v1);
         // Whitespace in the snapshot is shown exactly as saved.
         expect(await agentPage.getVersionSnapshotInstructions().textContent()).toBe(v1);
         await expect(agentPage.getVersionSnapshot()).toContainText('Mock Service');
-        await expect(agentPage.getCustomInstructionsInput()).toHaveCount(0);
         await expect(agentPage.getRestoreVersionButton()).toBeVisible();
+
+        // Closing the modal returns to the editor, which still holds the current configuration.
+        await agentPage.closeVersionHistory();
+        await expect(agentPage.getCustomInstructionsInput()).toHaveValue(v3);
 
         const history = await agentApi.getAgentVersions(token, agent.id);
         expect(history.currentVersion).toBe(3);
@@ -234,18 +252,22 @@ test.describe('Agent versioning, export and import', () => {
 
         await expect(agentPage.getRestoreDialog()).toBeVisible();
         await expect(agentPage.getRestoreDialog()).toContainText('Restoring will discard them');
+        // The confirmation names what the restore changes.
+        await expect(agentPage.getRestoreDialog().getByTestId('restore-changes')).toContainText('Custom instructions');
         await agentPage.getRestoreConfirmButton().click();
         await expect(agentPage.getRestoreDialog()).toBeHidden({ timeout: 10000 });
 
         await expect(page.getByText('Version 1 was restored as the current version.')).toBeVisible({ timeout: 10000 });
         await expect(agentPage.getVersionItems()).toHaveCount(4, { timeout: 10000 });
         await expect(agentPage.getVersionItem(4)).toContainText('Current');
-        await expect(agentPage.getVersionItem(4)).toContainText('Restored from version 1');
+        await expect(agentPage.getVersionHistoryDialog()).toContainText('Restored from version 1');
         await expect(agentPage.getVersionItem(4)).toHaveAttribute('aria-current', 'true');
         await expect(agentPage.getVersionSnapshotInstructions()).toHaveText(v1);
 
         // The editor now holds the restored agent with no leftover unsaved state.
-        await agentPage.getModalTab('Configuration').click();
+        await agentPage.closeVersionHistory();
+        await expect(agentPage.getVersionLine()).toContainText('v4');
+        await expect(agentPage.getVersionLine()).not.toContainText('Unsaved changes');
         await expect(agentPage.getCustomInstructionsInput()).toHaveValue(v1);
         await expect(agentPage.getAvatarPreview()).not.toHaveAttribute('src', /^blob:/);
         await agentPage.getBackButton().click();
@@ -566,7 +588,7 @@ test.describe('Agent versioning, export and import', () => {
         expect(history.versions[history.versions.length - 1].version).toBe(1);
     });
 
-    test('deleting selected and all previous versions from the History tab', async ({ page }) => {
+    test('deleting versions from the row menu, by multi-select, and all previous from the list menu', async ({ page }) => {
         test.setTimeout(90000);
         const agentApi = new AgentAPIHelper(mattermost.url());
         const token = await adminToken();
@@ -582,27 +604,40 @@ test.describe('Agent versioning, export and import', () => {
 
         const agentPage = await loginToAgents(page);
         await agentPage.openAgentEditor('Prune Agent');
-        await agentPage.getModalTab('History').click();
+        await agentPage.openVersionHistory();
         await expect(agentPage.getVersionItems()).toHaveCount(4, { timeout: 10000 });
-        await expect(agentPage.getVersionList().getByRole('checkbox')).toHaveCount(0);
-        await agentPage.getSelectVersionsButton().click();
-        // The current version is the live configuration, so it has no checkbox.
-        await expect(agentPage.getVersionList().getByRole('checkbox')).toHaveCount(3);
-        await expect(agentPage.getVersionCheckbox(4)).toHaveCount(0);
 
-        await agentPage.getVersionCheckbox(1).check();
+        // Deleting is tucked away: no standalone Delete button or checkboxes until
+        // multi-select is turned on, and the current version (the live
+        // configuration) has no row menu.
+        await expect(agentPage.getVersionActionsButton(4)).toHaveCount(0);
+
+        await agentPage.clickVersionAction(1, 'Delete this version');
+        await expect(page.getByRole('dialog', { name: 'Delete version 1?' })).toBeVisible();
+        await agentPage.confirmVersionDelete();
+        await expect(page.getByText('Deleted 1 version.')).toBeVisible({ timeout: 10000 });
+        await expect(agentPage.getVersionItems()).toHaveCount(3);
+        expect((await agentApi.getAgentVersions(token, agent.id)).versions.map((v) => v.version)).toEqual([4, 3, 2]);
+
+        await expect(agentPage.getVersionList().getByRole('checkbox')).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'Delete', exact: true })).toHaveCount(0);
+        await agentPage.startSelectingVersions();
+        await expect(agentPage.getVersionList().getByRole('checkbox')).toHaveCount(2);
+        await expect(agentPage.getVersionCheckbox(4)).toHaveCount(0);
+        await expect(agentPage.getDeleteSelectedVersionsButton()).toBeDisabled();
         await agentPage.getVersionCheckbox(2).check();
         await agentPage.getDeleteSelectedVersionsButton().click();
         await agentPage.confirmVersionDelete();
-        await expect(page.getByText('Deleted 2 versions.')).toBeVisible({ timeout: 10000 });
+        await expect(page.getByText('Deleted 1 version.')).toBeVisible({ timeout: 10000 });
         await expect(agentPage.getVersionItems()).toHaveCount(2);
         expect((await agentApi.getAgentVersions(token, agent.id)).versions.map((v) => v.version)).toEqual([4, 3]);
 
-        await agentPage.getDeleteAllPreviousVersionsButton().click();
+        await agentPage.clickDeleteAllPreviousVersions();
+        await expect(page.getByRole('dialog', { name: 'Delete all previous versions?' })).toBeVisible();
         await agentPage.confirmVersionDelete();
         await expect(agentPage.getVersionItems()).toHaveCount(1, { timeout: 10000 });
         await expect(agentPage.getVersionItem(4)).toContainText('Current');
-        await expect(agentPage.getDeleteAllPreviousVersionsButton()).toBeDisabled();
+        await expect(agentPage.getVersionHistoryMenuButton()).toHaveCount(0);
 
         const history = await agentApi.getAgentVersions(token, agent.id);
         expect(history).toMatchObject({ currentVersion: 4, hasMore: false });

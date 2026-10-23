@@ -25,6 +25,8 @@ jest.mock('react-intl', () => {
             formatNumber: (value: number) => new Intl.NumberFormat('en').format(value),
             formatList: (items: string[]) => new Intl.ListFormat('en', {type: 'conjunction'}).format(items),
             formatDate: (value: number) => new Date(value).toISOString().slice(0, 10),
+            formatRelativeTime: (value: number, unit: Intl.RelativeTimeFormatUnit, options?: Intl.RelativeTimeFormatOptions) =>
+                real.formatRelativeTime(value, unit, options),
         }),
         FormattedMessage: ({defaultMessage}: {defaultMessage: string}) => defaultMessage,
     };
@@ -64,6 +66,20 @@ jest.mock('@/hooks/use_mcp_connection_events', () => ({
 }));
 
 const mockedUseCurrentUserHasSystemPermission = useCurrentUserHasSystemPermission as unknown as jest.Mock;
+
+async function openHistory() {
+    fireEvent.click(await screen.findByRole('button', {name: /^Version history, v/}));
+    return screen.findByTestId('version-list');
+}
+
+async function closeHistory() {
+    fireEvent.click(within(screen.getByRole('dialog', {name: 'Version history'})).getByRole('button', {name: 'Close'}));
+    await waitFor(() => expect(screen.queryByTestId('version-list')).toBeNull());
+}
+
+async function openVersionMenu(version: number) {
+    fireEvent.click(await screen.findByRole('button', {name: `Actions for version ${version}`}));
+}
 
 jest.mock('@/components/system_console/bot', () => ({
     ChannelAccessLevel: {
@@ -1086,48 +1102,174 @@ describe('AgentConfigView history and export', () => {
         mockGetProfilesByIds.mockResolvedValue([{id: 'user_1', username: 'alice', first_name: 'Alice', last_name: 'Smith', nickname: ''}] as never);
     });
 
-    test('offers the History tab and Export only for existing agents', () => {
+    test('offers version history and Export only for existing agents', () => {
         renderView();
-        expect(screen.queryByRole('tab', {name: 'History'})).toBeNull();
+        expect(screen.queryByRole('button', {name: /^Version history/})).toBeNull();
         expect(screen.queryByRole('button', {name: 'Export'})).toBeNull();
+        expect(screen.queryByRole('tab', {name: 'History'})).toBeNull();
     });
 
-    test('History tab lists versions newest first and badges the current one', async () => {
+    test('the version history button to the left of Import and Export opens the version history', async () => {
         renderEdit();
-        fireEvent.click(screen.getByRole('tab', {name: 'History'}));
 
-        const list = await screen.findByTestId('version-list');
+        fireEvent.click(await screen.findByRole('button', {name: 'Version history'}));
+
+        expect(await screen.findByTestId('version-list')).not.toBeNull();
+        expect(within(screen.getByRole('dialog', {name: 'Version history'})).getByText('Existing Agent', {selector: 'p'})).not.toBeNull();
+        expect(within(screen.getByRole('dialog', {name: 'Version history'})).getByRole('button', {name: 'Close'}).getAttribute('title')).toBe('Close');
+    });
+
+    test('has no version history button while creating an agent', () => {
+        renderView();
+        expect(screen.queryByRole('button', {name: 'Version history'})).toBeNull();
+    });
+
+    describe('version line', () => {
+        let nowSpy: jest.SpyInstance | null = null;
+
+        afterEach(() => {
+            nowSpy?.mockRestore();
+            nowSpy = null;
+        });
+
+        test('shows the current version, its author and relative time next to the title', async () => {
+            nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1759600000000 + (2 * 24 * 60 * 60 * 1000));
+            renderEdit();
+
+            const button = await screen.findByRole('button', {name: /^Version history, v2/});
+            await waitFor(() => expect(button.textContent).toBe('v2 · by Alice Smith, 2d ago'));
+            expect(screen.queryByRole('tab', {name: 'History'})).toBeNull();
+        });
+
+        test('flags unsaved changes while the editor is dirty', async () => {
+            renderEdit();
+            const button = await screen.findByRole('button', {name: /^Version history, v2/});
+            expect(button.textContent).not.toContain('Unsaved changes');
+
+            fireEvent.change(screen.getByLabelText('Display Name'), {target: {value: 'Unsaved edit'}});
+
+            await waitFor(() => expect(screen.getByRole('button', {name: /^Version history, v2.*Unsaved changes$/}).textContent).toContain('· Unsaved changes'));
+        });
+
+        test.each([
+            {name: 'no versions', list: {currentVersion: 0, versions: []}},
+            {name: 'a null version list', list: {currentVersion: 0, versions: null}},
+            {name: 'no current version', list: {currentVersion: 0, versions: versionList.versions}},
+        ])('is hidden and requests no version for $name', async ({list}) => {
+            mockGetAgentVersions.mockResolvedValue(list as unknown as AgentVersionList);
+            renderEdit();
+
+            await waitFor(() => expect(mockGetAgentVersions).toHaveBeenCalled());
+            expect(screen.queryByRole('button', {name: /^Version history/})).toBeNull();
+            expect(mockGetAgentVersion).not.toHaveBeenCalled();
+        });
+    });
+
+    test('lists versions newest first with only the author and time on each row', async () => {
+        renderEdit();
+        const list = await openHistory();
         await waitFor(() => expect(within(list).getByText(/Alice Smith/)).not.toBeNull());
 
         const items = within(list).getAllByRole('listitem');
         expect(items).toHaveLength(2);
         expect(within(items[0]).getByText('Version 2')).not.toBeNull();
         expect(within(items[0]).getByText('Current')).not.toBeNull();
-        expect(within(items[0]).getByText('Edited')).not.toBeNull();
-        expect(within(items[0]).getByText('Changed: Custom instructions')).not.toBeNull();
         expect(within(items[1]).getByText('Version 1')).not.toBeNull();
         expect(within(items[1]).queryByText('Current')).toBeNull();
-        expect(within(items[1]).getByText('Initial version')).not.toBeNull();
-        expect(within(items[1]).getByText(/^System/)).not.toBeNull();
+        expect(within(items[1]).getByText(/^by System · /)).not.toBeNull();
+
+        // What changed lives in the detail column, not in the list.
+        expect(within(list).queryByText(/Changed:|Changes:/)).toBeNull();
+        expect(within(list).queryByText('Edited')).toBeNull();
+        expect(within(list).queryByText('Initial version')).toBeNull();
+        expect(screen.queryByTestId('version-changes')).toBeNull();
+        expect(screen.getByText(/^Edited · Created by Alice Smith · /)).not.toBeNull();
+    });
+
+    describe('changed fields in the detail column', () => {
+        const labelOf = (name: string) => screen.getByText(name, {selector: 'dt'});
+
+        test('marks the rows the selected version changed', async () => {
+            renderEdit();
+            await openHistory();
+            await screen.findByTestId('version-snapshot');
+
+            expect(within(labelOf('Custom instructions')).getByText('Changed')).not.toBeNull();
+            expect(within(labelOf('Model')).queryByText('Changed')).toBeNull();
+            expect(screen.getAllByText('Changed')).toHaveLength(1);
+            expect(screen.queryByTestId('version-other-changes')).toBeNull();
+        });
+
+        test('marks a row when any setting shown in it changed, and lists settings with no row', async () => {
+            mockGetAgentVersion.mockImplementation(async () => ({
+                ...versionList.versions[0],
+                changedFields: ['userIDs', 'enabledMCPTools', 'name', 'adminUserIDs'],
+                config: existingAgent,
+            }));
+            renderEdit();
+            await openHistory();
+            await screen.findByTestId('version-snapshot');
+
+            expect(within(labelOf('User access')).getByText('Changed')).not.toBeNull();
+            expect(within(labelOf('MCP tools')).getByText('Changed')).not.toBeNull();
+            expect(screen.getAllByText('Changed')).toHaveLength(2);
+            expect(screen.getByTestId('version-other-changes').textContent).toBe('Also changed: Username, Agent admins');
+        });
+
+        test('marks nothing for a version without changes', async () => {
+            renderEdit();
+            const list = await openHistory();
+            fireEvent.click(within(list).getByText('Version 1'));
+            await waitFor(() => expect(screen.getByText(/^Initial version · Created by System · /)).not.toBeNull());
+
+            expect(screen.queryByText('Changed')).toBeNull();
+        });
+    });
+
+    test('the list header singularizes the version count', async () => {
+        mockGetAgentVersions.mockResolvedValue({...versionList, versions: [versionList.versions[0]]});
+        renderEdit();
+        await openHistory();
+
+        expect(screen.getByText('1 version')).not.toBeNull();
+    });
+
+    test('the list header shows the version count and swaps to the selection count', async () => {
+        renderEdit();
+        await openHistory();
+        expect(screen.getByText('2 versions')).not.toBeNull();
+
+        fireEvent.click(screen.getByRole('button', {name: 'More version history actions'}));
+        fireEvent.click(await screen.findByText('Select multiple versions'));
+
+        expect(screen.queryByText('2 versions')).toBeNull();
+        expect(screen.getByText('0 selected')).not.toBeNull();
+    });
+
+    test('only previous versions have a row menu', async () => {
+        renderEdit();
+        await openHistory();
+
+        expect(screen.queryByRole('button', {name: 'Actions for version 2'})).toBeNull();
+        expect(screen.getByRole('button', {name: 'Actions for version 1'})).not.toBeNull();
     });
 
     test('selecting a version shows its instructions read-only', async () => {
         renderEdit();
-        fireEvent.click(screen.getByRole('tab', {name: 'History'}));
-        const list = await screen.findByTestId('version-list');
+        const list = await openHistory();
 
         fireEvent.click(within(list).getByText('Version 1'));
 
         const instructions = await screen.findByTestId('version-snapshot-instructions');
         await waitFor(() => expect(instructions.textContent).toBe('original instructions'));
-        expect(instructions.tagName).toBe('PRE');
-        expect(screen.getByText('Mock Service')).not.toBeNull();
+        expect(instructions.tagName).not.toBe('TEXTAREA');
+        expect(within(screen.getByTestId('version-snapshot')).getByText('Mock Service')).not.toBeNull();
         expect(screen.getByRole('button', {name: 'Restore this version'})).not.toBeNull();
     });
 
     test('does not offer restore for the current version', async () => {
         renderEdit();
-        fireEvent.click(screen.getByRole('tab', {name: 'History'}));
+        await openHistory();
         await screen.findByTestId('version-snapshot');
 
         expect(screen.queryByRole('button', {name: 'Restore this version'})).toBeNull();
@@ -1139,8 +1281,7 @@ describe('AgentConfigView history and export', () => {
         const {onRestored} = renderEdit();
 
         fireEvent.change(screen.getByLabelText('Display Name'), {target: {value: 'Unsaved edit'}});
-        fireEvent.click(screen.getByRole('tab', {name: 'History'}));
-        const list = await screen.findByTestId('version-list');
+        const list = await openHistory();
         fireEvent.click(within(list).getByText('Version 1'));
         await waitFor(() => expect((screen.getByRole('button', {name: 'Restore this version'}) as HTMLButtonElement).disabled).toBe(false));
 
@@ -1162,9 +1303,9 @@ describe('AgentConfigView history and export', () => {
         await waitFor(() => expect(mockRestoreAgentVersion).toHaveBeenCalledWith('agent_1', 1));
         await waitFor(() => expect(onRestored).toHaveBeenCalledWith(restored));
         expect(await screen.findByText('Version 1 was restored as the current version.')).not.toBeNull();
-        await waitFor(() => expect(screen.getByText('Restored from version 1')).not.toBeNull());
+        await waitFor(() => expect(screen.getByText(/^Restored from version 1 · /)).not.toBeNull());
 
-        fireEvent.click(screen.getByRole('tab', {name: 'Configuration'}));
+        await closeHistory();
         expect((screen.getByLabelText('Display Name') as HTMLInputElement).value).toBe('Restored Agent');
         expect((screen.getByLabelText('Custom instructions') as HTMLTextAreaElement).value).toBe('original instructions');
 
@@ -1173,18 +1314,16 @@ describe('AgentConfigView history and export', () => {
         expect(screen.queryByRole('dialog', {name: 'Discard changes?'})).toBeNull();
     });
 
-    test('History tab hides the editor Save and Cancel buttons', async () => {
+    test('Escape closes the history modal without prompting to discard editor changes', async () => {
         renderEdit();
-        expect(screen.getByRole('button', {name: 'Save'})).not.toBeNull();
+        fireEvent.change(screen.getByLabelText('Display Name'), {target: {value: 'Unsaved edit'}});
+        await openHistory();
 
-        fireEvent.click(screen.getByRole('tab', {name: 'History'}));
-        await screen.findByTestId('version-list');
-        expect(screen.queryByRole('button', {name: 'Save'})).toBeNull();
-        expect(screen.queryByRole('button', {name: 'Cancel'})).toBeNull();
+        fireEvent.keyDown(screen.getByRole('dialog', {name: 'Version history'}), {key: 'Escape'});
 
-        fireEvent.click(screen.getByRole('tab', {name: 'Configuration'}));
-        expect(screen.getByRole('button', {name: 'Save'})).not.toBeNull();
-        expect(screen.getByRole('button', {name: 'Cancel'})).not.toBeNull();
+        await waitFor(() => expect(screen.queryByTestId('version-list')).toBeNull());
+        expect(screen.queryByRole('dialog', {name: 'Discard changes?'})).toBeNull();
+        expect((screen.getByLabelText('Display Name') as HTMLInputElement).value).toBe('Unsaved edit');
     });
 
     test('restore discards a pending avatar upload along with the other edits', async () => {
@@ -1195,8 +1334,7 @@ describe('AgentConfigView history and export', () => {
         fireEvent.change(screen.getByLabelText('Bot avatar'), {target: {files: [avatar]}});
         expect(screen.getByTestId('pending-avatar').textContent).toBe('new-avatar.png');
 
-        fireEvent.click(screen.getByRole('tab', {name: 'History'}));
-        const list = await screen.findByTestId('version-list');
+        const list = await openHistory();
         fireEvent.click(within(list).getByText('Version 1'));
         await waitFor(() => expect((screen.getByRole('button', {name: 'Restore this version'}) as HTMLButtonElement).disabled).toBe(false));
         fireEvent.click(screen.getByRole('button', {name: 'Restore this version'}));
@@ -1205,7 +1343,7 @@ describe('AgentConfigView history and export', () => {
         fireEvent.click(within(dialog).getByRole('button', {name: 'Restore'}));
         expect(await screen.findByText('Version 1 was restored as the current version.')).not.toBeNull();
 
-        fireEvent.click(screen.getByRole('tab', {name: 'Configuration'}));
+        await closeHistory();
         expect(screen.getByTestId('pending-avatar').textContent).toBe('');
         fireEvent.keyDown(document, {key: 'Escape'});
         expect(screen.queryByRole('dialog', {name: 'Discard changes?'})).toBeNull();
@@ -1213,8 +1351,7 @@ describe('AgentConfigView history and export', () => {
 
     test('restore confirmation omits the discard warning when the editor is clean', async () => {
         renderEdit();
-        fireEvent.click(screen.getByRole('tab', {name: 'History'}));
-        const list = await screen.findByTestId('version-list');
+        const list = await openHistory();
         fireEvent.click(within(list).getByText('Version 1'));
         await waitFor(() => expect((screen.getByRole('button', {name: 'Restore this version'}) as HTMLButtonElement).disabled).toBe(false));
 
@@ -1224,11 +1361,55 @@ describe('AgentConfigView history and export', () => {
         expect(within(dialog).queryByText(/unsaved changes/)).toBeNull();
     });
 
+    test('restore confirmation lists the settings it will change', async () => {
+        renderEdit();
+        const list = await openHistory();
+        fireEvent.click(within(list).getByText('Version 1'));
+        await waitFor(() => expect((screen.getByRole('button', {name: 'Restore this version'}) as HTMLButtonElement).disabled).toBe(false));
+
+        fireEvent.click(screen.getByRole('button', {name: 'Restore this version'}));
+        const dialog = screen.getByRole('dialog', {name: 'Restore this version?'});
+
+        const changes = await within(dialog).findByTestId('restore-changes');
+        expect(within(changes).getAllByRole('listitem').map((el) => el.textContent)).toEqual(['Custom instructions']);
+        expect(mockGetAgentVersion).toHaveBeenCalledWith('agent_1', 2);
+    });
+
+    test('restore confirmation says when the version matches the current settings', async () => {
+        mockGetAgentVersion.mockImplementation(async (_id, version) => versionDetail(version, 'current instructions'));
+        renderEdit();
+        const list = await openHistory();
+        fireEvent.click(within(list).getByText('Version 1'));
+        await waitFor(() => expect((screen.getByRole('button', {name: 'Restore this version'}) as HTMLButtonElement).disabled).toBe(false));
+
+        fireEvent.click(screen.getByRole('button', {name: 'Restore this version'}));
+        const dialog = screen.getByRole('dialog', {name: 'Restore this version?'});
+
+        expect(await within(dialog).findByText('Its settings are the same as the current version.')).not.toBeNull();
+        expect(within(dialog).queryByTestId('restore-changes')).toBeNull();
+    });
+
+    test('restores a version from its row menu after confirming', async () => {
+        mockRestoreAgentVersion.mockResolvedValue({...existingAgent, customInstructions: 'original instructions'});
+        renderEdit();
+        await openHistory();
+
+        await openVersionMenu(1);
+        fireEvent.click(await screen.findByText('Restore this version'));
+
+        const dialog = await screen.findByRole('dialog', {name: 'Restore this version?'});
+        expect(await within(dialog).findByTestId('restore-changes')).not.toBeNull();
+        expect(mockRestoreAgentVersion).not.toHaveBeenCalled();
+
+        fireEvent.click(within(dialog).getByRole('button', {name: 'Restore'}));
+        await waitFor(() => expect(mockRestoreAgentVersion).toHaveBeenCalledWith('agent_1', 1));
+        expect(await screen.findByText('Version 1 was restored as the current version.')).not.toBeNull();
+    });
+
     test('shows the server error when restore fails and leaves the draft alone', async () => {
         mockRestoreAgentVersion.mockRejectedValue({message: 'The AI service for this version no longer exists.'});
         const {onRestored} = renderEdit();
-        fireEvent.click(screen.getByRole('tab', {name: 'History'}));
-        const list = await screen.findByTestId('version-list');
+        const list = await openHistory();
         fireEvent.click(within(list).getByText('Version 1'));
         await waitFor(() => expect((screen.getByRole('button', {name: 'Restore this version'}) as HTMLButtonElement).disabled).toBe(false));
 
@@ -1242,11 +1423,10 @@ describe('AgentConfigView history and export', () => {
     test.each([
         {name: 'more versions exist', hasMore: true},
         {name: 'all versions are loaded', hasMore: false},
-    ])('History tab offers older versions only when $name', async ({hasMore}) => {
+    ])('version history offers older versions only when $name', async ({hasMore}) => {
         mockGetAgentVersions.mockResolvedValue({...versionList, hasMore});
         renderEdit();
-        fireEvent.click(screen.getByRole('tab', {name: 'History'}));
-        await screen.findByTestId('version-list');
+        await openHistory();
 
         expect(mockGetAgentVersions).toHaveBeenCalledWith('agent_1');
         expect(screen.queryByRole('button', {name: 'Load older versions'}) !== null).toBe(hasMore);
@@ -1274,15 +1454,14 @@ describe('AgentConfigView history and export', () => {
         test('appends the page before the oldest loaded version until none are left', async () => {
             mockGetAgentVersions.mockResolvedValueOnce(firstPage).mockResolvedValueOnce(lastPage);
             renderEdit();
-            fireEvent.click(screen.getByRole('tab', {name: 'History'}));
-            const list = await screen.findByTestId('version-list');
+            const list = await openHistory();
             expect(within(list).getAllByRole('listitem')).toHaveLength(2);
 
             fireEvent.click(screen.getByRole('button', {name: 'Load older versions'}));
 
             await waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(4));
             expect(mockGetAgentVersions).toHaveBeenLastCalledWith('agent_1', {before: 3});
-            const titles = within(list).getAllByText(/^Version \d$/).map((el) => el.textContent);
+            const titles = within(list).getAllByText(/^Version \d$/).map((el) => el.firstChild?.textContent);
             expect(titles).toEqual(['Version 4', 'Version 3', 'Version 2', 'Version 1']);
             expect(within(list).getAllByText('Current')).toHaveLength(1);
             expect(screen.queryByRole('button', {name: 'Load older versions'})).toBeNull();
@@ -1306,8 +1485,7 @@ describe('AgentConfigView history and export', () => {
                 }));
             mockRestoreAgentVersion.mockResolvedValue(existingAgent);
             renderEdit();
-            fireEvent.click(screen.getByRole('tab', {name: 'History'}));
-            const list = await screen.findByTestId('version-list');
+            const list = await openHistory();
 
             fireEvent.click(within(list).getByText('Version 3'));
             await waitFor(() => expect((screen.getByRole('button', {name: 'Restore this version'}) as HTMLButtonElement).disabled).toBe(false));
@@ -1322,7 +1500,7 @@ describe('AgentConfigView history and export', () => {
             await act(async () => resolveReload({currentVersion: 5, versions: [summary(5), summary(4)], hasMore: true}));
             await act(async () => resolveOlder(lastPage));
 
-            const titles = within(screen.getByTestId('version-list')).getAllByText(/^Version \d$/).map((el) => el.textContent);
+            const titles = within(screen.getByTestId('version-list')).getAllByText(/^Version \d$/).map((el) => el.firstChild?.textContent);
             expect(titles).toEqual(['Version 5', 'Version 4']);
             expect(screen.getByRole('button', {name: 'Load older versions'})).not.toBeNull();
         });
@@ -1330,8 +1508,7 @@ describe('AgentConfigView history and export', () => {
         test('keeps the loaded versions and the button when an older page fails', async () => {
             mockGetAgentVersions.mockResolvedValueOnce(firstPage).mockRejectedValueOnce({message: 'Server unavailable'});
             renderEdit();
-            fireEvent.click(screen.getByRole('tab', {name: 'History'}));
-            const list = await screen.findByTestId('version-list');
+            const list = await openHistory();
 
             fireEvent.click(screen.getByRole('button', {name: 'Load older versions'}));
 
@@ -1339,20 +1516,6 @@ describe('AgentConfigView history and export', () => {
             expect(within(list).getAllByRole('listitem')).toHaveLength(2);
             expect(screen.getByRole('button', {name: 'Load older versions'})).not.toBeNull();
         });
-    });
-
-    test.each([
-        {name: 'no versions', list: {currentVersion: 0, versions: []}},
-        {name: 'a null version list', list: {currentVersion: 0, versions: null}},
-        {name: 'no current version', list: {currentVersion: 0, versions: versionList.versions}},
-    ])('History tab shows an empty state and requests no version for $name', async ({list}) => {
-        mockGetAgentVersions.mockResolvedValue(list as unknown as AgentVersionList);
-        renderEdit();
-        fireEvent.click(screen.getByRole('tab', {name: 'History'}));
-
-        expect(await screen.findByText('No versions recorded yet. Saving the agent creates the first version.')).not.toBeNull();
-        expect(screen.queryByTestId('version-list')).toBeNull();
-        expect(mockGetAgentVersion).not.toHaveBeenCalled();
     });
 
     test.each([
@@ -1368,8 +1531,7 @@ describe('AgentConfigView history and export', () => {
         mockRestoreAgentVersion.mockResolvedValue(restored);
         renderEdit(jest.fn(), agent);
 
-        fireEvent.click(screen.getByRole('tab', {name: 'History'}));
-        const list = await screen.findByTestId('version-list');
+        const list = await openHistory();
         fireEvent.click(within(list).getByText('Version 1'));
         expect(await screen.findByText('Attribute-based (policy not stored in versions)')).not.toBeNull();
         await waitFor(() => expect((screen.getByRole('button', {name: 'Restore this version'}) as HTMLButtonElement).disabled).toBe(false));
@@ -1384,7 +1546,9 @@ describe('AgentConfigView history and export', () => {
 
         if (expectWarning) {
             expect(await screen.findByRole('button', {name: 'Switch user access to everyone'})).not.toBeNull();
-            expect(screen.queryByTestId('version-list')).toBeNull();
+
+            // The modal closes so the Access tab is in view.
+            await waitFor(() => expect(screen.queryByTestId('version-list')).toBeNull());
         } else {
             expect(await screen.findByText('Version 1 was restored as the current version.')).not.toBeNull();
             expect(screen.queryByRole('button', {name: 'Switch user access to everyone'})).toBeNull();
@@ -1548,7 +1712,7 @@ describe('AgentConfigView history deletion', () => {
     const summary = (version: number) => ({version, createdBy: '', createAt: 1759500000000 + version, source: 'update' as const, restoredFromVersion: 0, changedFields: []});
     const listOf = (...versions: number[]): AgentVersionList => ({currentVersion: 3, versions: versions.map(summary), hasMore: false});
 
-    function renderHistory() {
+    async function renderHistory() {
         render(
             <IntlProvider locale='en'>
                 <AgentConfigView
@@ -1560,11 +1724,11 @@ describe('AgentConfigView history deletion', () => {
                 />
             </IntlProvider>,
         );
-        fireEvent.click(screen.getByRole('tab', {name: 'History'}));
+        return openHistory();
     }
 
     async function confirmDelete() {
-        const dialog = await screen.findByRole('dialog');
+        const dialog = await screen.findByRole('dialog', {name: /^Delete /});
         fireEvent.click(within(dialog).getByRole('button', {name: 'Delete'}));
     }
 
@@ -1576,57 +1740,96 @@ describe('AgentConfigView history deletion', () => {
         mockGetProfilesByIds.mockResolvedValue([]);
     });
 
-    test('deletes the checked versions and reloads the list', async () => {
+    test('deletes a version from its row menu and reloads the list', async () => {
+        mockDeleteAgentVersions.mockResolvedValue(1);
+        mockGetAgentVersions.mockResolvedValue(listOf(3, 2));
+        const list = await renderHistory();
+
+        expect(screen.queryByRole('button', {name: 'Delete'})).toBeNull();
+        expect(screen.queryByRole('button', {name: 'Actions for version 3'})).toBeNull();
+        expect(within(list).queryByRole('checkbox')).toBeNull();
+
+        await openVersionMenu(1);
+        fireEvent.click(await screen.findByText('Delete this version'));
+        expect(within(await screen.findByRole('dialog', {name: 'Delete version 1?'})).getByText(/Version 1 is permanently deleted/)).not.toBeNull();
+        expect(mockDeleteAgentVersions).not.toHaveBeenCalled();
+        await confirmDelete();
+
+        await waitFor(() => expect(mockDeleteAgentVersions).toHaveBeenCalledWith('agent_1', [1]));
+        await waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(2));
+        expect(mockGetAgentVersions).toHaveBeenCalledTimes(2);
+        expect(await screen.findByText('Deleted 1 version.')).not.toBeNull();
+    });
+
+    test('selects multiple versions from the list menu and deletes them', async () => {
         mockDeleteAgentVersions.mockResolvedValue(2);
         mockGetAgentVersions.mockResolvedValue(listOf(3));
-        renderHistory();
+        const list = await renderHistory();
 
-        await screen.findByTestId('version-list');
-        expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
-        fireEvent.click(screen.getByRole('button', {name: 'Select'}));
-        expect(screen.getAllByRole('checkbox')).toHaveLength(2);
-        expect(screen.queryByRole('checkbox', {name: 'Select version 3'})).toBeNull();
+        expect(within(list).queryAllByRole('checkbox')).toHaveLength(0);
+        fireEvent.click(screen.getByRole('button', {name: 'More version history actions'}));
+        fireEvent.click(await screen.findByText('Select multiple versions'));
+
+        // The current version is the live configuration, so it has no checkbox.
+        expect(within(list).getAllByRole('checkbox')).toHaveLength(2);
+        expect(within(list).queryByRole('checkbox', {name: 'Select version 3'})).toBeNull();
+        expect(screen.queryByRole('button', {name: 'Actions for version 1'})).toBeNull();
         expect((screen.getByRole('button', {name: 'Delete selected'}) as HTMLButtonElement).disabled).toBe(true);
 
-        fireEvent.click(screen.getByRole('checkbox', {name: 'Select version 2'}));
-        fireEvent.click(screen.getByRole('checkbox', {name: 'Select version 1'}));
+        fireEvent.click(within(list).getByRole('checkbox', {name: 'Select version 2'}));
+        fireEvent.click(within(list).getByRole('checkbox', {name: 'Select version 1'}));
         expect(screen.getByText('2 selected')).not.toBeNull();
         fireEvent.click(screen.getByRole('button', {name: 'Delete selected'}));
-        expect(within(await screen.findByRole('dialog')).getByText(/Versions 1 and 2 are permanently deleted/)).not.toBeNull();
+        expect(within(await screen.findByRole('dialog', {name: /^Delete /})).getByText(/Versions 1 and 2 are permanently deleted/)).not.toBeNull();
+        expect(mockDeleteAgentVersions).not.toHaveBeenCalled();
         await confirmDelete();
 
         await waitFor(() => expect(mockDeleteAgentVersions).toHaveBeenCalledWith('agent_1', [1, 2]));
-        await waitFor(() => expect(within(screen.getByTestId('version-list')).getAllByRole('listitem')).toHaveLength(1));
-        expect(mockGetAgentVersions).toHaveBeenCalledTimes(2);
-        expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
-        expect((screen.getByRole('button', {name: 'Delete all previous'}) as HTMLButtonElement).disabled).toBe(true);
-        expect((screen.getByRole('button', {name: 'Select'}) as HTMLButtonElement).disabled).toBe(true);
+        await waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(1));
+        expect(within(list).queryAllByRole('checkbox')).toHaveLength(0);
+        expect(screen.queryByRole('button', {name: 'More version history actions'})).toBeNull();
     });
 
-    test('deletes every previous version', async () => {
+    test('cancelling selection leaves the versions alone', async () => {
+        const list = await renderHistory();
+
+        fireEvent.click(screen.getByRole('button', {name: 'More version history actions'}));
+        fireEvent.click(await screen.findByText('Select multiple versions'));
+        fireEvent.click(within(list).getByRole('checkbox', {name: 'Select version 1'}));
+        fireEvent.click(within(screen.getByRole('dialog', {name: 'Version history'})).getByRole('button', {name: 'Cancel'}));
+
+        expect(within(list).queryAllByRole('checkbox')).toHaveLength(0);
+        expect(screen.getByRole('button', {name: 'Actions for version 1'})).not.toBeNull();
+        expect(mockDeleteAgentVersions).not.toHaveBeenCalled();
+    });
+
+    test('deletes every previous version from the modal menu', async () => {
         mockDeleteAgentVersions.mockResolvedValue(2);
         mockGetAgentVersions.mockResolvedValue(listOf(3));
-        renderHistory();
+        const list = await renderHistory();
 
-        await screen.findByTestId('version-list');
-        fireEvent.click(screen.getByRole('button', {name: 'Delete all previous'}));
+        fireEvent.click(screen.getByRole('button', {name: 'More version history actions'}));
+        fireEvent.click(await screen.findByText('Delete all previous versions'));
         expect(await screen.findByText('Delete all previous versions?')).not.toBeNull();
+        expect(mockDeleteAgentVersions).not.toHaveBeenCalled();
         await confirmDelete();
 
         await waitFor(() => expect(mockDeleteAgentVersions).toHaveBeenCalledWith('agent_1', 'all'));
-        await waitFor(() => expect(within(screen.getByTestId('version-list')).getAllByRole('listitem')).toHaveLength(1));
+        await waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(1));
+
+        // Nothing is left to delete, so the menu goes away.
+        expect(screen.queryByRole('button', {name: 'More version history actions'})).toBeNull();
     });
 
     test('deleting the viewed version falls back to the current version', async () => {
         mockDeleteAgentVersions.mockResolvedValue(1);
         mockGetAgentVersions.mockResolvedValue(listOf(3, 2));
-        renderHistory();
+        const list = await renderHistory();
 
-        const list = await screen.findByTestId('version-list');
         fireEvent.click(within(list).getByText('Version 1'));
         await waitFor(() => expect(mockGetAgentVersion).toHaveBeenCalledWith('agent_1', 1));
-        fireEvent.click(screen.getByRole('button', {name: 'Delete'}));
-        expect(within(await screen.findByRole('dialog')).getByText('Delete version 1?')).not.toBeNull();
+        await openVersionMenu(1);
+        fireEvent.click(await screen.findByText('Delete this version'));
         await confirmDelete();
 
         await waitFor(() => expect(mockDeleteAgentVersions).toHaveBeenCalledWith('agent_1', [1]));
@@ -1636,16 +1839,14 @@ describe('AgentConfigView history deletion', () => {
 
     test('shows the server error and keeps the list', async () => {
         mockDeleteAgentVersions.mockRejectedValue({message: 'the current version of an agent cannot be deleted'});
-        renderHistory();
+        const list = await renderHistory();
 
-        await screen.findByTestId('version-list');
-        fireEvent.click(screen.getByRole('button', {name: 'Select'}));
-        fireEvent.click(screen.getByRole('checkbox', {name: 'Select version 1'}));
-        fireEvent.click(screen.getByRole('button', {name: 'Delete selected'}));
+        await openVersionMenu(1);
+        fireEvent.click(await screen.findByText('Delete this version'));
         await confirmDelete();
 
         expect(await screen.findByText('the current version of an agent cannot be deleted')).not.toBeNull();
-        expect(within(screen.getByTestId('version-list')).getAllByRole('listitem')).toHaveLength(3);
+        expect(within(list).getAllByRole('listitem')).toHaveLength(3);
         expect(mockGetAgentVersions).toHaveBeenCalledTimes(1);
     });
 });

@@ -200,9 +200,9 @@ The dirty-state check considers both form fields and a queued avatar upload, so 
 
 Every successful save of an agent creates a new numbered version: 1, 2, 3, and so on. The agent always runs its latest version; there are no drafts or pinned versions. Creating, editing, and restoring an agent each add a version, and so do a few internal writes (for example, the legacy bot migration), which are labeled **System**. Agents that existed before version history was introduced get a version 1, labeled **Initial version**, when the plugin activates. If an agent's stored configuration changes outside the editor (for example, an internal migration), a **System** version records that change before the next save, so the next editor is never credited with it.
 
-To view the history, open an existing agent in the editor and select the **History** tab. Each entry shows the version number, when it was saved, who saved it, how it was produced, and which settings changed compared with the previous version (setting names only). The newest 50 versions are shown first; choose **Load older versions** below the list to see earlier ones. Select a version to see a read-only view of its full configuration.
+To view the history, open an existing agent in the editor and select the version line under the agent's name (for example, `v7 · by Dana Lee, 2d ago`) or the **Version history** button (the update icon) to the left of **Import** and **Export**. The line shows `Unsaved changes` while the editor has edits that aren't saved yet. The version history opens in a window with the versions listed on the left, each with its version number, who saved it, and when. Select a version to see, on the right, how it was produced, who created it, when it was saved, and a read-only view of its full configuration, with a **Changed** marker on each setting that differs from the previous version. Settings the view has no row for, such as the username, are listed under it as **Also changed**. The newest 50 versions are shown first; choose **Load older versions** below the list to see earlier ones.
 
-To roll back, select a version and choose **Restore this version**, then confirm. Restoring saves that version's configuration as a new latest version; history is never rewritten, so you can always restore back. If the editor has unsaved changes, they are discarded. A restore goes through the same checks as a normal save:
+To roll back, select a version and choose **Restore this version**, or open the **...** menu on a version in the list and choose **Restore this version**. The confirmation lists the settings the restore changes compared with the current version. Restoring saves that version's configuration as a new latest version; history is never rewritten, so you can always restore back. If the editor has unsaved changes, they are discarded. A restore goes through the same checks as a normal save:
 
 - The version's AI service must still exist. If it has since been deleted, the restore is rejected; restore a different version or edit the agent instead.
 - License gates, access validation, and the service account rules in [What's editable vs locked](#whats-editable-vs-locked) apply as if you had made the same edit by hand.
@@ -213,11 +213,13 @@ Only users who can manage the agent can see its history, because versions includ
 
 ### Deleting versions
 
-Versions keep everything an agent was ever saved with, including instructions that were later removed. If something sensitive was saved (for example, an access token pasted into the instructions), first edit the agent to remove it, then delete the versions that still hold it. On the **History** tab you can:
+Versions keep everything an agent was ever saved with, including instructions that were later removed. If something sensitive was saved (for example, an access token pasted into the instructions), first edit the agent to remove it, then delete the versions that still hold it. In the version history window you can:
 
-- Select a version and choose **Delete** to delete that version.
-- Check several versions in the list and choose **Delete selected**.
-- Choose **Delete all previous** to delete every version except the current one.
+- Open the **...** menu on a previous version in the list (it appears when you hover over or focus the version) and choose **Delete this version**.
+- Open the **...** menu at the top of the version list and choose **Select multiple versions**, check the versions to remove, and choose **Delete selected**.
+- Open the same menu and choose **Delete all previous versions** to delete every version except the current one.
+
+Both ask for confirmation first.
 
 Deleted versions are permanently removed and can't be restored. The current version is the agent's live configuration and can't be deleted. Version numbers are never reused: the next save continues from the current number. Deleting versions is recorded in the server audit log as `deleteAgentVersions` (agent, the deleted version numbers or whether all previous versions were deleted, and how many were deleted).
 
@@ -248,8 +250,8 @@ The file does **not** contain the AI service, model, reasoning settings, native 
 
 Importing loads a file's settings into the agent editor. Nothing is saved until you choose **Save**, and the save goes through the same checks as any other edit. Review the imported custom instructions before saving: they become the agent's instructions.
 
-- **New agent:** select **Import agent** on the **Agents** page and choose a file. This opens a new agent with the file's settings, including its suggested username and display name. Pick the AI service and any other settings, then save. This requires permission to create agents and counts toward the agent limit.
-- **Existing agent:** open the agent in the editor, select **Import from file**, and choose a file. Only the settings the file carries are replaced. The agent's username, display name, AI service, model, access rules, admins, and service account setting stay as they are.
+- **New agent:** select **Import** on the **Agents** page and choose a file. This opens a new agent with the file's settings, including its suggested username and display name. Pick the AI service and any other settings, then save. This requires permission to create agents and counts toward the agent limit.
+- **Existing agent:** open the agent in the editor, select **Import**, and choose a file. Only the settings the file carries are replaced. The agent's username, display name, AI service, model, access rules, admins, and service account setting stay as they are.
 
 MCP tools in the file are matched to the MCP servers your **MCPs** tab lists, by server URL (ignoring surrounding whitespace and a trailing `/`). Matched tools are stored under the server's URL exactly as it is configured here. Tools of servers that aren't listed are left out, and the editor names those servers so you can grant replacement tools on the **MCPs** tab before saving. When the file turns on **Automatically enable all MCP tools**, no matching is needed.
 
