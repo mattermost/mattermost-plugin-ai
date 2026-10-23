@@ -349,7 +349,7 @@ describe('AgentsList import and export', () => {
 
         renderList();
 
-        const button = await screen.findByRole('button', {name: 'Import agent'}) as HTMLButtonElement;
+        const button = await screen.findByRole('button', {name: 'Import'}) as HTMLButtonElement;
         await waitFor(() => expect(button.disabled).toBe(false));
         const file = pickFile();
 
@@ -365,30 +365,30 @@ describe('AgentsList import and export', () => {
 
         renderList();
 
-        await screen.findByRole('button', {name: 'Import agent'});
+        await screen.findByRole('button', {name: 'Import'});
         pickFile();
 
         expect(await screen.findByText('This file is not a valid Mattermost agent export.')).not.toBeNull();
         expect(screen.queryByTestId('agent-config-view')).toBeNull();
     });
 
-    test('hides Import agent from users who cannot create agents', async () => {
+    test('hides Import from users who cannot create agents', async () => {
         mockUserHasSystemPermission.mockReturnValue(false);
         mockGetAgents.mockResolvedValue({agents: [{...makeAgent('a1'), creatorID: 'someone_else', adminUserIDs: ['user_1']}]});
 
         renderList();
 
         await screen.findByText('Agent a1');
-        expect(screen.queryByRole('button', {name: 'Import agent'})).toBeNull();
+        expect(screen.queryByRole('button', {name: 'Import'})).toBeNull();
     });
 
-    test('disables Import agent when the agent limit is reached', async () => {
+    test('disables Import when the agent limit is reached', async () => {
         mockGetAgents.mockResolvedValue({agents: [makeAgent('a1')], activeAgentCount: 1});
 
         renderList();
 
         await screen.findByText('Agent a1');
-        expect((screen.getByRole('button', {name: 'Import agent'}) as HTMLButtonElement).disabled).toBe(true);
+        expect((screen.getByRole('button', {name: 'Import'}) as HTMLButtonElement).disabled).toBe(true);
     });
 
     test('exports an agent from the list and reports failures', async () => {

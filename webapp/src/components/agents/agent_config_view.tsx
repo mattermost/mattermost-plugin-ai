@@ -4,12 +4,13 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import styled from 'styled-components';
 import {FormattedMessage, useIntl} from 'react-intl';
-import {ArrowLeftIcon, ExportVariantIcon, ImportIcon} from '@mattermost/compass-icons/components';
+import {ArrowLeftIcon, ExportVariantIcon, ImportIcon, UpdateIcon} from '@mattermost/compass-icons/components';
 
 import {Button} from '@mattermost/compass-ui/components/button';
 import {Icon} from '@mattermost/compass-ui/components/icon';
 import {IconButton} from '@mattermost/compass-ui/components/icon-button';
 import {SectionNotice} from '@mattermost/compass-ui/components/section-notice';
+import {WithTooltip} from '@mattermost/shared/components/tooltip';
 
 import {createAgent, getUserMCPTools, updateAgent, uploadAgentAvatar} from '@/client';
 import {
@@ -37,9 +38,11 @@ import {useAgentFilePicker} from './use_agent_file_picker';
 import ConfigTab from './tabs/config_tab';
 import AccessTab from './tabs/access_tab';
 import McpsTab from './tabs/mcps_tab';
-import HistoryTab from './tabs/history_tab';
+import AgentVersionHistoryModal from './agent_version_history_modal';
+import {formatRelativeTime} from './agent_version_labels';
+import {hasVersions, useAgentVersionHistory} from './use_agent_version_history';
 
-type Tab = 'config' | 'access' | 'mcps' | 'history';
+type Tab = 'config' | 'access' | 'mcps';
 
 type Mode = 'create' | 'edit';
 
@@ -250,13 +253,16 @@ const AgentConfigView = (props: Props) => {
     const [showDiscardDialog, setShowDiscardDialog] = useState(false);
     const [showRenameDialog, setShowRenameDialog] = useState(false);
     const [importing, setImporting] = useState(false);
+    const [showHistory, setShowHistory] = useState(false);
+    const history = useAgentVersionHistory(mode === 'edit' && agent ? agent.id : '');
+    const refreshHistory = history.refresh;
 
     // MCP server origins whose tools the last imported file referenced but
     // this server does not list; null until a file is imported.
     const [importMissingServers, setImportMissingServers] = useState<string[] | null>(null);
     const importRequestRef = useRef(0);
     const dialogOpenRef = useRef(false);
-    dialogOpenRef.current = showDiscardDialog || showRenameDialog;
+    dialogOpenRef.current = showDiscardDialog || showRenameDialog || showHistory;
 
     const savedUsername = (mode === 'edit' && agent?.name) || '';
     const isRenaming = savedUsername !== '' && draft.username !== savedUsername;
@@ -358,6 +364,7 @@ const AgentConfigView = (props: Props) => {
         setErrors({});
         setImportMissingServers(null);
         if (needsAccessPolicy) {
+            setShowHistory(false);
             setActiveTab('access');
         }
         onRestored?.(restored);
@@ -487,6 +494,9 @@ const AgentConfigView = (props: Props) => {
             // Clear dirty state so onSaved -> onBack flow doesn't trigger discard prompt
             setBaselineDraft(cloneDraft(draft));
             setAvatarFile(null);
+            if (mode === 'edit') {
+                refreshHistory();
+            }
 
             onSaved(savedAgent);
         } catch (e: any) {
@@ -511,7 +521,7 @@ const AgentConfigView = (props: Props) => {
         } finally {
             setSaving(false);
         }
-    }, [mode, agent, draft, avatarFile, intl, onSaved]);
+    }, [mode, agent, draft, avatarFile, intl, onSaved, refreshHistory]);
 
     const handleSave = useCallback(() => {
         const validationErrors = validate();
@@ -539,6 +549,34 @@ const AgentConfigView = (props: Props) => {
 
     const title = mode === 'create' ? intl.formatMessage({defaultMessage: 'New Agent'}) : draft.displayName || intl.formatMessage({defaultMessage: 'Edit Agent'});
 
+    const canViewHistory = mode === 'edit' && Boolean(agent) && hasVersions(history.list);
+    let versionLine: React.ReactNode = null;
+    if (canViewHistory && hasVersions(history.list)) {
+        const current = history.list.versions.find((v) => v.version === history.list?.currentVersion) ?? history.list.versions[0];
+        const summary = intl.formatMessage(
+            {defaultMessage: 'v{version} · by {author}, {time}'},
+            {
+                version: current.version,
+                author: history.authorLabel(current.createdBy),
+                time: formatRelativeTime(intl, current.createAt),
+            },
+        );
+        const unsaved = intl.formatMessage({defaultMessage: 'Unsaved changes'});
+        versionLine = (
+            <VersionLineButton
+                type='button'
+                aria-haspopup='dialog'
+                aria-label={intl.formatMessage(
+                    {defaultMessage: 'Version history, {summary}'},
+                    {summary: isDirty ? `${summary} · ${unsaved}` : summary},
+                )}
+                onClick={() => setShowHistory(true)}
+            >
+                {isDirty ? `${summary} · ${unsaved}` : summary}
+            </VersionLineButton>
+        );
+    }
+
     return (
         <>
             <ViewContainer>
@@ -551,9 +589,23 @@ const AgentConfigView = (props: Props) => {
                             disabled={saving}
                             aria-label={intl.formatMessage({defaultMessage: 'Back to agents'})}
                         />
-                        <ViewTitle>{title}</ViewTitle>
+                        <HeaderTitleBlock>
+                            <ViewTitle>{title}</ViewTitle>
+                            {versionLine}
+                        </HeaderTitleBlock>
                     </HeaderLeading>
                     <HeaderActions>
+                        {canViewHistory && (
+                            <WithTooltip title={intl.formatMessage({defaultMessage: 'Version history'})}>
+                                <IconButton
+                                    icon={<Icon glyph={<UpdateIcon/>}/>}
+                                    size='medium'
+                                    onClick={() => setShowHistory(true)}
+                                    aria-haspopup='dialog'
+                                    aria-label={intl.formatMessage({defaultMessage: 'Version history'})}
+                                />
+                            </WithTooltip>
+                        )}
                         <Button
                             emphasis='tertiary'
                             leadingIcon={<Icon glyph={<ImportIcon/>}/>}
@@ -561,7 +613,7 @@ const AgentConfigView = (props: Props) => {
                             loading={importing}
                             disabled={saving}
                         >
-                            <FormattedMessage defaultMessage='Import from file'/>
+                            <FormattedMessage defaultMessage='Import'/>
                         </Button>
                         {filePicker.input}
                         {mode === 'edit' && agent && (
@@ -617,20 +669,6 @@ const AgentConfigView = (props: Props) => {
                     >
                         <FormattedMessage defaultMessage='MCPs'/>
                     </UnderlineTab>
-                    {mode === 'edit' && agent && (
-                        <UnderlineTab
-                            type='button'
-                            role='tab'
-                            id='agent-history-tab'
-                            aria-controls='agent-history-panel'
-                            aria-selected={activeTab === 'history'}
-                            tabIndex={activeTab === 'history' ? 0 : -1}
-                            $active={activeTab === 'history'}
-                            onClick={() => setActiveTab('history')}
-                        >
-                            <FormattedMessage defaultMessage='History'/>
-                        </UnderlineTab>
-                    )}
                 </ConfigTabs>
 
                 <ViewBody>
@@ -715,44 +753,39 @@ const AgentConfigView = (props: Props) => {
                             />
                         </div>
                     )}
-                    {activeTab === 'history' && mode === 'edit' && agent && (
-                        <div
-                            role='tabpanel'
-                            id='agent-history-panel'
-                            aria-labelledby='agent-history-tab'
-                        >
-                            <HistoryTab
-                                agentId={agent.id}
-                                services={services}
-                                isDirty={isDirty}
-                                currentUserAccessLevel={baselineDraft.userAccessLevel}
-                                onRestored={handleVersionRestored}
-                            />
-                        </div>
-                    )}
                 </ViewBody>
 
-                {/* History is read-only; a restore saves on its own. */}
-                {activeTab !== 'history' && (
-                    <ViewFooter>
-                        <Button
-                            emphasis='tertiary'
-                            onClick={requestBack}
-                            disabled={saving}
-                        >
-                            <FormattedMessage defaultMessage='Cancel'/>
-                        </Button>
-                        <Button
-                            emphasis='primary'
-                            onClick={handleSave}
-                            loading={saving}
-                        >
-                            {saving ? <FormattedMessage defaultMessage='Saving...'/> : <FormattedMessage defaultMessage='Save'/>
-                            }
-                        </Button>
-                    </ViewFooter>
-                )}
+                <ViewFooter>
+                    <Button
+                        emphasis='tertiary'
+                        onClick={requestBack}
+                        disabled={saving}
+                    >
+                        <FormattedMessage defaultMessage='Cancel'/>
+                    </Button>
+                    <Button
+                        emphasis='primary'
+                        onClick={handleSave}
+                        loading={saving}
+                    >
+                        {saving ? <FormattedMessage defaultMessage='Saving...'/> : <FormattedMessage defaultMessage='Save'/>
+                        }
+                    </Button>
+                </ViewFooter>
             </ViewContainer>
+            {mode === 'edit' && agent && (
+                <AgentVersionHistoryModal
+                    show={showHistory}
+                    onClose={() => setShowHistory(false)}
+                    agentId={agent.id}
+                    agentName={agent.displayName}
+                    services={services}
+                    history={history}
+                    isDirty={isDirty}
+                    currentUserAccessLevel={baselineDraft.userAccessLevel}
+                    onRestored={handleVersionRestored}
+                />
+            )}
             <ConfirmationDialog
                 show={showDiscardDialog}
                 titleId={DISCARD_CHANGES_TITLE_ID}
@@ -850,6 +883,35 @@ const HeaderLeading = styled.div`
     align-items: center;
     gap: var(--spacing-xs);
     min-width: 0;
+`;
+
+const HeaderTitleBlock = styled.div`
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 0;
+`;
+
+// Reads as quiet metadata under the title rather than a button or link.
+const VersionLineButton = styled.button`
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 16px;
+    color: rgba(var(--center-channel-color-rgb), 0.72);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+    &:hover {
+        text-decoration: underline;
+    }
 `;
 
 const ViewTitle = styled.h1`

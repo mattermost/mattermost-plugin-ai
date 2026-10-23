@@ -3,21 +3,53 @@
 
 import React from 'react';
 import styled from 'styled-components';
-import {useIntl} from 'react-intl';
+import {FormattedMessage, useIntl} from 'react-intl';
+
+import {Tag} from '@mattermost/compass-ui/components/tag';
 
 import {ChannelAccessLevel, UserAccessLevel} from '@/components/system_console/bot';
 import {DefaultMaxToolTurns, ServiceInfo, UserAgent} from '@/types/agents';
 
+import {changedFieldLabels} from './agent_version_labels';
+
 type Props = {
     config: Partial<UserAgent>;
     services: ServiceInfo[];
+
+    /** BotConfig keys this version changed; their rows are marked. */
+    changedFields?: string[] | null;
 }
+
+// The BotConfig keys behind each row, so a changed key marks the row showing it.
+const FIELD_GROUPS = {
+    displayName: ['displayName'],
+    service: ['serviceID'],
+    model: ['model'],
+    instructions: ['customInstructions'],
+    tools: ['disableTools'],
+    maxToolTurns: ['maxToolTurns'],
+    dynamicToolLoading: ['mcpDynamicToolLoading'],
+    mcpTools: ['enabledMCPTools', 'autoEnableNewMCPTools'],
+    vision: ['enableVision'],
+    reasoning: ['reasoningEnabled', 'reasoningEffort', 'thinkingBudget'],
+    nativeTools: ['enabledNativeTools'],
+    channelAccess: ['channelAccessLevel', 'channelIDs'],
+    userAccess: ['userAccessLevel', 'userIDs', 'teamIDs'],
+};
+
+const SHOWN_FIELDS = new Set(Object.values(FIELD_GROUPS).flat());
 
 /**
  * Read-only rendering of a stored agent version snapshot (llm.BotConfig JSON).
  */
-const VersionSnapshot = ({config, services}: Props) => {
+const VersionSnapshot = ({config, services, changedFields}: Props) => {
     const intl = useIntl();
+
+    const changed = new Set(changedFields ?? []);
+    const isChanged = (group: keyof typeof FIELD_GROUPS) => FIELD_GROUPS[group].some((key) => changed.has(key));
+
+    // Changes to settings this view has no row for (e.g. the username).
+    const otherChanges = changedFieldLabels(intl, (changedFields ?? []).filter((key) => !SHOWN_FIELDS.has(key)));
 
     const enabled = intl.formatMessage({defaultMessage: 'Enabled'});
     const disabled = intl.formatMessage({defaultMessage: 'Disabled'});
@@ -97,75 +129,146 @@ const VersionSnapshot = ({config, services}: Props) => {
     }
 
     return (
-        <Grid data-testid='version-snapshot'>
-            <Row label={intl.formatMessage({defaultMessage: 'Display name'})}>
-                {config.displayName || none}
-            </Row>
-            <Row label={intl.formatMessage({defaultMessage: 'AI service'})}>
-                {serviceLabel}
-            </Row>
-            <Row label={intl.formatMessage({defaultMessage: 'Model'})}>
-                {config.model || intl.formatMessage({defaultMessage: 'Service default'})}
-            </Row>
-            <Row label={intl.formatMessage({defaultMessage: 'Custom instructions'})}>
-                {config.customInstructions ? (
-                    <Instructions
-                        tabIndex={0}
-                        aria-label={intl.formatMessage({defaultMessage: 'Custom instructions (read-only)'})}
-                        data-testid='version-snapshot-instructions'
-                    >
-                        {config.customInstructions}
-                    </Instructions>
-                ) : none}
-            </Row>
-            <Row label={intl.formatMessage({defaultMessage: 'Tools'})}>
-                {toolsDisabled ? disabled : enabled}
-            </Row>
-            <Row label={intl.formatMessage({defaultMessage: 'Max tool turns'})}>
-                {config.maxToolTurns && config.maxToolTurns > 0 ? config.maxToolTurns : DefaultMaxToolTurns}
-            </Row>
-            <Row label={intl.formatMessage({defaultMessage: 'Dynamic tool loading'})}>
-                {(config.mcpDynamicToolLoading ?? true) ? enabled : disabled}
-            </Row>
-            <Row label={intl.formatMessage({defaultMessage: 'MCP tools'})}>
-                {mcpToolsValue}
-            </Row>
-            <Row label={intl.formatMessage({defaultMessage: 'Vision'})}>
-                {(config.enableVision ?? true) ? enabled : disabled}
-            </Row>
-            <Row label={intl.formatMessage({defaultMessage: 'Reasoning'})}>
-                {reasoning}
-            </Row>
-            <Row label={intl.formatMessage({defaultMessage: 'Native tools'})}>
-                {nativeTools.length === 0 ? none : nativeTools.join(', ')}
-            </Row>
-            <Row label={intl.formatMessage({defaultMessage: 'Channel access'})}>
-                {channelAccess}
-            </Row>
-            <Row label={intl.formatMessage({defaultMessage: 'User access'})}>
-                {userAccess}
-            </Row>
-        </Grid>
+        <>
+            <Grid data-testid='version-snapshot'>
+                <Row
+                    label={intl.formatMessage({defaultMessage: 'Display name'})}
+                    changed={isChanged('displayName')}
+                >
+                    {config.displayName || none}
+                </Row>
+                <Row
+                    label={intl.formatMessage({defaultMessage: 'AI service'})}
+                    changed={isChanged('service')}
+                >
+                    {serviceLabel}
+                </Row>
+                <Row
+                    label={intl.formatMessage({defaultMessage: 'Model'})}
+                    changed={isChanged('model')}
+                >
+                    {config.model || intl.formatMessage({defaultMessage: 'Service default'})}
+                </Row>
+                <Row
+                    label={intl.formatMessage({defaultMessage: 'Custom instructions'})}
+                    changed={isChanged('instructions')}
+                >
+                    {config.customInstructions ? (
+                        <Instructions
+                            tabIndex={0}
+                            aria-label={intl.formatMessage({defaultMessage: 'Custom instructions (read-only)'})}
+                            data-testid='version-snapshot-instructions'
+                        >
+                            {config.customInstructions}
+                        </Instructions>
+                    ) : none}
+                </Row>
+                <Row
+                    label={intl.formatMessage({defaultMessage: 'Tools'})}
+                    changed={isChanged('tools')}
+                >
+                    {toolsDisabled ? disabled : enabled}
+                </Row>
+                <Row
+                    label={intl.formatMessage({defaultMessage: 'Max tool turns'})}
+                    changed={isChanged('maxToolTurns')}
+                >
+                    {config.maxToolTurns && config.maxToolTurns > 0 ? config.maxToolTurns : DefaultMaxToolTurns}
+                </Row>
+                <Row
+                    label={intl.formatMessage({defaultMessage: 'Dynamic tool loading'})}
+                    changed={isChanged('dynamicToolLoading')}
+                >
+                    {(config.mcpDynamicToolLoading ?? true) ? enabled : disabled}
+                </Row>
+                <Row
+                    label={intl.formatMessage({defaultMessage: 'MCP tools'})}
+                    changed={isChanged('mcpTools')}
+                >
+                    {mcpToolsValue}
+                </Row>
+                <Row
+                    label={intl.formatMessage({defaultMessage: 'Vision'})}
+                    changed={isChanged('vision')}
+                >
+                    {(config.enableVision ?? true) ? enabled : disabled}
+                </Row>
+                <Row
+                    label={intl.formatMessage({defaultMessage: 'Reasoning'})}
+                    changed={isChanged('reasoning')}
+                >
+                    {reasoning}
+                </Row>
+                <Row
+                    label={intl.formatMessage({defaultMessage: 'Native tools'})}
+                    changed={isChanged('nativeTools')}
+                >
+                    {nativeTools.length === 0 ? none : nativeTools.join(', ')}
+                </Row>
+                <Row
+                    label={intl.formatMessage({defaultMessage: 'Channel access'})}
+                    changed={isChanged('channelAccess')}
+                >
+                    {channelAccess}
+                </Row>
+                <Row
+                    label={intl.formatMessage({defaultMessage: 'User access'})}
+                    changed={isChanged('userAccess')}
+                >
+                    {userAccess}
+                </Row>
+            </Grid>
+            {otherChanges.length > 0 && (
+                <OtherChanges data-testid='version-other-changes'>
+                    {intl.formatMessage(
+                        {defaultMessage: 'Also changed: {fields}'},
+                        {fields: otherChanges.join(', ')},
+                    )}
+                </OtherChanges>
+            )}
+        </>
     );
 };
 
-const Row = ({label, children}: {label: string; children: React.ReactNode}) => (
-    <>
-        <Label>{label}</Label>
+const Row = ({label, changed, children}: {label: string; changed: boolean; children: React.ReactNode}) => (
+    <RowWrap>
+        <Label>
+            {label}
+            {changed && (
+                <Tag
+                    type='default'
+                    size='x-small'
+                    label={<FormattedMessage defaultMessage='Changed'/>}
+                />
+            )}
+        </Label>
         <Value>{children}</Value>
-    </>
+    </RowWrap>
 );
 
 const Grid = styled.dl`
-    display: grid;
-    grid-template-columns: minmax(auto, 180px) minmax(0, 1fr);
-    gap: 12px 16px;
     margin: 0;
     font-size: 14px;
     line-height: 20px;
 `;
 
+const RowWrap = styled.div`
+    display: grid;
+    grid-template-columns: 180px minmax(0, 1fr);
+    align-items: start;
+    gap: var(--spacing-l);
+    padding: var(--spacing-xs) 0;
+    /* --border-light is a whole border shorthand in the host (e.g. "1px solid rgba(...)"), not a color. */
+    border-bottom: var(--border-light, 1px solid rgba(var(--center-channel-color-rgb), 0.08));
+`;
+
 const Label = styled.dt`
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-xxxs) var(--spacing-xs);
+    min-height: 20px;
+    font-size: var(--font-size-75);
     font-weight: 600;
     color: rgba(var(--center-channel-color-rgb), 0.72);
 `;
@@ -178,21 +281,19 @@ const Value = styled.dd`
     word-break: normal;
 `;
 
-const Instructions = styled.pre`
-    margin: 0;
+const OtherChanges = styled.p`
+    margin: var(--spacing-m) 0 0;
+    font-size: var(--font-size-75);
+    color: rgba(var(--center-channel-color-rgb), 0.72);
+`;
+
+const Instructions = styled.div`
     min-width: 0;
-    padding: 8px 12px;
     max-height: 280px;
     overflow: auto;
     white-space: pre-wrap;
     overflow-wrap: break-word;
     word-break: normal;
-    font-family: inherit;
-    font-size: 13px;
-    line-height: 20px;
-    border-radius: 4px;
-    border: 1px solid rgba(var(--center-channel-color-rgb), 0.16);
-    background: rgba(var(--center-channel-color-rgb), 0.04);
 `;
 
 const ToolList = styled.ul`
@@ -201,7 +302,7 @@ const ToolList = styled.ul`
 `;
 
 const ToolOrigin = styled.span`
-    margin-left: 8px;
+    margin-left: var(--spacing-xs);
     font-size: 12px;
     color: rgba(var(--center-channel-color-rgb), 0.64);
 `;

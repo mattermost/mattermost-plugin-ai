@@ -28,7 +28,55 @@ export function versionSourceLabel(intl: IntlShape, summary: Pick<AgentVersionSu
     }
 }
 
-// changedFieldLabel maps a BotConfig JSON key to a label for the History tab.
+const MINUTE = 60;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+const WEEK = 7 * DAY;
+const MONTH = 30 * DAY;
+const YEAR = 365 * DAY;
+
+// formatRelativeTime renders compact "2d ago" style text, rounding down so a
+// version never reads as older than it is.
+export function formatRelativeTime(intl: IntlShape, timestamp: number, now: number = Date.now()): string {
+    const seconds = Math.trunc((timestamp - now) / 1000);
+    const abs = Math.abs(seconds);
+    const sign = seconds < 0 ? -1 : 1;
+    const options = {style: 'narrow', numeric: 'always'} as const;
+
+    if (abs < MINUTE) {
+        return intl.formatRelativeTime(0, 'second', {numeric: 'auto'});
+    }
+    if (abs < HOUR) {
+        return intl.formatRelativeTime(sign * Math.floor(abs / MINUTE), 'minute', options);
+    }
+    if (abs < DAY) {
+        return intl.formatRelativeTime(sign * Math.floor(abs / HOUR), 'hour', options);
+    }
+    if (abs < WEEK) {
+        return intl.formatRelativeTime(sign * Math.floor(abs / DAY), 'day', options);
+    }
+    if (abs < MONTH) {
+        return intl.formatRelativeTime(sign * Math.floor(abs / WEEK), 'week', options);
+    }
+    if (abs < YEAR) {
+        return intl.formatRelativeTime(sign * Math.floor(abs / MONTH), 'month', options);
+    }
+    return intl.formatRelativeTime(sign * Math.floor(abs / YEAR), 'year', options);
+}
+
+// Not reported as changes: lifecycle ids and deprecated or non-snapshot keys.
+const IGNORED_CONFIG_FIELDS = new Set(['id', 'service', 'structuredOutputEnabled']);
+
+// differingConfigFields returns the keys whose values differ between two
+// version snapshots, e.g. what restoring one over the other would change.
+export function differingConfigFields(a: Record<string, unknown>, b: Record<string, unknown>): string[] {
+    const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+    return Array.from(keys).filter((key) => (
+        !IGNORED_CONFIG_FIELDS.has(key) && JSON.stringify(a[key] ?? null) !== JSON.stringify(b[key] ?? null)
+    ));
+}
+
+// changedFieldLabel maps a BotConfig JSON key to a label for a version's changes.
 export function changedFieldLabel(intl: IntlShape, field: string): string {
     switch (field) {
     case 'name':

@@ -24,6 +24,15 @@ const FloatingContainer = styled.div`
 	z-index: 2100;
 `;
 
+// The host tooltip layer (--z-index-tooltip, 1350) sits below this plugin's
+// modals (2000) and their menus (2100), so a trigger inside a modal would show
+// its tooltip behind the modal. && outranks the host's .tooltipContainer rule.
+export const TooltipAboveModals = styled(WithTooltip)`
+    && {
+        z-index: 2200;
+    }
+`;
+
 const TooltipTrigger = styled.span`
     display: inline-flex;
 `;
@@ -103,14 +112,14 @@ const Dropdown = (props: DropdownProps) => {
     // wrapper — icon-only triggers already expose their name via aria-label.
     const trigger = cloneElement(props.target, getReferenceProps({ref: reference, ...props.target.props}));
     const triggerWithTooltip = props.tooltip ? (
-        <WithTooltip
+        <TooltipAboveModals
             title={props.tooltip}
             disabled={open}
         >
             <TooltipTrigger>
                 {trigger}
             </TooltipTrigger>
-        </WithTooltip>
+        </TooltipAboveModals>
     ) : trigger;
 
     return (

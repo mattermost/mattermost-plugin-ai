@@ -242,7 +242,7 @@ const AgentsList = () => {
                                     onClick={importPicker.open}
                                     disabled={createButtonDisabled}
                                 >
-                                    <FormattedMessage defaultMessage='Import agent'/>
+                                    <FormattedMessage defaultMessage='Import'/>
                                 </Button>
                             )}
                             {importPicker.input}
