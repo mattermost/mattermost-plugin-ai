@@ -721,6 +721,48 @@ func TestToolRunner_ToolExecutionError(t *testing.T) {
 	assert.Contains(t, botPost.ToolUse[0].Result, "connection timeout")
 }
 
+// The error-result hook turns a failure into the text the model sees and can
+// change the tool catalog for the rest of the run.
+func TestToolRunner_ToolErrorResultHook(t *testing.T) {
+	inner := &testLLM{
+		responses: []testResponse{
+			{events: []llm.TextStreamEvent{
+				{Type: llm.EventTypeToolCalls, Value: []llm.ToolCall{
+					{ID: "tc1", Name: "failing_tool", Arguments: json.RawMessage(`{}`)},
+				}},
+				{Type: llm.EventTypeEnd},
+			}},
+			{events: []llm.TextStreamEvent{
+				{Type: llm.EventTypeText, Value: "Let me fix that"},
+				{Type: llm.EventTypeEnd},
+			}},
+		},
+	}
+
+	store := newTestToolStore(testToolDef{name: "failing_tool", err: fmt.Errorf("authorization lapsed")})
+	runner := New(inner, WithToolErrorResult(func(c *llm.Context, err error) string {
+		c.Tools.AddTools([]llm.Tool{{Name: "recovery_tool"}})
+		return "rewritten: " + err.Error()
+	}))
+	request := llm.CompletionRequest{
+		Posts:   []llm.Post{{Role: llm.PostRoleUser, Message: "go"}},
+		Context: &llm.Context{Tools: store},
+	}
+
+	result, err := runner.Run(context.Background(), request, alwaysExecute, nil)
+	require.NoError(t, err)
+	_, _ = result.Stream.ReadAll()
+
+	require.Len(t, result.ToolTurns, 1)
+	toolResult := result.ToolTurns[0].ToolResults[0]
+	assert.True(t, toolResult.IsError)
+	assert.Equal(t, "rewritten: authorization lapsed", toolResult.Result)
+
+	require.Len(t, inner.capturedRequests, 2)
+	assert.NotNil(t, inner.capturedRequests[1].Context.Tools.GetTool("recovery_tool"),
+		"the next round must see the catalog the hook changed")
+}
+
 func TestToolRunner_LLMError(t *testing.T) {
 	// ChatCompletion returns an error directly on the first call.
 	inner := &testLLM{
@@ -1172,6 +1214,88 @@ func TestToolRunner_MultipleToolCallsInOneBatch(t *testing.T) {
 	require.Len(t, result.ToolTurns[0].ToolResults, 2)
 	assert.Equal(t, "result_a", result.ToolTurns[0].ToolResults[0].Result)
 	assert.Equal(t, "result_b", result.ToolTurns[0].ToolResults[1].Result)
+}
+
+// TestToolRunner_UserInteractionToolsNeverAutoExecute pins that a call the
+// user must answer stays pending even when shouldExecute approves it, and
+// holds the rest of its batch pending with it.
+func TestToolRunner_UserInteractionToolsNeverAutoExecute(t *testing.T) {
+	tests := []struct {
+		name            string
+		toolCalls       []llm.ToolCall
+		wantAutoExecute map[string]bool
+	}{
+		{
+			name: "interaction tool alone",
+			toolCalls: []llm.ToolCall{
+				{ID: "q1", Name: "ask_user", Arguments: json.RawMessage(`{}`)},
+			},
+			wantAutoExecute: map[string]bool{"q1": false},
+		},
+		{
+			name: "interaction tool holds an approved call pending",
+			toolCalls: []llm.ToolCall{
+				{ID: "tc1", Name: "read_tool", Arguments: json.RawMessage(`{}`)},
+				{ID: "q1", Name: "ask_user", Arguments: json.RawMessage(`{}`)},
+			},
+			wantAutoExecute: map[string]bool{"tc1": true, "q1": false},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			inner := &testLLM{
+				responses: []testResponse{{
+					events: []llm.TextStreamEvent{
+						{Type: llm.EventTypeToolCalls, Value: tc.toolCalls},
+						{Type: llm.EventTypeEnd},
+					},
+				}},
+			}
+
+			executed := map[string]bool{}
+			store := llm.NewToolStore()
+			store.AddTools([]llm.Tool{
+				{
+					Name: "read_tool",
+					Resolver: func(context.Context, *llm.Context, llm.ToolArgumentGetter) (string, error) {
+						executed["read_tool"] = true
+						return "read", nil
+					},
+				},
+				{
+					Name:            "ask_user",
+					UserInteraction: llm.UserInteractionSelect,
+					Resolver: func(context.Context, *llm.Context, llm.ToolArgumentGetter) (string, error) {
+						executed["ask_user"] = true
+						return "answered", nil
+					},
+				},
+			})
+			request := llm.CompletionRequest{
+				Posts:   []llm.Post{{Role: llm.PostRoleUser, Message: "go"}},
+				Context: &llm.Context{Tools: store},
+			}
+
+			result, err := New(inner).Run(context.Background(), request, alwaysExecute, nil)
+			require.NoError(t, err)
+
+			var pending []llm.ToolCall
+			for event := range result.Stream.Stream {
+				if event.Type == llm.EventTypeToolCalls {
+					pending = append(pending, event.Value.([]llm.ToolCall)...)
+				}
+			}
+
+			assert.Empty(t, executed, "no call in a batch holding a user-interaction call may run")
+			assert.Empty(t, result.ToolTurns)
+			assert.Equal(t, 1, inner.callCount)
+			require.Len(t, pending, len(tc.toolCalls))
+			for _, call := range pending {
+				assert.Equal(t, tc.wantAutoExecute[call.ID], call.WouldAutoExecute, call.ID)
+			}
+		})
+	}
 }
 
 func TestToolRunner_NilContext(t *testing.T) {

@@ -4,6 +4,7 @@
 package conversations_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/mcp"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin/plugintest"
+	"github.com/mattermost/mattermost/server/public/pluginapi"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -46,10 +48,19 @@ type fakeMMClient struct {
 	ephemeralPosts       []*model.Post
 	ephemeralPostUserIDs []string
 	fileInfos            map[string]*model.FileInfo
+	files                map[string][]byte
 	onUpdatePost         func(*model.Post)
 	websocketEvents      []fakeWebSocketEvent
 	// dmChannelID, when set, is the channel DM posts are created in.
 	dmChannelID string
+	dmPosts     []*model.Post
+	// directChannelRequests counts GetDirectChannel calls, which create the
+	// DM in production.
+	directChannelRequests int
+	// postErrors are returned by GetPost for their post IDs.
+	postErrors map[string]error
+	// unreadableChannels are channels HasPermissionToChannel denies.
+	unreadableChannels map[string]bool
 
 	// logMu guards logErrors: background goroutines (e.g. title generation)
 	// may log while the test goroutine reads.
@@ -158,12 +169,15 @@ func (c *fakeMMClient) AddReaction(*model.Reaction) error {
 }
 
 func (c *fakeMMClient) GetPost(postID string) (*model.Post, error) {
+	if err := c.postErrors[postID]; err != nil {
+		return nil, err
+	}
 	if c.posts != nil {
 		if post, ok := c.posts[postID]; ok {
 			return post, nil
 		}
 	}
-	return nil, errors.New("post not found")
+	return nil, pluginapi.ErrNotFound
 }
 
 func (c *fakeMMClient) GetPostsSince(string, int64) (*model.PostList, error) {
@@ -183,6 +197,7 @@ func (c *fakeMMClient) DM(senderID, _ string, post *model.Post) error {
 	}
 	post.UserId = senderID
 	post.ChannelId = c.dmChannelID
+	c.dmPosts = append(c.dmPosts, post)
 	return nil
 }
 
@@ -200,7 +215,11 @@ func (c *fakeMMClient) GetChannel(channelID string) (*model.Channel, error) {
 }
 
 func (c *fakeMMClient) GetDirectChannel(string, string) (*model.Channel, error) {
-	return nil, errors.New("not implemented")
+	c.directChannelRequests++
+	if c.dmChannelID == "" {
+		return nil, errors.New("not implemented")
+	}
+	return c.GetChannel(c.dmChannelID)
 }
 
 func (c *fakeMMClient) PublishWebSocketEvent(event string, payload map[string]any, broadcast *model.WebsocketBroadcast) {
@@ -212,7 +231,7 @@ func (c *fakeMMClient) PublishWebSocketEvent(event string, payload map[string]an
 }
 
 func (c *fakeMMClient) GetConfig() *model.Config {
-	return &model.Config{}
+	return &model.Config{LocalizationSettings: model.LocalizationSettings{DefaultServerLocale: model.NewPointer("en")}}
 }
 
 func (c *fakeMMClient) LogError(msg string, _ ...any) {
@@ -256,8 +275,8 @@ func (c *fakeMMClient) GetChannelByName(string, string, bool) (*model.Channel, e
 	return nil, errors.New("not implemented")
 }
 
-func (c *fakeMMClient) HasPermissionToChannel(string, string, *model.Permission) bool {
-	return true
+func (c *fakeMMClient) HasPermissionToChannel(_, channelID string, _ *model.Permission) bool {
+	return !c.unreadableChannels[channelID]
 }
 
 func (c *fakeMMClient) HasPermissionToFileAction(sessionID, _, _ string) bool {
@@ -273,7 +292,10 @@ func (c *fakeMMClient) GetFileInfo(fileID string) (*model.FileInfo, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (c *fakeMMClient) GetFile(string) (io.ReadCloser, error) {
+func (c *fakeMMClient) GetFile(fileID string) (io.ReadCloser, error) {
+	if data, ok := c.files[fileID]; ok {
+		return io.NopCloser(bytes.NewReader(data)), nil
+	}
 	return nil, errors.New("not implemented")
 }
 
