@@ -273,6 +273,7 @@ func TestSearchThreadReplyKeepsSearchTools(t *testing.T) {
 
 			rootPostID := model.NewId()
 			channelID := env.channelID
+			env.mmClient.posts = map[string]*model.Post{rootPostID: {Id: rootPostID, UserId: env.userID, ChannelId: channelID, Message: "first question"}}
 			_, err := env.convService.CreateConversation(conversation.CreateConversationParams{
 				UserID:       env.userID,
 				BotID:        env.botID,

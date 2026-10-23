@@ -223,6 +223,8 @@ const MCPServer = ({
     const remoteMcpLicensed = useIsLicensedFor('remote_mcp');
     const serviceAccountLicensed = useIsLicensedFor('mcp_service_account');
     const [isEditingName, setIsEditingName] = useState(false);
+    const serverTitleRef = useRef<HTMLButtonElement>(null);
+    const focusTitleAfterEdit = useRef(false);
     const [serverName, setServerName] = useState(serverConfig.name);
     const [isOAuthExpanded, setIsOAuthExpanded] = useState(Boolean(serverConfig.clientID));
     const unnamedServerLabel = intl.formatMessage(
@@ -306,12 +308,23 @@ const MCPServer = ({
     // Handle keyboard events for the name input
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
+            focusTitleAfterEdit.current = true;
             handleRename();
         } else if (e.key === 'Escape') {
+            focusTitleAfterEdit.current = true;
             setServerName(config.name);
             setIsEditingName(false);
         }
     };
+
+    // Enter and Escape unmount the focused input; hand focus back to the
+    // title so keyboard users keep their place. Blur and Tab move on as usual.
+    useEffect(() => {
+        if (!isEditingName && focusTitleAfterEdit.current) {
+            focusTitleAfterEdit.current = false;
+            serverTitleRef.current?.focus();
+        }
+    }, [isEditingName]);
 
     return (
         <ServerContainer>
@@ -329,6 +342,7 @@ const MCPServer = ({
                     </ServerNameEditContainer>
                 ) : (
                     <ServerTitle
+                        ref={serverTitleRef}
                         type='button'
                         aria-label={intl.formatMessage(
                             {defaultMessage: 'Rename {name}'},

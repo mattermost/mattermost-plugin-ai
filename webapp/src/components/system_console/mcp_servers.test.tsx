@@ -197,6 +197,24 @@ describe('MCPServers stable ID handling', () => {
         expect(screen.getByPlaceholderText('Server name')).toBeTruthy();
     });
 
+    it.each(['Enter', 'Escape'])('returns focus to the rename button after %s', (key) => {
+        renderServers(makeMCPConfig([existingServer]));
+
+        fireEvent.click(screen.getByRole('button', {name: 'Rename Jira'}));
+        fireEvent.keyDown(screen.getByPlaceholderText('Server name'), {key});
+
+        expect(document.activeElement).toBe(screen.getByRole('button', {name: /^Rename /}));
+    });
+
+    it('leaves focus alone when the name editor loses focus', () => {
+        renderServers(makeMCPConfig([existingServer]));
+
+        fireEvent.click(screen.getByRole('button', {name: 'Rename Jira'}));
+        fireEvent.blur(screen.getByPlaceholderText('Server name'));
+
+        expect(document.activeElement).not.toBe(screen.getByRole('button', {name: 'Rename Jira'}));
+    });
+
     it('preserves the server id through a URL edit', () => {
         const {onChange} = renderServers(makeMCPConfig([existingServer]));
 

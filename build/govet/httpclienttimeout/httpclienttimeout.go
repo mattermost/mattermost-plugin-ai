@@ -6,6 +6,7 @@ package httpclienttimeout
 
 import (
 	"go/ast"
+	"go/constant"
 	"go/types"
 	"slices"
 	"strings"
@@ -31,7 +32,7 @@ func run(pass *analysis.Pass) (any, error) {
 		suppressed := suppressedLines(pass, file)
 		ast.Inspect(file, func(n ast.Node) bool {
 			lit, ok := n.(*ast.CompositeLit)
-			if !ok || !isHTTPClient(pass.TypesInfo.TypeOf(lit)) || hasTimeout(lit) {
+			if !ok || !isHTTPClient(pass.TypesInfo.TypeOf(lit)) || hasTimeout(pass, lit) {
 				return true
 			}
 			if suppressed[pass.Fset.Position(lit.Pos()).Line] {
@@ -61,14 +62,17 @@ func isHTTPClient(t types.Type) bool {
 	return obj.Pkg() != nil && obj.Pkg().Path() == "net/http" && obj.Name() == "Client"
 }
 
-func hasTimeout(lit *ast.CompositeLit) bool {
+// hasTimeout treats a constant Timeout of zero or less as missing, since
+// http.Client applies no deadline for it.
+func hasTimeout(pass *analysis.Pass, lit *ast.CompositeLit) bool {
 	for _, elt := range lit.Elts {
 		kv, ok := elt.(*ast.KeyValueExpr)
 		if !ok {
 			continue
 		}
 		if key, ok := kv.Key.(*ast.Ident); ok && key.Name == "Timeout" {
-			return true
+			value := pass.TypesInfo.Types[kv.Value].Value
+			return value == nil || constant.Sign(value) > 0
 		}
 	}
 	return false
