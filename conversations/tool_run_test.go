@@ -269,7 +269,7 @@ func TestHandleToolCallInterruptedByShutdown(t *testing.T) {
 				lifecycle.Start()
 				// Later tests run on the default root; leave it live.
 				t.Cleanup(lifecycle.Start)
-				f.c.SetRootContext(nil)
+				f.c.rootCtx = nil
 				shutdown = lifecycle.Shutdown
 			}
 
