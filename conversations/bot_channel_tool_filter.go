@@ -11,21 +11,14 @@ import (
 )
 
 // applyBotChannelAutoEverywhereToolFilter keeps only the tools
-// botChannelAutoEverywhereKeepTool allows, recording the removed tools in
-// DisabledToolsInfo for the model.
+// botChannelAutoEverywhereKeepTool allows.
 func (c *Conversations) applyBotChannelAutoEverywhereToolFilter(llmContext *llm.Context) {
 	if llmContext == nil || llmContext.Tools == nil {
 		return
 	}
-	keep := func(tool llm.Tool) bool {
+	llmContext.Tools.KeepToolsIf(func(tool llm.Tool) bool {
 		return botChannelAutoEverywhereKeepTool(c.toolPolicyChecker, tool)
-	}
-	for _, tool := range llmContext.Tools.GetTools() {
-		if !keep(tool) {
-			llmContext.DisabledToolsInfo = append(llmContext.DisabledToolsInfo, llm.ToolInfo{Name: tool.Name, Description: tool.Description})
-		}
-	}
-	llmContext.Tools.KeepToolsIf(keep)
+	})
 }
 
 // toolsDisabledLLMOptions returns the language-model options for a run whose

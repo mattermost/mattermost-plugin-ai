@@ -118,7 +118,7 @@ func TestBuildRequestsPairToolResultsWithTheirToolUse(t *testing.T) {
 				userTurn("u3", "and now?"),
 			},
 			threadPosts: []string{"u1", "a", "u2", "b", "u3"},
-			wantResults: map[string]string{"a1": MissingToolResultContent, "b1": "result b1"},
+			wantResults: map[string]string{"a1": NotExecutedToolResult, "b1": "result b1"},
 		},
 		{
 			name: "tool result whose tool_use no longer exists",
