@@ -107,9 +107,10 @@ function toolUseBlockToToolCall(block: ContentBlock, resultMap: Map<string, Cont
         mcp_bare_name: block.mcp_bare_name,
         arguments: (block.input as ToolCall['arguments']) ?? undefined, // eslint-disable-line no-undefined
         result: resultBlock?.content ?? undefined, // eslint-disable-line no-undefined
-        status: statusStringToEnum(block.status),
+        status: block.interrupted ? ToolCallStatus.Error : statusStringToEnum(block.status),
         user_interaction: block.user_interaction ?? undefined, // eslint-disable-line no-undefined
         would_auto_execute: block.would_auto_execute ?? undefined, // eslint-disable-line no-undefined
+        interrupted: block.interrupted ?? undefined, // eslint-disable-line no-undefined
         decided: resultBlock?.decided_at != null,
     };
 }

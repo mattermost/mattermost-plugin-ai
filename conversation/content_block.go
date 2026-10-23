@@ -77,6 +77,14 @@ type ContentBlock struct {
 	// Shared=false but require opposite UI behavior.
 	DecidedAt *int64 `json:"decided_at,omitempty"`
 
+	// ClaimedAt (tool_use blocks) records when an approval request claimed
+	// the block by moving it to StatusAccepted, before its tools ran.
+	ClaimedAt *int64 `json:"claimed_at,omitempty"`
+
+	// Interrupted is set only on API responses, never persisted: the block was
+	// claimed but its approval request never finished (see IsInterruptedToolUse).
+	Interrupted bool `json:"interrupted,omitempty"`
+
 	// ToolResult fields
 	ToolUseID string `json:"tool_use_id,omitempty"`
 	Content   string `json:"content,omitempty"` // tool_result or file content

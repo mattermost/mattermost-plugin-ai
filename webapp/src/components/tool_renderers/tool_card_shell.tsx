@@ -121,6 +121,10 @@ const ResultReviewCallout = styled(SectionNotice)`
     margin-top: 12px;
 `;
 
+const InterruptedNotice = styled(SectionNotice)`
+    margin-top: 12px;
+`;
+
 const ResultReviewTitle = styled.span`
     display: inline-flex;
     align-items: center;
@@ -386,6 +390,19 @@ const ToolCardShell: React.FC<ToolCardShellProps> = ({
                         )}
                     />
                 )}
+                {tool.interrupted && (
+                    <Tag
+                        type='danger'
+                        size='x-small'
+                        data-testid='llm-bot-tool-interrupted'
+                        label={
+                            <FormattedMessage
+                                id='ai.tool_call.interrupted'
+                                defaultMessage='Interrupted'
+                            />
+                        }
+                    />
+                )}
                 {(tool.status === ToolCallStatus.AutoApproved || isAutoApproved) && (
                     <Tag
                         type='success'
@@ -478,6 +495,24 @@ const ToolCardShell: React.FC<ToolCardShellProps> = ({
                                 <FormattedMessage
                                     id='ai.tool_call.approval_warning'
                                     defaultMessage='Approving lets Agents use this response in its next message. That message will be visible to everyone in the channel—only approve results you’re comfortable sharing.'
+                                />
+                            }
+                        />
+                    )}
+
+                    {tool.interrupted && (
+                        <InterruptedNotice
+                            type='danger'
+                            title={
+                                <FormattedMessage
+                                    id='ai.tool_call.interrupted_title'
+                                    defaultMessage='This tool call was interrupted'
+                                />
+                            }
+                            description={
+                                <FormattedMessage
+                                    id='ai.tool_call.interrupted_description'
+                                    defaultMessage='The approval stopped before its result was saved, so the tool may or may not have run. Regenerate the response to try again.'
                                 />
                             }
                         />

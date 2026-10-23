@@ -102,6 +102,9 @@ export interface ContentBlock {
     user_interaction?: string;
     would_auto_execute?: boolean;
 
+    // Set by the server when an approval claimed this call but never finished.
+    interrupted?: boolean;
+
     // Tool display name and description from MCP metadata (see llm.ToolCall).
     // description is not rendered yet.
     title?: string;

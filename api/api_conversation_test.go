@@ -318,6 +318,44 @@ func TestHandleGetConversation(t *testing.T) {
 			},
 		},
 		{
+			name:           "approval claim that never finished is flagged interrupted and needs no decision",
+			userID:         testOtherUserID,
+			conversationID: "conv-interrupted",
+			setup: func(e *TestEnvironment) {
+				e.conversationStore.conversations["conv-interrupted"] = &store.Conversation{
+					ID: "conv-interrupted", UserID: testUserID, BotID: testBotUserID, ChannelID: &channelID, Operation: "conversation",
+				}
+				now := model.GetMillis()
+				interruptedPostID := "post0interrupted000000000"
+				runningPostID := "post0running0000000000000"
+				e.conversationStore.turns["conv-interrupted"] = []store.Turn{
+					{ID: "turn-1", ConversationID: "conv-interrupted", Role: "user", Content: textOnlyBlocks, Sequence: 1},
+					{ID: "turn-2", ConversationID: "conv-interrupted", PostID: &interruptedPostID, Role: "assistant", Sequence: 2, Content: mustMarshalBlocks(t, []conversation.ContentBlock{
+						{Type: conversation.BlockTypeToolUse, ID: "tc_stale", Name: "get_weather", Status: conversation.StatusAccepted, ClaimedAt: new(now - conversation.ToolDecisionClaimTimeout.Milliseconds() - 1)},
+					})},
+					{ID: "turn-3", ConversationID: "conv-interrupted", Role: "user", Content: textOnlyBlocks, Sequence: 3},
+					{ID: "turn-4", ConversationID: "conv-interrupted", PostID: &runningPostID, Role: "assistant", Sequence: 4, Content: mustMarshalBlocks(t, []conversation.ContentBlock{
+						{Type: conversation.BlockTypeToolUse, ID: "tc_fresh", Name: "get_weather", Status: conversation.StatusAccepted, ClaimedAt: new(now)},
+					})},
+				}
+				e.mockAPI.On("HasPermissionToChannel", testOtherUserID, channelID, model.PermissionReadChannel).Return(true)
+			},
+			expectedStatus: http.StatusOK,
+			validate: func(t *testing.T, resp *http.Response) {
+				var response ConversationResponse
+				require.NoError(t, json.NewDecoder(resp.Body).Decode(&response))
+				require.Len(t, response.Turns, 4)
+
+				var stale, fresh []conversation.ContentBlock
+				require.NoError(t, json.Unmarshal(response.Turns[1].Content, &stale))
+				require.NoError(t, json.Unmarshal(response.Turns[3].Content, &fresh))
+				assert.True(t, stale[0].Interrupted)
+				assert.Equal(t, conversation.ApprovalStageDone, response.Turns[1].ApprovalState)
+				assert.False(t, fresh[0].Interrupted, "an approval still within its claim timeout is running")
+				assert.Equal(t, conversation.ApprovalStageCall, response.Turns[3].ApprovalState)
+			},
+		},
+		{
 			name:           "response JSON shape matches spec",
 			userID:         testUserID,
 			conversationID: "conv-json-shape",

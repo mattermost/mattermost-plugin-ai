@@ -159,3 +159,14 @@ describe('ToolCard awaiting the requester', () => {
         expect(screen.getByTestId('llm-bot-tool-status').getAttribute('data-status')).toBe('success');
     });
 });
+
+describe('ToolCard interrupted call', () => {
+    test('shows the interruption and what to do instead of a running spinner', () => {
+        renderComponent(makeTool({status: ToolCallStatus.Error, interrupted: true}));
+
+        expect(screen.getByTestId('llm-bot-tool-interrupted')).not.toBeNull();
+        expect(screen.getByText('This tool call was interrupted')).not.toBeNull();
+        expect(screen.getByText(/Regenerate the response to try again/)).not.toBeNull();
+        expect(screen.getByTestId('llm-bot-tool-status').getAttribute('data-status')).toBe('error');
+    });
+});

@@ -4,8 +4,26 @@
 package conversation
 
 import (
+	"time"
+
 	"github.com/mattermost/mattermost-plugin-agents/v2/store"
 )
+
+// ToolDecisionClaimTimeout bounds how long an approval request may hold a
+// claimed tool_use block. It is well past any batch of HTTP-bounded tool
+// calls, so an older claim belongs to a request that crashed or failed before
+// recording its results.
+const ToolDecisionClaimTimeout = 10 * time.Minute
+
+// IsInterruptedToolUse reports whether block was claimed by an approval
+// request that never finished. Its tools may or may not have run, so it is
+// neither retried nor shown as awaiting a decision.
+func IsInterruptedToolUse(block ContentBlock, nowMillis int64) bool {
+	if block.Type != BlockTypeToolUse || block.Status != StatusAccepted {
+		return false
+	}
+	return block.ClaimedAt == nil || nowMillis-*block.ClaimedAt > ToolDecisionClaimTimeout.Milliseconds()
+}
 
 // Approval-stage string values mirror the webapp ToolApprovalStage. A post-anchor
 // assistant turn carries one of these so the UI can render the correct controls
@@ -23,7 +41,8 @@ const (
 )
 
 // ComputePostApprovalState inspects the conversation turns and returns the
-// approval stage for the assistant post identified by postID.
+// approval stage for the assistant post identified by postID. Interrupted
+// claims (see IsInterruptedToolUse) count as neither pending nor executed.
 //
 // A turn belongs to a post's "response" when it sits between the post's anchor
 // turn (the assistant turn with matching post_id) and either the preceding
@@ -31,7 +50,7 @@ const (
 // collect tool-round turns (no post_id) that belong to this response, then
 // match their tool_use blocks against tool_result blocks anywhere in the
 // conversation.
-func ComputePostApprovalState(turns []store.Turn, postID string) string {
+func ComputePostApprovalState(turns []store.Turn, postID string, nowMillis int64) string {
 	anchorIdx := -1
 	for i, t := range turns {
 		if t.Role == "assistant" && t.PostID != nil && *t.PostID == postID {
@@ -62,7 +81,7 @@ func ComputePostApprovalState(turns []store.Turn, postID string) string {
 			continue
 		}
 		for _, b := range blocks {
-			if b.Type != BlockTypeToolUse || b.ID == "" {
+			if b.Type != BlockTypeToolUse || b.ID == "" || IsInterruptedToolUse(b, nowMillis) {
 				continue
 			}
 			switch b.Status {
