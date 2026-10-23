@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mattermost/mattermost-plugin-agents/v2/format"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmapi"
 	mmapimocks "github.com/mattermost/mattermost-plugin-agents/v2/mmapi/mocks"
@@ -833,6 +834,7 @@ func TestBlocksToPost_RequiresFileChannelReadAccess(t *testing.T) {
 		block        ContentBlock
 		wantInlined  bool
 		wantImage    bool
+		wantNotice   string
 	}{
 		{
 			name:        "file in readable channel is inlined",
@@ -880,10 +882,11 @@ func TestBlocksToPost_RequiresFileChannelReadAccess(t *testing.T) {
 			block:    ContentBlock{Type: BlockTypeFile, FileID: "doc1"},
 		},
 		{
-			name:        "file denied by the file policy is skipped without logging",
+			name:        "file denied by the file policy leaves only an unavailable notice",
 			userID:      convertTestUserID,
 			fileInfoErr: mmapi.ErrFileActionForbidden,
 			block:       ContentBlock{Type: BlockTypeFile, FileID: "doc1"},
+			wantNotice:  format.UnavailableAttachment("", format.AttachmentForbidden),
 		},
 	}
 
@@ -900,9 +903,12 @@ func TestBlocksToPost_RequiresFileChannelReadAccess(t *testing.T) {
 			blocks := []ContentBlock{{Type: BlockTypeText, Text: "question"}, tt.block}
 			post := BlocksToPost(blocks, "user", PostConversionOptions{MMClient: mmClient, UserID: tt.userID, EnableVision: tt.enableVision})
 
-			if tt.wantInlined {
+			switch {
+			case tt.wantInlined:
 				assert.Contains(t, post.Message, "Content: SECRET")
-			} else {
+			case tt.wantNotice != "":
+				assert.Equal(t, "question\n"+tt.wantNotice, post.Message)
+			default:
 				assert.Equal(t, "question", post.Message, "a withheld file must leave no content or descriptor behind")
 			}
 			if tt.wantImage {
