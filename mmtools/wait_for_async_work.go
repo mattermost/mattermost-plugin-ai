@@ -82,7 +82,7 @@ func resolveWaitForAsyncWork(schedule ScheduleWake, llmCtx *llm.Context, argsGet
 // WakeUserMessage is the synthetic user-turn text injected when a wait fires.
 // It is a fixed string: the model-supplied reason must never be voiced as
 // the user, so the model recovers it from its own earlier tool result.
-const WakeUserMessage = "The wait you requested with wait_for_async_work has elapsed; your earlier call to that tool notes what you were waiting on. Other messages may have been posted in the thread since you started waiting; they appear above, so take them into account. Then check the status of the async work using the appropriate tools. Report results to the user if complete, or call wait_for_async_work again if still running. If you have already waited many times without progress, report the situation to the user instead of waiting again."
+const WakeUserMessage = "The wait you requested with wait_for_async_work has elapsed; your earlier call to that tool notes what you were waiting on. Check the status of the async work now using the appropriate tools. Report results to the user if complete, or call wait_for_async_work again if still running. If you have already waited many times without progress, report the situation to the user instead of waiting again."
 
 // WakeCanceledUserMessage is the synthetic user-turn text recorded when a new
 // message cancels a pending wait. It is written to the invoking conversation,

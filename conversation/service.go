@@ -399,6 +399,12 @@ type BuildOptions struct {
 	// always shared=true anyway and nothing would be redacted in that case.
 	AllowUnsharedToolContent bool
 
+	// SkipThreadPostsAfterLatestUserTurn drops non-turn thread posts created
+	// or edited after the latest post-linked user turn in channel requests.
+	// Unattended runs set this so thread posts nobody vetted cannot steer
+	// auto-run tools.
+	SkipThreadPostsAfterLatestUserTurn bool
+
 	// ResponsePostID is the bot post the request is being built for. In channel
 	// requests it is omitted from the rendered thread unless it is already a
 	// turn: a fresh placeholder is empty and not yet part of the conversation.
@@ -520,32 +526,35 @@ func (s *Service) attachmentConfigForBot(botID string) (bool, int64) {
 	return enableVision, maxFileSize
 }
 
-// turnsToLLMPosts converts a contiguous slice of turns into llm.Posts,
-// merging each tool_result turn into the preceding assistant turn so that
-// BlocksToPost can pair tool_result blocks with their tool_use entries in a
-// single llm.Post. Without this merge, tool_use entries go out with empty
-// Result fields and bifrost emits empty-content tool messages, which
-// Anthropic rejects with "text content blocks must be non-empty".
+// MissingToolResultContent is replayed as the result of a tool_use that has no
+// stored tool_result (e.g. still awaiting approval). Providers reject a
+// tool_use that is not answered by a non-empty tool_result.
+const MissingToolResultContent = "No result: this tool call was not executed."
+
+// turnsToLLMPosts converts a slice of turns into llm.Posts. tool_result turns
+// produce no post of their own: each result is folded into the assistant turn
+// holding its tool_use (see pairToolResults), so every tool_use replays with
+// its own non-empty result.
 func turnsToLLMPosts(
 	turns []store.Turn,
 	conversionOpts PostConversionOptions,
 ) ([]llm.Post, error) {
-	posts := make([]llm.Post, 0, len(turns))
-	for i := 0; i < len(turns); i++ {
-		turn := turns[i]
+	blocksByTurn := make([][]ContentBlock, len(turns))
+	for i, turn := range turns {
 		blocks, err := UnmarshalBlocks(turn.Content)
 		if err != nil {
 			return nil, fmt.Errorf("failed to unmarshal turn %s content: %w", turn.ID, err)
 		}
-		if turn.Role == "assistant" && i+1 < len(turns) && turns[i+1].Role == "tool_result" {
-			nextBlocks, err := UnmarshalBlocks(turns[i+1].Content)
-			if err != nil {
-				return nil, fmt.Errorf("failed to unmarshal turn %s content: %w", turns[i+1].ID, err)
-			}
-			blocks = append(blocks, nextBlocks...)
-			i++
+		blocksByTurn[i] = blocks
+	}
+	pairToolResults(turns, blocksByTurn)
+
+	posts := make([]llm.Post, 0, len(turns))
+	for i, turn := range turns {
+		if turn.Role == "tool_result" {
+			continue
 		}
-		post := BlocksToPost(blocks, turn.Role, conversionOpts)
+		post := BlocksToPost(blocksByTurn[i], turn.Role, conversionOpts)
 		if turn.Role == "assistant" {
 			// Anthropic signed thinking must be replayed byte-for-byte. Our stored
 			// content blocks intentionally normalize assistant output (merge text
@@ -558,6 +567,95 @@ func turnsToLLMPosts(
 		posts = append(posts, post)
 	}
 	return posts, nil
+}
+
+// pairToolResults appends each tool_result block to the blocks of the nearest
+// preceding assistant turn holding its tool_use. A result need not follow its
+// tool_use directly: channel approvals append results at the end of the
+// conversation, after any newer bot posts. Results without a matching tool_use
+// are dropped, and executed tool_use blocks left without a result are answered
+// with MissingToolResultContent.
+func pairToolResults(turns []store.Turn, blocksByTurn [][]ContentBlock) {
+	type toolUseKey struct {
+		turn int
+		id   string
+	}
+	ownerByID := make(map[string]int)
+	answered := make(map[toolUseKey]bool)
+	for i, turn := range turns {
+		switch turn.Role {
+		case "assistant":
+			for _, b := range blocksByTurn[i] {
+				if b.Type == BlockTypeToolUse && b.ID != "" {
+					ownerByID[b.ID] = i
+				}
+				if b.Type == BlockTypeToolResult {
+					answered[toolUseKey{i, b.ToolUseID}] = true
+				}
+			}
+		case "tool_result":
+			for _, b := range blocksByTurn[i] {
+				owner, ok := ownerByID[b.ToolUseID]
+				if b.Type != BlockTypeToolResult || !ok {
+					continue
+				}
+				blocksByTurn[owner] = append(blocksByTurn[owner], b)
+				answered[toolUseKey{owner, b.ToolUseID}] = true
+			}
+			blocksByTurn[i] = nil
+		}
+	}
+
+	for i, turn := range turns {
+		if turn.Role != "assistant" {
+			continue
+		}
+		for _, b := range blocksByTurn[i] {
+			if b.Type != BlockTypeToolUse || b.ID == "" || answered[toolUseKey{i, b.ID}] {
+				continue
+			}
+			// BlocksToPost replays these as NotExecutedToolResult.
+			if b.Status == StatusPending || b.Status == StatusAccepted {
+				continue
+			}
+			blocksByTurn[i] = append(blocksByTurn[i], ContentBlock{
+				Type:      BlockTypeToolResult,
+				ToolUseID: b.ID,
+				Content:   MissingToolResultContent,
+				Status:    StatusError,
+				Shared:    new(true),
+			})
+		}
+	}
+}
+
+func toolUseIDs(content json.RawMessage) []string {
+	blocks, err := UnmarshalBlocks(content)
+	if err != nil {
+		return nil
+	}
+	var ids []string
+	for _, b := range blocks {
+		if b.Type == BlockTypeToolUse && b.ID != "" {
+			ids = append(ids, b.ID)
+		}
+	}
+	return ids
+}
+
+// toolResultOwnerSlot returns the run of the first tool_use answered by a
+// tool_result turn's content.
+func toolResultOwnerSlot(content json.RawMessage, slotByToolUseID map[string]runSlot) (runSlot, bool) {
+	blocks, err := UnmarshalBlocks(content)
+	if err != nil {
+		return runSlot{}, false
+	}
+	for _, b := range blocks {
+		if slot, ok := slotByToolUseID[b.ToolUseID]; ok && b.Type == BlockTypeToolResult {
+			return slot, true
+		}
+	}
+	return runSlot{}, false
 }
 
 // CreatePlaceholderAssistantTurn creates an empty assistant turn linked to the response post.
@@ -725,6 +823,13 @@ type floatingRun struct {
 	beforePostID string
 }
 
+// runSlot is where a post-less turn is rendered: a floating run, or else
+// after the post-linked turn with sequence seq (0 for before all of them).
+type runSlot struct {
+	run *floatingRun
+	seq int
+}
+
 // BuildChannelMentionRequest builds a CompletionRequest for a channel mention.
 // It reads the bot's own turns from the conversation and interleaves thread
 // posts from other users/bots at the correct sequence points.
@@ -763,10 +868,15 @@ func (s *Service) BuildChannelMentionRequest(
 	latestPostLinkedSequence := 0
 	latestPostLinkedPostID := ""
 	latestPostLinkedRole := ""
+	latestUserPostID := ""
 	// Post-less turns (tool rounds, synthetic user turns) are grouped by
 	// walking turns in sequence order: tool rounds ride with the preceding
 	// post-linked turn so tool_use/tool_result stay contiguous, while a
 	// post-less user turn opens a floating run positioned by time.
+	// tool_result turns instead join the run holding their tool_use:
+	// approvals append results at the end of the conversation, so an older
+	// post approved after a newer one would otherwise lend its results to
+	// the newer post.
 	turnsByPrecedingPost := make(map[int][]store.Turn)
 	var floatingRuns []*floatingRun
 	// unanchored are the runs since the last post-linked turn; that turn's
@@ -774,7 +884,16 @@ func (s *Service) BuildChannelMentionRequest(
 	var unanchored []*floatingRun
 	var openRun *floatingRun
 	precedingSeq := 0
+	appendToSlot := func(slot runSlot, turn store.Turn) {
+		if slot.run != nil {
+			slot.run.turns = append(slot.run.turns, turn)
+			return
+		}
+		turnsByPrecedingPost[slot.seq] = append(turnsByPrecedingPost[slot.seq], turn)
+	}
+	slotByToolUseID := make(map[string]runSlot)
 	for _, turn := range turns {
+		var slot runSlot
 		switch {
 		case turn.PostID != nil:
 			turnPostIDs[*turn.PostID] = true
@@ -784,20 +903,48 @@ func (s *Service) BuildChannelMentionRequest(
 				latestPostLinkedPostID = *turn.PostID
 				latestPostLinkedRole = turn.Role
 			}
+			if turn.Role == "user" {
+				latestUserPostID = *turn.PostID
+			}
 			for _, run := range unanchored {
 				run.beforePostID = *turn.PostID
 			}
 			unanchored = nil
 			openRun = nil
 			precedingSeq = turn.Sequence
+			slot = runSlot{seq: turn.Sequence}
 		case turn.Role == "user":
 			openRun = &floatingRun{turns: []store.Turn{turn}, createdAt: turn.CreatedAt}
 			floatingRuns = append(floatingRuns, openRun)
 			unanchored = append(unanchored, openRun)
-		case openRun != nil:
-			openRun.turns = append(openRun.turns, turn)
+			slot = runSlot{run: openRun}
 		default:
-			turnsByPrecedingPost[precedingSeq] = append(turnsByPrecedingPost[precedingSeq], turn)
+			slot = runSlot{run: openRun, seq: precedingSeq}
+			if turn.Role == "tool_result" {
+				if owner, ok := toolResultOwnerSlot(turn.Content, slotByToolUseID); ok {
+					slot = owner
+				}
+			}
+			appendToSlot(slot, turn)
+		}
+		if turn.Role == "assistant" {
+			for _, id := range toolUseIDs(turn.Content) {
+				slotByToolUseID[id] = slot
+			}
+		}
+	}
+
+	// Unattended runs drop non-turn thread posts nobody vetted: those created
+	// or changed after the latest user turn's post. If that post is gone from
+	// the thread there is no reference point, so every non-turn post is dropped.
+	skipUnvettedPosts := firstBuildOptions(opts).SkipThreadPostsAfterLatestUserTurn
+	var vettedCutoff int64
+	if skipUnvettedPosts {
+		for _, threadPost := range threadData.Posts {
+			if threadPost.Id == latestUserPostID {
+				vettedCutoff = threadPost.CreateAt
+				break
+			}
 		}
 	}
 
@@ -809,9 +956,10 @@ func (s *Service) BuildChannelMentionRequest(
 		Message: conv.SystemPrompt,
 	})
 
-	// Route through turnsToLLMPosts so tool_use and tool_result within the
-	// same tool round merge into a single llm.Post, matching
-	// BuildCompletionRequest's behavior.
+	// Emit any non-post turns that precede all post-linked turns
+	// (precedingSeq = 0). Route through turnsToLLMPosts so tool_use and
+	// tool_result within the same tool round merge into a single llm.Post,
+	// matching BuildCompletionRequest's behavior.
 	conversionOpts := PostConversionOptions{
 		RedactUnshared: redactUnshared,
 		MMClient:       mmClient,
@@ -855,8 +1003,13 @@ func (s *Service) BuildChannelMentionRequest(
 
 	responsePostID := firstBuildOptions(opts).ResponsePostID
 	for _, threadPost := range threadData.Posts {
-		if threadPost.Id == responsePostID && !turnPostIDs[threadPost.Id] {
-			continue
+		if !turnPostIDs[threadPost.Id] {
+			if threadPost.Id == responsePostID {
+				continue
+			}
+			if skipUnvettedPosts && (vettedCutoff == 0 || threadPost.CreateAt > vettedCutoff || threadPost.UpdateAt > vettedCutoff) {
+				continue
+			}
 		}
 		if err := emitRunsBefore(threadPost); err != nil {
 			return nil, err

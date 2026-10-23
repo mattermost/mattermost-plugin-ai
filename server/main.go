@@ -509,6 +509,9 @@ func (p *Plugin) OnActivate() error {
 	)
 	contextBuilder.SetMCPDynamicToolTelemetry(metricsService)
 
+	policyChecker := mcp.NewConfigToolPolicyChecker(p.configuration.MCP, func() bool {
+		return licenseChecker.Allows(enterprise.CapToolApprovalPolicies)
+	})
 	conversationsService := conversations.New(
 		prompts,
 		mmClient,
@@ -520,6 +523,7 @@ func (p *Plugin) OnActivate() error {
 		i18nBundle,
 		nil, // meetingsService will be set after it's created
 		&p.configuration,
+		policyChecker,
 	)
 
 	convService := conversation.NewService(p.store, prompts, mmClient, bots)
@@ -543,12 +547,7 @@ func (p *Plugin) OnActivate() error {
 	// TODO: Refactor to avoid circular dependency
 	conversationsService.SetMeetingsService(meetingsService)
 
-	// Wire per-tool policy checker for auto-approval in streaming and conversations.
-	policyChecker := mcp.NewConfigToolPolicyChecker(p.configuration.MCP, func() bool {
-		return licenseChecker.Allows(enterprise.CapToolApprovalPolicies)
-	})
 	streamingService.SetTurnStore(p.store)
-	conversationsService.SetToolPolicyChecker(policyChecker)
 
 	// wait_for_async_work wakes ride on the cluster JobOnce scheduler: jobs
 	// persist in KV, survive restarts, and fire exactly once cluster-wide.

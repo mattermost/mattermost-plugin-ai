@@ -3,7 +3,7 @@
 
 import React, {ChangeEvent, useEffect, useRef, useState} from 'react';
 import styled from 'styled-components';
-import {FormattedMessage} from 'react-intl';
+import {FormattedMessage, useIntl} from 'react-intl';
 
 //@ts-ignore it exists
 import aiIcon from 'src/../../assets/bot_icon.png';
@@ -21,6 +21,7 @@ type AvatarItemProps = {
 }
 
 const AvatarItem = (props: AvatarItemProps) => {
+    const intl = useIntl();
     const [icon, setIcon] = useState<string>(aiIcon);
     const hasLocalUpload = useRef(false);
     const localPreviewURL = useRef<string | null>(null);
@@ -106,7 +107,10 @@ const AvatarItem = (props: AvatarItemProps) => {
         <FormRow>
             <ItemLabel><FormattedMessage defaultMessage='Bot avatar'/></ItemLabel>
             <AvatarSelectorContainer>
-                <Avatar src={icon}/>
+                <Avatar
+                    src={icon}
+                    alt={intl.formatMessage({defaultMessage: 'Bot avatar'})}
+                />
                 <HiddenInput
                     ref={hiddenInput}
                     type='file'

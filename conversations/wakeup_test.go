@@ -9,12 +9,15 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/bots"
 	"github.com/mattermost/mattermost-plugin-agents/v2/conversation"
 	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise"
+	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise/enterprisetest"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmapi"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmapi/mocks"
@@ -199,6 +202,10 @@ func (e *wakeEnv) seedTurn(t *testing.T, id, role, text string, postID *string, 
 // captures the wake reply post.
 func (e *wakeEnv) expectLiveWake(post *model.Post, channel *model.Channel, userID string) {
 	e.mmClient.On("GetPost", post.Id).Return(post, nil).Once()
+	if channel.Type == model.ChannelTypeDirect && post.RootId != "" {
+		// The DM analysis-source check looks the thread root up.
+		e.mmClient.On("GetPost", post.RootId).Return(&model.Post{Id: post.RootId, ChannelId: channel.Id}, nil).Maybe()
+	}
 	e.mmClient.On("GetUser", userID).Return(&model.User{Id: userID, Username: "user"}, nil)
 	e.mmClient.On("GetChannel", channel.Id).Return(channel, nil).Once()
 	e.mmClient.On("HasPermissionToChannel", userID, channel.Id, model.PermissionReadChannel).Return(true).Once()
@@ -254,45 +261,70 @@ func TestResumeConversationWritesWakeTurnAndFollowsUp(t *testing.T) {
 	require.False(t, env.lm.requests[0].Context.ToolCatalog.InteractiveUserPresent)
 }
 
-func TestResumeConversationInChannelSeesPostsMadeWhileWaiting(t *testing.T) {
-	env := newWakeEnv(t, nil)
-	rootPostID := "mention-post-id"
-	env.conv.RootPostID = &rootPostID
-	require.NoError(t, env.convStore.CreateConversation(env.conv))
-	replyPostID := "bot-post-id"
-	env.seedTurn(t, "user-1", "user", "@matty watch the job", &rootPostID, 1, 0)
-	env.seedTurn(t, "assistant-1", "assistant", "waiting on the job", &replyPostID, 2, 0)
+func TestResumeConversationInChannelOnlySeesPostsVettedBeforeSleeping(t *testing.T) {
+	tests := []struct {
+		name     string
+		createAt int64
+		updateAt int64
+		wantPeer bool
+	}{
+		{name: "post made while waiting is withheld", createAt: 3000, updateAt: 3000},
+		{name: "post made before the requester's message is kept", createAt: 900, updateAt: 900, wantPeer: true},
+		{name: "earlier post edited while waiting is withheld", createAt: 900, updateAt: 3500},
+	}
 
-	peerID := model.NewId()
-	channel := &model.Channel{Id: "open-channel", Type: model.ChannelTypeOpen, TeamId: "team-id"}
-	post := &model.Post{Id: replyPostID, UserId: "bot-id", ChannelId: channel.Id, RootId: rootPostID, CreateAt: 2000}
-	thread := &model.PostList{
-		Order: []string{rootPostID, replyPostID, "peer-post-id", "wake-post-id"},
-		Posts: map[string]*model.Post{
-			rootPostID:     {Id: rootPostID, UserId: wakeUserID, ChannelId: channel.Id, CreateAt: 1000, Message: "@matty watch the job"},
-			replyPostID:    post,
-			"peer-post-id": {Id: "peer-post-id", UserId: peerID, ChannelId: channel.Id, RootId: rootPostID, CreateAt: 3000, Message: "PEER_MESSAGE"},
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := newWakeEnv(t, nil)
+			env.c.licenseChecker = enterprisetest.CheckerAt(enterprise.LevelProfessional)
+			rootPostID := "mention-post-id"
+			env.conv.RootPostID = &rootPostID
+			require.NoError(t, env.convStore.CreateConversation(env.conv))
+			replyPostID := "bot-post-id"
+			env.seedTurn(t, "user-1", "user", "@matty watch the job", &rootPostID, 1, 0)
+			env.seedTurn(t, "assistant-1", "assistant", "waiting on the job", &replyPostID, 2, 0)
+
+			peerID := model.NewId()
+			channel := &model.Channel{Id: "open-channel", Type: model.ChannelTypeOpen, TeamId: "team-id"}
+			mention := &model.Post{Id: rootPostID, UserId: wakeUserID, ChannelId: channel.Id, CreateAt: 1000, UpdateAt: 1000, Message: "@matty watch the job"}
+			post := &model.Post{Id: replyPostID, UserId: "bot-id", ChannelId: channel.Id, RootId: rootPostID, CreateAt: 2000, UpdateAt: 2000}
+			peer := &model.Post{
+				Id: "peer-post-id", UserId: peerID, ChannelId: channel.Id, RootId: rootPostID,
+				CreateAt: tt.createAt, UpdateAt: tt.updateAt, Message: "PEER_MESSAGE",
+			}
 			// The wake's own empty reply post exists in the thread when the request is built.
-			"wake-post-id": {Id: "wake-post-id", UserId: "bot-id", ChannelId: channel.Id, RootId: rootPostID, CreateAt: 4000},
-		},
-	}
-	env.expectLiveWake(post, channel, wakeUserID)
-	env.mmClient.On("GetUser", peerID).Return(&model.User{Id: peerID, Username: "mallory"}, nil).Maybe()
-	env.mmClient.On("GetUser", "bot-id").Return(&model.User{Id: "bot-id", Username: "matty", IsBot: true}, nil).Maybe()
-	env.mmClient.On("GetPostThread", rootPostID).Return(thread, nil).Once()
+			wakeReply := &model.Post{Id: "wake-post-id", UserId: "bot-id", ChannelId: channel.Id, RootId: rootPostID, CreateAt: 4000, UpdateAt: 4000}
 
-	env.resume(t, post, wakeUserID)
+			ordered := []*model.Post{mention, post, peer, wakeReply}
+			slices.SortStableFunc(ordered, func(a, b *model.Post) int { return int(a.CreateAt - b.CreateAt) })
+			thread := &model.PostList{Posts: map[string]*model.Post{}}
+			for _, p := range ordered {
+				thread.Order = append(thread.Order, p.Id)
+				thread.Posts[p.Id] = p
+			}
 
-	require.Len(t, env.lm.requests, 1)
-	var messages []string
-	for _, p := range env.lm.requests[0].Posts[1:] {
-		require.NotEmpty(t, p.Message, "the empty wake placeholder must not reach the model")
-		messages = append(messages, p.Message)
+			env.expectLiveWake(post, channel, wakeUserID)
+			env.mmClient.On("GetPost", rootPostID).Return(mention, nil).Maybe()
+			env.mmClient.On("GetUser", peerID).Return(&model.User{Id: peerID, Username: "mallory"}, nil).Maybe()
+			env.mmClient.On("GetUser", "bot-id").Return(&model.User{Id: "bot-id", Username: "matty", IsBot: true}, nil).Maybe()
+			env.mmClient.On("GetPostThread", rootPostID).Return(thread, nil).Once()
+
+			env.resume(t, post, wakeUserID)
+
+			require.Len(t, env.lm.requests, 1)
+			var messages []string
+			for _, p := range env.lm.requests[0].Posts[1:] {
+				require.NotEmpty(t, p.Message, "the empty wake placeholder must not reach the model")
+				messages = append(messages, p.Message)
+			}
+			require.Equal(t, mmtools.WakeUserMessage, messages[len(messages)-1], "the wake turn is the latest input")
+			if tt.wantPeer {
+				require.Contains(t, strings.Join(messages, "\n"), "PEER_MESSAGE")
+				return
+			}
+			require.NotContains(t, strings.Join(messages, "\n"), "PEER_MESSAGE", "unattended wakes must not see unvetted thread posts")
+		})
 	}
-	// Posts made while waiting come before the wake turn, which is the latest input.
-	require.Len(t, messages, 4)
-	require.Contains(t, messages[2], "PEER_MESSAGE")
-	require.Equal(t, mmtools.WakeUserMessage, messages[3])
 }
 
 func TestResumeConversationDrops(t *testing.T) {
@@ -735,6 +767,7 @@ func TestRegenerationCancelsThreadWakeWithoutNote(t *testing.T) {
 
 	mmClient := mocks.NewMockClient(t)
 	kv := newKVFake(mmClient)
+	mmClient.On("GetPost", "root-post-id").Return(&model.Post{Id: "root-post-id"}, nil).Maybe()
 	sched := &fakeWakeScheduler{scheduled: map[string]WakeJob{}}
 	post := &model.Post{Id: "response-post-id", UserId: "bot-id", RootId: "root-post-id"}
 	post.AddProp(streaming.ConversationIDProp, conv.ID)
@@ -744,21 +777,24 @@ func TestRegenerationCancelsThreadWakeWithoutNote(t *testing.T) {
 	require.NoError(t, err)
 	kv.data[responsePostMarkerKey(post)] = raw
 
+	bot := loadedStateBot(&loadedStateLLM{})
 	c := &Conversations{
 		mmClient:       mmClient,
 		contextBuilder: loadedStateBuilder(t),
+		bots:           passthroughBotsService(bot),
 		convService:    conversation.NewService(convStore, nil, nil, nil),
 		configProvider: &channelFollowUpTestConfig{},
 		wakeScheduler:  sched,
 	}
-	streamResult, err := c.regenerateViaConversation(
-		context.Background(),
-		loadedStateBot(&loadedStateLLM{}),
-		&model.User{Id: "user-id", Username: "user"},
-		&model.Channel{Id: "dm-channel", Type: model.ChannelTypeDirect, Name: "bot-id__user-id"},
-		post,
-		"root-post-id",
-	)
+	policy, err := c.resolveTurnPolicy(context.Background(), turnRequest{
+		bot:     bot,
+		user:    &model.User{Id: wakeUserID, Username: "user"},
+		channel: &model.Channel{Id: "dm-channel", Type: model.ChannelTypeDirect, Name: "bot-id__" + wakeUserID},
+		conv:    conv,
+		post:    post,
+	})
+	require.NoError(t, err)
+	streamResult, err := c.regenerateViaConversation(context.Background(), policy, post)
 	require.NoError(t, err)
 	_, err = streamResult.ReadAll()
 	require.NoError(t, err)

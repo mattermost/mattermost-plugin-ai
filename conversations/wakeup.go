@@ -14,6 +14,7 @@ import (
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/bots"
 	"github.com/mattermost/mattermost-plugin-agents/v2/conversation"
+	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmapi"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmtools"
 	"github.com/mattermost/mattermost-plugin-agents/v2/store"
@@ -323,17 +324,13 @@ func (c *Conversations) ResumeConversation(ctx context.Context, job WakeJob) (er
 		return c.dropWake("user no longer authorized", nil, "user_id", user.Id, "channel_id", channel.Id)
 	}
 
-	isDM := mmapi.IsDMWith(bot.GetMMBot().UserId, channel)
-	var restrictionErr error
-	if isDM {
-		restrictionErr = c.bots.CheckUsageRestrictionsForUser(ctx, bot, user.Id)
-	} else {
-		restrictionErr = c.bots.CheckUsageRestrictions(ctx, user.Id, bot, channel)
-	}
-	if errors.Is(restrictionErr, bots.ErrUsageRestriction) {
-		return c.dropWake("usage restricted", restrictionErr, "user_id", user.Id, "bot_id", bot.GetMMBot().UserId, "channel_id", channel.Id)
-	} else if restrictionErr != nil {
-		return fmt.Errorf("failed to check usage restrictions: %w", restrictionErr)
+	policy, err := c.resolveTurnPolicy(ctx, turnRequest{bot: bot, user: user, channel: channel, conv: conv, post: post})
+	_, isLicenseErr := errors.AsType[*enterprise.LicenseError](err)
+	switch {
+	case errors.Is(err, bots.ErrUsageRestriction), errors.Is(err, ErrAnalysisSourceUnavailable), isLicenseErr:
+		return c.dropWake("turn not allowed", err, "user_id", user.Id, "bot_id", bot.GetMMBot().UserId, "channel_id", channel.Id)
+	case err != nil:
+		return fmt.Errorf("failed to resolve turn policy: %w", err)
 	}
 
 	if wakes := countConsecutiveWakes(turns); wakes >= maxConsecutiveWakes {
@@ -354,7 +351,7 @@ func (c *Conversations) ResumeConversation(ctx context.Context, job WakeJob) (er
 		return err
 	}
 
-	if err := c.streamToolFollowUp(ctx, bot, user, channel, wakePost, conv, followUpOptions{Unattended: true}); err != nil {
+	if err := c.streamToolFollowUp(ctx, policy, wakePost, conv, followUpOptions{Unattended: true}); err != nil {
 		c.failResponsePlaceholder(wakePost, user.Locale)
 		return err
 	}

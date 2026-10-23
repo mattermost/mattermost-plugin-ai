@@ -15,6 +15,7 @@ import {IconButton} from '@mattermost/compass-ui/components/icon-button';
 import {Modal} from '@mattermost/compass-ui/components/modal';
 import {SearchInput} from '@mattermost/compass-ui/components/search-input';
 import {SectionNotice} from '@mattermost/compass-ui/components/section-notice';
+import {WithTooltip} from '@mattermost/shared/components/tooltip';
 
 import {getCustomPrompts, getPinnedPromptIds, getShowCustomPromptsModal} from '@/selectors';
 import {fetchCustomPrompts, fetchPinnedPromptIds, ShowCustomPromptsModalHandler} from '@/redux';
@@ -270,6 +271,7 @@ const CustomPromptsManagement = () => {
                 onBackdropClick={handleClose}
                 zIndex={2000}
             >
+                {/* eslint-disable-next-line agents/click-events-have-key-events, agents/no-static-element-interactions -- only stops clicks inside the sheet from reaching the backdrop */}
                 <Sheet
                     className={MODAL_SHEET_CLASS}
                     onClick={handleModalClick}
@@ -375,6 +377,10 @@ const CustomPromptsManagement = () => {
                                         <PromptList>
                                             {filteredPrompts.map((prompt) => {
                                                 const isPinned = pinnedIds.includes(prompt.id);
+                                                let pinLabel = intl.formatMessage({defaultMessage: 'Pin prompt'});
+                                                if (isPinned) {
+                                                    pinLabel = intl.formatMessage({defaultMessage: 'Unpin prompt'});
+                                                }
                                                 const openPrompt = () => {
                                                     setEditingPromptId(prompt.id);
                                                     setShowCreateForm(false);
@@ -405,15 +411,16 @@ const CustomPromptsManagement = () => {
                                                                     )}
                                                                 </PromptInfo>
                                                             </PromptRowMain>
-                                                            <PinButton
-                                                                size='small'
-                                                                active={isPinned}
-                                                                aria-pressed={isPinned}
-                                                                icon={<Icon glyph={isPinned ? <PinIcon/> : <PinOutlineIcon/>}/>}
-                                                                onClick={() => handleTogglePin(prompt.id)}
-                                                                aria-label={isPinned ? intl.formatMessage({defaultMessage: 'Unpin prompt'}) : intl.formatMessage({defaultMessage: 'Pin prompt'})
-                                                                }
-                                                            />
+                                                            <WithTooltip title={pinLabel}>
+                                                                <PinButton
+                                                                    size='small'
+                                                                    active={isPinned}
+                                                                    aria-pressed={isPinned}
+                                                                    icon={<Icon glyph={isPinned ? <PinIcon/> : <PinOutlineIcon/>}/>}
+                                                                    onClick={() => handleTogglePin(prompt.id)}
+                                                                    aria-label={pinLabel}
+                                                                />
+                                                            </WithTooltip>
                                                         </PromptRowHeader>
                                                     </PromptRowContainer>
                                                 );
