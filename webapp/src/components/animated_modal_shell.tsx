@@ -201,6 +201,7 @@ export const AnimatedModalShell = ({show, children, onBackdropClick, onEscape, z
             onEntered={handleEntered}
             onExited={handleExited}
         >
+            {/* eslint-disable-next-line agents/no-static-element-interactions -- backdrop click dismisses; Escape is handled by onKeyDown */}
             <ShellRoot
                 ref={nodeRef}
                 $zIndex={zIndex}

@@ -242,7 +242,8 @@ type BotConfig struct {
 	StructuredOutputEnabled bool `json:"structuredOutputEnabled"`
 
 	// MaxToolTurns is the maximum number of LLM-call → tool-execute iterations
-	// the tool runner will perform for this agent before stopping. A non-positive
+	// the tool runner will perform for this agent; one more LLM call with tools
+	// disabled then produces the final answer. A non-positive
 	// value falls back to DefaultMaxToolTurns. Lower this when using a smaller
 	// model that tends to call tools in loops; raise it for agents that rely on
 	// long dynamic-tool-discovery chains (e.g. search → load → execute).

@@ -435,12 +435,17 @@ func (a *API) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Reques
 	postRouter.POST("/analyze", a.handleThreadAnalysis)
 	postRouter.POST("/transcribe/file/:fileid", a.capabilityRequired(enterprise.CapMeetings), a.handleTranscribeFile)
 	postRouter.POST("/summarize_transcription", a.capabilityRequired(enterprise.CapMeetings), a.handleSummarizeTranscription)
-	postRouter.POST("/stop", a.handleStop)
-	postRouter.POST("/regenerate", a.handleRegenerate)
-	postRouter.POST("/tool_call", a.handleToolCall)
-	postRouter.POST("/tool_result", a.handleToolResult)
 	postRouter.POST("/postback_summary", a.handlePostbackSummary)
 	postRouter.POST("/loop_in_agent", a.handleLoopInAgent)
+
+	// Resuming a run acts as the agent that wrote the post, so these routes
+	// authorize against that agent rather than the default one.
+	agentPostRouter := router.Group("/post/:postid")
+	agentPostRouter.Use(a.agentPostAuthorizationRequired)
+	agentPostRouter.POST("/stop", a.handleStop)
+	agentPostRouter.POST("/regenerate", a.handleRegenerate)
+	agentPostRouter.POST("/tool_call", a.handleToolCall)
+	agentPostRouter.POST("/tool_result", a.handleToolResult)
 
 	channelRouter := botRequiredRouter.Group("/channel/:channelid")
 	channelRouter.Use(a.channelAuthorizationRequired)
