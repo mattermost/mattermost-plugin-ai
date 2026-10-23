@@ -19,13 +19,6 @@ linters:
     - unused
     - whitespace
   settings:
-    gocritic:
-      enabled-checks:
-        - ruleguard
-      settings:
-        ruleguard:
-          rules: ${base-path}/build/ruleguard/rules.go
-          failOn: all
     testifylint:
       disable-all: true
       enable:

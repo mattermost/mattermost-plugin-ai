@@ -1,12 +1,11 @@
 module github.com/mattermost/mattermost-plugin-agents/loadtest/controller
 
-go 1.26.7
+go 1.27.3
 
 require (
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/mattermost/mattermost-load-test-ng v1.32.0
 	github.com/mattermost/mattermost/server/public v0.4.3
-	github.com/quasilyte/go-ruleguard/dsl v0.3.23
 	github.com/stretchr/testify v1.11.1
 )
 

@@ -196,10 +196,6 @@ export default class MattermostContainer {
         await this.mmctl('permissions', 'remove', 'system_user', 'manage_own_agent');
     }
 
-    getLogs = async (lines: number): Promise<string> => {
-        return this.mmctl("logs", "--number", lines.toString())
-    }
-
     setSiteURL = async () => {
         await this.mmctl("config", "set", "ServiceSettings.SiteURL", this.url())
     }

@@ -21,21 +21,24 @@ function passedThroughDeadline(call) {
         outer.arguments.at(-1) === arrow;
 }
 
-function readsExitCode(call) {
+// Before the await, exitCode would be read off the pending promise.
+function readsExitCode(call, sourceCode) {
     if (passedThroughDeadline(call)) {
-        return readsExitCode(call.parent.parent);
+        return readsExitCode(call.parent.parent, sourceCode);
     }
-    let node = call.parent;
-    if (node.type === 'AwaitExpression') {
-        node = node.parent;
+    if (call.parent.type !== 'AwaitExpression') {
+        return false;
     }
+    const node = call.parent.parent;
     if (node.type === 'MemberExpression' && node.property.name === 'exitCode') {
         return true;
     }
-    if (node.type === 'VariableDeclarator' && node.id.type === 'ObjectPattern') {
-        return node.id.properties.some((p) => p.type === 'Property' && p.key.name === 'exitCode');
+    if (node.type !== 'VariableDeclarator' || node.id.type !== 'ObjectPattern') {
+        return false;
     }
-    return false;
+    const prop = node.id.properties.find((p) => p.type === 'Property' && p.key.name === 'exitCode');
+    const variable = prop && sourceCode.getDeclaredVariables(node).find((v) => v.identifiers.includes(prop.value));
+    return Boolean(variable) && variable.references.some((ref) => ref.isRead());
 }
 
 export default {
@@ -43,14 +46,14 @@ export default {
         type: 'problem',
         docs: {description: 'Check the exit code of container.exec'},
         messages: {
-            unchecked: 'container.exec resolves on non-zero exit; destructure and check exitCode (or use mattermost.mmctl).',
+            unchecked: 'container.exec resolves on non-zero exit; await it and check exitCode (or use mattermost.mmctl).',
         },
         schema: [],
     },
     create(context) {
         return {
             CallExpression(call) {
-                if (isContainerExec(call) && !readsExitCode(call)) {
+                if (isContainerExec(call) && !readsExitCode(call, context.sourceCode)) {
                     context.report({node: call, messageId: 'unchecked'});
                 }
             },

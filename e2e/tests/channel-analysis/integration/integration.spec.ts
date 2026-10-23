@@ -105,8 +105,8 @@ class IntegrationHelper {
         await expect(input).toBeVisible();
         await input.fill(query);
 
-        // Click the send icon or press Enter
         await input.press('Enter');
+        await expect(this.page.locator('.channel-summarize-popover')).toBeHidden({ timeout: 10000 });
     }
 
     /**

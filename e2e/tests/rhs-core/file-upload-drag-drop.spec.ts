@@ -62,6 +62,10 @@ test.describe('Agents RHS drag-and-drop file upload', () => {
         const rhs = aiPlugin.getRhsContainer();
         await expect(rhs).toBeVisible();
 
+        // The drop zone forwards files to the editor's file input and drops them if the
+        // editor is still waiting on the bot DM channel.
+        await expect(page.locator('[data-testid="rhs-file-drop-zone"] input[type="file"]')).toBeAttached({timeout: 30000});
+
         await dispatchFileDrop(
             page,
             '[data-testid="rhs-file-drop-zone"]',
