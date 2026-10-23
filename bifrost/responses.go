@@ -21,6 +21,9 @@ func (b *LLM) convertToResponsesMessages(posts []llm.Post) []schemas.ResponsesMe
 	for _, post := range posts {
 		switch post.Role {
 		case llm.PostRoleSystem:
+			if isBlank(post.Message) {
+				continue
+			}
 			msg := schemas.ResponsesMessage{
 				Role: new(schemas.ResponsesInputMessageRoleSystem),
 				Content: &schemas.ResponsesMessageContent{
@@ -33,6 +36,9 @@ func (b *LLM) convertToResponsesMessages(posts []llm.Post) []schemas.ResponsesMe
 			if len(post.Files) > 0 {
 				// Multimodal message with images
 				parts := b.createResponsesMultimodalContent(post, maxDim)
+				if len(parts) == 0 {
+					continue
+				}
 				msg := schemas.ResponsesMessage{
 					Role: new(schemas.ResponsesInputMessageRoleUser),
 					Content: &schemas.ResponsesMessageContent{
@@ -40,7 +46,7 @@ func (b *LLM) convertToResponsesMessages(posts []llm.Post) []schemas.ResponsesMe
 					},
 				}
 				messages = append(messages, msg)
-			} else {
+			} else if !isBlank(post.Message) {
 				msg := schemas.ResponsesMessage{
 					Role: new(schemas.ResponsesInputMessageRoleUser),
 					Content: &schemas.ResponsesMessageContent{
@@ -52,7 +58,7 @@ func (b *LLM) convertToResponsesMessages(posts []llm.Post) []schemas.ResponsesMe
 
 		case llm.PostRoleBot:
 			messages = append(messages, assistantReplayMessages(post)...)
-			for _, tc := range post.ToolUse {
+			for _, tc := range replayableToolCalls(post.ToolUse) {
 				funcCallMsg := schemas.ResponsesMessage{
 					Type: new(schemas.ResponsesMessageTypeFunctionCall),
 					ResponsesToolMessage: &schemas.ResponsesToolMessage{
@@ -71,6 +77,12 @@ func (b *LLM) convertToResponsesMessages(posts []llm.Post) []schemas.ResponsesMe
 							ResponsesToolCallOutputStr: new(tc.Result),
 						},
 					},
+				}
+				// Mark failures with status "incomplete", never ResponsesToolMessage.Error:
+				// the OpenAI converter forwards "error" verbatim and OpenAI rejects it,
+				// while "status" is valid OpenAI wire and Anthropic maps it to is_error.
+				if toolResultIsError(tc) {
+					funcOutputMsg.Status = new("incomplete")
 				}
 				messages = append(messages, funcOutputMsg)
 			}
@@ -98,7 +110,7 @@ func assistantReplayMessages(post llm.Post) []schemas.ResponsesMessage {
 		if record := serverToolActivityRecord(post.ServerTools); record != "" {
 			messages = append(messages, newTextMessage(record))
 		}
-		if post.Message != "" {
+		if !isBlank(post.Message) {
 			messages = append(messages, newTextMessage(post.Message))
 		}
 		return messages
@@ -114,7 +126,7 @@ func assistantReplayMessages(post llm.Post) []schemas.ResponsesMessage {
 	for _, segment := range post.AssistantSegments {
 		switch segment.Kind {
 		case llm.TurnSegmentText:
-			if segment.Text != "" {
+			if !isBlank(segment.Text) {
 				messages = append(messages, newTextMessage(segment.Text))
 			}
 		case llm.TurnSegmentServerTool:
@@ -647,19 +659,8 @@ func (b *LLM) streamResponses(ctx context.Context, request llm.CompletionRequest
 					}
 				}
 
-				// Response completed - emit tool calls if any, in sorted key order
-				if len(toolCallsBuffer) > 0 {
-					toolCalls = flushToolCallBuffers(toolCallsBuffer, true)
-					if len(toolCalls) > 0 {
-						output <- llm.TextStreamEvent{
-							Type:  llm.EventTypeToolCalls,
-							Value: toolCalls,
-						}
-						return
-					}
-				}
-
-				// Handle usage data from completed response
+				// Usage comes before the tool calls: a round that ends in
+				// tool calls returns below, and it must still be counted.
 				if resp.Response != nil && resp.Response.Usage != nil {
 					usage := convertResponsesUsage(resp.Response.Usage)
 					if usage.InputTokens > 0 || usage.OutputTokens > 0 {
@@ -670,6 +671,21 @@ func (b *LLM) streamResponses(ctx context.Context, request llm.CompletionRequest
 							Value: usage,
 						}
 					}
+				}
+
+				// Response completed - emit tool calls if any, in sorted key order
+				if len(toolCallsBuffer) > 0 {
+					toolCalls = flushToolCallBuffers(toolCallsBuffer, true)
+				}
+				if reason := responsesFinishReason(resp.Response, len(toolCalls) > 0); reason != "" {
+					span.SetAttributes(telemetry.LLMFinishReason.String(reason))
+				}
+				if len(toolCalls) > 0 {
+					output <- llm.TextStreamEvent{
+						Type:  llm.EventTypeToolCalls,
+						Value: toolCalls,
+					}
+					return
 				}
 			}
 		}
@@ -691,4 +707,23 @@ func (b *LLM) streamResponses(ctx context.Context, request llm.CompletionRequest
 		Type:  llm.EventTypeEnd,
 		Value: nil,
 	}
+}
+
+// responsesFinishReason reports why a Responses API turn ended: the
+// provider's stop reason when it sends one, else the incomplete reason,
+// else "tool_calls" or the response status.
+func responsesFinishReason(resp *schemas.BifrostResponsesResponse, hasToolCalls bool) string {
+	if resp != nil && resp.StopReason != nil && *resp.StopReason != "" {
+		return *resp.StopReason
+	}
+	if resp != nil && resp.IncompleteDetails != nil && resp.IncompleteDetails.Reason != "" {
+		return resp.IncompleteDetails.Reason
+	}
+	if hasToolCalls {
+		return "tool_calls"
+	}
+	if resp != nil && resp.Status != nil {
+		return *resp.Status
+	}
+	return ""
 }

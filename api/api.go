@@ -6,14 +6,19 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/accesscontrol"
 	"github.com/mattermost/mattermost-plugin-agents/v2/autoreply"
@@ -39,6 +44,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/search"
 	"github.com/mattermost/mattermost-plugin-agents/v2/store"
 	"github.com/mattermost/mattermost-plugin-agents/v2/streaming"
+	"github.com/mattermost/mattermost-plugin-agents/v2/telemetry"
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/mattermost/mattermost/server/public/pluginapi"
@@ -51,9 +57,13 @@ const (
 )
 
 type Config interface {
+	GetDefaultBotUserID() string
+	// GetDefaultBotName is the legacy username reference, used only when no
+	// default bot user ID is set.
 	GetDefaultBotName() string
 	MCP() mcp.Config
 	AllowUnsafeLinks() bool
+	EnableHTMLArtifacts() bool
 	EmbeddingSearchConfig() embeddings.EmbeddingSearchConfig
 	EnableChannelMentionToolCalling() bool
 
@@ -136,8 +146,10 @@ type ChannelAutoReplyStore interface {
 }
 
 // ClusterAgentNotifier broadcasts agent update events to other cluster nodes.
+// agentID names a renamed agent that peers refresh individually first; it is
+// empty when no single agent needs that.
 type ClusterAgentNotifier interface {
-	PublishAgentUpdate() error
+	PublishAgentUpdate(agentID string) error
 }
 
 // MCPOAuthClusterNotifier broadcasts MCP OAuth updates to other cluster nodes.
@@ -188,6 +200,11 @@ type API struct {
 	autoReplyStore        ChannelAutoReplyStore
 	accessChecker         *accesscontrol.Checker
 	mcpRequestLimiter     *mcpRequestLimiter
+
+	// artifactSecretCache caches the HTML artifact bridge secret after
+	// its first load from the KV store.
+	artifactSecretMu    sync.Mutex
+	artifactSecretCache []byte
 
 	// auditEvents maps gin handler names to audit event names for routes
 	// that emit server audit records. Built once in New; read-only after.
@@ -291,7 +308,7 @@ func (a *API) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Reques
 	}
 
 	router := gin.Default()
-	router.Use(otelgin.Middleware("mattermost-ai-agents"))
+	router.Use(httpTracingMiddleware())
 	router.Use(a.ginlogger)
 	router.Use(a.metricsMiddleware)
 	router.Use(a.auditMiddleware(c))
@@ -344,6 +361,8 @@ func (a *API) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Reques
 	router.GET("/oauth/callback", a.handleOAuthCallback)
 	router.GET("/ai_threads", a.handleGetAIThreads)
 	router.GET("/ai_bots", a.handleGetAIBots)
+	router.GET("/artifacts/:fileid", a.handleGetArtifact)
+	router.GET("/artifacts/:fileid/token", a.handleGetArtifactToken)
 	router.GET("/mcp/tools", a.handleGetUserMCPTools)
 	router.POST("/mcp/tools/refresh", a.handleRefreshUserMCPTools)
 	router.GET("/mcp/oauth/:serverName/start", a.handleOAuthStart)
@@ -400,12 +419,17 @@ func (a *API) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Reques
 	postRouter.POST("/analyze", a.handleThreadAnalysis)
 	postRouter.POST("/transcribe/file/:fileid", a.capabilityRequired(enterprise.CapMeetings), a.handleTranscribeFile)
 	postRouter.POST("/summarize_transcription", a.capabilityRequired(enterprise.CapMeetings), a.handleSummarizeTranscription)
-	postRouter.POST("/stop", a.handleStop)
-	postRouter.POST("/regenerate", a.handleRegenerate)
-	postRouter.POST("/tool_call", a.handleToolCall)
-	postRouter.POST("/tool_result", a.handleToolResult)
 	postRouter.POST("/postback_summary", a.handlePostbackSummary)
 	postRouter.POST("/loop_in_agent", a.handleLoopInAgent)
+
+	// Resuming a run acts as the agent that wrote the post, so these routes
+	// authorize against that agent rather than the default one.
+	agentPostRouter := router.Group("/post/:postid")
+	agentPostRouter.Use(a.agentPostAuthorizationRequired)
+	agentPostRouter.POST("/stop", a.handleStop)
+	agentPostRouter.POST("/regenerate", a.handleRegenerate)
+	agentPostRouter.POST("/tool_call", a.handleToolCall)
+	agentPostRouter.POST("/tool_result", a.handleToolResult)
 
 	channelRouter := botRequiredRouter.Group("/channel/:channelid")
 	channelRouter.Use(a.channelAuthorizationRequired)
@@ -443,6 +467,7 @@ func (a *API) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Reques
 	adminRouter.GET("/services/:serviceid/access_policy", a.handleGetServicePolicy)
 	adminRouter.PUT("/services/:serviceid/access_policy", a.handlePutServicePolicy)
 	adminRouter.DELETE("/services/:serviceid/access_policy", a.handleDeleteServicePolicy)
+	adminRouter.GET("/mcp/:serverid/suggested-description", a.handleGetMCPSuggestedDescription)
 	adminRouter.GET("/mcp/:serverid/access_policy", a.handleGetMCPPolicy)
 	adminRouter.PUT("/mcp/:serverid/access_policy", a.handlePutMCPPolicy)
 	adminRouter.DELETE("/mcp/:serverid/access_policy", a.handleDeleteMCPPolicy)
@@ -490,16 +515,39 @@ func (a *API) metricsMiddleware(c *gin.Context) {
 	a.metricsService.ObserveAPIEndpointDuration(endpoint, c.Request.Method, strconv.Itoa(status), elapsed)
 }
 
+// aiBotRequired selects the agent a request runs with: the one named by the
+// botId query parameter, else by the deprecated botUsername one, else the
+// configured default. The first agent is used only when no default is
+// configured; a requested or configured agent that is not available is a 404.
 func (a *API) aiBotRequired(c *gin.Context) {
-	botUsername := c.Query("botUsername")
-	if botUsername == "" {
-		botUsername = a.config.GetDefaultBotName()
-	}
-
-	bot := a.bots.GetBotByUsernameOrFirst(botUsername)
-	if bot == nil {
-		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to get bot: %s", botUsername))
-		return
+	var bot *bots.Bot
+	switch botID, botUsername := c.Query("botId"), c.Query("botUsername"); {
+	case botID != "":
+		if !model.IsValidId(botID) {
+			c.AbortWithError(http.StatusBadRequest, errors.New("invalid botId: must be a bot user ID"))
+			return
+		}
+		bot = a.bots.GetBotByID(botID)
+		if bot == nil {
+			c.AbortWithError(http.StatusNotFound, fmt.Errorf("agent not available: %s", botID))
+			return
+		}
+	case botUsername != "":
+		bot = a.bots.GetBotByUsername(botUsername)
+		if bot == nil {
+			c.AbortWithError(http.StatusNotFound, fmt.Errorf("agent not available: %s", botUsername))
+			return
+		}
+	default:
+		var configured bool
+		bot, configured = a.defaultBot()
+		if !configured {
+			bot = a.bots.GetBotByUsernameOrFirst("")
+		}
+		if bot == nil {
+			c.AbortWithError(http.StatusNotFound, errors.New("default agent not available"))
+			return
+		}
 	}
 	c.Set(ContextBotKey, bot)
 }
@@ -507,9 +555,39 @@ func (a *API) aiBotRequired(c *gin.Context) {
 func (a *API) ginlogger(c *gin.Context) {
 	c.Next()
 
-	for _, ginErr := range c.Errors {
-		a.pluginAPI.Log.Error(ginErr.Error())
+	if len(c.Errors) == 0 {
+		return
 	}
+
+	path := c.FullPath()
+	if path == "" {
+		path = c.Request.URL.Path
+	}
+	status := c.Writer.Status()
+
+	for _, ginErr := range c.Errors {
+		fields := []any{"method", c.Request.Method, "path", path, "status", status, "error", ginErr.Error()}
+		switch {
+		case isClientDisconnect(ginErr.Err):
+			a.pluginAPI.Log.Debug("Client disconnected during request", fields...)
+		case status >= http.StatusBadRequest && status < http.StatusInternalServerError:
+			// 4xx responses are expected outcomes (missing resources,
+			// permission checks, bad input), not server faults.
+			a.pluginAPI.Log.Debug("Request rejected", fields...)
+		default:
+			// 5xx, or a success response that still recorded an error
+			// (a best-effort step failed and the client won't see it).
+			a.pluginAPI.Log.Error("Request failed", fields...)
+		}
+	}
+}
+
+// isClientDisconnect reports whether err came from the client going away
+// mid-request rather than from a server fault.
+func isClientDisconnect(err error) bool {
+	return errors.Is(err, context.Canceled) ||
+		errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, syscall.ECONNRESET)
 }
 
 func (a *API) MattermostAuthorizationRequired(c *gin.Context) {
@@ -523,9 +601,49 @@ func (a *API) MattermostAuthorizationRequired(c *gin.Context) {
 func (a *API) interPluginAuthorizationRequired(c *gin.Context) {
 	pluginID := c.GetHeader("Mattermost-Plugin-ID")
 	if pluginID != "" {
+		// Identify the caller on the bridge request's span. The header is
+		// set by the server for inter-plugin requests, never by clients.
+		attrs := []attribute.KeyValue{telemetry.BridgePluginID.String(pluginID)}
+		if agent := c.Param("agent"); agent != "" {
+			attrs = append(attrs, telemetry.AgentID.String(agent))
+		}
+		if service := c.Param("service"); service != "" {
+			attrs = append(attrs, telemetry.ServiceID.String(service))
+		}
+		trace.SpanFromContext(c.Request.Context()).SetAttributes(attrs...)
 		return
 	}
 	c.AbortWithStatus(http.StatusUnauthorized)
+}
+
+// mcpServerStreamPath is the MCP Streamable HTTP endpoint. A GET on it holds
+// a server-to-client event stream open for as long as the client stays
+// connected.
+const mcpServerStreamPath = "/mcp-server/mcp"
+
+// httpTracingMiddleware starts an HTTP span per traced request.
+func httpTracingMiddleware() gin.HandlerFunc {
+	return otelgin.Middleware("mattermost-ai-agents",
+		otelgin.WithGinFilter(traceHTTPRequest),
+		otelgin.WithSpanNameFormatter(httpSpanName),
+	)
+}
+
+// traceHTTPRequest decides which requests get an HTTP span. Requests that
+// match no route are 404 noise, and the MCP stream GET would produce a span
+// lasting the whole connection; the MCP POSTs that carry tool calls are kept.
+func traceHTTPRequest(c *gin.Context) bool {
+	route := c.FullPath()
+	if route == "" {
+		return false
+	}
+	return route != mcpServerStreamPath || c.Request.Method != http.MethodGet
+}
+
+// httpSpanName names an HTTP span by method and route template, so requests
+// to the same handler group together without embedding IDs.
+func httpSpanName(c *gin.Context) string {
+	return c.Request.Method + " " + c.FullPath()
 }
 
 // enforceEmptyBody checks if the request body is empty returning an error if not
@@ -595,9 +713,10 @@ type AIBotInfo struct {
 }
 
 type AIBotsResponse struct {
-	Bots             []AIBotInfo `json:"bots"`
-	SearchEnabled    bool        `json:"searchEnabled"`
-	AllowUnsafeLinks bool        `json:"allowUnsafeLinks"`
+	Bots                 []AIBotInfo `json:"bots"`
+	SearchEnabled        bool        `json:"searchEnabled"`
+	AllowUnsafeLinks     bool        `json:"allowUnsafeLinks"`
+	HTMLArtifactsEnabled bool        `json:"htmlArtifactsEnabled"`
 }
 
 // usesServiceAccountAuth reports the effective service account mode for a bot:
@@ -610,6 +729,26 @@ func (a *API) usesServiceAccountAuth(bot *bots.Bot) bool {
 	return a.contextBuilder.UsesServiceAccountCatalog(bot)
 }
 
+// defaultBot returns the configured default agent, nil when it is not
+// available, and whether a default is configured at all.
+func (a *API) defaultBot() (*bots.Bot, bool) {
+	botUserID, legacyName := a.config.GetDefaultBotUserID(), a.config.GetDefaultBotName()
+	if botUserID == "" && legacyName == "" {
+		return nil, false
+	}
+	return a.bots.GetBotByIDOrUsername(botUserID, legacyName), true
+}
+
+// defaultBotUserID returns the bot user ID of the default agent, or "" when
+// it is not available. Registry usernames can lag a rename, so callers match
+// the default by user ID rather than by username.
+func (a *API) defaultBotUserID() string {
+	if bot, _ := a.defaultBot(); bot != nil {
+		return bot.BotUserID()
+	}
+	return ""
+}
+
 // getAIBotsForUser returns all AI bots available to a user
 func (a *API) getAIBotsForUser(ctx context.Context, userID string) []AIBotInfo {
 	allBots := a.bots.GetAllBots()
@@ -617,7 +756,7 @@ func (a *API) getAIBotsForUser(ctx context.Context, userID string) []AIBotInfo {
 	// Get the info from all the bots.
 	// Put the default bot first.
 	bots := make([]AIBotInfo, 0, len(allBots))
-	defaultBotName := a.config.GetDefaultBotName()
+	defaultBotID := a.defaultBotUserID()
 	for _, bot := range allBots {
 		// Don't return bots the user is excluded from using.
 		if a.bots.CheckUsageRestrictionsForUser(ctx, bot, userID) != nil {
@@ -633,7 +772,7 @@ func (a *API) getAIBotsForUser(ctx context.Context, userID string) []AIBotInfo {
 			dmChannelID = botDMChannel.Id
 		}
 
-		isDefault := bot.GetMMBot().Username == defaultBotName
+		isDefault := defaultBotID != "" && bot.BotUserID() == defaultBotID
 		bots = append(bots, AIBotInfo{
 			ID:                    bot.GetMMBot().UserId,
 			DisplayName:           bot.GetMMBot().DisplayName,
@@ -666,9 +805,10 @@ func (a *API) handleGetAIBots(c *gin.Context) {
 	searchEnabled := a.searchService.Enabled()
 
 	c.JSON(http.StatusOK, AIBotsResponse{
-		Bots:             bots,
-		SearchEnabled:    searchEnabled,
-		AllowUnsafeLinks: a.config.AllowUnsafeLinks(),
+		Bots:                 bots,
+		SearchEnabled:        searchEnabled,
+		AllowUnsafeLinks:     a.config.AllowUnsafeLinks(),
+		HTMLArtifactsEnabled: a.config.EnableHTMLArtifacts(),
 	})
 }
 

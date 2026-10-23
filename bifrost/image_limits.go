@@ -55,6 +55,12 @@ func maxImageDimension(provider schemas.ModelProvider, imageCount int) int {
 	}
 }
 
+// countRequestImages counts files that may be sent as images. It filters on the
+// declared type rather than the sniffed one: only files declared as supported
+// images carry bytes, so this never undercounts, and sniffing can only turn
+// one of them into a placeholder. Overcounting at worst applies the stricter
+// many-image limit, and counting here never reads (and so never drains) a
+// file's Reader before multimodalContent does.
 func countRequestImages(posts []llm.Post) int {
 	n := 0
 	for _, post := range posts {

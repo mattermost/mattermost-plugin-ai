@@ -116,17 +116,14 @@ func (b *LLM) streamChat(ctx context.Context, request llm.CompletionRequest, cfg
 
 				// Check finish reason
 				if choice.FinishReason != nil {
+					span.SetAttributes(telemetry.LLMFinishReason.String(*choice.FinishReason))
 					switch *choice.FinishReason {
 					case "tool_calls":
-						// Convert buffered tool calls in index order
+						// Convert buffered tool calls in index order. They
+						// are emitted once the stream ends: providers send
+						// usage in a chunk after the finish reason, and
+						// returning here would drop it for every tool round.
 						toolCalls = flushToolCallBuffers(toolCallsBuffer, false)
-						if len(toolCalls) > 0 {
-							output <- llm.TextStreamEvent{
-								Type:  llm.EventTypeToolCalls,
-								Value: toolCalls,
-							}
-							return
-						}
 					case "stop":
 						// Emit reasoning end if we accumulated reasoning
 						reasoning.emitEnd(output)
@@ -149,11 +146,20 @@ func (b *LLM) streamChat(ctx context.Context, request llm.CompletionRequest, cfg
 		}
 	}
 
+	// Tool calls completed by a "tool_calls" finish reason.
+	if len(toolCalls) > 0 {
+		output <- llm.TextStreamEvent{
+			Type:  llm.EventTypeToolCalls,
+			Value: toolCalls,
+		}
+		return
+	}
+
 	// Emit any unsent reasoning
 	reasoning.emitEnd(output)
 
 	// If we have pending tool calls, emit them in index order
-	if len(toolCallsBuffer) > 0 && len(toolCalls) == 0 {
+	if len(toolCallsBuffer) > 0 {
 		toolCalls = flushToolCallBuffers(toolCallsBuffer, true)
 		if len(toolCalls) > 0 {
 			output <- llm.TextStreamEvent{
@@ -241,6 +247,9 @@ func (b *LLM) convertMessages(posts []llm.Post) []schemas.ChatMessage {
 
 		switch post.Role {
 		case llm.PostRoleSystem:
+			if isBlank(post.Message) {
+				continue
+			}
 			msg = schemas.ChatMessage{
 				Role: schemas.ChatMessageRoleSystem,
 				Content: &schemas.ChatMessageContent{
@@ -252,6 +261,9 @@ func (b *LLM) convertMessages(posts []llm.Post) []schemas.ChatMessage {
 			if len(post.Files) > 0 {
 				// Multimodal message with images
 				parts := b.createMultimodalContent(post, maxDim)
+				if len(parts) == 0 {
+					continue
+				}
 				msg = schemas.ChatMessage{
 					Role: schemas.ChatMessageRoleUser,
 					Content: &schemas.ChatMessageContent{
@@ -259,6 +271,9 @@ func (b *LLM) convertMessages(posts []llm.Post) []schemas.ChatMessage {
 					},
 				}
 			} else {
+				if isBlank(post.Message) {
+					continue
+				}
 				msg = schemas.ChatMessage{
 					Role: schemas.ChatMessageRoleUser,
 					Content: &schemas.ChatMessageContent{
@@ -270,9 +285,11 @@ func (b *LLM) convertMessages(posts []llm.Post) []schemas.ChatMessage {
 		case llm.PostRoleBot:
 			msg = schemas.ChatMessage{
 				Role: schemas.ChatMessageRoleAssistant,
-				Content: &schemas.ChatMessageContent{
+			}
+			if !isBlank(post.Message) {
+				msg.Content = &schemas.ChatMessageContent{
 					ContentStr: new(post.Message),
-				},
+				}
 			}
 
 			// Add reasoning details for thinking-enabled conversations.
@@ -294,12 +311,9 @@ func (b *LLM) convertMessages(posts []llm.Post) []schemas.ChatMessage {
 			}
 
 			// Handle tool calls in assistant messages
-			if len(post.ToolUse) > 0 {
-				if post.Message == "" {
-					msg.Content = nil
-				}
-				toolCalls := make([]schemas.ChatAssistantMessageToolCall, 0, len(post.ToolUse))
-				for i, tc := range post.ToolUse {
+			if replayable := replayableToolCalls(post.ToolUse); len(replayable) > 0 {
+				toolCalls := make([]schemas.ChatAssistantMessageToolCall, 0, len(replayable))
+				for i, tc := range replayable {
 					toolCalls = append(toolCalls, schemas.ChatAssistantMessageToolCall{
 						Index: uint16(i % 65536), //nolint:gosec // index will never exceed uint16 max in practice
 						ID:    new(tc.ID),
@@ -318,27 +332,28 @@ func (b *LLM) convertMessages(posts []llm.Post) []schemas.ChatMessage {
 				// Add the assistant message with tool calls
 				messages = append(messages, msg)
 
-				// Add tool result messages. Anthropic rejects tool result
-				// messages with empty content ("text content blocks must be
-				// non-empty"), so substitute a placeholder if the tool
-				// returned an empty string.
-				for _, tc := range post.ToolUse {
-					result := tc.Result
-					if result == "" {
-						result = "(no output)"
-					}
+				for _, tc := range replayable {
+					// OpenAI-wire converters strip IsError; Anthropic and
+					// Bedrock map it to their tool-result error markers.
 					toolResultMsg := schemas.ChatMessage{
 						Role: schemas.ChatMessageRoleTool,
 						Content: &schemas.ChatMessageContent{
-							ContentStr: new(result),
+							ContentStr: new(tc.Result),
 						},
 						ChatToolMessage: &schemas.ChatToolMessage{
 							ToolCallID: new(tc.ID),
 						},
 					}
+					if toolResultIsError(tc) {
+						toolResultMsg.IsError = new(true)
+					}
 					messages = append(messages, toolResultMsg)
 				}
 				continue // Skip adding msg again
+			}
+
+			if msg.Content == nil && msg.ChatAssistantMessage == nil {
+				continue
 			}
 		}
 
@@ -458,4 +473,10 @@ func (b *LLM) convertTools(request llm.CompletionRequest, cfg llm.LanguageModelC
 	}
 
 	return result
+}
+
+// toolResultIsError reports whether a replayed tool call did not produce a
+// real result: it failed, or was rejected, denied by policy, or never run.
+func toolResultIsError(tc llm.ToolCall) bool {
+	return tc.Status == llm.ToolCallStatusError || tc.Status == llm.ToolCallStatusRejected
 }

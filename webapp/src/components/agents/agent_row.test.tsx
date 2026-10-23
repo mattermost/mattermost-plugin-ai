@@ -29,10 +29,14 @@ jest.mock('@/client', () => ({
     getProfilePictureUrl: () => 'http://example.com/avatar.png',
 }));
 
-jest.mock('react-bootstrap', () => ({
-    OverlayTrigger: ({children, overlay}: {children: React.ReactNode; overlay: React.ReactNode}) => <>{children}{overlay}</>,
-    Tooltip: ({children}: {children: React.ReactNode}) => <div>{children}</div>,
-}), {virtual: true});
+jest.mock('@mattermost/shared/components/tooltip', () => ({
+    WithTooltip: ({children, title}: {children: React.ReactNode; title?: React.ReactNode}) => (
+        <>
+            {children}
+            <div>{title}</div>
+        </>
+    ),
+}));
 
 function makeAgent(): UserAgent {
     return {

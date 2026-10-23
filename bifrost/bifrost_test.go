@@ -473,7 +473,7 @@ func TestConvertMessagesReasoningDetails(t *testing.T) {
 
 func TestCreateMultimodalContentUsesReusableFileData(t *testing.T) {
 	b := &LLM{}
-	imageData := []byte("PNGDATA")
+	imageData := encodeTestImage(t, "image/png", 2, 2)
 	post := llm.Post{
 		Role:    llm.PostRoleUser,
 		Message: "look at this",
@@ -493,7 +493,63 @@ func TestCreateMultimodalContentUsesReusableFileData(t *testing.T) {
 	require.NotNil(t, first[1].ImageURLStruct)
 	require.NotNil(t, second[1].ImageURLStruct)
 	assert.Equal(t, first[1].ImageURLStruct.URL, second[1].ImageURLStruct.URL)
-	assert.Contains(t, second[1].ImageURLStruct.URL, "UE5HREFUQQ==")
+	assert.Equal(t, "data:image/png;base64,"+base64.StdEncoding.EncodeToString(imageData), second[1].ImageURLStruct.URL)
+}
+
+func TestMultimodalContentUsesSniffedImageType(t *testing.T) {
+	pngData := encodeTestImage(t, "image/png", 4, 4)
+	jpegData := encodeTestImage(t, "image/jpeg", 4, 4)
+	gifData := encodeTestImage(t, "image/gif", 4, 4)
+	// BMP has no stdlib encoder; the "BM" signature is what the sniffer keys on.
+	bmpData := append([]byte("BM"), make([]byte, 64)...)
+	// WebP has no stdlib encoder either; a RIFF/WEBP header is what the sniffer keys on.
+	webpData := append([]byte("RIFF\x00\x00\x00\x00WEBPVP8 "), make([]byte, 32)...)
+
+	tests := []struct {
+		name            string
+		declared        string
+		data            []byte
+		wantMimeType    string
+		wantPlaceholder string
+	}{
+		{name: "correctly labeled PNG", declared: "image/png", data: pngData, wantMimeType: "image/png"},
+		{name: "correctly labeled GIF", declared: "image/gif", data: gifData, wantMimeType: "image/gif"},
+		{name: "PNG labeled as JPEG", declared: "image/jpeg", data: pngData, wantMimeType: "image/png"},
+		{name: "WebP labeled as PNG", declared: "image/png", data: webpData, wantMimeType: "image/webp"},
+		{name: "JPEG labeled as PNG", declared: "image/png", data: jpegData, wantMimeType: "image/jpeg"},
+		{name: "non-image bytes labeled as image", declared: "image/png", data: []byte("hello, this is not an image"), wantPlaceholder: "[Unsupported image type: text/plain]"},
+		{name: "unsupported real image type", declared: "image/jpeg", data: bmpData, wantPlaceholder: "[Unsupported image type: image/bmp]"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			post := llm.Post{
+				Role:  llm.PostRoleUser,
+				Files: []llm.File{{MimeType: tt.declared, Data: tt.data}},
+			}
+
+			chatParts := (&LLM{}).createMultimodalContent(post, 0)
+			require.Len(t, chatParts, 1)
+			responsesParts := multimodalContent(post, 0,
+				func(text string) string { return "text:" + text },
+				func(dataURL string) string { return "image:" + dataURL },
+			)
+			require.Len(t, responsesParts, 1)
+
+			if tt.wantPlaceholder != "" {
+				assert.Nil(t, chatParts[0].ImageURLStruct)
+				require.NotNil(t, chatParts[0].Text)
+				assert.Equal(t, tt.wantPlaceholder, *chatParts[0].Text)
+				assert.Equal(t, "text:"+tt.wantPlaceholder, responsesParts[0])
+				return
+			}
+
+			wantURL := "data:" + tt.wantMimeType + ";base64," + base64.StdEncoding.EncodeToString(tt.data)
+			require.NotNil(t, chatParts[0].ImageURLStruct)
+			assert.Equal(t, wantURL, chatParts[0].ImageURLStruct.URL)
+			assert.Equal(t, "image:"+wantURL, responsesParts[0])
+		})
+	}
 }
 
 func TestCreateMultimodalContentOmitsOversizedImages(t *testing.T) {

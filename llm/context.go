@@ -20,6 +20,18 @@ type ToolInfo struct {
 	ServerOrigin string
 }
 
+// UnconnectedMCPServer describes an MCP server the requesting user could use
+// after connecting their own account to it. Every field comes from admin
+// configuration.
+type UnconnectedMCPServer struct {
+	// Name is the admin-configured server name, the identifier a connection
+	// request must use.
+	Name         string
+	ServerOrigin string
+	Description  string
+	Tools        []ToolInfo
+}
+
 // Context represents the per-turn data necessary to build the context of the LLM.
 // For consumers none of the fields can be assumed to be present.
 type Context struct {
@@ -49,9 +61,15 @@ type Context struct {
 	// (ToolAuthModeUser or ToolAuthModeServiceAccount); consumed by token usage attribution.
 	ToolAuthMode string
 
-	Tools             *ToolStore
-	DisabledToolsInfo []ToolInfo // Info about tools that are unavailable in the current context (e.g., DM-only tools in a channel)
-	Parameters        map[string]any
+	Tools *ToolStore
+	// DisabledTools lists tools that run only in a DM or the Agents tab and so
+	// cannot be called here. Set it through DisableTools so each tool appears
+	// once.
+	DisabledTools []ToolInfo
+	// UnconnectedMCPServers lists servers the requester can connect from the
+	// conversation; set only when the connection request tool is cataloged.
+	UnconnectedMCPServers []UnconnectedMCPServer
+	Parameters            map[string]any
 
 	// ToolCatalog holds request-scoped inputs used while building the tool store.
 	ToolCatalog ToolCatalogContext
@@ -82,6 +100,11 @@ type ToolCatalogContext struct {
 	// pending tool approvals. Tools that require a user response (see
 	// Tool.UserInteraction) are only cataloged when this is set.
 	InteractiveUserPresent bool
+
+	// MCPServerOrigins maps configured remote MCP server names to their
+	// origins so an answered connection request can find the server's tools.
+	// It is nil where connection requests cannot be offered.
+	MCPServerOrigins map[string]string
 
 	// ResponseFilesSupported indicates the current flow attaches
 	// ToolRuntime.CreatedFiles to the bot's streamed response post, so
@@ -158,15 +181,40 @@ func (c *Context) SetBotFields(displayName, username, userID, defaultModel, serv
 }
 
 // IsToolCallable reports whether the named tool is in the tool store and not
-// listed in DisabledToolsInfo. Disabled tools stay in the store for prompt
+// listed in DisabledTools. Disabled tools may stay in the store for prompt
 // awareness but are never sent to the provider, so prompts must not tell the
 // model to call them.
 func (c *Context) IsToolCallable(name string) bool {
 	if c == nil || c.Tools == nil || c.Tools.GetTool(name) == nil {
 		return false
 	}
-	return !slices.ContainsFunc(c.DisabledToolsInfo, func(info ToolInfo) bool {
-		return info.Name == name
+	return !c.isToolDisabled(name)
+}
+
+// CallableToolsInfo lists the tools the model can call, sorted by name.
+func (c *Context) CallableToolsInfo() []ToolInfo {
+	if c == nil || c.Tools == nil {
+		return nil
+	}
+	infos := slices.DeleteFunc(c.Tools.GetToolsInfo(), func(info ToolInfo) bool {
+		return c.isToolDisabled(info.Name)
+	})
+	slices.SortFunc(infos, func(a, b ToolInfo) int { return strings.Compare(a.Name, b.Name) })
+	return infos
+}
+
+// DisableTools records tools as unavailable in the current context.
+func (c *Context) DisableTools(infos ...ToolInfo) {
+	for _, info := range infos {
+		if !c.isToolDisabled(info.Name) {
+			c.DisabledTools = append(c.DisabledTools, info)
+		}
+	}
+}
+
+func (c *Context) isToolDisabled(name string) bool {
+	return slices.ContainsFunc(c.DisabledTools, func(tool ToolInfo) bool {
+		return tool.Name == name
 	})
 }
 

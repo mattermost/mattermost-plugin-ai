@@ -12,6 +12,7 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/bots"
 	"github.com/mattermost/mattermost-plugin-agents/v2/conversation"
 	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise"
+	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise/enterprisetest"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmapi/mocks"
 	"github.com/mattermost/mattermost-plugin-agents/v2/store"
@@ -37,8 +38,9 @@ func newClaimTestConversations(t *testing.T, convStore *loadedStateFlowStore, lm
 	botsService.SetBotsForTesting([]*bots.Bot{loadedStateBot(lm)})
 
 	mmClient := mocks.NewMockClient(t)
+	seedRequesterInitiator(t, convStore, "conv-id", mmClient)
 	mmClient.On("LogDebug", mock.Anything, mock.Anything).Maybe().Return()
-	mmClient.On("GetUser", "user-id").Maybe().Return(&model.User{Id: "user-id", Username: "user"}, nil)
+	mmClient.On("GetUser", testRequesterID).Maybe().Return(&model.User{Id: testRequesterID, Username: "user"}, nil)
 	mmClient.On("KVGet", mock.Anything, mock.Anything).Maybe().Return(nil)
 	mmClient.On("GetConfig").Maybe().Return(&model.Config{})
 
@@ -47,9 +49,11 @@ func newClaimTestConversations(t *testing.T, convStore *loadedStateFlowStore, lm
 		tool.Resolver = resolver
 	}
 	return &Conversations{
+		configProvider:   &channelFollowUpTestConfig{enableChannelMentionToolCalling: true},
 		mmClient:         mmClient,
 		contextBuilder:   newChannelFollowUpTestBuilder(t, []llm.Tool{tool}, &channelFollowUpTestConfig{}),
 		bots:             botsService,
+		licenseChecker:   enterprisetest.CheckerAt(enterprise.LevelProfessional),
 		convService:      conversation.NewService(convStore, nil, nil, nil),
 		streamingService: streamingService,
 	}
@@ -138,7 +142,7 @@ func TestHandleToolCallExecutesApprovedCallsOnceUnderConcurrentClicks(t *testing
 			var c *Conversations
 			var errs []error
 			click := func() {
-				errs = append(errs, c.HandleToolCall(context.Background(), "user-id", post, channel, []string{"tool-use-1"}, nil))
+				errs = append(errs, c.HandleToolCall(context.Background(), testRequesterID, post, channel, []string{"tool-use-1"}, nil))
 			}
 
 			executions := 0
@@ -197,7 +201,7 @@ func TestHandleToolResultStreamsFollowUpOnceUnderConcurrentClicks(t *testing.T) 
 
 	var errs []error
 	click := func() {
-		errs = append(errs, c.HandleToolResult(context.Background(), "user-id", post, channel, []string{"tool-use-1"}))
+		errs = append(errs, c.HandleToolResult(context.Background(), testRequesterID, post, channel, []string{"tool-use-1"}))
 	}
 	convStore.afterTurnsRead = func(reads int) {
 		if reads == decisionReadsPerRequest {

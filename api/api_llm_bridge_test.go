@@ -57,7 +57,7 @@ func newMockEmbeddedMCPServer(toolNames []string) *mockEmbeddedMCPServer {
 	return &mockEmbeddedMCPServer{mcpServer: server}
 }
 
-func (m *mockEmbeddedMCPServer) CreateClientTransport(userID, sessionID string, pluginAPI *pluginapi.Client) (*gosdkmcp.InMemoryTransport, error) {
+func (m *mockEmbeddedMCPServer) CreateClientTransport(userID, sessionID, _ string, pluginAPI *pluginapi.Client) (*gosdkmcp.InMemoryTransport, error) {
 	serverTransport, clientTransport := gosdkmcp.NewInMemoryTransports()
 	go func() {
 		_ = m.mcpServer.Run(context.Background(), serverTransport)
@@ -859,7 +859,7 @@ func TestBridgeGetBots(t *testing.T) {
 				}, mmBot, nil)
 				allBots = append(allBots, bot)
 			}
-			e.bots.SetBotsForTesting(allBots)
+			e.setBots(allBots...)
 
 			// Create bridge client and make request
 			client := e.CreateBridgeClient()
