@@ -241,6 +241,9 @@ func convertMessages(posts []llm.Post, rules messageRules) []schemas.ChatMessage
 
 		switch post.Role {
 		case llm.PostRoleSystem:
+			if isBlank(post.Message) {
+				continue
+			}
 			msg = schemas.ChatMessage{
 				Role: schemas.ChatMessageRoleSystem,
 				Content: &schemas.ChatMessageContent{
@@ -251,13 +254,20 @@ func convertMessages(posts []llm.Post, rules messageRules) []schemas.ChatMessage
 		case llm.PostRoleUser:
 			if len(post.Files) > 0 {
 				// Multimodal message with images
+				parts := createMultimodalContent(post, rules.imageDimensionLimit)
+				if len(parts) == 0 {
+					continue
+				}
 				msg = schemas.ChatMessage{
 					Role: schemas.ChatMessageRoleUser,
 					Content: &schemas.ChatMessageContent{
-						ContentBlocks: createMultimodalContent(post, rules.imageDimensionLimit),
+						ContentBlocks: parts,
 					},
 				}
 			} else {
+				if isBlank(post.Message) {
+					continue
+				}
 				msg = schemas.ChatMessage{
 					Role: schemas.ChatMessageRoleUser,
 					Content: &schemas.ChatMessageContent{
@@ -320,6 +330,9 @@ func convertMessages(posts []llm.Post, rules messageRules) []schemas.ChatMessage
 						ChatToolMessage: &schemas.ChatToolMessage{
 							ToolCallID: new(tc.ID),
 						},
+					}
+					if toolResultIsError(tc) {
+						toolResultMsg.IsError = new(true)
 					}
 					messages = append(messages, toolResultMsg)
 				}
@@ -448,4 +461,10 @@ func convertTools(request llm.CompletionRequest, cfg llm.LanguageModelConfig) []
 	}
 
 	return result
+}
+
+// toolResultIsError reports whether a replayed tool call did not produce a
+// real result: it failed, or was rejected, denied by policy, or never run.
+func toolResultIsError(tc llm.ToolCall) bool {
+	return tc.Status == llm.ToolCallStatusError || tc.Status == llm.ToolCallStatusRejected
 }

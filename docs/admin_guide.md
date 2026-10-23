@@ -147,7 +147,7 @@ If you have unsaved changes and try to leave the agent configuration view by sel
 | **Agent Avatar** | Custom image for the agent |
 | **Service** | Select a configured Service from the dropdown |
 | **Model** | (Optional) Override the service's default model for this agent |
-| **Max tool turns** | Maximum consecutive tool-call/execute rounds per response. Default **30**, range **1–250**. Lower for smaller models that loop on tool calls; raise for agents that chain many MCP tools per turn. |
+| **Max tool turns** | Maximum consecutive tool-call/execute rounds per response; after the last round the agent answers without tools. Default **30**, range **1–250**. Lower for smaller models that loop on tool calls; raise for agents that chain many MCP tools per turn. |
 | **Custom Instructions** | Custom instructions that define the agent's personality and capabilities |
 | **Enable Vision** | Enable Vision to allow the agent to process images. Requires a compatible model and service. |
 | **Enable Tools** | Enables tool use for integrations and other tool-based capabilities. Disable this only for models or use cases where tool calling shouldn't be available. Some features won't work without tools. |
@@ -296,8 +296,8 @@ To obtain Google Custom Search credentials:
 
 #### Usage and limitations
 
-- Agents are limited to **3 web searches per conversation** to manage API costs and prevent LLMs from looping indefinitely
-- Agents cannot repeat the same search query within a conversation
+- Agents are limited to **3 web searches per response** to manage API costs and prevent LLMs from looping indefinitely
+- Agents cannot repeat the same search query within a response
 - Search results include clickable citations that link back to source websites
 - Domain denylisting applies to all providers and is enforced for _web page fetching only_. 
 

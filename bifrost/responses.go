@@ -21,6 +21,9 @@ func convertToResponsesMessages(posts []llm.Post, rules messageRules) []schemas.
 	for _, post := range posts {
 		switch post.Role {
 		case llm.PostRoleSystem:
+			if isBlank(post.Message) {
+				continue
+			}
 			msg := schemas.ResponsesMessage{
 				Role: new(schemas.ResponsesInputMessageRoleSystem),
 				Content: &schemas.ResponsesMessageContent{
@@ -32,14 +35,18 @@ func convertToResponsesMessages(posts []llm.Post, rules messageRules) []schemas.
 		case llm.PostRoleUser:
 			if len(post.Files) > 0 {
 				// Multimodal message with images
+				parts := createResponsesMultimodalContent(post, rules.imageDimensionLimit)
+				if len(parts) == 0 {
+					continue
+				}
 				msg := schemas.ResponsesMessage{
 					Role: new(schemas.ResponsesInputMessageRoleUser),
 					Content: &schemas.ResponsesMessageContent{
-						ContentBlocks: createResponsesMultimodalContent(post, rules.imageDimensionLimit),
+						ContentBlocks: parts,
 					},
 				}
 				messages = append(messages, msg)
-			} else {
+			} else if !isBlank(post.Message) {
 				msg := schemas.ResponsesMessage{
 					Role: new(schemas.ResponsesInputMessageRoleUser),
 					Content: &schemas.ResponsesMessageContent{
@@ -51,7 +58,7 @@ func convertToResponsesMessages(posts []llm.Post, rules messageRules) []schemas.
 
 		case llm.PostRoleBot:
 			messages = append(messages, assistantReplayMessages(post)...)
-			for _, tc := range post.ToolUse {
+			for _, tc := range replayableToolCalls(post.ToolUse) {
 				funcCallMsg := schemas.ResponsesMessage{
 					Type: new(schemas.ResponsesMessageTypeFunctionCall),
 					ResponsesToolMessage: &schemas.ResponsesToolMessage{
@@ -70,6 +77,12 @@ func convertToResponsesMessages(posts []llm.Post, rules messageRules) []schemas.
 							ResponsesToolCallOutputStr: new(tc.Result),
 						},
 					},
+				}
+				// Mark failures with status "incomplete", never ResponsesToolMessage.Error:
+				// the OpenAI converter forwards "error" verbatim and OpenAI rejects it,
+				// while "status" is valid OpenAI wire and Anthropic maps it to is_error.
+				if toolResultIsError(tc) {
+					funcOutputMsg.Status = new("incomplete")
 				}
 				messages = append(messages, funcOutputMsg)
 			}
@@ -97,7 +110,7 @@ func assistantReplayMessages(post llm.Post) []schemas.ResponsesMessage {
 		if record := serverToolActivityRecord(post.ServerTools); record != "" {
 			messages = append(messages, newTextMessage(record))
 		}
-		if post.Message != "" {
+		if !isBlank(post.Message) {
 			messages = append(messages, newTextMessage(post.Message))
 		}
 		return messages
