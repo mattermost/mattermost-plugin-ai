@@ -5,7 +5,7 @@ import {useCallback, useEffect, useState} from 'react';
 
 /**
  * Keeps a compass PopoverMenu mounted while it plays its exit animation.
- * Pass `mounted || isOpen` to the Dropdown that positions the menu, give the
+ * Pass `rendered` as `isOpen` to the Dropdown that positions the menu, give the
  * menu `open={isOpen}` and `onExited`, and the menu unmounts once it has faded out.
  */
 export function useMenuTransition(isOpen: boolean) {

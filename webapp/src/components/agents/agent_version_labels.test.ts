@@ -49,13 +49,19 @@ describe('formatRelativeTime', () => {
         {name: 'a week', ago: 7 * day, expected: '1w ago'},
         {name: 'weeks', ago: 21 * day, expected: '3w ago'},
         {name: 'months', ago: 90 * day, expected: '3mo ago'},
+        {name: 'the last days of the year, not 12 months', ago: 364 * day, expected: '11mo ago'},
+        {name: 'a year', ago: 365 * day, expected: '1y ago'},
         {name: 'years', ago: 800 * day, expected: '2y ago'},
     ])('formats $name', ({ago, expected}) => {
         expect(formatRelativeTime(intl, now - ago, now)).toBe(expected);
     });
 
-    test('treats a timestamp slightly in the future as now', () => {
-        expect(formatRelativeTime(intl, now + (10 * second), now)).toBe('now');
+    test.each([
+        {name: 'slightly', ahead: 10 * second},
+        {name: 'by a few minutes of clock skew', ahead: 5 * minute},
+        {name: 'by hours', ahead: 3 * hour},
+    ])('treats a timestamp in the future $name as now', ({ahead}) => {
+        expect(formatRelativeTime(intl, now + ahead, now)).toBe('now');
     });
 });
 
@@ -67,9 +73,9 @@ describe('differingConfigFields', () => {
         expect(differingConfigFields(a, b).sort()).toEqual(['enabledNativeTools', 'extra', 'model']);
     });
 
-    test('ignores ids and keys that are not part of a version snapshot', () => {
-        const a = {id: 'one', service: {id: 's'}, structuredOutputEnabled: true, model: 'a'};
-        const b = {id: 'two', model: 'a'};
+    test('ignores ids, the username and keys that are not part of a version snapshot', () => {
+        const a = {id: 'one', name: 'helper', service: {id: 's'}, structuredOutputEnabled: true, model: 'a'};
+        const b = {id: 'two', name: 'helper2', model: 'a'};
 
         expect(differingConfigFields(a, b)).toEqual([]);
     });
