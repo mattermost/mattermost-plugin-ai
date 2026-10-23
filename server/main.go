@@ -515,6 +515,9 @@ func (p *Plugin) OnActivate() error {
 	)
 	contextBuilder.SetMCPDynamicToolTelemetry(metricsService)
 
+	policyChecker := mcp.NewConfigToolPolicyChecker(p.configuration.MCP, func() bool {
+		return licenseChecker.Allows(enterprise.CapToolApprovalPolicies)
+	})
 	conversationsService := conversations.New(
 		prompts,
 		mmClient,
@@ -525,6 +528,7 @@ func (p *Plugin) OnActivate() error {
 		licenseChecker,
 		i18nBundle,
 		&p.configuration,
+		policyChecker,
 	)
 
 	convService := conversation.NewService(p.store, prompts, mmClient, bots)
@@ -540,18 +544,12 @@ func (p *Plugin) OnActivate() error {
 		i18nBundle,
 		metricsService,
 		contextBuilder,
-		conversationsService,
+		convService,
 		licenseChecker,
 	)
+	conversationsService.SetMeetingSummaryRegenerator(meetingsService)
 
-	meetingsService.SetConversationService(convService)
-
-	// Wire per-tool policy checker for auto-approval in streaming and conversations.
-	policyChecker := mcp.NewConfigToolPolicyChecker(p.configuration.MCP, func() bool {
-		return licenseChecker.Allows(enterprise.CapToolApprovalPolicies)
-	})
 	streamingService.SetTurnStore(p.store)
-	conversationsService.SetToolPolicyChecker(policyChecker)
 
 	// Initialize embedded MCP server handlers for plugin endpoints
 	var mcpHandlers *mcpserver.PluginMCPHandlers

@@ -29,7 +29,10 @@ import (
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
-const attachmentTestSessionID = "attachment-test-session"
+const (
+	attachmentTestSessionID = "attachment-test-session"
+	attachmentTestChannelID = "attachment-test-channel"
+)
 
 var testConnStr string
 
@@ -758,10 +761,12 @@ func TestBuildCompletionRequest_RedactsUnsharedToolContentByDefault(t *testing.T
 	require.NoError(t, err)
 	convID := result.ConversationID
 
-	// Two tool calls, one shared, one unshared.
+	// One shared call, one the user kept private, and one awaiting the
+	// share decision.
 	assistantBlocks := []ContentBlock{
 		{Type: BlockTypeToolUse, ID: "tc-shared", Name: "search", Input: json.RawMessage(`{}`), Status: StatusSuccess, Shared: new(true)},
-		{Type: BlockTypeToolUse, ID: "tc-private", Name: "read_dm", Input: json.RawMessage(`{}`), Status: StatusSuccess, Shared: new(false)},
+		{Type: BlockTypeToolUse, ID: "tc-private", Name: "read_dm", Input: json.RawMessage(`{"channel":"secret-dm"}`), Status: StatusSuccess, Shared: new(false)},
+		{Type: BlockTypeToolUse, ID: "tc-pending", Name: "read_dm", Input: json.RawMessage(`{"channel":"other-dm"}`), Status: StatusSuccess, Shared: new(false)},
 	}
 	assistantContent, err := json.Marshal(assistantBlocks)
 	require.NoError(t, err)
@@ -773,7 +778,8 @@ func TestBuildCompletionRequest_RedactsUnsharedToolContentByDefault(t *testing.T
 
 	resultBlocks := []ContentBlock{
 		{Type: BlockTypeToolResult, ToolUseID: "tc-shared", Content: "PUBLIC DATA", Status: StatusSuccess, Shared: new(true)},
-		{Type: BlockTypeToolResult, ToolUseID: "tc-private", Content: "PRIVATE SECRET", Status: StatusSuccess, Shared: new(false)},
+		{Type: BlockTypeToolResult, ToolUseID: "tc-private", Content: "PRIVATE SECRET", Status: StatusSuccess, Shared: new(false), DecidedAt: new(model.GetMillis())},
+		{Type: BlockTypeToolResult, ToolUseID: "tc-pending", Content: "PENDING SECRET", Status: StatusSuccess, Shared: new(false)},
 	}
 	resultContent, err := json.Marshal(resultBlocks)
 	require.NoError(t, err)
@@ -803,9 +809,17 @@ func TestBuildCompletionRequest_RedactsUnsharedToolContentByDefault(t *testing.T
 		require.NoError(t, err)
 		results := resultsByID(req)
 		assert.Equal(t, "PUBLIC DATA", results["tc-shared"])
-		assert.Equal(t, UnsharedToolResultRedaction, results["tc-private"],
+		assert.Equal(t, "[arguments and result not shared by user]", results["tc-private"],
 			"kept-private tool_result content must never leak into the default LLM prompt; "+
 				"a channel-visible response could paraphrase it")
+		assert.Equal(t, "[result pending the user's decision to share it]", results["tc-pending"])
+		for _, p := range req.Posts {
+			for _, tc := range p.ToolUse {
+				if tc.ID != "tc-shared" {
+					assert.JSONEq(t, `{}`, string(tc.Arguments))
+				}
+			}
+		}
 	})
 
 	t.Run("empty BuildOptions still redacts", func(t *testing.T) {
@@ -822,6 +836,7 @@ func TestBuildCompletionRequest_RedactsUnsharedToolContentByDefault(t *testing.T
 		results := resultsByID(req)
 		assert.Equal(t, "PUBLIC DATA", results["tc-shared"])
 		assert.Equal(t, "PRIVATE SECRET", results["tc-private"])
+		assert.Equal(t, "PENDING SECRET", results["tc-pending"])
 	})
 }
 
@@ -1750,6 +1765,116 @@ func TestBuildChannelMentionRequest_ToolRoundsMerged(t *testing.T) {
 	assert.Equal(t, "Weather in NYC is 72F and sunny.", final.Message)
 }
 
+// A tool call left pending or accepted (the user replied instead of approving,
+// or stopped the response while it ran) must not replay as a call that ran.
+func TestBuildRequests_UnexecutedToolCallsReplayAsNotExecuted(t *testing.T) {
+	tests := []struct {
+		name       string
+		status     string
+		result     *string
+		wantResult string
+		wantStatus llm.ToolCallStatus
+	}{
+		{
+			name:       "pending without result",
+			status:     StatusPending,
+			wantResult: NotExecutedToolResult,
+			wantStatus: llm.ToolCallStatusRejected,
+		},
+		{
+			name:       "accepted without result",
+			status:     StatusAccepted,
+			wantResult: NotExecutedToolResult,
+			wantStatus: llm.ToolCallStatusRejected,
+		},
+		{
+			name:       "executed call keeps its empty result",
+			status:     StatusSuccess,
+			result:     new(""),
+			wantResult: "",
+			wantStatus: llm.ToolCallStatusSuccess,
+		},
+		{
+			name:       "pending call with a stored result keeps it",
+			status:     StatusPending,
+			result:     new("72F"),
+			wantResult: "72F",
+			wantStatus: llm.ToolCallStatusPending,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, s := setupTestService(t)
+			botID := model.NewId()
+			userID := model.NewId()
+			rootPostID := "root_" + model.NewId()
+
+			result, err := svc.CreateConversation(CreateConversationParams{
+				UserID:       userID,
+				BotID:        botID,
+				RootPostID:   &rootPostID,
+				Operation:    "conversation",
+				SystemPrompt: "system",
+				UserMessage:  "what's the weather?",
+				UserPostID:   new("postU1"),
+			})
+			require.NoError(t, err)
+			convID := result.ConversationID
+
+			blocks := []ContentBlock{
+				{Type: BlockTypeText, Text: "Let me check."},
+				{Type: BlockTypeToolUse, ID: "tc1", Name: "get_weather", Input: json.RawMessage(`{}`), Status: tc.status, Shared: new(true)},
+			}
+			if tc.result != nil {
+				blocks = append(blocks, ContentBlock{Type: BlockTypeToolResult, ToolUseID: "tc1", Content: *tc.result, Status: StatusSuccess, Shared: new(true)})
+			}
+			content, _ := json.Marshal(blocks)
+			require.NoError(t, s.CreateTurn(&store.Turn{
+				ID: model.NewId(), ConversationID: convID, PostID: new("postBot1"),
+				Role: "assistant", Content: content, Sequence: 2, CreatedAt: model.GetMillis(),
+			}))
+			followUp, _ := json.Marshal([]ContentBlock{{Type: BlockTypeText, Text: "never mind"}})
+			require.NoError(t, s.CreateTurn(&store.Turn{
+				ID: model.NewId(), ConversationID: convID, PostID: new("postU2"),
+				Role: "user", Content: followUp, Sequence: 3, CreatedAt: model.GetMillis(),
+			}))
+
+			conv, err := s.GetConversation(convID)
+			require.NoError(t, err)
+			svc.bots = &testBotLookup{botUserIDs: map[string]bool{botID: true}}
+
+			dmReq, err := svc.BuildCompletionRequest(conv, &llm.Context{})
+			require.NoError(t, err)
+			channelReq, err := svc.BuildChannelMentionRequest(conv, &llm.Context{}, &mmapi.ThreadData{
+				Posts: []*model.Post{
+					{Id: "postU1", UserId: userID, CreateAt: 1000, Message: "what's the weather?"},
+					{Id: "postBot1", UserId: botID, CreateAt: 2000, Message: "Let me check."},
+					{Id: "postU2", UserId: userID, CreateAt: 3000, Message: "never mind"},
+				},
+				UsersByID: map[string]*model.User{userID: {Id: userID, Username: "alice"}},
+			})
+			require.NoError(t, err)
+
+			for name, req := range map[string]*llm.CompletionRequest{"dm": dmReq, "channel": channelReq} {
+				var calls []llm.ToolCall
+				for _, post := range req.Posts {
+					calls = append(calls, post.ToolUse...)
+				}
+				require.Len(t, calls, 1, name)
+				assert.Equal(t, tc.wantResult, calls[0].Result, name)
+				assert.Equal(t, tc.wantStatus, calls[0].Status, name)
+			}
+
+			turns, err := s.GetTurnsForConversation(convID)
+			require.NoError(t, err)
+			stored, err := UnmarshalBlocks(turns[1].Content)
+			require.NoError(t, err)
+			assert.Equal(t, tc.status, stored[1].Status, "stored data must not change")
+		})
+	}
+}
+
 func TestSequenceNumbering_Concurrent(t *testing.T) {
 	svc, s := setupTestService(t)
 
@@ -1861,6 +1986,12 @@ func setupTestServiceWithClient(
 			attachmentTestSessionID,
 			mock.Anything,
 			model.AccessControlPolicyActionDownloadFileAttachment,
+		).Return(true).Maybe()
+		mockClient.On(
+			"HasPermissionToChannel",
+			mock.Anything,
+			attachmentTestChannelID,
+			model.PermissionReadChannel,
 		).Return(true).Maybe()
 	}
 
@@ -2029,10 +2160,11 @@ func TestCreateConversation_EmptyFileIDsAndMessage(t *testing.T) {
 	assert.Empty(t, blocks)
 }
 
-// TestCreateConversation_FileIDInfoErrorIsSkipped pins the resilience
+// TestCreateConversation_FileIDInfoErrorKeepsBareBlock pins the resilience
 // contract. If GetFileInfo errors for one fileID, the user turn must still
-// be created with the rest. Mirrors the old PostToAIPost behavior.
-func TestCreateConversation_FileIDInfoErrorIsSkipped(t *testing.T) {
+// be created with the rest, and the bad attachment must keep a bare block so
+// request building can tell the model it could not be loaded.
+func TestCreateConversation_FileIDInfoErrorKeepsBareBlock(t *testing.T) {
 	mmClient := mmapimocks.NewMockClient(t)
 	// Both GetFileInfo calls MUST happen — the bad one returns an error,
 	// but production must still attempt the fetch (otherwise an
@@ -2066,11 +2198,11 @@ func TestCreateConversation_FileIDInfoErrorIsSkipped(t *testing.T) {
 	err = json.Unmarshal(turns[0].Content, &blocks)
 	require.NoError(t, err)
 
-	// Expected layout: text + (skipped broken) + ok1 file block.
-	require.Len(t, blocks, 2)
+	require.Len(t, blocks, 3)
 	assert.Equal(t, BlockTypeText, blocks[0].Type)
-	assert.Equal(t, BlockTypeFile, blocks[1].Type)
-	assert.Equal(t, "ok1", blocks[1].FileID)
+	assert.Equal(t, ContentBlock{Type: BlockTypeFile, FileID: "broken"}, blocks[1])
+	assert.Equal(t, BlockTypeFile, blocks[2].Type)
+	assert.Equal(t, "ok1", blocks[2].FileID)
 }
 
 // TestBuildCompletionRequest_AttachmentsResolveLazily wires the full path:
@@ -2083,11 +2215,11 @@ func TestBuildCompletionRequest_AttachmentsResolveLazily(t *testing.T) {
 		// Used twice: once for user-turn creation (read MIME) and once at
 		// request build time (lazy resolve).
 		mmClient.On("GetFileInfo", "img1").Return(&model.FileInfo{
-			Id: "img1", Name: "pic.png", MimeType: "image/png", Size: 100,
+			ChannelId: attachmentTestChannelID, Id: "img1", Name: "pic.png", MimeType: "image/png", Size: 100,
 		}, nil)
 		mmClient.On("GetFile", "img1").Return(io.NopCloser(strings.NewReader("PNGDATA")), nil)
 		mmClient.On("GetFileInfo", "doc1").Return(&model.FileInfo{
-			Id: "doc1", Name: "notes.txt", MimeType: "text/plain", Size: 5,
+			ChannelId: attachmentTestChannelID, Id: "doc1", Name: "notes.txt", MimeType: "text/plain", Size: 5,
 		}, nil)
 		mmClient.On("GetFile", "doc1").Return(io.NopCloser(strings.NewReader("hello")), nil)
 
@@ -2131,14 +2263,14 @@ func TestBuildCompletionRequest_AttachmentsResolveLazily(t *testing.T) {
 		assert.Contains(t, userPost.Message, "Content: hello")
 	})
 
-	t.Run("EnableVision=false drops image but keeps file text content", func(t *testing.T) {
+	t.Run("EnableVision=false replaces image with a placeholder and keeps file text content", func(t *testing.T) {
 		mmClient := mmapimocks.NewMockClient(t)
 
 		mmClient.On("GetFileInfo", "img1").Return(&model.FileInfo{
-			Id: "img1", Name: "pic.png", MimeType: "image/png", Size: 100,
+			ChannelId: attachmentTestChannelID, Id: "img1", Name: "pic.png", MimeType: "image/png", Size: 100,
 		}, nil)
 		mmClient.On("GetFileInfo", "doc1").Return(&model.FileInfo{
-			Id: "doc1", Name: "notes.txt", MimeType: "text/plain", Size: 5,
+			ChannelId: attachmentTestChannelID, Id: "doc1", Name: "notes.txt", MimeType: "text/plain", Size: 5,
 		}, nil)
 		mmClient.On("GetFile", "doc1").Return(io.NopCloser(strings.NewReader("hello")), nil)
 		// NOTE: no GetFile(img1) expectation — vision is off so it must NOT be called.
@@ -2177,10 +2309,77 @@ func TestBuildCompletionRequest_AttachmentsResolveLazily(t *testing.T) {
 		// mode. Production silently fetching the image bytes anyway
 		// would be a bug we'd want to surface here.
 		mmClient.AssertNotCalled(t, "GetFile", "img1")
-		assert.Empty(t, userPost.Files, "image attachments must be dropped entirely when vision is disabled")
+		assert.Empty(t, userPost.Files, "image bytes must not be sent when vision is disabled")
+		assert.Contains(t, userPost.Message,
+			"[Image attached: pic.png. Image input is disabled for this agent, so you cannot see it.]")
 		assert.Contains(t, userPost.Message, "Content: hello",
 			"text-file content must still flow through to the LLM even when vision is off")
 	})
+}
+
+// TestBuildCompletionRequest_RevokedAttachmentIsNotNamed covers an attachment
+// the user could read when the turn was written but not when the request is
+// rebuilt: the model learns an attachment is unavailable, never its name or
+// content.
+func TestBuildCompletionRequest_RevokedAttachmentIsNotNamed(t *testing.T) {
+	const revokedSessionID = "revoked-session"
+
+	tests := []struct {
+		name     string
+		fileInfo *model.FileInfo
+	}{
+		{
+			name:     "image",
+			fileInfo: &model.FileInfo{Id: "img-secret", Name: "secret-plan.png", MimeType: "image/png", Size: 100},
+		},
+		{
+			name:     "file",
+			fileInfo: &model.FileInfo{Id: "doc-secret", Name: "secret-plan.txt", MimeType: "text/plain", Size: 5},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mmClient := mmapimocks.NewMockClient(t)
+			mmClient.On(
+				"HasPermissionToFileAction",
+				revokedSessionID,
+				tt.fileInfo.Id,
+				model.AccessControlPolicyActionDownloadFileAttachment,
+			).Return(false)
+			mmClient.On("GetFileInfo", tt.fileInfo.Id).Return(tt.fileInfo, nil).Once()
+
+			botID := model.NewId()
+			bots := &testBotLookup{
+				botUserIDs: map[string]bool{},
+				configByID: map[string]testBotConfig{botID: {enableVision: true}},
+			}
+			svc, _ := setupTestServiceWithClient(t, mmClient, bots)
+
+			result, err := svc.CreateConversation(CreateConversationParams{
+				UserID:       model.NewId(),
+				SessionID:    attachmentTestSessionID,
+				BotID:        botID,
+				Operation:    "conversation",
+				SystemPrompt: "system",
+				UserMessage:  "see attached",
+				FileIDs:      []string{tt.fileInfo.Id},
+			})
+			require.NoError(t, err)
+
+			conv, err := svc.GetConversation(result.ConversationID)
+			require.NoError(t, err)
+
+			req, err := svc.BuildCompletionRequest(conv, &llm.Context{}, BuildOptions{SessionID: revokedSessionID})
+			require.NoError(t, err)
+
+			require.Len(t, req.Posts, 2)
+			userPost := req.Posts[1]
+			assert.Empty(t, userPost.Files)
+			assert.Equal(t, "see attached\n[An attachment here is not available to the requesting user.]", userPost.Message)
+			mmClient.AssertNotCalled(t, "GetFile", tt.fileInfo.Id)
+		})
+	}
 }
 
 // TestBuildChannelMentionRequest_AttachmentsResolveLazily mirrors the
@@ -2199,11 +2398,11 @@ func TestBuildChannelMentionRequest_AttachmentsResolveLazily(t *testing.T) {
 		mmClient := mmapimocks.NewMockClient(t)
 
 		mmClient.On("GetFileInfo", "img1").Return(&model.FileInfo{
-			Id: "img1", Name: "pic.png", MimeType: "image/png", Size: 100,
+			ChannelId: attachmentTestChannelID, Id: "img1", Name: "pic.png", MimeType: "image/png", Size: 100,
 		}, nil)
 		mmClient.On("GetFile", "img1").Return(io.NopCloser(strings.NewReader("PNGDATA")), nil)
 		mmClient.On("GetFileInfo", "doc1").Return(&model.FileInfo{
-			Id: "doc1", Name: "notes.txt", MimeType: "text/plain", Size: 5,
+			ChannelId: attachmentTestChannelID, Id: "doc1", Name: "notes.txt", MimeType: "text/plain", Size: 5,
 		}, nil)
 		mmClient.On("GetFile", "doc1").Return(io.NopCloser(strings.NewReader("hello")), nil)
 
@@ -2263,14 +2462,14 @@ func TestBuildChannelMentionRequest_AttachmentsResolveLazily(t *testing.T) {
 		assert.Contains(t, userPost.Message, "Content: hello")
 	})
 
-	t.Run("EnableVision=false drops image but keeps file text content", func(t *testing.T) {
+	t.Run("EnableVision=false replaces image with a placeholder and keeps file text content", func(t *testing.T) {
 		mmClient := mmapimocks.NewMockClient(t)
 
 		mmClient.On("GetFileInfo", "img1").Return(&model.FileInfo{
-			Id: "img1", Name: "pic.png", MimeType: "image/png", Size: 100,
+			ChannelId: attachmentTestChannelID, Id: "img1", Name: "pic.png", MimeType: "image/png", Size: 100,
 		}, nil)
 		mmClient.On("GetFileInfo", "doc1").Return(&model.FileInfo{
-			Id: "doc1", Name: "notes.txt", MimeType: "text/plain", Size: 5,
+			ChannelId: attachmentTestChannelID, Id: "doc1", Name: "notes.txt", MimeType: "text/plain", Size: 5,
 		}, nil)
 		mmClient.On("GetFile", "doc1").Return(io.NopCloser(strings.NewReader("hello")), nil)
 		// NOTE: no GetFile(img1) expectation — vision is off so the
@@ -2320,7 +2519,9 @@ func TestBuildChannelMentionRequest_AttachmentsResolveLazily(t *testing.T) {
 		userPost := req.Posts[1]
 		mmClient.AssertNotCalled(t, "GetFile", "img1")
 		assert.Empty(t, userPost.Files,
-			"image attachments must be dropped on the channel-mention path when vision is disabled")
+			"image bytes must not be sent on the channel-mention path when vision is disabled")
+		assert.Contains(t, userPost.Message,
+			"[Image attached: pic.png. Image input is disabled for this agent, so you cannot see it.]")
 		assert.Contains(t, userPost.Message, "Content: hello",
 			"text-file content must still flow through to the LLM via the channel-mention path")
 	})
@@ -2329,7 +2530,7 @@ func TestBuildChannelMentionRequest_AttachmentsResolveLazily(t *testing.T) {
 		mmClient := mmapimocks.NewMockClient(t)
 
 		mmClient.On("GetFileInfo", "img-root").Return(&model.FileInfo{
-			Id: "img-root", Name: "screenshot.png", MimeType: "image/png", Size: 100,
+			ChannelId: attachmentTestChannelID, Id: "img-root", Name: "screenshot.png", MimeType: "image/png", Size: 100,
 		}, nil)
 		mmClient.On("GetFile", "img-root").Return(io.NopCloser(strings.NewReader("PNGDATA")), nil)
 
@@ -2474,6 +2675,7 @@ func TestBuildChannelMentionRequest_DeniedThreadAttachmentIsWithheld(t *testing.
 	assert.Contains(t, combined.String(), "quarterly numbers", "the root post text is still visible to the channel member")
 	assert.NotContains(t, combined.String(), secretContent)
 	assert.NotContains(t, combined.String(), "classified.txt")
+	assert.Contains(t, combined.String(), "[An attachment here is not available to the requesting user.]")
 	assert.False(t, adminReadCalled, "admin GetFileInfo/GetFile must not run after the requester's file policy denies access")
 }
 

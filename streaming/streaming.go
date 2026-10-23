@@ -6,6 +6,7 @@ package streaming
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -93,6 +94,10 @@ type postStreamContext struct {
 	// done is closed when the stream is finished (FinishStreaming).
 	done chan struct{}
 }
+
+// errStoppedByUser is the cancellation cause of a stream the requester
+// stopped, distinguishing it from shutdown or a superseded run.
+var errStoppedByUser = errors.New("generation stopped by user")
 
 // TurnStore is the subset of store operations needed by the streaming layer.
 // Finalize either creates a fresh anchor (first stream / regen, with the caller
@@ -316,7 +321,8 @@ func (p *MMPostStreamService) sendPostStreamingEvent(post *model.Post, broadcast
 }
 
 // StopStreaming cancels any in-flight stream to the given post on this node
-// and waits (bounded) for it to finish so a new stream can take the post.
+// on behalf of the requester (the post is marked as stopped) and waits
+// (bounded) for it to finish so a new stream can take the post.
 func (p *MMPostStreamService) StopStreaming(postID string) {
 	p.contextsMutex.Lock()
 	sc, ok := p.contexts[postID]
@@ -324,7 +330,7 @@ func (p *MMPostStreamService) StopStreaming(postID string) {
 	if !ok {
 		return
 	}
-	sc.cancel(context.Canceled)
+	sc.cancel(errStoppedByUser)
 	select {
 	case <-sc.done:
 	case <-time.After(stopWaitTimeout):
@@ -590,6 +596,10 @@ func (p *MMPostStreamService) streamToPostImpl(ctx context.Context, stream *llm.
 	// them over TCP so they are not silently dropped between cluster nodes.
 	broadcast := &model.WebsocketBroadcast{ChannelId: post.ChannelId, ReliableClusterSend: true}
 
+	// A new run (regenerate, tool-approval resume) supersedes an earlier
+	// stop; the post update at stream end persists the cleared marker.
+	post.DelProp(GenerationStoppedProp)
+
 	// Look up any prior anchor; only continuation uses it (to demote at
 	// finalize). First stream and regen find none.
 	controlEvent := PostStreamingControlStart
@@ -649,13 +659,15 @@ func (p *MMPostStreamService) streamToPostImpl(ctx context.Context, stream *llm.
 	shuttingDown := func() bool { return lifecycle.IsShutdown(ctx) || lifecycle.IsShutdown(p.root()) }
 
 	// stopStream finishes a canceled stream. A user stop is an intentional,
-	// complete response. Plugin shutdown is an interruption the user should be
-	// told about.
+	// complete response marked as stopped. Plugin shutdown is an interruption
+	// the user should be told about.
 	stopStream := func() {
 		outcome = telemetry.StreamOutcomeCancelled
 		if shuttingDown() {
 			finalStatus = store.TurnStatusInterrupted
 			MarkInterrupted(post, InterruptedReasonShutdown, model.GetMillis())
+		} else if errors.Is(context.Cause(ctx), errStoppedByUser) {
+			post.AddProp(GenerationStoppedProp, true)
 		}
 		if err := p.mmClient.UpdatePost(post); err != nil {
 			p.mmClient.LogError("Error updating post on stop signaled", "error", err)
@@ -677,10 +689,12 @@ func (p *MMPostStreamService) streamToPostImpl(ctx context.Context, stream *llm.
 			}
 			p.sendPostStreamingEvent(post, broadcast, map[string]any{"control": PostStreamingControlHeartbeat})
 		case event, ok := <-stream.Stream:
-			// Shutdown cancels the LLM request too, which can close the stream
-			// or emit end/error before ctx.Done is selected. Treat any of those
-			// as the interruption so the reply is not saved as finished.
-			if shuttingDown() && (!ok || event.Type == llm.EventTypeEnd || event.Type == llm.EventTypeError) {
+			// Shutdown, a user stop, or any other cancel also cancels the LLM
+			// request when the upstream shares this context, which can close
+			// the stream or emit end/error before ctx.Done is selected. Treat
+			// any of those as the cancellation so the reply is not saved as
+			// finished.
+			if (!ok || event.Type == llm.EventTypeEnd || event.Type == llm.EventTypeError) && (shuttingDown() || ctx.Err() != nil) {
 				stopStream()
 				return
 			}
