@@ -155,7 +155,7 @@ const VersionSnapshot = ({config, services, changedFields}: Props) => {
                 >
                     {config.customInstructions ? (
                         <Instructions
-                            tabIndex={0}
+                            tabIndex={0} // eslint-disable-line agents/no-noninteractive-tabindex -- scrollable region must be keyboard-focusable to scroll
                             aria-label={intl.formatMessage({defaultMessage: 'Custom instructions (read-only)'})}
                             data-testid='version-snapshot-instructions'
                         >
