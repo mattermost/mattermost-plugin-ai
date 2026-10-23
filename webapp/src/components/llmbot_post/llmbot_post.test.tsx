@@ -780,34 +780,6 @@ describe('LLMBotPost rounds awaiting a decision', () => {
         expect(screen.queryByTestId('llm-bot-tool-activity')).toBeNull();
     });
 
-    test.each([
-        ['the requester', 'user_1'],
-        ['an onlooker', 'someone_else'],
-    ])('shows an interrupted approval to %s as finished, not running or waiting', (_viewer, userId) => {
-        mockUseConversation.mockReturnValue({
-            conversation: makeConversation([
-                makeTurn({id: 'u1', post_id: 'user_post', role: 'user', content: [{type: 'text', text: 'post that for me'}]}),
-                makeTurn({
-                    id: 'anchor',
-                    sequence: 3,
-                    approval_state: 'done',
-                    content: [
-                        {type: 'text', text: 'I will post that'},
-                        {type: 'tool_use', id: 'tc_a', name: 'create_post', status: 'accepted', interrupted: true},
-                    ],
-                }),
-            ], userId),
-            loading: false,
-            error: null,
-        });
-        withRequesterProfile();
-
-        renderPost();
-
-        expect(screen.getByTestId('llm-bot-tool-activity-current').textContent).toMatch(/^Used /);
-        expect(screen.queryByTestId('llm-bot-activity-waiting')).toBeNull();
-    });
-
     test('folds the same round into the activity area for a viewer who owes no decision', () => {
         mockUseConversation.mockReturnValue({conversation: conversationAwaitingApproval('someone_else'), loading: false, error: null});
 

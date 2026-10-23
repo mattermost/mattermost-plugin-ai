@@ -23,7 +23,6 @@ func blockJSON(t *testing.T, blocks []ContentBlock) json.RawMessage {
 // infinite-loop bugs behind these design changes all came from ambiguity in
 // this machine, so the tests guard the distinct states explicitly.
 func TestComputePostApprovalState(t *testing.T) {
-	const now = int64(1_800_000_000_000)
 	tests := []struct {
 		name   string
 		postID string
@@ -150,33 +149,11 @@ func TestComputePostApprovalState(t *testing.T) {
 			},
 			want: ApprovalStageDone,
 		},
-		{
-			name:   "call claimed by an approval still running returns call",
-			postID: "p1",
-			turns: []store.Turn{
-				{Role: "user", Sequence: 1, Content: blockJSON(t, nil)},
-				{Role: "assistant", Sequence: 2, PostID: new("p1"), Content: blockJSON(t, []ContentBlock{
-					{Type: BlockTypeToolUse, ID: "tc1", Name: "x", Status: StatusAccepted, ClaimedAt: new(now - 1000)},
-				})},
-			},
-			want: ApprovalStageCall,
-		},
-		{
-			name:   "call whose approval never finished returns done",
-			postID: "p1",
-			turns: []store.Turn{
-				{Role: "user", Sequence: 1, Content: blockJSON(t, nil)},
-				{Role: "assistant", Sequence: 2, PostID: new("p1"), Content: blockJSON(t, []ContentBlock{
-					{Type: BlockTypeToolUse, ID: "tc1", Name: "x", Status: StatusAccepted, ClaimedAt: new(now - ToolDecisionClaimTimeout.Milliseconds() - 1)},
-				})},
-			},
-			want: ApprovalStageDone,
-		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ComputePostApprovalState(tc.turns, tc.postID, now)
+			got := ComputePostApprovalState(tc.turns, tc.postID)
 			require.Equal(t, tc.want, got)
 		})
 	}

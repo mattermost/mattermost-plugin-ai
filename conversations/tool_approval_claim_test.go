@@ -176,35 +176,6 @@ func TestHandleToolCallExecutesApprovedCallsOnceUnderConcurrentClicks(t *testing
 	}
 }
 
-// While approved calls run, viewers must see them as running, not interrupted.
-func TestHandleToolCallClaimIsNotInterruptedWhileToolsRun(t *testing.T) {
-	convStore, conv := loadedStateConversationStore()
-	postID := "approval-post-id"
-	seedClaimTestTurns(t, convStore, conv.ID, postID, []conversation.ContentBlock{{
-		Type: conversation.BlockTypeToolUse, ID: "tool-use-1", Name: "jira__get_issue",
-		Input: json.RawMessage(`{}`), Status: conversation.StatusPending, Shared: new(false),
-	}}, nil)
-
-	var seenWhileRunning []conversation.ContentBlock
-	c := newClaimTestConversations(t, convStore, &loadedStateLLM{}, &loadedStateStreamingService{},
-		func(context.Context, *llm.Context, llm.ToolArgumentGetter) (string, error) {
-			turn, err := convStore.GetTurnByPostID(postID)
-			require.NoError(t, err)
-			seenWhileRunning, err = conversation.UnmarshalBlocks(turn.Content)
-			require.NoError(t, err)
-			return "result", nil
-		})
-
-	post := &model.Post{Id: postID, UserId: "bot-id"}
-	post.AddProp(streaming.ConversationIDProp, conv.ID)
-	channel := &model.Channel{Id: "channel-id", TeamId: "team-id", Type: model.ChannelTypeOpen}
-	require.NoError(t, c.HandleToolCall(context.Background(), testRequesterID, post, channel, []string{"tool-use-1"}, nil))
-
-	require.Len(t, seenWhileRunning, 1)
-	assert.Equal(t, conversation.StatusAccepted, seenWhileRunning[0].Status)
-	assert.False(t, conversation.IsInterruptedToolUse(seenWhileRunning[0], model.GetMillis()))
-}
-
 // failingCASStore fails the failAt-th compare-and-swap with a store error.
 type failingCASStore struct {
 	*loadedStateFlowStore

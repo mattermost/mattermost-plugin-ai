@@ -204,24 +204,6 @@ describe('extractToolCallsForPost', () => {
         expect(result[2].decided).toBe(true);
     });
 
-    test('renders a claimed call the server flags as interrupted as a finished error, and a running claim as running', () => {
-        const conv = makeConversation([makeTurn({
-            post_id: 'post_1',
-            sequence: 1,
-            content: [
-                {type: 'tool_use', id: 'tc_stale', name: 'create_post', status: 'accepted', interrupted: true},
-                {type: 'tool_use', id: 'tc_running', name: 'create_post', status: 'accepted'},
-            ],
-        })]);
-
-        const [stale, running] = extractToolCallsForPost(conv, 'post_1');
-
-        expect(stale.status).toBe(ToolCallStatus.Error);
-        expect(stale.interrupted).toBe(true);
-        expect(running.status).toBe(ToolCallStatus.Accepted);
-        expect(running.interrupted).toBeUndefined();
-    });
-
     test('handles tool_use with null input (redacted)', () => {
         const assistantTurn = makeTurn({
             post_id: 'post_1',

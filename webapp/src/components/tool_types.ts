@@ -60,10 +60,6 @@ export interface ToolCall {
     // individual approval decision.
     would_auto_execute?: boolean;
 
-    // True when the call was approved but the server stopped before recording
-    // its result, so it may or may not have run. Rendered with Error status.
-    interrupted?: boolean;
-
     // True when the matching tool result has already received its terminal
     // share/keep-private decision (decided_at set server-side). Derived from
     // the conversation API; absent on live websocket payloads.

@@ -80,7 +80,7 @@ func (a *API) handleGetConversation(c *gin.Context) {
 	}
 
 	// 4. Privacy filtering and display sanitization
-	turnResponses, err := turnsToResponse(turns, userID != conv.UserID, model.GetMillis())
+	turnResponses, err := turnsToResponse(turns, userID != conv.UserID)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to sanitize turns: %w", err))
 		return
@@ -101,25 +101,22 @@ func (a *API) handleGetConversation(c *gin.Context) {
 
 // approvalStateForTurn computes the approval-stage string for a post-anchor
 // assistant turn, or "" for any turn that is not a post anchor.
-func approvalStateForTurn(turn store.Turn, allTurns []store.Turn, nowMillis int64) string {
+func approvalStateForTurn(turn store.Turn, allTurns []store.Turn) string {
 	if turn.Role != "assistant" || turn.PostID == nil {
 		return ""
 	}
-	return conversation.ComputePostApprovalState(allTurns, *turn.PostID, nowMillis)
+	return conversation.ComputePostApprovalState(allTurns, *turn.PostID)
 }
 
 // turnsToResponse converts store turns to response objects with display
 // sanitization, first applying privacy filtering when the requesting user is
 // not the conversation owner.
-func turnsToResponse(turns []store.Turn, filterForNonRequester bool, nowMillis int64) ([]TurnResponse, error) {
+func turnsToResponse(turns []store.Turn, filterForNonRequester bool) ([]TurnResponse, error) {
 	result := make([]TurnResponse, len(turns))
 	for i, turn := range turns {
 		var blocks []conversation.ContentBlock
 		if err := json.Unmarshal(turn.Content, &blocks); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal turn content: %w", err)
-		}
-		for j := range blocks {
-			blocks[j].Interrupted = conversation.IsInterruptedToolUse(blocks[j], nowMillis)
 		}
 		if filterForNonRequester {
 			blocks = conversation.FilterForNonRequester(blocks)
@@ -137,7 +134,7 @@ func turnsToResponse(turns []store.Turn, filterForNonRequester bool, nowMillis i
 			TokensIn:      turn.TokensIn,
 			TokensOut:     turn.TokensOut,
 			Sequence:      turn.Sequence,
-			ApprovalState: approvalStateForTurn(turn, turns, nowMillis),
+			ApprovalState: approvalStateForTurn(turn, turns),
 		}
 	}
 	return result, nil

@@ -810,11 +810,9 @@ func (c *Conversations) undoTurnUpdates(applied []turnUpdate) {
 // the claimed content for the final conditional write.
 func (c *Conversations) claimToolDecision(turn *store.Turn, blocks []conversation.ContentBlock) (json.RawMessage, error) {
 	claimed := slices.Clone(blocks)
-	now := model.GetMillis()
 	for i := range claimed {
 		if claimed[i].Type == conversation.BlockTypeToolUse && claimed[i].Status == conversation.StatusPending {
 			claimed[i].Status = conversation.StatusAccepted
-			claimed[i].ClaimedAt = &now
 		}
 	}
 	content, err := json.Marshal(claimed)
