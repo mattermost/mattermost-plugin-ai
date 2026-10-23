@@ -322,6 +322,8 @@ func convertMessages(posts []llm.Post, rules messageRules) []schemas.ChatMessage
 				messages = append(messages, msg)
 
 				for _, tc := range post.ToolUse {
+					// OpenAI-wire converters strip IsError; Anthropic and
+					// Bedrock map it to their tool-result error markers.
 					toolResultMsg := schemas.ChatMessage{
 						Role: schemas.ChatMessageRoleTool,
 						Content: &schemas.ChatMessageContent{
