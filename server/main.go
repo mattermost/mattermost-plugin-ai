@@ -210,6 +210,17 @@ func (p *Plugin) OnActivate() error {
 		return fmt.Errorf("failed to run ABAC ID migrations: %w", err)
 	}
 
+	// Runs after the ID migration so agent versions record the remapped
+	// service IDs. Not fatal: the next update of an agent records its prior
+	// state first anyway.
+	backfilled, backfillErr := p.store.BackfillAgentVersions()
+	if backfilled > 0 {
+		pluginAPI.Log.Info("Backfilled agent versions", "count", backfilled)
+	}
+	if backfillErr != nil {
+		pluginAPI.Log.Error("Failed to backfill versions of some agents", "error", backfillErr.Error())
+	}
+
 	// Runs after the ID migration (it matches agents to services by ID) and
 	// before runtime config is loaded, so every node — including a follower
 	// that found nothing left to migrate — loads the migrated policies and
@@ -228,6 +239,9 @@ func (p *Plugin) OnActivate() error {
 		p.configuration.Update(dbConfig)
 	}
 	p.configMigrated = true
+
+	p.applyAgentVersionRetention()
+	p.configuration.RegisterUpdateListener(p.applyAgentVersionRetention)
 
 	if idsMigrated || structuredOutputMigrated {
 		if pubErr := p.PublishConfigUpdate(); pubErr != nil {
@@ -650,6 +664,21 @@ type telemetryOTLPSettings struct {
 	endpoint string
 	tls      bool
 	headers  string
+}
+
+// applyAgentVersionRetention applies the configured number of agent versions
+// to keep and deletes the versions beyond it. Config updates reach every
+// node, and the delete is idempotent, so each node may run it.
+func (p *Plugin) applyAgentVersionRetention() {
+	p.store.SetAgentVersionsToKeep(p.configuration.Config().AgentVersionsToKeep)
+	pruned, err := p.store.PruneAgentVersions()
+	if err != nil {
+		p.pluginAPI.Log.Error("Failed to delete agent versions beyond the retention limit", "error", err.Error())
+		return
+	}
+	if pruned > 0 {
+		p.pluginAPI.Log.Info("Deleted agent versions beyond the retention limit", "count", pruned)
+	}
 }
 
 // applyTelemetryConfig (re)initializes the global OpenTelemetry TracerProvider
