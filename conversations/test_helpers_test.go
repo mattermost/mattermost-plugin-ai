@@ -358,10 +358,15 @@ func (p *testToolProvider) GetTools(_ *bots.Bot, _ *llm.Context) []llm.Tool {
 // testToolCallingConfig implements conversations.ConfigProvider for testing
 type testToolCallingConfig struct {
 	enableChannelMentionToolCalling bool
+	enableAmbientAutoReply          bool
 }
 
 func (c *testToolCallingConfig) EnableChannelMentionToolCalling() bool {
 	return c.enableChannelMentionToolCalling
+}
+
+func (c *testToolCallingConfig) EnableAmbientAutoReply() bool {
+	return c.enableAmbientAutoReply
 }
 
 func (c *testToolCallingConfig) AllowNativeWebSearchInChannels() bool {

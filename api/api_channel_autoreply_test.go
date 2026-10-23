@@ -90,6 +90,38 @@ func TestGetChannelAutoReply(t *testing.T) {
 			expectedBody:   fmt.Sprintf(`{"bot_id":%q,"mode":"threads"}`, testBotUserID),
 		},
 		{
+			name: "ambient setting hides instructions and analysis model from members who cannot manage it",
+			envSetup: func(e *TestEnvironment) {
+				e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionReadChannel).Return(true)
+				e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionManagePublicChannelProperties).Return(false)
+				e.autoReplyStore.settings["channelid"] = &autoreply.Setting{
+					ChannelID:     "channelid",
+					BotID:         testBotUserID,
+					Mode:          autoreply.ModeAmbient,
+					Instructions:  "only billing questions",
+					AnalysisModel: "gpt-4o-mini",
+				}
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody:   fmt.Sprintf(`{"bot_id":%q,"mode":"ambient"}`, testBotUserID),
+		},
+		{
+			name: "ambient setting echoes instructions and analysis model to channel managers",
+			envSetup: func(e *TestEnvironment) {
+				e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionReadChannel).Return(true)
+				e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionManagePublicChannelProperties).Return(true)
+				e.autoReplyStore.settings["channelid"] = &autoreply.Setting{
+					ChannelID:     "channelid",
+					BotID:         testBotUserID,
+					Mode:          autoreply.ModeAmbient,
+					Instructions:  "only billing questions",
+					AnalysisModel: "gpt-4o-mini",
+				}
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody:   fmt.Sprintf(`{"bot_id":%q,"mode":"ambient","instructions":"only billing questions","analysis_model":"gpt-4o-mini"}`, testBotUserID),
+		},
+		{
 			name: "store error returns 500",
 			envSetup: func(e *TestEnvironment) {
 				e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionReadChannel).Return(true)
@@ -129,6 +161,38 @@ func TestGetChannelAutoReply(t *testing.T) {
 				require.NoError(t, err)
 				require.JSONEq(t, tc.expectedBody, string(body))
 			}
+		})
+	}
+}
+
+func TestGetChannelAutoReplyRedactsAmbientConfigInPrivateChannels(t *testing.T) {
+	tests := []struct {
+		name         string
+		canManage    bool
+		expectedBody string
+	}{
+		{name: "private channel manager sees ambient config", canManage: true, expectedBody: fmt.Sprintf(`{"bot_id":%q,"mode":"ambient_threads","instructions":"only billing"}`, testBotUserID)},
+		{name: "private channel member without manage permission does not", canManage: false, expectedBody: fmt.Sprintf(`{"bot_id":%q,"mode":"ambient_threads"}`, testBotUserID)},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			e := setupChannelAutoReplyTest(t, model.ChannelTypePrivate)
+			defer e.Cleanup(t)
+			e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionReadChannel).Return(true)
+			e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionManagePrivateChannelProperties).Return(tc.canManage)
+			e.autoReplyStore.settings["channelid"] = &autoreply.Setting{
+				ChannelID:    "channelid",
+				BotID:        testBotUserID,
+				Mode:         autoreply.ModeAmbientThreads,
+				Instructions: "only billing",
+			}
+
+			resp := e.doChannelAutoReplyRequest(t, http.MethodGet, "")
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			require.JSONEq(t, tc.expectedBody, string(body))
 		})
 	}
 }
@@ -277,7 +341,7 @@ func TestPutChannelAutoReplyValidation(t *testing.T) {
 		},
 		{
 			name:           "body larger than limit",
-			body:           fmt.Sprintf(`{"bot_id":%q,"mode":"threads"}`, strings.Repeat("a", 2048)),
+			body:           fmt.Sprintf(`{"bot_id":%q,"mode":"threads"}`, strings.Repeat("a", 65<<10)),
 			expectedStatus: http.StatusRequestEntityTooLarge,
 		},
 		{
@@ -454,6 +518,11 @@ func TestPutChannelAutoReplyUnlicensed(t *testing.T) {
 			body:           fmt.Sprintf(`{"bot_id":%q,"mode":"threads"}`, testBotUserID),
 			expectedStatus: http.StatusForbidden,
 		},
+		{
+			name:           "ambient is forbidden without a license",
+			body:           fmt.Sprintf(`{"bot_id":%q,"mode":"ambient"}`, testBotUserID),
+			expectedStatus: http.StatusForbidden,
+		},
 	}
 
 	for _, tc := range tests {
@@ -480,6 +549,42 @@ func TestPutChannelAutoReplyUnlicensed(t *testing.T) {
 			} else {
 				require.NotContains(t, e.autoReplyStore.settings, "channelid")
 			}
+		})
+	}
+}
+
+func TestPutChannelAutoReplyAmbientKillSwitch(t *testing.T) {
+	tests := []struct {
+		name           string
+		mode           string
+		enabled        bool
+		expectedStatus int
+	}{
+		{name: "ambient conflicts with the disabled admin setting", mode: "ambient", expectedStatus: http.StatusConflict},
+		{name: "ambient_threads conflicts with the disabled admin setting", mode: "ambient_threads", expectedStatus: http.StatusConflict},
+		{name: "threads is unaffected by the ambient setting", mode: "threads", expectedStatus: http.StatusOK},
+		{name: "ambient saves when enabled by the admin", mode: "ambient", enabled: true, expectedStatus: http.StatusOK},
+		{name: "ambient_threads saves when enabled by the admin", mode: "ambient_threads", enabled: true, expectedStatus: http.StatusOK},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			e := setupChannelAutoReplyTest(t, model.ChannelTypeOpen)
+			defer e.Cleanup(t)
+			e.config.enableAmbientAutoReply = tc.enabled
+			e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionReadChannel).Return(true)
+			e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionManagePublicChannelProperties).Return(true)
+
+			body := fmt.Sprintf(`{"bot_id":%q,"mode":%q,"instructions":"only billing"}`, testBotUserID, tc.mode)
+			resp := e.doChannelAutoReplyRequest(t, http.MethodPut, body)
+			require.Equal(t, tc.expectedStatus, resp.StatusCode)
+
+			if tc.expectedStatus != http.StatusOK {
+				require.Empty(t, e.autoReplyStore.setCalls, "a forbidden request must not persist")
+				return
+			}
+			require.Len(t, e.autoReplyStore.setCalls, 1)
+			require.Equal(t, autoreply.Mode(tc.mode), e.autoReplyStore.setCalls[0].Mode)
 		})
 	}
 }
@@ -535,6 +640,7 @@ func TestPutChannelAutoReplyByLevel(t *testing.T) {
 func TestPutChannelAutoReplyPersistsAndPublishes(t *testing.T) {
 	e := setupChannelAutoReplyTest(t, model.ChannelTypeOpen)
 	defer e.Cleanup(t)
+	e.config.enableAmbientAutoReply = true
 	e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionReadChannel).Return(true)
 	e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionManagePublicChannelProperties).Return(true)
 
@@ -581,6 +687,28 @@ func TestPutChannelAutoReplyPersistsAndPublishes(t *testing.T) {
 		require.Equal(t, "channelid", events[0].broadcast.ChannelId)
 	})
 
+	t.Run("enabling ambient persists instructions and analysis model", func(t *testing.T) {
+		body := fmt.Sprintf(`{"bot_id":%q,"mode":"ambient","instructions":"keep it short","analysis_model":"gpt-4o-mini"}`, testBotUserID)
+		resp, echoed := doPut(t, body)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, ChannelAutoReply{
+			BotID:         testBotUserID,
+			Mode:          "ambient",
+			Instructions:  "keep it short",
+			AnalysisModel: "gpt-4o-mini",
+		}, echoed)
+
+		require.Len(t, e.autoReplyStore.setCalls, 2)
+		require.Equal(t, autoreply.ModeAmbient, e.autoReplyStore.setCalls[1].Mode)
+		require.Equal(t, "keep it short", e.autoReplyStore.setCalls[1].Instructions)
+		require.Equal(t, "gpt-4o-mini", e.autoReplyStore.setCalls[1].AnalysisModel)
+
+		require.Len(t, events, 2)
+		require.Equal(t, "ambient", events[1].payload["mode"])
+		require.NotContains(t, events[1].payload, "instructions")
+		require.NotContains(t, events[1].payload, "analysis_model")
+	})
+
 	t.Run("switching to threads overwrites the stored mode", func(t *testing.T) {
 		resp, echoed := doPut(t, fmt.Sprintf(`{"bot_id":%q,"mode":"threads"}`, testBotUserID))
 		require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -590,8 +718,8 @@ func TestPutChannelAutoReplyPersistsAndPublishes(t *testing.T) {
 		require.NotNil(t, stored)
 		require.Equal(t, autoreply.ModeThreads, stored.Mode)
 
-		require.Len(t, events, 2)
-		require.Equal(t, "threads", events[1].payload["mode"])
+		require.Len(t, events, 3)
+		require.Equal(t, "threads", events[2].payload["mode"])
 	})
 
 	t.Run("turning off deletes the row and publishes off", func(t *testing.T) {
@@ -602,13 +730,13 @@ func TestPutChannelAutoReplyPersistsAndPublishes(t *testing.T) {
 		require.Equal(t, []string{"channelid"}, e.autoReplyStore.deleteCalls)
 		require.NotContains(t, e.autoReplyStore.settings, "channelid")
 
-		require.Len(t, events, 3)
-		require.Equal(t, WebsocketEventChannelAutoReplyUpdated, events[2].name)
-		require.Equal(t, "channelid", events[2].payload["channel_id"])
-		require.Equal(t, "", events[2].payload["bot_id"])
-		require.Equal(t, "off", events[2].payload["mode"])
-		require.NotNil(t, events[2].broadcast)
-		require.Equal(t, "channelid", events[2].broadcast.ChannelId)
+		require.Len(t, events, 4)
+		require.Equal(t, WebsocketEventChannelAutoReplyUpdated, events[3].name)
+		require.Equal(t, "channelid", events[3].payload["channel_id"])
+		require.Equal(t, "", events[3].payload["bot_id"])
+		require.Equal(t, "off", events[3].payload["mode"])
+		require.NotNil(t, events[3].broadcast)
+		require.Equal(t, "channelid", events[3].broadcast.ChannelId)
 	})
 }
 
@@ -708,4 +836,34 @@ func TestChannelAutoReplyAuditRecords(t *testing.T) {
 			tc.validate(t, *records)
 		})
 	}
+}
+
+func TestChannelAutoReplyAuditOmitsAmbientConfig(t *testing.T) {
+	const (
+		plantedInstructions = "PLANTED-AMBIENT-INSTRUCTIONS-SECRET"
+		plantedModel        = "PLANTED-ANALYSIS-MODEL"
+	)
+
+	e := setupChannelAutoReplyTest(t, model.ChannelTypeOpen)
+	defer e.Cleanup(t)
+	e.config.enableAmbientAutoReply = true
+	e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionReadChannel).Return(true)
+	e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionManagePublicChannelProperties).Return(true)
+	records := e.CaptureAuditRecords()
+
+	body := fmt.Sprintf(`{"bot_id":%q,"mode":"ambient","instructions":%q,"analysis_model":%q}`, testBotUserID, plantedInstructions, plantedModel)
+	resp := e.doChannelAutoReplyRequest(t, http.MethodPut, body)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Len(t, *records, 1)
+
+	rec := (*records)[0]
+	require.Equal(t, AuditEventUpdateChannelAutoReply, rec.EventName)
+	require.Equal(t, "ambient", rec.EventData.Parameters["mode"])
+	require.NotContains(t, rec.EventData.Parameters, "analysis_model")
+	require.NotContains(t, rec.EventData.Parameters, "instructions")
+
+	raw, err := json.Marshal(rec)
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), plantedInstructions)
+	require.NotContains(t, string(raw), plantedModel)
 }

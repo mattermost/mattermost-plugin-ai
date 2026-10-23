@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -221,7 +222,7 @@ func TestServiceSetValidation(t *testing.T) {
 			notifier := &recordingNotifier{}
 			svc := newTestService(t, dbClient, notifier, mmClient, botList)
 
-			setting, err := svc.Set(channelID, botID, tc.mode, model.NewId())
+			setting, err := svc.Set(Setting{ChannelID: channelID, BotID: botID, Mode: tc.mode, UpdatedBy: model.NewId()})
 			require.Error(t, err)
 			require.Nil(t, setting)
 			if tc.wantValidation {
@@ -269,6 +270,22 @@ func TestServiceSetSuccess(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:        "open channel with ambient mode",
+			mode:        ModeAmbient,
+			channelType: model.ChannelTypeOpen,
+			botCfg: func(string) llm.BotConfig {
+				return llm.BotConfig{ChannelAccessLevel: llm.ChannelAccessLevelAll}
+			},
+		},
+		{
+			name:        "open channel with ambient threads mode",
+			mode:        ModeAmbientThreads,
+			channelType: model.ChannelTypeOpen,
+			botCfg: func(string) llm.BotConfig {
+				return llm.BotConfig{ChannelAccessLevel: llm.ChannelAccessLevelAll}
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -283,7 +300,7 @@ func TestServiceSetSuccess(t *testing.T) {
 			notifier := &recordingNotifier{}
 			svc := newTestService(t, dbClient, notifier, mmClient, []*bots.Bot{newTestBot(botID, tc.botCfg(channelID))})
 
-			setting, err := svc.Set(channelID, botID, tc.mode, updatedBy)
+			setting, err := svc.Set(Setting{ChannelID: channelID, BotID: botID, Mode: tc.mode, UpdatedBy: updatedBy})
 			require.NoError(t, err)
 			require.NotNil(t, setting)
 			require.Equal(t, channelID, setting.ChannelID)
@@ -323,10 +340,10 @@ func TestServiceSetOverwrite(t *testing.T) {
 		newTestBot(botB, allowAll),
 	})
 
-	_, err := svc.Set(channelID, botA, ModeRootPosts, model.NewId())
+	_, err := svc.Set(Setting{ChannelID: channelID, BotID: botA, Mode: ModeRootPosts, UpdatedBy: model.NewId()})
 	require.NoError(t, err)
 
-	second, err := svc.Set(channelID, botB, ModeThreads, model.NewId())
+	second, err := svc.Set(Setting{ChannelID: channelID, BotID: botB, Mode: ModeThreads, UpdatedBy: model.NewId()})
 	require.NoError(t, err)
 
 	stored, err := svc.Get(channelID)
@@ -341,6 +358,83 @@ func TestServiceSetOverwrite(t *testing.T) {
 	require.Equal(t, *second, cached)
 
 	require.Equal(t, []string{channelID, channelID}, notifier.publishedIDs())
+}
+
+func TestServiceSetAmbientFields(t *testing.T) {
+	dbClient := testDB(t)
+
+	allowAll := llm.BotConfig{ChannelAccessLevel: llm.ChannelAccessLevelAll}
+
+	tests := []struct {
+		name          string
+		instructions  string
+		analysisModel string
+		wantErr       bool
+	}{
+		{
+			name:          "persists instructions and analysis model",
+			instructions:  "reply only to questions about billing",
+			analysisModel: "gpt-4o-mini",
+		},
+		{
+			name:         "accepts instructions at the rune cap",
+			instructions: strings.Repeat("界", MaxInstructionsRunes),
+		},
+		{
+			name:         "rejects instructions over the rune cap",
+			instructions: strings.Repeat("界", MaxInstructionsRunes+1),
+			wantErr:      true,
+		},
+		{
+			name:          "accepts analysis model at the 512 cap",
+			analysisModel: strings.Repeat("a", MaxAnalysisModelLen),
+		},
+		{
+			name:          "rejects analysis model over 512 bytes",
+			analysisModel: strings.Repeat("a", MaxAnalysisModelLen+1),
+			wantErr:       true,
+		},
+		{
+			name:          "rejects a multi-byte analysis model over 512 bytes",
+			analysisModel: strings.Repeat("界", MaxAnalysisModelLen/3+1),
+			wantErr:       true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			channelID := model.NewId()
+			botID := model.NewId()
+			updatedBy := model.NewId()
+
+			mmClient := mocks.NewMockClient(t)
+			mmClient.EXPECT().GetChannel(channelID).Return(&model.Channel{Id: channelID, Type: model.ChannelTypeOpen}, nil).Maybe()
+
+			svc := newTestService(t, dbClient, &recordingNotifier{}, mmClient, []*bots.Bot{newTestBot(botID, allowAll)})
+
+			setting, err := svc.Set(Setting{ChannelID: channelID, BotID: botID, Mode: ModeAmbient, UpdatedBy: updatedBy, Instructions: tc.instructions, AnalysisModel: tc.analysisModel})
+			if tc.wantErr {
+				require.ErrorIs(t, err, ErrValidation)
+				require.Nil(t, setting)
+				stored, getErr := NewStore(dbClient).Get(channelID)
+				require.NoError(t, getErr)
+				require.Nil(t, stored)
+				_, ok := svc.GetCached(channelID)
+				require.False(t, ok)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.instructions, setting.Instructions)
+			require.Equal(t, tc.analysisModel, setting.AnalysisModel)
+
+			stored, getErr := NewStore(dbClient).Get(channelID)
+			require.NoError(t, getErr)
+			require.Equal(t, *setting, *stored)
+			cached, ok := svc.GetCached(channelID)
+			require.True(t, ok)
+			require.Equal(t, *setting, cached)
+		})
+	}
 }
 
 func TestServiceDelete(t *testing.T) {
@@ -385,7 +479,7 @@ func TestServiceDelete(t *testing.T) {
 
 			expectedNotifications := []string(nil)
 			if tc.setFirst {
-				_, err := svc.Set(channelID, botID, ModeRootPosts, model.NewId())
+				_, err := svc.Set(Setting{ChannelID: channelID, BotID: botID, Mode: ModeRootPosts, UpdatedBy: model.NewId()})
 				require.NoError(t, err)
 				expectedNotifications = append(expectedNotifications, channelID)
 			}
@@ -424,7 +518,7 @@ func TestServiceGet(t *testing.T) {
 	bot := newTestBot(botID, llm.BotConfig{ChannelAccessLevel: llm.ChannelAccessLevelAll})
 	svc := newTestService(t, dbClient, &recordingNotifier{}, mmClient, []*bots.Bot{bot})
 
-	setting, err := svc.Set(channelID, botID, ModeThreads, model.NewId())
+	setting, err := svc.Set(Setting{ChannelID: channelID, BotID: botID, Mode: ModeThreads, UpdatedBy: model.NewId()})
 	require.NoError(t, err)
 
 	got, err := svc.Get(channelID)
@@ -549,7 +643,7 @@ func TestServiceNotifierFailureDoesNotFailWrite(t *testing.T) {
 		{
 			name: "set succeeds when the notifier fails",
 			op: func(t *testing.T, svc *Service, channelID, botID string) {
-				setting, err := svc.Set(channelID, botID, ModeRootPosts, model.NewId())
+				setting, err := svc.Set(Setting{ChannelID: channelID, BotID: botID, Mode: ModeRootPosts, UpdatedBy: model.NewId()})
 				require.NoError(t, err, "a failed broadcast must not fail the write")
 				require.NotNil(t, setting)
 			},
@@ -637,7 +731,7 @@ func TestServiceStalledDBWriteDoesNotBlockGetCached(t *testing.T) {
 
 	setDone := make(chan error, 1)
 	go func() {
-		_, setErr := svc.Set(stalledChannelID, botID, ModeThreads, model.NewId())
+		_, setErr := svc.Set(Setting{ChannelID: stalledChannelID, BotID: botID, Mode: ModeThreads, UpdatedBy: model.NewId()})
 		setDone <- setErr
 	}()
 
@@ -726,10 +820,10 @@ func TestServiceConcurrentAccess(t *testing.T) {
 				channelID := channelIDs[(seed+i)%len(channelIDs)]
 				switch i % 4 {
 				case 0:
-					_, err := svc.Set(channelID, botID, ModeRootPosts, updatedBy)
+					_, err := svc.Set(Setting{ChannelID: channelID, BotID: botID, Mode: ModeRootPosts, UpdatedBy: updatedBy})
 					assert.NoError(t, err)
 				case 1:
-					_, err := svc.Set(channelID, botID, ModeThreads, updatedBy)
+					_, err := svc.Set(Setting{ChannelID: channelID, BotID: botID, Mode: ModeThreads, UpdatedBy: updatedBy})
 					assert.NoError(t, err)
 				case 2:
 					assert.NoError(t, svc.Delete(channelID))
