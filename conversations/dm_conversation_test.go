@@ -791,7 +791,7 @@ func TestDMManualApprovalTools_ToolRunnerReturnsUnresolved(t *testing.T) {
 	// Consume stream and check for tool call events
 	var foundToolCalls bool
 	for event := range streamResult.Stream.Stream {
-		if event.Type == llm.EventTypeToolCalls {
+		if event.Type == llm.EventTypeToolCallBatch {
 			foundToolCalls = true
 		}
 	}

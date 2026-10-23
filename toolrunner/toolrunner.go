@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
 	"github.com/mattermost/mattermost-plugin-agents/v2/mcp"
@@ -237,7 +238,7 @@ func (r *ToolRunner) runLoop(
 			resolvedToolCalls := buildResolvedToolCalls(toolCalls, toolResults)
 			appendToolTurnAndPost(result, &request, resp.text, resp.reasoningData, resp.serverTools, resp.segments, resolvedToolCalls, toolResults, resp.usage)
 
-			output <- llm.TextStreamEvent{Type: llm.EventTypeToolCalls, Value: resolvedToolCalls}
+			output <- toolCallBatchEvent(llm.ToolCallPhaseResolved, resolvedToolCalls)
 
 			if llm.CountTrailingFailedToolCalls(request.Posts) >= llm.MaxConsecutiveToolCallFailures {
 				request.Posts = llm.EnsureToolRetryLimitSystemMessage(request.Posts)
@@ -267,19 +268,18 @@ func (r *ToolRunner) runLoop(
 				toolCalls[i].WouldAutoExecute = approved[i]
 			}
 			r.deliverToolTurns(result, onToolTurns)
-			output <- llm.TextStreamEvent{Type: llm.EventTypeToolCalls, Value: toolCalls}
+			output <- toolCallBatchEvent(llm.ToolCallPhaseAwaitingDecision, toolCalls)
 			output <- llm.TextStreamEvent{Type: llm.EventTypeEnd}
 			return
 		}
 
-		// All calls passed the policy: stamp them so the pending broadcast
-		// (and, if the stream is interrupted mid-execution, the persisted
-		// blocks) carry the auto-execute signal instead of implying an
-		// approval request, then forward so the UI can show spinners.
+		// All calls passed the policy. The marker keeps persisted blocks from
+		// implying an approval request if the stream is interrupted
+		// mid-execution.
 		for i := range toolCalls {
 			toolCalls[i].WouldAutoExecute = true
 		}
-		output <- llm.TextStreamEvent{Type: llm.EventTypeToolCalls, Value: toolCalls}
+		output <- toolCallBatchEvent(llm.ToolCallPhaseExecuting, toolCalls)
 
 		// Execute each tool call.
 		toolResults := r.executeTools(ctx, toolCalls, request)
@@ -288,8 +288,7 @@ func (r *ToolRunner) runLoop(
 		resolvedToolCalls := buildResolvedToolCalls(toolCalls, toolResults)
 		appendToolTurnAndPost(result, &request, resp.text, resp.reasoningData, resp.serverTools, resp.segments, resolvedToolCalls, toolResults, resp.usage)
 
-		// Forward resolved tool calls so the UI can show success/error states.
-		output <- llm.TextStreamEvent{Type: llm.EventTypeToolCalls, Value: resolvedToolCalls}
+		output <- toolCallBatchEvent(llm.ToolCallPhaseResolved, resolvedToolCalls)
 
 		// Check for consecutive tool call failures and disable tools if needed.
 		if llm.CountTrailingFailedToolCalls(request.Posts) >= llm.MaxConsecutiveToolCallFailures {
@@ -305,6 +304,12 @@ func (r *ToolRunner) runLoop(
 			synthesisForced = true
 		}
 	}
+}
+
+// toolCallBatchEvent copies calls because consumers sanitize them in place
+// while the runner is still executing and replaying the originals.
+func toolCallBatchEvent(phase llm.ToolCallPhase, calls []llm.ToolCall) llm.TextStreamEvent {
+	return llm.TextStreamEvent{Type: llm.EventTypeToolCallBatch, Value: llm.ToolCallBatch{Phase: phase, Calls: slices.Clone(calls)}}
 }
 
 // assistantResponse holds the accumulated contents of one fully consumed

@@ -392,9 +392,9 @@ func TestToolRunner_PartialApproval_NoneExecuted(t *testing.T) {
 		switch event.Type {
 		case llm.EventTypeText:
 			gotText = true
-		case llm.EventTypeToolCalls:
+		case llm.EventTypeToolCallBatch:
 			gotToolCalls = true
-			tcs := event.Value.([]llm.ToolCall)
+			tcs := event.Value.(llm.ToolCallBatch).Calls
 			assert.Equal(t, "tc1", tcs[0].ID)
 		}
 	}
@@ -442,8 +442,8 @@ func TestToolRunner_MixedBatch_AllOrNothing(t *testing.T) {
 	// All tool calls returned unresolved.
 	var toolCallEvents []llm.ToolCall
 	for event := range result.Stream.Stream {
-		if event.Type == llm.EventTypeToolCalls {
-			toolCallEvents = append(toolCallEvents, event.Value.([]llm.ToolCall)...)
+		if event.Type == llm.EventTypeToolCallBatch {
+			toolCallEvents = append(toolCallEvents, event.Value.(llm.ToolCallBatch).Calls...)
 		}
 	}
 	require.Len(t, toolCallEvents, 2)
