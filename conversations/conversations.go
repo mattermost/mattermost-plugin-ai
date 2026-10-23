@@ -20,7 +20,6 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/mmtools"
 	"github.com/mattermost/mattermost-plugin-agents/v2/prompts"
 	"github.com/mattermost/mattermost-plugin-agents/v2/streaming"
-	"github.com/mattermost/mattermost-plugin-agents/v2/subtitles"
 	"github.com/mattermost/mattermost-plugin-agents/v2/telemetry"
 	"github.com/mattermost/mattermost/server/public/model"
 	"go.opentelemetry.io/otel/trace"
@@ -29,8 +28,9 @@ import (
 const ThreadIDProp = "referenced_thread"
 const AnalysisTypeProp = "prompt_type"
 
-// AnalyzedChannelIDProp records, on a channel analysis response, the channel
-// that was analyzed, so continuing the conversation can re-check access to it.
+// AnalyzedChannelIDProp records the channel a channel analysis post analyzed
+// so continuing or regenerating it can re-check access and re-bind the
+// analysis tools to it.
 const AnalyzedChannelIDProp = "analyzed_channel_id"
 
 // ConfigProvider provides configuration values for conversation behavior
@@ -49,17 +49,11 @@ type Conversations struct {
 	db                *mmapi.DBClient
 	licenseChecker    *enterprise.LicenseChecker
 	i18n              *i18n.Bundle
-	meetingsService   MeetingsService
 	configProvider    ConfigProvider
 	toolPolicyChecker mcp.ToolPolicyChecker
 	convService       *conversation.Service
 	autoReplySettings AutoReplySettings
-}
-
-// MeetingsService defines the interface for meetings functionality needed by conversations
-type MeetingsService interface {
-	GetCaptionsFileIDFromProps(post *model.Post) (fileID string, err error)
-	SummarizeTranscription(ctx stdcontext.Context, bot *bots.Bot, transcription *subtitles.Subtitles, context *llm.Context) (*llm.TextStreamResult, error)
+	meetingSummaries  MeetingSummaryRegenerator
 }
 
 // New creates the conversations service. toolPolicyChecker is required: tool
@@ -73,7 +67,6 @@ func New(
 	db *mmapi.DBClient,
 	licenseChecker *enterprise.LicenseChecker,
 	i18nBundle *i18n.Bundle,
-	meetingsService MeetingsService,
 	configProvider ConfigProvider,
 	toolPolicyChecker mcp.ToolPolicyChecker,
 ) *Conversations {
@@ -86,15 +79,9 @@ func New(
 		db:                db,
 		licenseChecker:    licenseChecker,
 		i18n:              i18nBundle,
-		meetingsService:   meetingsService,
 		configProvider:    configProvider,
 		toolPolicyChecker: toolPolicyChecker,
 	}
-}
-
-// SetMeetingsService sets the meetings service (used to break circular dependency during initialization)
-func (c *Conversations) SetMeetingsService(meetingsService MeetingsService) {
-	c.meetingsService = meetingsService
 }
 
 // SetAutoReplySettings sets the per-channel auto-reply settings lookup.

@@ -29,7 +29,10 @@ import (
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
-const attachmentTestSessionID = "attachment-test-session"
+const (
+	attachmentTestSessionID = "attachment-test-session"
+	attachmentTestChannelID = "attachment-test-channel"
+)
 
 var testConnStr string
 
@@ -1984,6 +1987,12 @@ func setupTestServiceWithClient(
 			mock.Anything,
 			model.AccessControlPolicyActionDownloadFileAttachment,
 		).Return(true).Maybe()
+		mockClient.On(
+			"HasPermissionToChannel",
+			mock.Anything,
+			attachmentTestChannelID,
+			model.PermissionReadChannel,
+		).Return(true).Maybe()
 	}
 
 	db, err := sqlx.Connect("postgres", testConnStr)
@@ -2206,11 +2215,11 @@ func TestBuildCompletionRequest_AttachmentsResolveLazily(t *testing.T) {
 		// Used twice: once for user-turn creation (read MIME) and once at
 		// request build time (lazy resolve).
 		mmClient.On("GetFileInfo", "img1").Return(&model.FileInfo{
-			Id: "img1", Name: "pic.png", MimeType: "image/png", Size: 100,
+			ChannelId: attachmentTestChannelID, Id: "img1", Name: "pic.png", MimeType: "image/png", Size: 100,
 		}, nil)
 		mmClient.On("GetFile", "img1").Return(io.NopCloser(strings.NewReader("PNGDATA")), nil)
 		mmClient.On("GetFileInfo", "doc1").Return(&model.FileInfo{
-			Id: "doc1", Name: "notes.txt", MimeType: "text/plain", Size: 5,
+			ChannelId: attachmentTestChannelID, Id: "doc1", Name: "notes.txt", MimeType: "text/plain", Size: 5,
 		}, nil)
 		mmClient.On("GetFile", "doc1").Return(io.NopCloser(strings.NewReader("hello")), nil)
 
@@ -2258,10 +2267,10 @@ func TestBuildCompletionRequest_AttachmentsResolveLazily(t *testing.T) {
 		mmClient := mmapimocks.NewMockClient(t)
 
 		mmClient.On("GetFileInfo", "img1").Return(&model.FileInfo{
-			Id: "img1", Name: "pic.png", MimeType: "image/png", Size: 100,
+			ChannelId: attachmentTestChannelID, Id: "img1", Name: "pic.png", MimeType: "image/png", Size: 100,
 		}, nil)
 		mmClient.On("GetFileInfo", "doc1").Return(&model.FileInfo{
-			Id: "doc1", Name: "notes.txt", MimeType: "text/plain", Size: 5,
+			ChannelId: attachmentTestChannelID, Id: "doc1", Name: "notes.txt", MimeType: "text/plain", Size: 5,
 		}, nil)
 		mmClient.On("GetFile", "doc1").Return(io.NopCloser(strings.NewReader("hello")), nil)
 		// NOTE: no GetFile(img1) expectation — vision is off so it must NOT be called.
@@ -2389,11 +2398,11 @@ func TestBuildChannelMentionRequest_AttachmentsResolveLazily(t *testing.T) {
 		mmClient := mmapimocks.NewMockClient(t)
 
 		mmClient.On("GetFileInfo", "img1").Return(&model.FileInfo{
-			Id: "img1", Name: "pic.png", MimeType: "image/png", Size: 100,
+			ChannelId: attachmentTestChannelID, Id: "img1", Name: "pic.png", MimeType: "image/png", Size: 100,
 		}, nil)
 		mmClient.On("GetFile", "img1").Return(io.NopCloser(strings.NewReader("PNGDATA")), nil)
 		mmClient.On("GetFileInfo", "doc1").Return(&model.FileInfo{
-			Id: "doc1", Name: "notes.txt", MimeType: "text/plain", Size: 5,
+			ChannelId: attachmentTestChannelID, Id: "doc1", Name: "notes.txt", MimeType: "text/plain", Size: 5,
 		}, nil)
 		mmClient.On("GetFile", "doc1").Return(io.NopCloser(strings.NewReader("hello")), nil)
 
@@ -2457,10 +2466,10 @@ func TestBuildChannelMentionRequest_AttachmentsResolveLazily(t *testing.T) {
 		mmClient := mmapimocks.NewMockClient(t)
 
 		mmClient.On("GetFileInfo", "img1").Return(&model.FileInfo{
-			Id: "img1", Name: "pic.png", MimeType: "image/png", Size: 100,
+			ChannelId: attachmentTestChannelID, Id: "img1", Name: "pic.png", MimeType: "image/png", Size: 100,
 		}, nil)
 		mmClient.On("GetFileInfo", "doc1").Return(&model.FileInfo{
-			Id: "doc1", Name: "notes.txt", MimeType: "text/plain", Size: 5,
+			ChannelId: attachmentTestChannelID, Id: "doc1", Name: "notes.txt", MimeType: "text/plain", Size: 5,
 		}, nil)
 		mmClient.On("GetFile", "doc1").Return(io.NopCloser(strings.NewReader("hello")), nil)
 		// NOTE: no GetFile(img1) expectation — vision is off so the
@@ -2521,7 +2530,7 @@ func TestBuildChannelMentionRequest_AttachmentsResolveLazily(t *testing.T) {
 		mmClient := mmapimocks.NewMockClient(t)
 
 		mmClient.On("GetFileInfo", "img-root").Return(&model.FileInfo{
-			Id: "img-root", Name: "screenshot.png", MimeType: "image/png", Size: 100,
+			ChannelId: attachmentTestChannelID, Id: "img-root", Name: "screenshot.png", MimeType: "image/png", Size: 100,
 		}, nil)
 		mmClient.On("GetFile", "img-root").Return(io.NopCloser(strings.NewReader("PNGDATA")), nil)
 
