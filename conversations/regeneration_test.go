@@ -93,7 +93,7 @@ const (
 // check does not pass.
 func TestHandleRegenerate(t *testing.T) {
 	const (
-		userID          = "user-id"
+		userID          = testRequesterID
 		botID           = "bot-id"
 		otherBotID      = "other-bot-id"
 		regenPostID     = "regen-post-id"
@@ -153,7 +153,7 @@ func TestHandleRegenerate(t *testing.T) {
 			operation:  llm.OperationThreadAnalysis,
 			rootIsPost: true,
 			postProps:  map[string]any{AnalysisTypeProp: "summarize_thread"},
-			wantErr:    "missing its referenced thread",
+			wantErrIs:  ErrAnalysisSourceUnavailable,
 		},
 		{
 			name:       "thread analysis without thread channel access fails",
@@ -164,7 +164,7 @@ func TestHandleRegenerate(t *testing.T) {
 				mm.On("GetPost", threadID).Return(&model.Post{Id: threadID, ChannelId: threadChannel}, nil)
 				mm.On("HasPermissionToChannel", userID, threadChannel, model.PermissionReadChannel).Return(false)
 			},
-			wantErr: "permission",
+			wantErrIs: ErrAnalysisSourceUnavailable,
 		},
 		{
 			name:       "channel summary rebinds tools to the analyzed channel",
@@ -192,7 +192,7 @@ func TestHandleRegenerate(t *testing.T) {
 			rootIsPost: true,
 			postProps:  map[string]any{AnalyzedChannelIDProp: analyzedChannel},
 			setupMM:    analyzed(false),
-			wantErr:    "permission",
+			wantErrIs:  ErrAnalysisSourceUnavailable,
 		},
 		{
 			name:      "channel summary follow-up regenerates as a conversation",
@@ -250,7 +250,7 @@ func TestHandleRegenerate(t *testing.T) {
 			operation:  llm.OperationChannelInterval,
 			rootIsPost: true,
 			postProps:  map[string]any{streaming.NoRegen: "true"},
-			wantErr:    "tagged no regen",
+			wantErrIs:  ErrNotRegenerable,
 		},
 		{
 			name:       "interval summary post without its no-regen tag still fails closed",
@@ -345,6 +345,16 @@ func TestHandleRegenerate(t *testing.T) {
 			if tt.setupMM != nil {
 				tt.setupMM(mm)
 			}
+			analysisRoot := &model.Post{Id: "analysis-root-post", UserId: botID}
+			switch tt.operation {
+			case llm.OperationThreadAnalysis:
+				analysisRoot.AddProp(ThreadIDProp, threadID)
+			case llm.OperationChannelSummary, llm.OperationChannelInterval:
+				analysisRoot.AddProp(AnalyzedChannelIDProp, analyzedChannel)
+			}
+			mm.On("GetPost", analysisRoot.Id).Return(analysisRoot, nil).Maybe()
+			mm.On("GetPost", threadID).Return(&model.Post{Id: threadID, ChannelId: threadChannel}, nil).Maybe()
+			mm.On("HasPermissionToChannel", userID, mock.Anything, model.PermissionReadChannel).Return(true).Maybe()
 
 			lm := &loadedStateLLM{}
 			botCfg := loadedStateBot(lm).GetConfig()

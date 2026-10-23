@@ -89,6 +89,10 @@ func seedMeetingSummaryConversation(t *testing.T, env *dmTestEnv, rootID, fileID
 	t.Helper()
 	channelID := env.channelID
 	convID := model.NewId()
+	if env.mmClient.posts == nil {
+		env.mmClient.posts = map[string]*model.Post{}
+	}
+	env.mmClient.posts[rootID] = &model.Post{Id: rootID, UserId: env.botID, ChannelId: channelID, Message: summary}
 	require.NoError(t, env.convStore.CreateConversation(&store.Conversation{
 		ID:           convID,
 		UserID:       env.userID,

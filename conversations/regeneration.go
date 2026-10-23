@@ -19,7 +19,6 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/store"
 	"github.com/mattermost/mattermost-plugin-agents/v2/streaming"
 	"github.com/mattermost/mattermost-plugin-agents/v2/telemetry"
-	"github.com/mattermost/mattermost-plugin-agents/v2/toolrunner"
 	"github.com/mattermost/mattermost/server/public/model"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -45,6 +44,10 @@ const (
 	regenerateMeetingSummary
 )
 
+// ErrNotRegenerable is returned when regenerating a post tagged no_regen,
+// such as an interval summary. The HTTP layer maps it to 400.
+var ErrNotRegenerable = errors.New("this post cannot be regenerated")
+
 // selectRegeneratePath picks how post is regenerated from server-stored state
 // and props of the bot-authored post only. Follow-up replies in an
 // operation's conversation regenerate as ordinary conversation turns.
@@ -65,7 +68,7 @@ func selectRegeneratePath(conv *store.Conversation, post *model.Post) (regenerat
 		return regenerateConversation, nil
 	case llm.OperationChannelInterval:
 		if isOperationRoot {
-			return 0, errors.New("interval summary posts cannot be regenerated")
+			return 0, ErrNotRegenerable
 		}
 		return regenerateConversation, nil
 	case llm.OperationMeetingSummary:
@@ -111,7 +114,7 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 		return fmt.Errorf("failed to get conversation for ownership check: %w", err)
 	}
 	if conv.UserID != userID {
-		return errors.New("only the original poster can regenerate")
+		return ErrNotRequester
 	}
 	// Props select the regenerate path and its sources, so they are only
 	// trusted on a post the conversation's own bot authored.
@@ -120,7 +123,7 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 	}
 
 	if post.GetProp(streaming.NoRegen) != nil {
-		return errors.New("tagged no regen")
+		return ErrNotRegenerable
 	}
 
 	if err = c.checkRegenerateLicense(conv.Operation); err != nil {
@@ -137,6 +140,11 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 		return fmt.Errorf("unable to get user to regen post: %w", err)
 	}
 
+	policy, err := c.resolveTurnPolicy(ctx, turnRequest{bot: bot, user: user, channel: channel, conv: conv, post: post})
+	if err != nil {
+		return err
+	}
+
 	ctx, err = c.streamingService.GetStreamingContext(ctx, post.Id)
 	if err != nil {
 		return fmt.Errorf("unable to get post streaming context: %w", err)
@@ -146,9 +154,6 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 	var result *llm.TextStreamResult
 	switch path {
 	case regenerateThreadAnalysis:
-		if err = c.checkAnalyzedThreadAccess(userID, post); err != nil {
-			return err
-		}
 		result, err = c.regenerateSingleShot(ctx, bot, user, channel, conv, post)
 
 	case regenerateMeetingSummary:
@@ -165,7 +170,7 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 		if _, ok := post.GetProp(streaming.RespondingToProp).(string); !ok {
 			return errors.New("post missing responding to prop")
 		}
-		result, err = c.regenerateViaConversation(ctx, bot, user, channel, conv, post)
+		result, err = c.regenerateViaConversation(ctx, policy, post)
 	}
 	if err != nil {
 		return fmt.Errorf("could not regenerate %s post: %w", conv.Operation, err)
@@ -183,23 +188,6 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 	config := c.mmClient.GetConfig()
 	c.streamingService.StreamToPost(ctx, result, post, *config.LocalizationSettings.DefaultServerLocale, user.Id)
 
-	return nil
-}
-
-// checkAnalyzedThreadAccess fails unless userID can still read the thread a
-// thread analysis post was built from.
-func (c *Conversations) checkAnalyzedThreadAccess(userID string, post *model.Post) error {
-	threadID, _ := post.GetProp(ThreadIDProp).(string)
-	if threadID == "" {
-		return errors.New("thread analysis post missing its referenced thread")
-	}
-	threadPost, err := c.mmClient.GetPost(threadID)
-	if err != nil {
-		return fmt.Errorf("could not get thread post on regen: %w", err)
-	}
-	if !c.mmClient.HasPermissionToChannel(userID, threadPost.ChannelId, model.PermissionReadChannel) {
-		return errors.New("user doesn't have permission to read the channel of the original thread")
-	}
 	return nil
 }
 
@@ -285,32 +273,18 @@ func (c *Conversations) regenerateChannelAnalysis(
 
 // regenerateViaConversation rebuilds the completion request from the conversation entity
 // and runs the ToolRunner to produce a new response stream.
-func (c *Conversations) regenerateViaConversation(
-	ctx stdcontext.Context,
-	bot *bots.Bot,
-	user *model.User,
-	channel *model.Channel,
-	conv *store.Conversation,
-	post *model.Post,
-) (*llm.TextStreamResult, error) {
-	// Regeneration is triggered by the requester clicking the regen control,
-	// so the user is interactively present.
-	llmContext := c.buildConversationContextWithTools(
-		ctx, bot, user, channel,
-		"Failed to load user tool preferences on regen, proceeding without filtering",
-		append([]llm.ContextOption{
-			c.contextBuilder.WithLLMContextInteractive(),
-			c.contextBuilder.WithLLMContextResponseFiles(),
-		}, c.conversationToolOptions(bot, conv)...)...,
-	)
+func (c *Conversations) regenerateViaConversation(ctx stdcontext.Context, policy *turnPolicy, post *model.Post) (*llm.TextStreamResult, error) {
+	conv := policy.conv
+	if conv == nil {
+		return nil, errors.New("post missing conversation_id for regeneration")
+	}
 
-	isDM := mmapi.IsDMWith(bot.GetMMBot().UserId, channel)
-	toolsDisabled := applyToolAvailability(llmContext, isDM, c.channelMentionToolCallingEnabled())
+	llmContext := policy.buildContext(ctx, "Failed to load user tool preferences on regen, proceeding without filtering")
 
 	// AllowUnsharedToolContent on DMs is a no-op (DM tool_results are shared)
 	// but documents intent.
 	completionReq, err := c.convService.BuildRegenerateRequest(conv, llmContext, post.Id, conversation.BuildOptions{
-		AllowUnsharedToolContent: isDM,
+		AllowUnsharedToolContent: policy.isDM,
 		SessionID:                auth.SessionIDFromContext(ctx),
 	})
 	if err != nil {
@@ -325,15 +299,10 @@ func (c *Conversations) regenerateViaConversation(
 	// even if the new run creates none; nil could be treated as "no change".
 	post.FileIds = []string{}
 
-	runResult, runErr := c.runToolLoop(ctx, bot.LLM(), bot.GetConfig().EffectiveMaxToolTurns(), *completionReq,
-		c.shouldAutoExecuteTool(llmContext, isDM),
-		conv.ID,
-		func(turns []toolrunner.ToolTurn) bool { return isDM || c.allToolsAutoRunEverywhere(turns, llmContext) },
-		c.toolsDisabledLLMOptions(bot, toolsDisabled), "Failed to write tool turns on regen")
-
+	runResult, runErr := policy.runToolLoop(ctx, llmContext, conv.ID, *completionReq, "Failed to write tool turns on regen")
 	if runErr != nil {
 		return nil, fmt.Errorf("tool runner failed on regen: %w", runErr)
 	}
 
-	return c.decorateStreamWithCreatedFiles(ctx, bot, runResult.Stream, post, nil, llmContext, llmContext), nil
+	return c.decorateStreamWithCreatedFiles(ctx, policy.bot, runResult.Stream, post, nil, llmContext, llmContext), nil
 }

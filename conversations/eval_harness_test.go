@@ -153,6 +153,7 @@ func respondAsAgent(t *evals.EvalT, scenario evalScenario, post *model.Post) str
 		licenseChecker,
 		i18n.Init(),
 		&testToolCallingConfig{},
+		newDMPolicyChecker(),
 	)
 	convs.SetConversationService(conversation.NewService(newFakeConvStore(), promptsManager, mmClient, botService))
 

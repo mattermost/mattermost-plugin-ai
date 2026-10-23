@@ -12,6 +12,10 @@ const NoRegen = "no_regen"
 const UnsafeLinksPostProp = "unsafe_links"
 const ConversationIDProp = "conversation_id"
 
+// GenerationStoppedProp marks a response the requester stopped before it
+// finished, so every viewer can tell a cut-off reply from a complete one.
+const GenerationStoppedProp = "generation_stopped"
+
 // ModifyPostForBot modifies a post to add bot-specific properties
 func ModifyPostForBot(botid string, post *model.Post, respondingToPostID string) {
 	post.UserId = botid

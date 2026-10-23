@@ -32,6 +32,25 @@ jest.mock('react-intl', () => {
     };
 });
 
+// WithTooltip renders its title alongside children so tests can assert the tooltip text.
+jest.mock('@mattermost/shared/components/tooltip', () => ({
+    WithTooltip: ({
+        children,
+        title,
+        hint,
+    }: {
+        children: React.ReactNode;
+        title?: React.ReactNode;
+        hint?: React.ReactNode;
+    }) => (
+        <>
+            {children}
+            <div>{title}</div>
+            <div>{hint}</div>
+        </>
+    ),
+}));
+
 // OverlayTrigger renders the overlay alongside children so tests can assert the tooltip text.
 jest.mock('react-bootstrap', () => ({
     OverlayTrigger: ({children, overlay}: {children: React.ReactNode; overlay: React.ReactNode}) => <>{children}{overlay}</>,
