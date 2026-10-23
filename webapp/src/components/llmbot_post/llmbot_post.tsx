@@ -8,6 +8,8 @@ import styled from 'styled-components';
 
 import {GlobalState} from '@mattermost/types/store';
 
+import {CancelIcon} from '@mattermost/compass-icons/components';
+
 import {ErrorMessage} from '@mattermost/compass-ui/components/error-message';
 import {SectionNotice} from '@mattermost/compass-ui/components/section-notice';
 
@@ -21,12 +23,13 @@ import {LLMBot} from '@/bots';
 import manifest from '@/manifest';
 
 import {isValidId} from '@/utils/ids';
+import {displayNameFor, selectTeammateNameDisplay} from '@/utils/teammate_name';
 
 import {ServerToolUse} from '@/types/conversation';
 
 import HTMLArtifacts from '../html_artifacts/html_artifacts';
 import {needsViewerDecision, selectDecisionToolCalls} from '../tool_decisions';
-import {ToolApprovalStage, ToolCall, ToolCallStatus} from '../tool_types';
+import {ToolApprovalStage, ToolCall, ToolCallPhase, ToolCallStatus} from '../tool_types';
 import {Annotation} from '../citations/types';
 
 import {
@@ -34,8 +37,9 @@ import {
     buildRoundsFromTurns,
     computeRenderedRounds,
     deriveApprovalStageForPost,
+    markUnfinishedToolsInterrupted,
 } from './turn_content_utils';
-import {deriveActivity, isTerminalToolStatus} from './activity_items';
+import {deriveActivity} from './activity_items';
 import {ControlsBarComponent} from './controls_bar';
 import {extractPermalinkData} from './permalink_data';
 import {FoldingText, useFoldingText} from './folding_text';
@@ -58,6 +62,7 @@ export interface PostUpdateWebsocketMessage {
     progress_phase?: AgentProgressPhase
     progress_seq?: number
     tool_call?: string
+    tool_call_phase?: ToolCallPhase
     reasoning?: string
     annotations?: string
     server_tool?: string
@@ -84,12 +89,6 @@ type InterruptReason = 'shutdown' | 'lost';
 
 function parseInterruptReason(value: unknown): InterruptReason | null {
     return value === 'shutdown' || value === 'lost' ? value : null;
-}
-
-// ToolRunner emits one tool_call event per round with pending statuses, then one
-// with terminal statuses after execution. The terminal one is the round boundary.
-function isResolvedToolCallEvent(toolCalls: ToolCall[]): boolean {
-    return toolCalls.length > 0 && toolCalls.every((tc) => isTerminalToolStatus(tc.status));
 }
 
 export const LLMBotPost = (props: LLMBotPostProps) => {
@@ -180,6 +179,13 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
     // persisted turn is then authoritative.
     const postTurnSettled = Boolean(conversation?.turns.some((turn) => turn.post_id === props.post.id && turn.status !== 'streaming'));
     const liveStreamOpen = generating || (awaitingEnd && !postTurnSettled);
+
+    // A persisted turn still marked streaming means generation is unfinished
+    // even though heartbeats already flushed partial text onto the post, or
+    // that approved tool calls are running. Read the fresh conversation (not
+    // the last-known copy) so a refetch that lands with the turn complete
+    // clears this.
+    const turnStillStreaming = Boolean(conversation?.turns.some((turn) => turn.post_id === props.post.id && turn.status === 'streaming'));
 
     // Lets the WebSocket handler snapshot the live round without re-subscribing.
     const liveRef = useRef({message, toolCalls, reasoningSummary, annotations, serverTools});
@@ -340,7 +346,7 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
                 setGenerating(true);
                 try {
                     const parsedToolCalls = JSON.parse(data.tool_call) as ToolCall[];
-                    if (isResolvedToolCallEvent(parsedToolCalls)) {
+                    if (data.tool_call_phase === 'resolved') {
                         const live = liveRef.current;
                         setLiveRounds((prev) => [
                             ...prev,
@@ -563,15 +569,18 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
         };
     }, [message, toolCalls, reasoningSummary, annotations, serverTools]);
 
-    const renderedRounds = useMemo(() => computeRenderedRounds({
-        regenerating,
-        hasConversation: Boolean(conversationId),
-        persistedRounds: stablePersisted,
-        liveRounds,
-        generating: liveStreamOpen,
-        pendingRefetch,
-        currentRound,
-    }), [regenerating, conversationId, stablePersisted, liveRounds, liveStreamOpen, pendingRefetch, currentRound]);
+    const renderedRounds = useMemo(() => {
+        const rounds = computeRenderedRounds({
+            regenerating,
+            hasConversation: Boolean(conversationId),
+            persistedRounds: stablePersisted,
+            liveRounds,
+            generating: liveStreamOpen,
+            pendingRefetch,
+            currentRound,
+        });
+        return interrupted ? markUnfinishedToolsInterrupted(rounds) : rounds;
+    }, [regenerating, conversationId, stablePersisted, liveRounds, liveStreamOpen, pendingRefetch, currentRound, interrupted]);
 
     const regnerate = () => {
         setStreamEventCount((count) => count + 1);
@@ -659,10 +668,13 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
         break;
     }
 
-    // The interrupted notice carries its own Regenerate action.
-    const showRegenerate = isDM && !isGenerationInProgress && !interrupted && requesterIsCurrentUser && !isNoShowRegen;
+    // The interrupted notice carries its own Regenerate action, and so does the
+    // stale notice for a streaming turn that stops heartbeating.
+    const showRegenerate = isDM && !isGenerationInProgress && !interrupted && !turnStillStreaming && requesterIsCurrentUser && !isNoShowRegen;
     const meetingsLicensed = useIsLicensedFor('meetings');
-    const showPostbackButton = meetingsLicensed && !isGenerationInProgress && requesterIsCurrentUser && isTranscriptionResult;
+
+    // The server authorizes postback by DM membership, not conversation ownership.
+    const showPostbackButton = meetingsLicensed && !isGenerationInProgress && isDM && isTranscriptionResult;
     const showStopGeneratingButton = isGenerationInProgress && requesterIsCurrentUser;
     const hasContent = renderedRounds.length > 0;
     const showControlsBar = ((showRegenerate || showPostbackButton) && hasContent) || showStopGeneratingButton;
@@ -734,6 +746,25 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
         ) : intl.formatMessage({defaultMessage: 'Waiting for the requester to approve tool use'});
     }
 
+    // Only the requester can stop, so the requester is who stopped it.
+    // A regenerate leaves the prior run's marker on the post until it finishes.
+    const generationStopped = (stopped || (props.post.props?.generation_stopped === true && !regenerating)) && !isGenerationInProgress;
+    const requesterDisplayName = useSelector<GlobalState, string | undefined>((state) => {
+        const profile = requesterUserId ? state.entities.users.profiles?.[requesterUserId] : undefined; // eslint-disable-line no-undefined
+        return profile ? displayNameFor(profile, selectTeammateNameDisplay(state)) : undefined; // eslint-disable-line no-undefined
+    });
+    let generationStoppedMessage: string;
+    if (requesterIsCurrentUser) {
+        generationStoppedMessage = intl.formatMessage({defaultMessage: 'You stopped generating this response.'});
+    } else if (requesterDisplayName) {
+        generationStoppedMessage = intl.formatMessage(
+            {defaultMessage: '{name} stopped generating this response.'},
+            {name: requesterDisplayName},
+        );
+    } else {
+        generationStoppedMessage = intl.formatMessage({defaultMessage: 'The requester stopped generating this response.'});
+    }
+
     const reasoningLoadingRoundId = isReasoningLoading ? LIVE_ROUND_ID : undefined; // eslint-disable-line no-undefined
     const activity = useMemo(
         () => deriveActivity(renderedRounds, {pendingDecisionRoundId, reasoningLoadingRoundId, live: isGenerationInProgress}),
@@ -792,7 +823,7 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
     // Tool-only posts leave post.message empty, so precontent stays true on
     // remount. Hide Working... once rounds exist, except while generation is
     // actually resuming (continue/start still set precontent on purpose).
-    const showWorking = !interrupted && (
+    const showWorking = !interrupted && !generationStopped && (
         (precontent && (generating || renderedRounds.length === 0)) ||
         (conversationLoading && !generating && renderedRounds.length === 0)
     );
@@ -802,11 +833,6 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
     // generation) restarts or cancels the timer.
     // An empty message with persisted rounds is a tool-only post (finished, or
     // waiting on the requester's approval), not a stalled generation.
-    // A persisted turn still marked streaming means generation is unfinished
-    // even though heartbeats already flushed partial text onto the post.
-    // Read the fresh conversation (not the last-known copy) so a refetch that
-    // lands with the turn complete clears this.
-    const turnStillStreaming = Boolean(conversation?.turns.some((turn) => turn.post_id === props.post.id && turn.status === 'streaming'));
     const staleRefetchedRef = useRef(false);
     useEffect(() => {
         staleRefetchedRef.current = false;
@@ -901,6 +927,15 @@ export const LLMBotPost = (props: LLMBotPostProps) => {
             <AnswerArea $afterActivity={activity.items.length > 0}>
                 {activity.answerRounds.map(renderRound)}
             </AnswerArea>
+            {generationStopped && (
+                <GenerationStoppedNotice data-testid='llm-bot-generation-stopped'>
+                    <GenerationStoppedIcon
+                        size={14}
+                        aria-hidden={true}
+                    />
+                    {generationStoppedMessage}
+                </GenerationStoppedNotice>
+            )}
             <HTMLArtifacts
                 postId={props.post.id}
                 files={props.post.metadata?.files}
@@ -936,6 +971,22 @@ const AnswerArea = styled.div<{$afterActivity: boolean}>`
     &:not(:empty) {
         margin-top: ${(props) => (props.$afterActivity ? '8px' : '0')};
     }
+`;
+
+const GenerationStoppedNotice = styled.div`
+    display: flex;
+    align-items: start;
+    gap: 4px;
+    margin-top: 8px;
+    font-size: 12px;
+    line-height: 16px;
+    color: rgba(var(--center-channel-color-rgb), 0.64);
+`;
+
+// Lines the 14px icon up with the first line of 16px text when the notice wraps.
+const GenerationStoppedIcon = styled(CancelIcon)`
+    flex-shrink: 0;
+    margin-top: 1px;
 `;
 
 const PostSummaryHelpMessage = styled(SectionNotice)`

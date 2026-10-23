@@ -4,6 +4,7 @@
 package channels
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -103,6 +104,39 @@ func (s *inMemoryStore) UpdateTurnContent(id string, content json.RawMessage) er
 	}
 	turn.Content = content
 	return nil
+}
+
+func (s *inMemoryStore) CompareAndSwapTurnContent(id string, expected, content json.RawMessage) (bool, error) {
+	turn, ok := s.turns[id]
+	if !ok || !bytes.Equal(turn.Content, expected) {
+		return false, nil
+	}
+	turn.Content = content
+	return true, nil
+}
+
+func (s *inMemoryStore) CompareAndSwapTurnContentAndStatus(id string, expectedContent json.RawMessage, expectedStatus string, content json.RawMessage, status string) (bool, error) {
+	t, ok := s.turns[id]
+	if !ok || t.Status != expectedStatus || !bytes.Equal(t.Content, expectedContent) {
+		return false, nil
+	}
+	t.Content = content
+	t.Status = status
+	return true, nil
+}
+
+func (s *inMemoryStore) TouchStreamingTurn(id string) (bool, error) {
+	t, ok := s.turns[id]
+	return ok && t.Status == store.TurnStatusStreaming, nil
+}
+
+func (s *inMemoryStore) TransitionTurnStatus(id, from, to string) (bool, error) {
+	t, ok := s.turns[id]
+	if !ok || t.Status != from {
+		return false, nil
+	}
+	t.Status = to
+	return true, nil
 }
 
 func (s *inMemoryStore) UpdateTurnTokens(id string, tokensIn, tokensOut int64) error {

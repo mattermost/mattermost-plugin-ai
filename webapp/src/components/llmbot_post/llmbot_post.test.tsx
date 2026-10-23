@@ -502,11 +502,12 @@ describe('LLMBotPost mid-stream text routing', () => {
         });
     }
 
-    // ToolRunner re-emits a round's calls with terminal statuses once they ran; that closes the round.
+    // ToolRunner re-emits a round's calls in the resolved phase once they ran; that closes the round.
     function resolvedToolCall(id: string, name: string) {
         return {
             control: 'tool_call',
             tool_call: JSON.stringify([{id, name, description: '', status: ToolCallStatus.Success}]),
+            tool_call_phase: 'resolved' as const,
         };
     }
 
@@ -747,7 +748,9 @@ describe('LLMBotPost rounds awaiting a decision', () => {
         mockUseSelector.mockImplementation((selector) => selector({
             entities: {
                 channels: {channels: {channel_1: {type: 'O'}}},
+                general: {config: {}, license: {}},
                 posts: {posts: {}},
+                preferences: {myPreferences: {}},
                 users: {currentUserId: 'user_1', profiles: {requester_1: {username: 'alice'}}},
             },
         }));
@@ -912,6 +915,7 @@ describe('LLMBotPost rounds awaiting a decision', () => {
                 post_id: 'post_1',
                 control: 'tool_call',
                 tool_call: JSON.stringify([{id: 'tc_search', name: 'search_tools', description: '', status: ToolCallStatus.Success}]),
+                tool_call_phase: 'resolved',
             }));
             listener?.(postUpdateMessage({post_id: 'post_1', next: 'I will post that'}));
             listener?.(postUpdateMessage({
@@ -1389,6 +1393,116 @@ describe('LLMBotPost conversation_id prop handling', () => {
     });
 });
 
+describe('LLMBotPost stopped generation notice', () => {
+    function inChannelWithRequester(teammateNameDisplay = 'username') {
+        mockUseSelector.mockImplementation((selector) => selector({
+            entities: {
+                channels: {channels: {channel_1: {type: 'O'}}},
+                general: {config: {TeammateNameDisplay: teammateNameDisplay}, license: {}},
+                posts: {posts: {}},
+                preferences: {myPreferences: {}},
+                users: {
+                    currentUserId: 'user_1',
+                    profiles: {requester_1: {username: 'alice', nickname: '', first_name: 'Alice', last_name: 'Smith'}},
+                },
+            },
+        }));
+    }
+
+    function stoppedNotice() {
+        return screen.queryByTestId('llm-bot-generation-stopped')?.textContent ?? null;
+    }
+
+    test.each([
+        {name: 'the requester', requester: 'user_1', nameDisplay: 'username', expected: 'You stopped generating this response.'},
+        {name: 'an onlooker', requester: 'requester_1', nameDisplay: 'username', expected: 'alice stopped generating this response.'},
+        {name: 'an onlooker who shows full names', requester: 'requester_1', nameDisplay: 'full_name', expected: 'Alice Smith stopped generating this response.'},
+        {name: 'an onlooker without the requester profile', requester: 'requester_2', nameDisplay: 'username', expected: 'The requester stopped generating this response.'},
+    ])('tells $name that the response was stopped', ({requester, nameDisplay, expected}) => {
+        inChannelWithRequester(nameDisplay);
+        mockUseConversation.mockReturnValue({conversation: makeConversation([], requester), loading: false, error: null});
+
+        renderPost(makePost('Partial answer', {generation_stopped: true}));
+
+        expect(stoppedNotice()).toBe(expected);
+        expect(screen.getByText('Partial answer')).toBeTruthy();
+    });
+
+    test('shows no notice on a response that was not stopped', () => {
+        inChannelWithRequester();
+        mockUseConversation.mockReturnValue({conversation: makeConversation([], 'requester_1'), loading: false, error: null});
+
+        renderPost(makePost('Full answer'));
+
+        expect(stoppedNotice()).toBeNull();
+    });
+
+    test('shows the stop instead of Working... when it came before any text', () => {
+        inChannelWithRequester();
+        mockUseConversation.mockReturnValue({conversation: makeConversation([], 'requester_1'), loading: false, error: null});
+
+        renderPost(makePost('', {generation_stopped: true}));
+
+        expect(stoppedNotice()).toBe('alice stopped generating this response.');
+        expect(screen.queryByText('Working...')).toBeNull();
+    });
+
+    test('hides the notice while a new run streams onto the post', () => {
+        mockUseConversation.mockReturnValue({conversation: makeConversation([]), loading: false, error: null});
+        let listener: PostUpdateHandler | undefined;
+        renderPost(makePost('Partial answer', {generation_stopped: true}), (postID, listenerID, handler) => {
+            listener = handler;
+        });
+        expect(stoppedNotice()).not.toBeNull();
+
+        act(() => {
+            listener?.(postUpdateMessage({post_id: 'post_1', control: 'start'}));
+            listener?.(postUpdateMessage({post_id: 'post_1', next: 'New answer'}));
+        });
+
+        expect(stoppedNotice()).toBeNull();
+    });
+
+    test('tells the requester right away when they press Stop Generating', () => {
+        mockUseConversation.mockReturnValue({conversation: makeConversation([]), loading: false, error: null});
+        let listener: PostUpdateHandler | undefined;
+        renderPost(makePost(), (postID, listenerID, handler) => {
+            listener = handler;
+        });
+
+        act(() => {
+            listener?.(postUpdateMessage({post_id: 'post_1', control: 'start'}));
+            listener?.(postUpdateMessage({post_id: 'post_1', next: 'Partial'}));
+        });
+        expect(stoppedNotice()).toBeNull();
+
+        fireEvent.click(screen.getByTestId('stop-generating-button'));
+
+        expect(stoppedNotice()).toBe('You stopped generating this response.');
+    });
+
+    test('tells the requester right away when they stop a regenerate', () => {
+        mockUseConversation.mockReturnValue({
+            conversation: makeConversation([makeTurn({content: [{type: 'text', text: 'Old answer'}]})]),
+            loading: false,
+            error: null,
+        });
+        let listener: PostUpdateHandler | undefined;
+        renderPost(makePost('Old answer'), (postID, listenerID, handler) => {
+            listener = handler;
+        });
+
+        fireEvent.click(screen.getByTestId('regenerate-button'));
+        act(() => {
+            listener?.(postUpdateMessage({post_id: 'post_1', control: 'start'}));
+            listener?.(postUpdateMessage({post_id: 'post_1', next: 'New partial'}));
+        });
+        fireEvent.click(screen.getByTestId('stop-generating-button'));
+
+        expect(stoppedNotice()).toBe('You stopped generating this response.');
+    });
+});
+
 describe('LLMBotPost meetings license gating', () => {
     const {useIsLicensedFor} = jest.requireMock('@/license') as {useIsLicensedFor: jest.Mock};
 
@@ -1426,6 +1540,26 @@ describe('LLMBotPost meetings license gating', () => {
 
     test('hides Post summary below Enterprise', () => {
         useIsLicensedFor.mockReturnValue(false);
+        renderPost(makePost('Call summary'));
+
+        expect(screen.queryByText('Post summary')).toBeNull();
+    });
+
+    test('shows Post summary for a summary posted without a conversation', () => {
+        mockUseConversation.mockReturnValue({conversation: null, loading: false, error: null});
+        renderPost(makePost('Call summary', {conversation_id: ''}));
+
+        expect(screen.getByText('Post summary')).not.toBeNull();
+    });
+
+    test('hides Post summary outside a DM', () => {
+        mockUseSelector.mockImplementation((selector) => selector({
+            entities: {
+                channels: {channels: {channel_1: {type: 'O'}}},
+                posts: {posts: {root_1: {props: {referenced_transcript_post_id: 'transcript_1'}}}},
+                users: {currentUserId: 'user_1'},
+            },
+        }));
         renderPost(makePost('Call summary'));
 
         expect(screen.queryByText('Post summary')).toBeNull();
@@ -1803,5 +1937,98 @@ describe('LLMBotPost interrupted and stale generation notices', () => {
             jest.advanceTimersByTime(120000);
         });
         expect(screen.queryByText(STALE_TEXT)).toBeNull();
+    });
+
+    describe('approved tool calls', () => {
+        function approvalRunConversation(status: 'streaming' | 'interrupted') {
+            return {
+                conversation: makeConversation([
+                    makeTurn({id: 'u1', post_id: 'user_post', role: 'user', sequence: 1, content: [{type: 'text', text: 'what is MM-1?'}]}),
+                    makeTurn({
+                        id: 'anchor',
+                        sequence: 2,
+                        status,
+                        approval_state: status === 'streaming' ? 'call' : 'done',
+                        content: [
+                            {type: 'text', text: 'Let me look that up.'},
+                            {type: 'tool_use', id: 'tc_1', name: 'jira__get_issue', status: 'accepted'},
+                        ],
+                    }),
+                ], 'user_1'),
+                loading: false,
+                error: null,
+            };
+        }
+
+        test('show as running, not stalled, while their run heartbeats', () => {
+            jest.useFakeTimers();
+            (invalidateConversation as jest.Mock).mockClear();
+            mockUseConversation.mockReturnValue(approvalRunConversation('streaming'));
+            let listener: PostUpdateHandler | undefined;
+            const ui = () => (
+                <IntlProvider locale='en'>
+                    <LLMBotPost
+                        post={{...makePost('Let me look that up.'), user_id: BOT_ID}}
+                        websocketRegister={(postID: string, listenerID: string, handler: PostUpdateHandler) => {
+                            listener = handler;
+                        }}
+                        websocketUnregister={jest.fn()}
+                    />
+                </IntlProvider>
+            );
+            const {rerender} = render(ui());
+
+            const heartbeatAfter = (ms: number) => act(() => {
+                jest.advanceTimersByTime(ms);
+                listener?.(postUpdateMessage({post_id: 'post_1', control: 'heartbeat'}));
+            });
+            for (let i = 0; i < 6; i++) {
+                heartbeatAfter(50000);
+            }
+            expect(screen.queryByText(STALE_TEXT)).toBeNull();
+            expect(screen.queryByTestId('llm-bot-post-interrupted')).toBeNull();
+            expect(screen.getByTestId('llm-bot-activity-spinner')).toBeTruthy();
+            expect(invalidateConversation).not.toHaveBeenCalled();
+
+            // The server refuses to regenerate over a live run, and it has no Stop.
+            expect(screen.queryByTestId('regenerate-button')).toBeNull();
+            expect(screen.queryByText('Stop Generating')).toBeNull();
+
+            // A run whose node died stops heartbeating: refetch once, then
+            // offer Regenerate until the recovery sweep marks the post.
+            act(() => {
+                jest.advanceTimersByTime(60000);
+            });
+            expect(invalidateConversation).toHaveBeenCalledTimes(1);
+            mockUseConversation.mockReturnValue({conversation: null, loading: true, error: null});
+            rerender(ui());
+            mockUseConversation.mockReturnValue(approvalRunConversation('streaming'));
+            rerender(ui());
+            act(() => {
+                jest.advanceTimersByTime(60000);
+            });
+            expect(within(screen.getByTestId('llm-bot-post-stale')).getByText('Regenerate')).toBeTruthy();
+        });
+
+        test.each([
+            ['shutdown', SHUTDOWN_TEXT],
+            ['lost', LOST_TEXT],
+        ])('show as interrupted, with Regenerate and no spinner, after a %s', (reason, text) => {
+            mockUseConversation.mockReturnValue(approvalRunConversation('interrupted'));
+            mockToolApprovalSet.mockClear();
+            renderPost(interruptedPost(reason, BOT_ID, 'Let me look that up.'));
+
+            const notice = screen.getByTestId('llm-bot-post-interrupted');
+            expect(within(notice).getByText(text)).toBeTruthy();
+            expect(within(notice).getByText('Regenerate')).toBeTruthy();
+            expect(screen.queryByTestId('llm-bot-activity-spinner')).toBeNull();
+            expect(screen.getByTestId('llm-bot-tool-activity-header').textContent).toMatch(/^Used /);
+            expect(within(screen.getByTestId('llm-bot-tool-activity-header')).getByTestId('llm-bot-tool-status').getAttribute('data-status')).toBe('error');
+
+            expandToolActivity();
+            const lastCall = mockToolApprovalSet.mock.calls[mockToolApprovalSet.mock.calls.length - 1][0] as unknown as {approvalStage: string; toolCalls: Array<{status: ToolCallStatus; interrupted?: boolean}>};
+            expect(lastCall.approvalStage).toBe('done');
+            expect(lastCall.toolCalls).toEqual([expect.objectContaining({status: ToolCallStatus.Error, interrupted: true})]);
+        });
     });
 });

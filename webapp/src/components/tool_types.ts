@@ -60,11 +60,19 @@ export interface ToolCall {
     // individual approval decision.
     would_auto_execute?: boolean;
 
+    // Client-only: the call never finished because its post was interrupted
+    // (see llm_interrupted). Rendered with Error status.
+    interrupted?: boolean;
+
     // True when the matching tool result has already received its terminal
     // share/keep-private decision (decided_at set server-side). Derived from
     // the conversation API; absent on live websocket payloads.
     decided?: boolean;
 }
+
+// ToolCallPhase mirrors llm.ToolCallPhase on live tool_call websocket events.
+// 'resolved' closes the round; 'executing' and 'awaiting_decision' are in progress.
+export type ToolCallPhase = 'executing' | 'awaiting_decision' | 'resolved';
 
 // ToolApprovalStage mirrors the server-computed approval state for a post.
 // 'done' means no user decision remains (auto-run, keep private, all

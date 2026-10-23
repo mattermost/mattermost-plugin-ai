@@ -4,6 +4,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -488,6 +489,68 @@ func (m *mockConversationStore) GetTurnByPostID(postID string) (*store.Turn, err
 	return turn, nil
 }
 
+func (m *mockConversationStore) CompareAndSwapTurnContent(id string, expected, content json.RawMessage) (bool, error) {
+	if m.err != nil {
+		return false, m.err
+	}
+	for convID, turns := range m.turns {
+		for i, turn := range turns {
+			if turn.ID == id {
+				if !bytes.Equal(turn.Content, expected) {
+					return false, nil
+				}
+				m.turns[convID][i].Content = content
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+func (m *mockConversationStore) CompareAndSwapTurnContentAndStatus(id string, expectedContent json.RawMessage, expectedStatus string, content json.RawMessage, status string) (bool, error) {
+	if m.err != nil {
+		return false, m.err
+	}
+	return m.updateTurn(id, func(turn *store.Turn) bool {
+		if turn.Status != expectedStatus || !bytes.Equal(turn.Content, expectedContent) {
+			return false
+		}
+		turn.Content = content
+		turn.Status = status
+		return true
+	}), nil
+}
+
+func (m *mockConversationStore) TouchStreamingTurn(id string) (bool, error) {
+	return m.TransitionTurnStatus(id, store.TurnStatusStreaming, store.TurnStatusStreaming)
+}
+
+func (m *mockConversationStore) TransitionTurnStatus(id, from, to string) (bool, error) {
+	if m.err != nil {
+		return false, m.err
+	}
+	return m.updateTurn(id, func(turn *store.Turn) bool {
+		if turn.Status != from {
+			return false
+		}
+		turn.Status = to
+		return true
+	}), nil
+}
+
+// updateTurn applies a conditional update to turn id and reports whether it
+// applied.
+func (m *mockConversationStore) updateTurn(id string, update func(*store.Turn) bool) bool {
+	for convID, turns := range m.turns {
+		for i := range turns {
+			if turns[i].ID == id {
+				return update(&m.turns[convID][i])
+			}
+		}
+	}
+	return false
+}
+
 func (m *mockConversationStore) UpdateTurnContent(id string, content json.RawMessage) error {
 	if m.err != nil {
 		return m.err
@@ -766,6 +829,10 @@ func (e *TestEnvironment) setBots(registry ...*bots.Bot) {
 	e.bots.SetBotsForTesting(registry)
 }
 
+// askForEveryTool is a tool policy checker that never lets a tool run
+// without approval.
+var askForEveryTool = mcp.ToolPolicyFunc(func(string, string) (string, bool) { return mcp.ToolPolicyAsk, false })
+
 func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 	mockAPI := &plugintest.API{}
 	noopMetrics := &metrics.NoopMetrics{}
@@ -814,6 +881,7 @@ func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 		nil,
 		nil,
 		cfg,
+		askForEveryTool,
 	)
 
 	api := New(
@@ -976,10 +1044,6 @@ func TestBotRequiredRoutesAcceptBotID(t *testing.T) {
 		"analyze post":            "/post/postid/analyze",
 		"transcribe":              "/post/postid/transcribe/file/fileid",
 		"summarize_transcription": "/post/postid/summarize_transcription",
-		"stop":                    "/post/postid/stop",
-		"regenerate":              "/post/postid/regenerate",
-		"tool_call":               "/post/postid/tool_call",
-		"tool_result":             "/post/postid/tool_result",
 		"postback_summary":        "/post/postid/postback_summary",
 		"loop_in_agent":           "/post/postid/loop_in_agent",
 		"analyze channel":         "/channel/channelid/analyze",
@@ -1195,6 +1259,11 @@ func TestPostRouter(t *testing.T) {
 				},
 			},
 		} {
+			// The agent-post routes check access to the post's agent in the
+			// service; TestPostResumeRoutesUseThePostsAgent covers them.
+			if name == "user not allowed" && (urlName == "stop" || urlName == "regenerate") {
+				continue
+			}
 			t.Run(urlName+" "+name, func(t *testing.T) {
 				e := SetupTestEnvironment(t)
 				defer e.Cleanup(t)
@@ -1203,7 +1272,10 @@ func TestPostRouter(t *testing.T) {
 
 				e.setupTestBot(test.botconfig)
 
+				// The agent-post routes resolve the agent from the post's
+				// author; the others ignore it.
 				e.mockAPI.On("GetPost", "postid").Return(&model.Post{
+					UserId:    testBotUserID,
 					ChannelId: "channelid",
 				}, nil)
 				e.mockAPI.On("LogError", mock.Anything).Maybe()
@@ -1350,7 +1422,7 @@ func TestEmptyBodyCheckerInApi(t *testing.T) {
 			defer e.Cleanup(t)
 
 			e.mockAPI.On("LogDebug", "Request rejected", "method", http.MethodPost, "path", mock.Anything, "status", http.StatusBadRequest, "error", "request body must be empty")
-			e.mockAPI.On("GetPost", mock.Anything).Return(&model.Post{}, nil).Maybe()
+			e.mockAPI.On("GetPost", mock.Anything).Return(&model.Post{UserId: testBotUserID}, nil).Maybe()
 			e.mockAPI.On("GetChannel", mock.Anything).Return(&model.Channel{}, nil).Maybe()
 			e.mockAPI.On("HasPermissionToChannel", mock.Anything, mock.Anything, model.PermissionReadChannel).Return(true).Maybe()
 			e.mockAPI.On("HasPermissionTo", mock.Anything, model.PermissionManageSystem).Return(true).Maybe()
