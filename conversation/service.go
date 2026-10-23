@@ -545,8 +545,8 @@ func turnsToLLMPosts(
 // preceding assistant turn holding its tool_use. A result need not follow its
 // tool_use directly: channel approvals append results at the end of the
 // conversation, after any newer bot posts. Results without a matching tool_use
-// are dropped, and tool_use blocks left without a result are answered with
-// MissingToolResultContent.
+// are dropped, and executed tool_use blocks left without a result are answered
+// with MissingToolResultContent.
 func pairToolResults(turns []store.Turn, blocksByTurn [][]ContentBlock) {
 	type toolUseKey struct {
 		turn int
@@ -560,6 +560,9 @@ func pairToolResults(turns []store.Turn, blocksByTurn [][]ContentBlock) {
 			for _, b := range blocksByTurn[i] {
 				if b.Type == BlockTypeToolUse && b.ID != "" {
 					ownerByID[b.ID] = i
+				}
+				if b.Type == BlockTypeToolResult {
+					answered[toolUseKey{i, b.ToolUseID}] = true
 				}
 			}
 		case "tool_result":
@@ -581,6 +584,10 @@ func pairToolResults(turns []store.Turn, blocksByTurn [][]ContentBlock) {
 		}
 		for _, b := range blocksByTurn[i] {
 			if b.Type != BlockTypeToolUse || b.ID == "" || answered[toolUseKey{i, b.ID}] {
+				continue
+			}
+			// BlocksToPost replays these as NotExecutedToolResult.
+			if b.Status == StatusPending || b.Status == StatusAccepted {
 				continue
 			}
 			blocksByTurn[i] = append(blocksByTurn[i], ContentBlock{

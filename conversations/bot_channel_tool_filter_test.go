@@ -190,7 +190,7 @@ func TestApplyBotChannelAutoEverywhereToolFilter(t *testing.T) {
 	tools := llmContext.Tools.GetTools()
 	require.Len(t, tools, 1)
 	require.Equal(t, "everywhere_tool", tools[0].Name)
-	require.Len(t, llmContext.DisabledToolsInfo, 3)
+	require.Empty(t, llmContext.DisabledTools, "removed tools must not be listed to the model")
 }
 
 func TestApplyBotChannelAutoEverywhereToolFilter_NamespacedToolUsesBarePolicy(t *testing.T) {
@@ -246,12 +246,7 @@ func TestBotChannelAutoEverywhereFilterKeepsMetaTools(t *testing.T) {
 		toolNames = append(toolNames, tool.Name)
 	}
 	require.ElementsMatch(t, []string{mcp.SearchToolsName, mcp.LoadToolName, "safe_tool"}, toolNames)
-
-	disabledNames := make([]string, 0, len(llmContext.DisabledToolsInfo))
-	for _, info := range llmContext.DisabledToolsInfo {
-		disabledNames = append(disabledNames, info.Name)
-	}
-	require.ElementsMatch(t, []string{"builtin", "ask_tool"}, disabledNames)
+	require.Empty(t, llmContext.DisabledTools, "removed tools must not be listed to the model")
 }
 
 // TestBotChannelAutoEverywhereKeepToolAutoExecuteBuiltIn pins that

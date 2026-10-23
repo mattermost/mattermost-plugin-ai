@@ -171,7 +171,7 @@ func wireToolResults(t *testing.T, body []byte) map[string]string {
 func TestChannelApprovalsOutOfOrderKeepThreadReplayable(t *testing.T) {
 	const (
 		botID     = "bot-id"
-		userID    = "user-id"
+		userID    = "user12345678901234567890ab"
 		channelID = "channel-id"
 		rootID    = "post-u1"
 	)
@@ -242,6 +242,15 @@ func TestChannelApprovalsOutOfOrderKeepThreadReplayable(t *testing.T) {
 		return list, nil
 	}).Maybe()
 
+	mmClient.EXPECT().GetPost(mock.Anything).RunAndReturn(func(id string) (*model.Post, error) {
+		threadMu.Lock()
+		defer threadMu.Unlock()
+		if post, ok := threadPosts.Posts[id]; ok {
+			return post.Clone(), nil
+		}
+		return nil, model.NewAppError("GetPost", "app.post.get.app_error", nil, "", http.StatusNotFound)
+	}).Maybe()
+
 	streamingService := streaming.NewMMPostStreamService(mmClient, i18n.Init())
 	streamingService.SetTurnStore(s)
 
@@ -281,12 +290,14 @@ func TestChannelApprovalsOutOfOrderKeepThreadReplayable(t *testing.T) {
 
 	convService := conversation.NewService(s, nil, nil, nil)
 	c := &Conversations{
-		mmClient:         mmClient,
-		contextBuilder:   contextBuilder,
-		bots:             botsService,
-		convService:      convService,
-		streamingService: streamingService,
-		licenseChecker:   licenseChecker,
+		mmClient:          mmClient,
+		contextBuilder:    contextBuilder,
+		bots:              botsService,
+		convService:       convService,
+		streamingService:  streamingService,
+		licenseChecker:    licenseChecker,
+		configProvider:    &channelFollowUpTestConfig{enableChannelMentionToolCalling: true},
+		toolPolicyChecker: mapPolicyChecker{},
 	}
 
 	userMessage := func(postID, text string) *store.Conversation {
@@ -369,7 +380,7 @@ func TestChannelApprovalsOutOfOrderKeepThreadReplayable(t *testing.T) {
 	assert.Contains(t, string(requests[0]), `"web_fetch`, "requests must take the Responses path, which carries native tools")
 
 	executed := map[string]string{"a1": "mcp:jira__get_issue", "a2": "(no output)", "b1": "mcp:jira__get_issue", "b2": "(no output)"}
-	notExecutedA := map[string]string{"a1": conversation.MissingToolResultContent, "a2": conversation.MissingToolResultContent, "b1": executed["b1"], "b2": executed["b2"]}
+	notExecutedA := map[string]string{"a1": conversation.NotExecutedToolResult, "a2": conversation.NotExecutedToolResult, "b1": executed["b1"], "b2": executed["b2"]}
 	want := []struct {
 		name    string
 		results map[string]string
