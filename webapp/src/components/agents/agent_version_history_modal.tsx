@@ -704,10 +704,6 @@ const VersionList = styled.ol`
     gap: var(--spacing-xxxxs);
 `;
 
-const VersionRow = styled.li`
-    position: relative;
-`;
-
 const VersionLabel = styled.span`
     display: inline-flex;
     align-items: center;
@@ -721,15 +717,33 @@ const VersionMenuItem = styled(MenuItem)<{$reserveMenu: boolean; $reserveCheckbo
         padding-top: var(--spacing-xs);
         padding-bottom: var(--spacing-xs);
         padding-left: ${(p) => (p.$reserveCheckbox ? 'var(--spacing-xxxxl)' : 'var(--spacing-l)')};
-        padding-right: ${(p) => (p.$reserveMenu ? '44px' : 'var(--spacing-l)')};
+        padding-right: ${(p) => (p.$reserveMenu ? '52px' : 'var(--spacing-l)')};
         border-radius: 4px;
     }
 `;
 
+// The row's menu button sits over the menu item rather than inside it, so
+// hovering the button would drop the item's own :hover. The row owns the tint
+// instead, which keeps it while the pointer is anywhere on the row.
+const VersionRow = styled.li`
+    position: relative;
+
+    &:hover ${VersionMenuItem}:not(:disabled) {
+        background-color: rgba(var(--center-channel-color-rgb), 0.08);
+    }
+
+    &:hover ${VersionMenuItem}[aria-current='true']:not(:disabled) {
+        background-color: rgba(var(--button-bg-rgb), 0.12);
+    }
+`;
+
+// Spans the same width as the version list (which bleeds past the sidebar's
+// padding) and insets the right edge like a row's menu button, so the header
+// buttons line up horizontally with the row buttons beneath them.
 const ListToolbar = styled.div`
     display: flex;
-    padding-top: 0;
-    padding-bottom: 0;
+    margin: 0 calc(-1 * var(--spacing-m));
+    padding: 0 calc(var(--spacing-xxs) + var(--spacing-xs)) 0 var(--spacing-m);
     align-items: center;
     justify-content: space-between;
     gap: var(--spacing-xs);
@@ -760,12 +774,17 @@ const CheckboxSlot = styled.div`
 const RowMenu = styled.div<{$visible: boolean}>`
     position: absolute;
     top: 50%;
-    right: var(--spacing-xxs);
+    right: calc(var(--spacing-xxs) + var(--spacing-xs));
     transform: translateY(-50%);
     opacity: ${(p) => (p.$visible ? 1 : 0)};
 
-    ${VersionRow}:hover &,
-    ${VersionRow}:focus-within & {
+    ${VersionRow}:hover & {
+        opacity: 1;
+    }
+
+    /* Keyboard focus only: a click leaves focus on the row or on the button
+       after its menu closes, and :focus-within would keep the button showing. */
+    ${VersionRow}:has(:focus-visible) & {
         opacity: 1;
     }
 
