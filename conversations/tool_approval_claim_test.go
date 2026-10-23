@@ -6,6 +6,7 @@ package conversations
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"testing"
 
@@ -172,6 +173,64 @@ func TestHandleToolCallExecutesApprovedCallsOnceUnderConcurrentClicks(t *testing
 			assert.Equal(t, 1, stale)
 			assert.Equal(t, 1, countToolResultTurns(t, convStore, conv.ID), "exactly one tool_result turn is recorded")
 		})
+	}
+}
+
+// failingCASStore fails the failAt-th compare-and-swap with a store error.
+type failingCASStore struct {
+	*loadedStateFlowStore
+	calls  int
+	failAt int
+}
+
+func (s *failingCASStore) CompareAndSwapTurnContent(id string, expected, content json.RawMessage) (bool, error) {
+	s.calls++
+	if s.calls == s.failAt {
+		return false, errors.New("database unavailable")
+	}
+	return s.loadedStateFlowStore.CompareAndSwapTurnContent(id, expected, content)
+}
+
+// A share that fails after recording its decision must stay retryable: the
+// retry applies the share and streams the follow-up.
+func TestHandleToolResultRetriesAfterPartialWriteFailure(t *testing.T) {
+	convStore, conv := loadedStateConversationStore()
+	postID := "approval-post-id"
+	seedClaimTestTurns(t, convStore, conv.ID, postID,
+		[]conversation.ContentBlock{{
+			Type: conversation.BlockTypeToolUse, ID: "tool-use-1", Name: "jira__get_issue",
+			Input: json.RawMessage(`{}`), Status: conversation.StatusSuccess, Shared: new(false),
+		}},
+		[]conversation.ContentBlock{{
+			Type: conversation.BlockTypeToolResult, ToolUseID: "tool-use-1",
+			Content: "result", Status: conversation.StatusSuccess, Shared: new(false),
+		}},
+	)
+
+	post := &model.Post{Id: postID, UserId: "bot-id"}
+	post.AddProp(streaming.ConversationIDProp, conv.ID)
+	channel := &model.Channel{Id: "channel-id", TeamId: "team-id", Type: model.ChannelTypeOpen}
+
+	lm := &loadedStateLLM{}
+	streamingService := &loadedStateStreamingService{}
+	c := newClaimTestConversations(t, convStore, lm, streamingService, nil)
+	c.convService = conversation.NewService(&failingCASStore{loadedStateFlowStore: convStore, failAt: 2}, nil, nil, nil)
+
+	require.Error(t, c.HandleToolResult(context.Background(), testRequesterID, post, channel, []string{"tool-use-1"}))
+	require.NoError(t, c.HandleToolResult(context.Background(), testRequesterID, post, channel, []string{"tool-use-1"}))
+	streamingService.waitForStreaming()
+
+	assert.Equal(t, 1, len(lm.requests), "the retry must stream the follow-up")
+	turns, err := convStore.GetTurnsForConversation(conv.ID)
+	require.NoError(t, err)
+	for _, turn := range turns {
+		if turn.ID != "assistant-turn" && turn.ID != "result-turn" {
+			continue
+		}
+		blocks, err := conversation.UnmarshalBlocks(turn.Content)
+		require.NoError(t, err)
+		require.NotNil(t, blocks[0].Shared)
+		assert.True(t, *blocks[0].Shared, "turn %s must carry the share", turn.ID)
 	}
 }
 

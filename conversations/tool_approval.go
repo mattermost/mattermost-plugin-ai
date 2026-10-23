@@ -593,10 +593,6 @@ func (c *Conversations) HandleToolResult(ctx context.Context, userID string, pos
 	}
 
 	now := model.GetMillis()
-	type turnUpdate struct {
-		turn    *store.Turn
-		content json.RawMessage
-	}
 	// Turns that record the decision (DecidedAt) are written first and
 	// conditionally: concurrent clicks race on the same first turn, and the
 	// loser fails before writing anything or streaming a second follow-up.
@@ -645,17 +641,22 @@ func (c *Conversations) HandleToolResult(ctx context.Context, userID string, pos
 		}
 	}
 
-	for i, update := range append(decisionUpdates, otherUpdates...) {
+	updates := slices.Concat(decisionUpdates, otherUpdates)
+	for i, update := range updates {
 		swapped, updateErr := c.convService.CompareAndSwapTurnContent(update.turn.ID, update.turn.Content, update.content)
+		if updateErr == nil && swapped {
+			continue
+		}
+		if i == 0 && updateErr == nil {
+			return fmt.Errorf("share decision for post %s was already recorded: %w", post.Id, ErrStaleToolClick)
+		}
+		// A recorded decision without its companion writes would make a retry
+		// return early as already decided and never stream the follow-up.
+		c.undoTurnUpdates(updates[:i])
 		if updateErr != nil {
 			return fmt.Errorf("failed to update turn shared flags: %w", updateErr)
 		}
-		if !swapped && i == 0 {
-			return fmt.Errorf("share decision for post %s was already recorded: %w", post.Id, ErrStaleToolClick)
-		}
-		if !swapped {
-			return fmt.Errorf("turn %s changed while recording the share decision", update.turn.ID)
-		}
+		return fmt.Errorf("turn %s changed while recording the share decision", update.turn.ID)
 	}
 
 	// DMs stream the follow-up from HandleToolCall.
@@ -784,6 +785,23 @@ func resolveApprovedToolUseBlock(ctx context.Context, llmContext *llm.Context, b
 		llm.ToolCallInfo{ID: block.ID, Execution: execution},
 		func(args any) error { return json.Unmarshal(block.Input, args) },
 		llmContext)
+}
+
+// turnUpdate is a conditional rewrite of turn from its read content to content.
+type turnUpdate struct {
+	turn    *store.Turn
+	content json.RawMessage
+}
+
+// undoTurnUpdates restores applied updates, newest first. It is best effort:
+// a restore that fails or finds the turn changed again is logged and skipped.
+func (c *Conversations) undoTurnUpdates(applied []turnUpdate) {
+	for _, update := range slices.Backward(applied) {
+		swapped, err := c.convService.CompareAndSwapTurnContent(update.turn.ID, update.content, update.turn.Content)
+		if err != nil || !swapped {
+			c.mmClient.LogError("Failed to undo a partial tool decision write", "turn_id", update.turn.ID, "error", err)
+		}
+	}
 }
 
 // claimToolDecision marks the turn's pending tool_use blocks accepted, but only
