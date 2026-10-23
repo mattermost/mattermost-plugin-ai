@@ -71,16 +71,16 @@ func (s *Server) registerWithBackoff(ctx context.Context) {
 		retriable, err := s.postRegistration(ctx, registerPath, s.config)
 		if err == nil {
 			if attempt > s.retry.warnAfterAttempts {
-				log.Printf("pluginmcp: registered with Agents plugin after %d attempts (plugin_id=%s)", attempt, s.config.PluginID)
+				log.Printf("pluginmcp: registered with Agents plugin after %d attempts (plugin_id=%s)", attempt, s.config.PluginID) //nolint:gosec // logs this plugin's configured ID and the Agents plugin's response, not request data
 			}
 			return
 		}
 		if !retriable {
-			log.Printf("pluginmcp: registration with Agents plugin failed permanently (plugin_id=%s): %v", s.config.PluginID, err)
+			log.Printf("pluginmcp: registration with Agents plugin failed permanently (plugin_id=%s): %v", s.config.PluginID, err) //nolint:gosec // logs this plugin's configured ID and the Agents plugin's response, not request data
 			return
 		}
 		if attempt == s.retry.warnAfterAttempts {
-			log.Printf("pluginmcp: still unable to register with Agents plugin after %d attempts, will keep retrying (plugin_id=%s): %v", attempt, s.config.PluginID, err)
+			log.Printf("pluginmcp: still unable to register with Agents plugin after %d attempts, will keep retrying (plugin_id=%s): %v", attempt, s.config.PluginID, err) //nolint:gosec // logs this plugin's configured ID and the Agents plugin's response, not request data
 		}
 		select {
 		case <-time.After(delay):
